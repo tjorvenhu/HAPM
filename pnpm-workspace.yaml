@@ -1,0 +1,9 @@
+# Kein echter Workspace, hier liegt genau ein Paket. Die Datei gibt es, weil
+# pnpm 11 die Freigabe von Install-Skripten nur hier liest.
+packages:
+  - "."
+
+allowBuilds:
+  esbuild: true
+  sharp: true
+  unrs-resolver: true

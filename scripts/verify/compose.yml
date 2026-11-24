@@ -1,0 +1,83 @@
+# Der Stack zum lokalen Prüfen, siehe README.md in diesem Ordner. Wie
+# docker-compose.dev.yml, aber mit einem fertigen Abbild und mit den Namen, unter
+# denen die Test-Zertifizierungsstelle den Container findet.
+
+name: hapm-verify
+
+services:
+  hapm:
+    image: ${HAPM_VERIFY_IMAGE:-hapm:verify}
+    container_name: hapm-verify
+    restart: unless-stopped
+    environment:
+      PORT: "7080"
+      TZ: Europe/Berlin
+      HAPM_ACME_SERVER: ${HAPM_ACME_SERVER:-letsencrypt}
+      HAPM_HAPROXY_CONTAINER: hapm-verify-haproxy
+      HAPM_POSTGRES_CONTAINER: hapm-verify-postgres
+    networks:
+      default:
+        aliases:
+          - demo.hapmtest.example
+          - www.hapmtest.example
+    ports:
+      - "7080:7080"
+      - "8080:80"
+      - "8443:443"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - data:/data
+      - haproxy-etc:/etc/haproxy
+      - haproxy-run:/run/haproxy
+      - haproxy-log:/var/log/haproxy
+      - acme:/root/.acme.sh
+      - postgres-run:/var/run/postgresql
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: hapm-verify-postgres
+    restart: unless-stopped
+    network_mode: none
+    command: >-
+      postgres -c listen_addresses='' -c shared_buffers=32MB -c max_connections=20
+      -c max_worker_processes=4 -c max_parallel_workers=0 -c autovacuum_max_workers=1 -c jit=off
+    environment:
+      POSTGRES_DB: hapm
+      POSTGRES_USER: hapm
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - postgres-run:/var/run/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hapm -d hapm"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  haproxy:
+    image: haproxy:lts
+    container_name: hapm-verify-haproxy
+    restart: unless-stopped
+    network_mode: service:hapm
+    user: root
+    command: ["haproxy", "-f", "/etc/haproxy/haproxy.cfg", "-S", "/run/haproxy/master.sock"]
+    depends_on:
+      hapm:
+        condition: service_healthy
+    volumes:
+      - haproxy-etc:/etc/haproxy:ro
+      - haproxy-run:/run/haproxy
+
+
+volumes:
+  data:
+  haproxy-etc:
+  haproxy-run:
+  haproxy-log:
+  acme:
+  postgres-data:
+  postgres-run:

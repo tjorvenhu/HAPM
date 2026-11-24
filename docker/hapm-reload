@@ -1,0 +1,3 @@
+#!/bin/sh
+# HAProxy neu laden und melden, ob der neue Prozess steht.
+exec node /app/bin/hapm-ctl.mjs reload

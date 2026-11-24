@@ -1,0 +1,47 @@
+/* Scrollbalken. Gehört zu `frame.css`.
+
+   Ein schmaler runder Griff ohne Schiene, auf jeder Seite und nicht nur auf denen mit dem
+   Rahmen (`.app-shell`, `.shell-page`): nirgendwo soll ein Standard-Balken stehen. Die
+   Regeln hängen deshalb an `*` und nicht an einer Klasse des Rahmens.
+
+   Die Farben haben einen Rückfall, weil eine Seite ohne Rahmen die Variablen nicht haben
+   muss: ohne Wert wäre der Griff durchsichtig.
+
+   Der @supports-Block nimmt scrollbar-width und scrollbar-color wieder zurück: stehen die
+   beiden, verwirft Chrome die ::-webkit-Regeln und zeigt einen eckigen Balken. Firefox kennt
+   nur die beiden Eigenschaften und behält sie. Keine eigenen ::-webkit-scrollbar-Maße je
+   Komponente: der Griff hat 4 px durchsichtigen Rahmen, in einem schmaleren Balken
+   verschwindet er. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hover, #bfbdb7) transparent;
+}
+
+@supports selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  min-height: 2.5rem;
+  border: 0.25rem solid transparent;
+  border-radius: 100px;
+  background-color: var(--border-hover, #bfbdb7);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--text-tertiary, #8e8a83);
+}

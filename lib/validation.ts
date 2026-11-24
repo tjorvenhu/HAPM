@@ -1,0 +1,61 @@
+/**
+ * Input validation.
+ *
+ * These are semantic checks — "is this plausibly a hostname". They are NOT the
+ * defence against command injection: that is lib/shell.ts, which escapes every
+ * argument regardless. Validation you have to remember to call is not a
+ * control.
+ */
+
+/** Validate a hostname or IP address. */
+export function validateHostname(host: string): boolean {
+  if (!host || host.length > 253) return false;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) {
+    return host.split('.').every((o) => Number(o) <= 255);
+  }
+  if (/^\[?[a-fA-F0-9:]+\]?$/.test(host) && (host.match(/:/g) || []).length >= 2) return true;
+  return /^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/.test(
+    host
+  );
+}
+
+/** Validate a display name (server, repository, group, plan). */
+export function validateName(name: string): boolean {
+  if (!name || name.length > 255) return false;
+  return /^[a-zA-Z0-9äöüÄÖÜß\s\-_.]+$/.test(name);
+}
+
+export function validateEmail(email: string): boolean {
+  if (!email || email.length > 254) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+/** Validate password complexity. Returns a German error message, or null if valid. */
+export function validatePassword(password: string): string | null {
+  if (!password || password.length < 10) {
+    return 'Das Passwort muss mindestens 10 Zeichen lang sein.';
+  }
+  if (!/[A-Z]/.test(password)) return 'Das Passwort muss mindestens einen Großbuchstaben enthalten.';
+  if (!/[a-z]/.test(password)) return 'Das Passwort muss mindestens einen Kleinbuchstaben enthalten.';
+  if (!/[0-9]/.test(password)) return 'Das Passwort muss mindestens eine Zahl enthalten.';
+  return null;
+}
+
+/** Validate an IPv4/IPv6 address. */
+export function validateIP(ip: string): boolean {
+  if (!ip || ip.length > 45) return false;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) {
+    return ip.split('.').every((o) => Number(o) <= 255);
+  }
+  return /^[a-fA-F0-9:]+$/.test(ip) && (ip.match(/:/g) || []).length >= 2;
+}
+
+/** Validate a CIDR range. */
+export function validateIPRange(range: string): boolean {
+  const [addr, bits] = range.split('/');
+  if (!addr || !bits) return false;
+  const prefix = Number(bits);
+  if (!Number.isInteger(prefix) || prefix < 0) return false;
+  if (addr.includes(':')) return prefix <= 128 && validateIP(addr);
+  return prefix <= 32 && validateIP(addr);
+}

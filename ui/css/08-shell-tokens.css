@@ -1,0 +1,127 @@
+/* Der Rahmen, Teil 1: die Werte (Farben, Radien, Schatten, Zeiten) an `html:has(.app-shell)`,
+   `html:has(.shell-page)` und `.shell-scope`.
+   Die Teile des Rahmens (`08`, `09`, `14`) stehen in `frame.css` in der Reihenfolge der
+   Kaskade. Die Nummern sind nur Namen.
+*/
+
+/* ===== APP-SHELL =====
+   Hellgraue Seitenfläche, Seitenleiste und Inhalt je in einer eigenen
+   abgerundeten Fläche, Buttons und Navigation als Pills, Felder mit 14 px
+   Radius, Karten mit 24 px. Akzent ist das Grün aus dem Logo.
+
+   Alles hängt an `.app-shell` (Wurzel in `ui/shell/ShellFrame.tsx`). Die
+   Tokens stehen an `html:has(.app-shell)`, damit auch Flächen im `body`
+   (globale Suche) sie erben.
+
+   `.shell-page` ist für eine ganze Seite ohne Rahmen (Anmeldung, Einrichtung,
+   Ladeschirm): die Werte stehen dann am Dokument, also auch für `body`.
+   `.shell-scope` gibt sie nur dem eigenen Teilbaum und färbt die Seite
+   dahinter nicht um. */
+html:has(.app-shell),
+html:has(.shell-page),
+.shell-scope {
+  /* Neutralskala: fast farblos, im Farbton des Markengrüns. */
+  --n-0: #fff;
+  --n-50: oklch(0.985 0.003 175);
+  --n-100: oklch(0.967 0.003 175);
+  --n-150: oklch(0.952 0.003 175);
+  --n-200: oklch(0.922 0.003 175);
+  --n-300: oklch(0.87 0.006 175);
+  --n-500: oklch(0.556 0.006 175);
+  --n-600: oklch(0.439 0.006 175);
+  --n-800: oklch(0.269 0.006 175);
+  --n-950: oklch(0.145 0.003 175);
+
+  --bg: var(--n-150);
+  --bg-warm: var(--n-100);
+  --bg-alt: var(--n-200);
+  --bg-tint: var(--n-100);
+  --surface: var(--n-0);
+  --surface-hover: var(--n-50);
+  --surface-muted: var(--n-100);
+  --field: var(--n-100);
+  --text: var(--n-950);
+  --text-secondary: var(--n-600);
+  --text-tertiary: var(--n-500);
+  --border: var(--n-200);
+  --border-hover: var(--n-300);
+  /* Rahmen von Feldern: 3:1 gegen die Fläche (WCAG 1.4.11). */
+  --border-strong: var(--n-500);
+  --overlay: oklch(0.145 0.003 175 / 0.32);
+  --sidebar-bg: var(--n-950);
+
+  --primary: var(--accent);
+  --primary-hover: var(--accent-hover);
+  --primary-fg: #fff;
+  --secondary: var(--n-100);
+  --secondary-hover: var(--n-200);
+
+  --danger: oklch(0.48 0.193 27);
+  --danger-light: oklch(0.97 0.014 27);
+  --danger-fg: oklch(0.41 0.167 27);
+  --danger-solid: oklch(0.55 0.21 27);
+  --success: oklch(0.48 0.131 150);
+  --success-light: oklch(0.97 0.031 150);
+  --success-fg: oklch(0.41 0.112 150);
+  --warning: oklch(0.48 0.103 70);
+  --warning-light: oklch(0.97 0.022 70);
+  --warning-fg: oklch(0.41 0.088 70);
+  --info: oklch(0.48 0.156 255);
+  --info-light: oklch(0.97 0.014 255);
+  --info-fg: oklch(0.41 0.135 255);
+
+  --radius: 0.625rem;
+  --radius-lg: 1.125rem;
+  --radius-xl: 1.5rem;
+  --radius-input: 0.875rem;
+  --radius-panel: 1.125rem;
+  --radius-card: 1.5rem;
+  --radius-full: 9999px;
+  --btn-radius: var(--radius-full);
+
+  --shadow-control: 0 1px 1px oklch(0.2 0.005 175 / 0.04);
+  --shadow-solid: 0 1px 2px oklch(0.2 0.005 175 / 0.18), 0 2px 6px -2px oklch(0.2 0.005 175 / 0.16);
+  --shadow-raised: 0 1px 2px oklch(0.2 0.005 175 / 0.03), 0 6px 20px -6px oklch(0.2 0.005 175 / 0.07);
+  --shadow-overlay: 0 0 0 1px oklch(0.2 0.005 175 / 0.04), 0 8px 16px -6px oklch(0.2 0.005 175 / 0.08), 0 28px 56px -16px oklch(0.2 0.005 175 / 0.2);
+  --shadow-sm: var(--shadow-control);
+  --shadow-md: var(--shadow-raised);
+  --shadow-lg: var(--shadow-overlay);
+
+  /* Überschriften in der Grotesk: eine Serif gibt es im Rahmen nicht. */
+  --font-display: var(--font-body);
+  --font-serif: var(--font-body);
+
+  /* Bewegung: 120/200/300 ms, ease-out für alles, was auf eine Aktion reagiert, und
+     eine Feder (Steifigkeit 400, Dämpfung 34) passend zu 300 ms. */
+  --shell-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --shell-fast: 120ms;
+  --shell-base: 200ms;
+  --shell-slow: 300ms;
+  --shell-spring: linear(0, 0.0271, 0.0941, 0.1838, 0.2838, 0.3854, 0.483, 0.573, 0.6535, 0.7236, 0.7835, 0.8336, 0.8748, 0.908, 0.9344, 0.955, 0.9708, 0.9825, 0.9911, 0.9972, 1.0013, 1.0039, 1.0054, 1.0061, 1);
+  --transition: 120ms cubic-bezier(0.22, 1, 0.36, 1);
+  --shell-sidebar-width: 16rem;
+  --shell-content-width: 72rem;
+  --control-height: 2.5rem;
+
+  scroll-padding-top: 5rem;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── Rahmen ── */
+.app-shell {
+  display: flex;
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--text);
+}

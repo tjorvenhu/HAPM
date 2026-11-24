@@ -1,0 +1,414 @@
+/*
+ * Das Stylesheet von HAPM.
+ *
+ * Das Design liegt unter `ui/`: `tool.css` bringt den Rahmen (Seitenleiste,
+ * Menüs, Schublade), den Wortschatz der Seiten (Knöpfe, Felder, Karten,
+ * Tabellen, Fenster, Toast) und die Diagramme (`charts.css`) mit.
+ *
+ * Darunter stehen nur die Regeln einzelner Seiten des Reverse-Proxys: die Karte
+ * der Ziele (`.rp-*`), Karten als Link, zwei Felder nebeneinander im Formular,
+ * die Anzeige laufender Vorgänge, der Ablauf eines Laufs (`.run-*`) und
+ * einzelne Regeln der Statistik und der Tabellen.
+ *
+ * Regeln für Übersicht, Updates und Konto stehen in `hapm.css`.
+ */
+@import "../ui/css/tool.css";
+
+/* Die Schrift lädt `next/font` (app/layout.tsx) und legt sie als Variable an
+   `<html>`. `ui/css/` nennt sie beim Namen, und den vergibt `next/font` selbst. */
+:root {
+  --font-sans: var(--font-instrument-sans, 'Instrument Sans'), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* ── Reverse-Proxy-Karte ──
+ *
+ * Die eine Stelle im Werkzeug, an der eine Karte mehr trägt als Beschriftung
+ * und Wert: zwei gegliederte Abschnitte, und in den Routen einen Weg von links
+ * nach rechts. Deshalb eigene Klassen statt `.entity-card` — und deshalb nur
+ * hier. Gesteuert von components/reverse-proxy/ServiceCard.tsx.
+ *
+ * Grün ist hier Struktur und nicht Zustand: die Kacheln und Chips sind das
+ * Gerüst der Karte. Was einen Zustand meint, steht daneben in seiner eigenen
+ * Farbe — der Punkt am Symbol, das Schloss, die rote Sperr-Marke. */
+/* Kompakt: eine Karte ist eine Zeile Übersicht, keine Seite. Sie stand einmal
+   mit 18px Innenabstand und 14px zwischen den Blöcken da — bei sechs Diensten
+   passte keine zweite Reihe mehr auf den Bildschirm. */
+.rp-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; padding: 14px; box-shadow: var(--shadow-sm);
+  display: flex; flex-direction: column; gap: 10px; min-width: 0;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.rp-card:hover { border-color: var(--border-hover); box-shadow: var(--shadow-md); }
+
+/* Solange etwas läuft, ändert sich am Aussehen der Karte NICHTS außer dem
+   Symbol: dort dreht sich ein Spinner statt des Globus, und eine Marke nennt
+   die Phase. Die Karte färbte sich einmal gelb — das las sich als Warnung, wo
+   nur etwas läuft, und ließ die halbe Liste flackern, sobald man zwei Einträge
+   nacheinander anfasst.
+
+   Beim Entfernen war sie zuletzt rot hinterlegt, mit der Begründung, sie
+   verschwinde ohnehin gleich. Das galt für die Fläche und für nichts sonst:
+   Spinner, Marken und Knöpfe darin behielten ihre eigenen Farben, und heraus
+   kam eine Karte, die aussah, als stimme etwas nicht. Was mit ihr geschieht,
+   sagt jetzt die Marke („Wird entfernt · Phase") und nicht der Hintergrund. */
+.rp-card-head { display: flex; align-items: center; gap: 12px; min-width: 0; }
+
+.rp-card-icon {
+  position: relative; flex-shrink: 0;
+  width: 40px; height: 40px; border-radius: 50%;
+  background: var(--accent-light); color: var(--accent);
+  display: grid; place-items: center;
+}
+
+/* Der Zustand der Ziele steht in der Healthcheck-Marke (siehe unten,
+   `.rp-tag.is-online`) und nicht als eigener Punkt am Symbol. Der stand hier
+   einmal: klein, ohne Beschriftung, direkt neben einer Marke, auf der
+   „Healthcheck" steht — zwei Zeichen für dieselbe Sache. */
+.rp-card-heading { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
+.rp-card-title {
+  font-size: 1.0625rem; font-weight: 700; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.rp-card-subtitle {
+  font-size: 0.875rem; color: var(--text-tertiary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* EINE Zeile, nie zwei: `nowrap` plus abgeschnittene Marken halten alle Karten
+   einer Reihe auf derselben Höhe. Was nicht hineinpasst, zählt die Komponente
+   zusammen — es verschwindet also nicht, es steht nur als Zahl da.
+   KEIN `overflow: hidden` hier: der Tooltip einer Marke ist ein Pseudo-Element
+   ÜBER der Zeile und würde davon abgeschnitten. Das Kürzen macht die Marke
+   selbst, die Zeile muss es nicht noch einmal tun. */
+.rp-tags { display: flex; flex-wrap: nowrap; gap: 8px; min-width: 0; }
+
+.rp-tag {
+  display: inline-flex; align-items: center; gap: 7px; flex-shrink: 1; min-width: 0;
+  padding: 7px 12px; border-radius: 10px;
+  background: var(--accent-light); color: var(--accent);
+  font-size: 0.8125rem; font-weight: 500; max-width: 100%;
+  white-space: nowrap;
+}
+
+/* Abgeschnitten wird der TEXT, nicht die Marke: sonst klippt sie ihren eigenen
+   Tooltip weg, und der ist genau das, was den abgeschnittenen Text lesbar
+   macht. */
+.rp-tag-label { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+
+/* Die Zähl-Marke („+2") schrumpft nie: gestaucht stünde ihre Zahl nicht mehr
+   mittig, und zwei Zeichen zu kürzen bringt ohnehin nichts. */
+.rp-tag.is-count { flex-shrink: 0; justify-content: center; }
+
+.rp-tag.is-muted { background: var(--bg-warm); color: var(--text-secondary); }
+
+.rp-tag.is-locked { background: var(--danger-light); color: var(--danger); }
+
+/* Teilweise gesperrt: gelb zwischen offen und zu. Der Eintrag ist erreichbar,
+   nur nicht über jede seiner Domains. */
+.rp-tag.is-partly-locked { background: var(--warning-light); color: var(--warning); }
+
+/* Was HAProxys Healthcheck über die Ziele sagt. Ohne Zusatz bleibt die Marke
+   grün-neutral wie jede andere: dann ist der Zustand nicht bekannt, und das
+   ist nicht dasselbe wie „erreichbar". */
+.rp-tag.is-online { background: var(--success-light); color: var(--success); }
+
+.rp-tag.is-degraded { background: var(--warning-light); color: var(--warning); }
+
+.rp-tag.is-offline { background: var(--danger-light); color: var(--danger); }
+
+/* Die Phase, während geschrieben wird: leise. Sie sagt, was gerade läuft, und
+   nicht, dass etwas nicht stimmt. */
+.rp-tag.is-pending { background: var(--bg-warm); color: var(--text-secondary); }
+
+/* Auch das Entfernen trägt diese leise Marke und keine rote: der Unterschied
+   zum Schreiben steht in ihrem Text („Wird entfernt · Phase") und nicht in
+   ihrer Farbe. Rot neben einem laufenden Vorgang liest sich als Fehler. */
+.rp-tag svg { flex-shrink: 0; }
+
+.rp-section {
+  display: flex; flex-direction: column; gap: 8px;
+  border-top: 1px solid var(--border); padding-top: 14px;
+}
+
+.rp-section-title {
+  display: flex; align-items: center; gap: 9px;
+  font-size: 0.9375rem; font-weight: 600; color: var(--text);
+}
+
+.rp-section-title svg { color: var(--accent); }
+
+/* Die Überschrift der Routen ist zugleich der Schalter, der sie aufklappt. */
+.rp-section-toggle {
+  background: none; border: none; padding: 0; cursor: pointer; width: 100%;
+  text-align: left; font: inherit; color: inherit;
+}
+
+.rp-section-toggle:hover { color: var(--accent); }
+
+.rp-section-count {
+  margin-left: auto; padding: 1px 8px; border-radius: 20px;
+  background: var(--bg-alt); color: var(--text-secondary);
+  font-size: 0.75rem; font-weight: 600;
+}
+
+.rp-empty-line { font-size: 0.8125rem; color: var(--text-tertiary); }
+
+.rp-row {
+  display: flex; align-items: center; gap: 10px; min-width: 0;
+  padding: 9px 11px; border: 1px solid var(--border); border-radius: 12px;
+}
+
+.rp-row-icon {
+  display: grid; place-items: center; flex-shrink: 0;
+  width: 28px; height: 28px; border-radius: 8px;
+  background: var(--accent-light); color: var(--accent);
+}
+
+.rp-row-name {
+  flex: 1; min-width: 0; font-size: 0.875rem; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.rp-chip {
+  display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
+  padding: 5px 10px; border-radius: 8px;
+  background: var(--bg-warm); color: var(--text-secondary);
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace; font-size: 0.8125rem;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.rp-chip.is-accent { background: var(--accent-light); color: var(--accent); }
+
+.rp-chip svg { flex-shrink: 0; color: var(--text-tertiary); }
+
+/* Die Route liest sich als Weg: Pfad, Strecke, Ziel. Die gepunktete Linie
+   trägt keine Information, sie hält die beiden Enden auseinander — deshalb
+   `flex: 1` und kein Mindestmaß, sie darf auf null schrumpfen. */
+.rp-route { gap: 8px; }
+
+.rp-route-line { flex: 1; min-width: 8px; border-top: 2px dotted var(--border-hover); }
+
+.rp-route-arrow {
+  display: grid; place-items: center; flex-shrink: 0;
+  width: 28px; height: 28px; border-radius: 50%;
+  border: 1px solid var(--border); color: var(--accent); background: var(--surface);
+}
+
+.rp-actions {
+  display: flex; gap: 8px; margin-top: auto;
+  border-top: 1px solid var(--border); padding-top: 14px;
+}
+
+.rp-action {
+  display: grid; place-items: center; cursor: pointer;
+  width: 38px; height: 34px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--surface);
+  color: var(--text-secondary);
+  transition: border-color var(--transition), background var(--transition), color var(--transition);
+}
+
+.rp-action:hover:not(:disabled) { border-color: var(--border-hover); background: var(--surface-hover); }
+
+/* Eine der Aktionen ist ein Link (die Statistik des Dienstes): ein `a` bringt
+   die Linkfarbe mit und stünde sonst blau zwischen drei grauen Knöpfen. */
+a.rp-action { color: var(--text-secondary); text-decoration: none; }
+
+.rp-action:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.rp-action.is-open { color: var(--success); }
+
+.rp-action.is-locked { color: var(--danger); }
+
+.rp-action.is-partly-locked { color: var(--warning); }
+
+.rp-action.is-danger:hover:not(:disabled) { color: var(--danger); border-color: var(--danger); }
+
+/* Der leere Zustand innerhalb eines Abschnitts. Kein `.empty-state`: der ist
+   für eine ganze Seite gebaut und bringt eine Höhe mit, die einen Dialog
+   auseinanderzieht. */
+.rp-blank {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 22px 18px; text-align: center;
+  border: 1px dashed var(--border); border-radius: var(--radius-lg);
+  background: var(--bg-warm);
+}
+
+.rp-blank-icon {
+  display: grid; place-items: center; width: 44px; height: 44px;
+  border-radius: 50%; background: var(--surface); color: var(--text-tertiary);
+}
+
+.rp-blank strong { font-size: 0.9375rem; color: var(--text); }
+
+.rp-blank > span:last-child { font-size: 0.8125rem; color: var(--text-secondary); }
+
+/* Eine Karte, die selbst ein Link ist (die Gruppen der Übersicht). Der Link
+   trägt keine eigene Farbe: die Karte ist die Fläche, nicht der Text darin. */
+.entity-link { color: inherit; text-decoration: none; display: block; }
+
+.entity-link .entity-card { height: 100%; transition: border-color var(--transition); }
+
+.entity-link:hover .entity-card { border-color: var(--accent); }
+
+.entity-card-chevron { color: var(--text-tertiary); flex-shrink: 0; }
+
+/* Zwei Felder nebeneinander INNERHALB eines Abschnitts. `.form-row` tut
+   dasselbe, hat aber 16px Abstand und sitzt auf Seitenebene. */
+.form-section .form-pair {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px;
+}
+
+@media (max-width: 560px) {
+  .form-section .form-pair { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ── Laufende Vorgänge (unten rechts) ──
+ * Die Zeilen der Liste (`.activity-row*`) stehen in `ui/css/tool-vocabulary.css`. */
+.activity-indicator {
+  position: fixed; bottom: 24px; right: 24px; z-index: 90;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
+}
+
+.activity-pill {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 8px 14px; border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg); cursor: pointer;
+  font-size: 0.8125rem; font-weight: 500; color: var(--text);
+}
+
+.activity-pill:hover { border-color: var(--border-hover); }
+
+.activity-pill .spin { color: var(--accent); }
+
+.activity-chevron-open { transform: rotate(180deg); }
+
+.activity-panel {
+  width: 300px; max-width: calc(100vw - 48px);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+.activity-panel-head {
+  padding: 10px 14px; font-size: 0.75rem; font-weight: 600;
+  color: var(--text-secondary); border-bottom: 1px solid var(--border);
+}
+
+.run-timer {
+  font: 500 0.8125rem/1 'SF Mono', monospace;
+  color: var(--text-tertiary);
+  background: var(--bg-warm); padding: 6px 14px;
+  border-radius: var(--radius);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Ablauf eines Laufs ── */
+.run-steps {
+  display: flex; align-items: flex-start;
+  margin: 4px 0 20px;
+}
+
+.run-step {
+  flex: 1; position: relative;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+
+/* Connector to the next step, drawn behind the markers. */
+.run-step-line {
+  position: absolute; top: 15px; left: 50%; width: 100%; height: 2px;
+  background: var(--border); z-index: 0;
+}
+
+.run-step-marker {
+  position: relative; z-index: 1;
+  width: 32px; height: 32px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface); border: 2px solid var(--border);
+  color: var(--text-tertiary);
+}
+
+.run-step-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); }
+
+.run-step-label {
+  font-size: 0.75rem; color: var(--text-secondary); text-align: center;
+  line-height: 1.2; max-width: 90px;
+}
+
+.run-step-done .run-step-marker { background: var(--accent); border-color: var(--accent); color: var(--primary-fg); }
+
+.run-step-done .run-step-line { background: var(--accent); }
+
+.run-step-done .run-step-label { color: var(--text); }
+
+.run-step-active .run-step-marker {
+  border-color: var(--accent); color: var(--accent);
+  animation: run-step-pulse 1.6s ease-in-out infinite;
+}
+
+.run-step-active .run-step-label { color: var(--text); font-weight: 600; }
+
+@keyframes run-step-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--accent-glow); }
+  50% { box-shadow: 0 0 0 6px var(--accent-subtle); }
+}
+
+.run-status-line { display: flex; align-items: center; gap: 12px; }
+
+.run-phase-name { font-size: 0.8125rem; color: var(--text-secondary); }
+
+.run-result { display: flex; align-items: center; gap: 12px; }
+
+.run-result-meta { display: inline-flex; align-items: center; color: var(--text-secondary); margin-left: 8px; }
+
+/* ── Statistik ── */
+.metrics-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+/* Eine Adresse oder ein Pfad in einer Rangliste. Dieselbe Schrift wie in der
+ * Tabelle: bei Adressen untereinander soll die Stelle einer Ziffer etwas
+ * bedeuten, und ein Pfad ist Code. */
+.ranking-mono {
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 0.8rem;
+}
+
+/* ── Statistik: zurück aus einem Dienst ── */
+.sys-back {
+  display: inline-flex; align-items: center; gap: 4px; font-size: 0.8125rem;
+}
+
+/* Auf der Reverse-Proxy-Statistik ist der Rückweg aus einem Dienst kein
+   Ortswechsel, sondern ein Zustand derselben Seite — also ein `button`. Er soll
+   trotzdem aussehen wie der Link daneben, und dafür muss ihm genau das
+   abgewöhnt werden, was ein Knopf von sich aus mitbringt: Rahmen, Fläche,
+   eigene Schrift und die Textfarbe. */
+button.sys-back {
+  background: none; border: 0; padding: 0;
+  font-family: inherit; color: var(--accent); cursor: pointer;
+}
+
+button.sys-back:hover { color: var(--accent-hover); }
+
+/* ── Tabellenzellen ──
+ * Feste Spaltenbreiten: nur so kann eine Zelle abschneiden statt umzubrechen.
+ * Die Zahlenspalten bekommen ihre Breite zugewiesen, die Namensspalten teilen
+ * sich den Rest. Wird es enger, scrollt .table-wrap waagerecht — das ist besser
+ * als eine Tabelle, in der jede zweite Zeile doppelt so hoch ist. */
+.sys-table { table-layout: fixed; width: 100%; }
+
+.sys-trunc {
+  display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .metrics-row { grid-template-columns: 1fr; }
+}

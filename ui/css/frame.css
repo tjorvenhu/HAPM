@@ -1,0 +1,8 @@
+/* Nur der Rahmen: Werte, Scrollbalken, Flächen, Seitenleiste, Menüs, Schublade, Bewegung.
+   Die Regeln hängen an `.app-shell`, `.shell-*` und `.shell-page`. `tool.css` bindet die
+   Datei vor dem Wortschatz der Seiten ein: was dort oder in `app/globals.css` dieselbe
+   Stärke hat, überstimmt, was hier steht. */
+@import "./08-shell-tokens.css";
+@import "./frame-scrollbar.css";
+@import "./09-shell-frame.css";
+@import "./14-shell-motion.css";

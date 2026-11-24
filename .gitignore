@@ -1,0 +1,31 @@
+node_modules/
+.next/
+out/
+build/
+dist/
+
+.env
+.env.local
+.env*.local
+
+# Zustand der lokalen Entwicklung (Datenbank, Geheimnisse, HAProxy-Dateien)
+.data/
+
+*.tsbuildinfo
+next-env.d.ts
+
+.DS_Store
+*.pem
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+.vscode/
+.idea/
+
+# Sitzung des Prüf-Clients (scripts/verify/api.mjs)
+.session.json
+
+# Notizen der Entwicklungsumgebung, nicht Teil des Projekts
+.forge/
+.claude/

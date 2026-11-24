@@ -1,0 +1,3 @@
+#!/bin/sh
+# Notfall-Kommandos: Konten zeigen, Passwort zurücksetzen.
+exec node /app/bin/hapm-admin.mjs "$@"

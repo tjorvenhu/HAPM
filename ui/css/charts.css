@@ -1,0 +1,500 @@
+/* ── Diagramme (`ui/charts/*`) ──
+   `tool.css` bindet diese Datei am Ende ein. Sie verlässt sich nur auf Werte, die es mit
+   und ohne Rahmen gibt (`--surface`, `--border`, `--text*`, `--accent`, `--radius-card`),
+   und setzt Maße, die überall gleich aussehen sollen, selbst. */
+
+:root {
+  /* ── Diagrammpalette ──
+     Eine Farbe je Reihe, nicht je Zustand. Zustandsfarben (--success, --warning, --danger)
+     sind reserviert und stehen hier nicht: sonst sähe ein Container „kritisch" aus, nur weil
+     er der vierte in der Liste ist.
+
+     Die REIHENFOLGE ist der Mechanismus: benachbarte Plätze sind gegen Rot-Grün- und
+     Blau-Gelb-Schwäche geprüft (Validator der Datenvisualisierung, gegen Weiß: schlechtestes
+     benachbartes Paar ΔE 16 simuliert, 18,8 normalsichtig). Platz 1 ist das Grün der Marke,
+     eine Stufe heller als `--accent`, weil das Markengrün für eine Reihe unter anderen zu
+     dunkel und zu grau ist. Eine Reihe allein steht im `--accent`.
+
+     Magenta und Gelb liegen unter 3:1 zur Fläche. Deshalb hat jedes Diagramm ab zwei Reihen
+     eine beschriftete Legende. */
+  --viz-1: #1f8a6c;
+  --viz-2: #2a78d6;
+  --viz-3: #eb6834;
+  --viz-4: #6250d6;
+  --viz-5: #e87ba4;
+  --viz-6: #eda100;
+  --viz-7: #0e8fae;
+  --viz-8: #a8642a;
+  /* Mischpartner für die Stufen ab der neunten Reihe (`seriesColor`). Kein reines Schwarz:
+     gegen hellen Grund liest sich #16130f als dunkler Ton derselben Farbe, #000 als Loch. */
+  --viz-tint: #ffffff;
+  --viz-shade: #16130f;
+}
+
+/* ── Karte und Raster ── */
+
+/* Zwei Spalten, fest. Bei drei Kacheln nebeneinander blieben je Diagramm rund 340 px, und die
+   Daten der Zeitachse liefen ineinander. Ein Diagramm braucht Breite, nicht Nachbarn. */
+.viz-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-bottom: 24px;
+}
+
+@media (max-width: 1180px) {
+  .viz-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.viz-card {
+  min-width: 0;
+  padding: 1.25rem 1.5rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card, 1.5rem);
+  background: var(--surface);
+  box-shadow: var(--shadow-raised, none);
+}
+
+.viz-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.viz-card__heading {
+  min-width: 0;
+}
+
+.viz-card__title {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  color: var(--text);
+  font-family: var(--font-body, inherit);
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.015em;
+}
+
+.viz-card__subtitle {
+  margin: 2px 0 0;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.viz-card__action {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+}
+
+/* recharts zeichnet einen Fokusrahmen um das SVG, sobald man hineinklickt. */
+.viz-card .recharts-wrapper:focus,
+.viz-card .recharts-surface:focus,
+.recharts-wrapper *:focus {
+  outline: none;
+}
+
+.viz-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 190px;
+  padding: 0 1rem;
+  color: var(--text-tertiary);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.viz-empty.is-compact {
+  height: auto;
+  min-height: 96px;
+}
+
+/* ── Legende ──
+   Wächst nach unten und scrollt nicht: was man nicht sieht, sucht man nicht. */
+.viz-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 10px;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.viz-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+}
+
+.viz-legend-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viz-legend-detail {
+  color: var(--text-tertiary);
+}
+
+.viz-legend-value {
+  margin-left: auto;
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.viz-legend-item.is-clickable {
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.viz-legend-item.is-clickable:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+/* Untereinander mit Wert rechts, neben einem Ring. */
+.viz-legend--list {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 8px;
+  margin-top: 0;
+  font-size: 0.8125rem;
+}
+
+.viz-legend--list .viz-legend-item {
+  max-width: none;
+}
+
+.viz-swatch {
+  flex-shrink: 0;
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  /* Ein Ring in der Flächenfarbe trennt die Marke von dem, was darunter liegt. */
+  box-shadow: 0 0 0 1px var(--surface);
+}
+
+/* ── Tooltip ── */
+.viz-tooltip {
+  min-width: 168px;
+  max-width: 340px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  color: var(--text-secondary);
+  font-family: var(--font-body, inherit);
+  font-size: 0.75rem;
+}
+
+.viz-tooltip-time {
+  margin-bottom: 6px;
+  color: var(--text);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.viz-tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  line-height: 1.5;
+}
+
+/* Lange Namen kürzen statt den Kasten breiter als das Diagramm zu machen. Der Tooltip
+   zeigt alle Reihen und wächst nach unten: eine Bildlaufleiste darin ließe sich nicht
+   bedienen, er folgt dem Zeiger. */
+.viz-tooltip-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viz-tooltip-value {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.viz-tooltip-total {
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid var(--border);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.viz-tooltip-hint {
+  margin-top: 6px;
+  color: var(--text-tertiary);
+  font-size: 0.6875rem;
+}
+
+/* ── Ring mit Legende (DonutChart) ── */
+.viz-donut {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.viz-donut__chart {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.viz-donut__center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.viz-donut__center-value {
+  color: var(--text);
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.viz-donut__center-label {
+  margin-top: 2px;
+  color: var(--text-tertiary);
+  font-size: 0.6875rem;
+}
+
+.viz-donut .viz-legend {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 480px) {
+  .viz-donut {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .viz-donut__chart {
+    align-self: center;
+  }
+}
+
+/* ── Rangliste (BarList) ── */
+.viz-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.viz-bars__row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.viz-bars__row.is-clickable {
+  cursor: pointer;
+  transition: background-color 120ms ease-out;
+}
+
+.viz-bars__row.is-clickable:hover {
+  background: var(--surface-hover, rgba(0, 0, 0, 0.03));
+}
+
+.viz-bars__row.is-clickable:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.viz-bars__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.8125rem;
+  line-height: 1.35;
+}
+
+.viz-bars__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text);
+}
+
+.viz-bars__icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+.viz-bars__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viz-bars__value {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 8px;
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.viz-bars__share {
+  min-width: 3.25em;
+  color: var(--text-tertiary);
+  font-weight: 500;
+  text-align: right;
+}
+
+.viz-bars__detail {
+  margin-top: -3px;
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+}
+
+.viz-bars__track {
+  display: block;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--bg-alt, var(--border));
+}
+
+.viz-bars__fill {
+  display: block;
+  height: 100%;
+  min-width: 3px;
+  border-radius: 999px;
+  transform-origin: left center;
+  animation: viz-grow-x 600ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── Fortschrittsring (ProgressRing) ── */
+.viz-ring {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.viz-ring__svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.viz-ring__track,
+.viz-ring__fill {
+  fill: none;
+  stroke-width: 3.2;
+}
+
+.viz-ring__track {
+  stroke: var(--bg-alt, var(--border));
+}
+
+.viz-ring__fill {
+  stroke: var(--accent);
+  stroke-linecap: round;
+  transition: stroke-dasharray 400ms ease;
+  animation: viz-ring-in 900ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.viz-ring--success .viz-ring__fill {
+  stroke: var(--success);
+}
+
+.viz-ring--warning .viz-ring__fill {
+  stroke: var(--warning);
+}
+
+.viz-ring--danger .viz-ring__fill {
+  stroke: var(--danger);
+}
+
+.viz-ring__label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes viz-grow-x {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+@keyframes viz-ring-in {
+  from {
+    stroke-dasharray: 0 100;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .viz-bars__fill,
+  .viz-ring__fill {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* Zwischenüberschrift, wenn eine Karte zwei Diagramme untereinander trägt (zwei Größen mit
+   verschiedener Einheit: nie auf einer gemeinsamen Achse). */
+.viz-subheading {
+  margin: 0 0 4px;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.viz-subheading:not(:first-child) {
+  margin-top: 14px;
+}

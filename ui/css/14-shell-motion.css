@@ -1,0 +1,91 @@
+/* Der Rahmen, Teil 3: Bewegung (Seitenwechsel, Menüs) und Ergänzungen am Menü.
+   Steht nach `09-shell-frame.css` und überstimmt dort, was dieselbe Stärke hat.
+*/
+
+/* ── Bewegung beim Laden: Seite, Balken, Ringe ──
+   Animiert werden nur transform, opacity und der Strich eines Rings. Ohne Füllmodus:
+   eine stehende Transform-Animation machte die Inhaltsfläche zum Bezugsrahmen für
+   alles Fixierte darin (Dialoge). */
+/* Schließen: Menü und Auswahlliste blenden kurz aus, bevor sie aus dem Baum fallen
+   (usePresence). Außerhalb des App-Rahmens gibt es die Bewegung nicht, dort ist die
+   Liste beim Schließen sofort weg. */
+@keyframes shell-pop-out {
+  to {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+.dns-select__list.is-closing {
+  display: none;
+}
+
+.app-shell .dns-select__list.is-closing,
+html:has(.app-shell) .dns-select__list.is-closing {
+  display: block;
+}
+
+.app-shell .dns-select__list.is-closing,
+html:has(.app-shell) .dns-select__list.is-closing,
+.shell-menu__panel.is-closing {
+  pointer-events: none;
+  animation: shell-pop-out var(--shell-fast) var(--shell-ease) forwards;
+}
+
+@keyframes shell-page-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+}
+
+.app-shell__content {
+  animation: shell-page-in var(--shell-base) var(--shell-ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell__content {
+    animation: none;
+  }
+
+  .app-shell .dns-select__list.is-closing,
+  html:has(.app-shell) .dns-select__list.is-closing,
+  .shell-menu__panel.is-closing {
+    animation: none;
+    opacity: 0;
+  }
+
+  .shell-subnav-wrap,
+  .shell-subnav-wrap--open,
+  .shell-overlay,
+  .shell-overlay--open {
+    transition: none;
+  }
+
+}
+
+/* ── Ein Menü für Leiste und Schublade: Ergänzungen an der Seitenleiste ──
+   `ShellSidebarPanel` steht ab 1024 px in der Leiste und darunter in der Schublade.
+   Regeln für das Menü stehen bei `.shell-*`, nicht bei einem der beiden Behälter,
+   sonst sieht es nicht mehr in beiden gleich aus. */
+.shell-sidebar__end {
+  margin-left: auto;
+}
+
+/* Eintrag ohne eigene Seite: der ganze Eintrag ist ein Knopf, der nur aufklappt. */
+button.shell-nav__item {
+  width: 100%;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.shell-nav__toggle--mark {
+  pointer-events: none;
+}
+
+.shell-nav__item[aria-expanded="true"] + .shell-nav__toggle--mark svg {
+  transform: none;
+}

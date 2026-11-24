@@ -1,0 +1,16 @@
+node_modules
+.next
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+.data
+*.log
+*.tsbuildinfo
+.vscode
+.idea
+.claude
+.forge
+.DS_Store
+*.pem

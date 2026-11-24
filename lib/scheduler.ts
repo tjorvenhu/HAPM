@@ -1,0 +1,202 @@
+/**
+ * Was HAPM von selbst tut, in diesem Prozess. Es darf deshalb genau eine
+ * Instanz laufen.
+ *
+ *  - jede Minute: die Zähler von HAProxy einsammeln (Statistik)
+ *  - jede Minute: prüfen, ob ein selbsttätiges Update fällig ist
+ *  - alle zwei Minuten: läuft HAProxy, antworten die Ziele (Benachrichtigungen)
+ *  - alle sechs Stunden: nach neuen Abbildern und einem neuen acme.sh sehen
+ *  - einmal am Tag: Zertifikate erneuern und Altes aufräumen
+ */
+
+import { deleteWhere, Query } from './db';
+import { COLLECTIONS } from './types';
+import { systemActor } from './audit';
+import { getSettings } from './settings';
+import { renewCertificates } from './acme';
+import { pruneExpiredSessions } from './session';
+import { checkUpdates, readUpdateStates } from './updates/check';
+import { expireStaleUpdateRuns, reconcileUpdateRuns, startUpdate } from './updates/apply';
+import { reconcileOrphanedHaproxyRuns } from './haproxy/reconcile';
+import {
+  collectHaproxyMetrics,
+  HAPROXY_METRICS_INTERVAL_MS,
+  HAPROXY_METRICS_RETENTION_DAYS,
+} from './haproxy/stats-collect';
+import { startLogFollower } from './haproxy-log';
+import { HEALTH_CHECK_INTERVAL_MS, runDailyChecks, runHealthChecks } from './notifications/checks';
+import { maybeRefreshGeoip } from './geoip/fetch';
+import { getBackupSettings } from './backup/settings';
+import { onBackupFailure, pruneBackupRuns, reconcileBackupRuns, startBackup } from './backup/run';
+import { notify } from './notifications';
+
+const UPDATE_CHECK_MS = 6 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Wie lange Historie und Protokoll aufgehoben werden. */
+const RUN_RETENTION_DAYS = 180;
+const AUDIT_RETENTION_DAYS = 365;
+
+interface SchedulerState {
+  started: boolean;
+  timers: ReturnType<typeof setInterval>[];
+  statsRunning: boolean;
+  dailyRunning: boolean;
+  lastStatsRun: string | null;
+  lastStatsError: string | null;
+  lastDailyRun: string | null;
+  lastRenewal: { at: string; ok: boolean; output: string } | null;
+  /** Der Tag, an dem zuletzt selbsttätig aktualisiert wurde, damit es je Tag einmal geschieht. */
+  lastAutoUpdateDay: string | null;
+  /** Der Tag der letzten selbsttätigen Sicherung, aus demselben Grund. */
+  lastBackupDay: string | null;
+}
+
+const globalState = globalThis as unknown as { __hapmScheduler?: SchedulerState };
+
+function state(): SchedulerState {
+  return (globalState.__hapmScheduler ??= {
+    started: false,
+    timers: [],
+    statsRunning: false,
+    dailyRunning: false,
+    lastStatsRun: null,
+    lastStatsError: null,
+    lastDailyRun: null,
+    lastRenewal: null,
+    lastAutoUpdateDay: null,
+    lastBackupDay: null,
+  });
+}
+
+export function schedulerStatus() {
+  const s = state();
+  return {
+    started: s.started,
+    lastStatsRun: s.lastStatsRun,
+    lastStatsError: s.lastStatsError,
+    lastDailyRun: s.lastDailyRun,
+    lastRenewal: s.lastRenewal,
+  };
+}
+
+function log(text: string): void {
+  console.log(`[scheduler] ${text}`);
+}
+
+async function tickStats(): Promise<void> {
+  const s = state();
+  if (s.statsRunning) return;
+  s.statsRunning = true;
+  try {
+    const result = await collectHaproxyMetrics();
+    s.lastStatsRun = new Date().toISOString();
+    s.lastStatsError = result.errors[0] ?? null;
+  } catch (err) {
+    s.lastStatsError = err instanceof Error ? err.message : String(err);
+  } finally {
+    s.statsRunning = false;
+  }
+}
+
+function daysAgo(days: number): string {
+  return new Date(Date.now() - days * DAY_MS).toISOString();
+}
+
+export async function runDaily(): Promise<void> {
+  const s = state();
+  if (s.dailyRunning) return;
+  s.dailyRunning = true;
+  try {
+    // Die Länder-Tabelle, falls ein neuer Monat begonnen hat. Wirft nie.
+    void maybeRefreshGeoip();
+
+    const renewal = await renewCertificates();
+    s.lastRenewal = { at: new Date().toISOString(), ok: renewal.ok, output: renewal.output };
+    if (!renewal.ok) log(`Erneuerung der Zertifikate meldet einen Fehler:\n${renewal.output}`);
+    // Benachrichtigen, ohne den Lauf aufzuhalten. Wirft nie.
+    void runDailyChecks(renewal);
+
+    await deleteWhere(COLLECTIONS.HAPROXY_METRICS, [
+      Query.lessThan('collectedAt', daysAgo(HAPROXY_METRICS_RETENTION_DAYS)),
+    ]);
+    await deleteWhere(COLLECTIONS.HAPROXY_RUNS, [Query.lessThan('startedAt', daysAgo(RUN_RETENTION_DAYS))]);
+    await deleteWhere(COLLECTIONS.UPDATE_RUNS, [Query.lessThan('startedAt', daysAgo(RUN_RETENTION_DAYS))]);
+    await deleteWhere(COLLECTIONS.AUDIT_LOGS, [Query.lessThan('timestamp', daysAgo(AUDIT_RETENTION_DAYS))]);
+    await pruneBackupRuns(daysAgo(RUN_RETENTION_DAYS));
+    await pruneExpiredSessions();
+    s.lastDailyRun = new Date().toISOString();
+  } catch (err) {
+    log(`Täglicher Lauf gescheitert: ${err instanceof Error ? err.message : String(err)}`);
+  } finally {
+    s.dailyRunning = false;
+  }
+}
+
+/** Die Uhrzeit des Containers als `HH:MM`. Die Zeitzone kommt aus `TZ`. */
+function clock(now: Date): string {
+  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+}
+
+async function tickMinute(): Promise<void> {
+  const s = state();
+  const now = new Date();
+  const time = clock(now);
+  const day = now.toDateString();
+
+  // Kurz nach drei: dann ist auf einem Proxy am wenigsten los.
+  if (time === '03:17') void runDaily();
+
+  await expireStaleUpdateRuns().catch(() => undefined);
+
+  try {
+    const backup = await getBackupSettings();
+    if (backup.enabled && backup.hostPath && time === backup.time && s.lastBackupDay !== day) {
+      s.lastBackupDay = day;
+      log('Tägliche Sicherung beginnt');
+      await startBackup(systemActor());
+    }
+  } catch (err) {
+    log(`Sicherung nicht gestartet: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  try {
+    const settings = await getSettings();
+    if (!settings.autoUpdateHaproxy || time !== settings.autoUpdateTime || s.lastAutoUpdateDay === day) return;
+    s.lastAutoUpdateDay = day;
+    await checkUpdates();
+    const haproxy = (await readUpdateStates()).find((entry) => entry.component === 'haproxy');
+    if (haproxy?.updateAvailable) {
+      log('Selbsttätiges Update von HAProxy beginnt');
+      await startUpdate('haproxy', systemActor());
+    }
+  } catch (err) {
+    log(`Selbsttätiges Update nicht gestartet: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+export async function initializeScheduler(): Promise<void> {
+  const s = state();
+  if (s.started) return;
+  s.started = true;
+
+  // Was der vorige Prozess offen gelassen hat.
+  await reconcileOrphanedHaproxyRuns().catch((err) => log(`Abgleich der Läufe gescheitert: ${err}`));
+  await reconcileUpdateRuns().catch((err) => log(`Abgleich der Updates gescheitert: ${err}`));
+  await reconcileBackupRuns().catch((err) => log(`Abgleich der Sicherungen gescheitert: ${err}`));
+  // Die Sicherung kennt den Mailversand nicht, sie meldet nur, dass sie gescheitert ist.
+  onBackupFailure((detail) => void notify({ type: 'backup_failed', detail }));
+
+  startLogFollower();
+
+  s.timers.push(setInterval(() => void tickStats(), HAPROXY_METRICS_INTERVAL_MS));
+  s.timers.push(setInterval(() => void tickMinute(), 60_000));
+  s.timers.push(setInterval(() => void checkUpdates().catch(() => undefined), UPDATE_CHECK_MS));
+  s.timers.push(setInterval(() => void runHealthChecks(), HEALTH_CHECK_INTERVAL_MS));
+
+  // Die erste Prüfung kurz nach dem Start, damit die Übersicht nicht sechs Stunden leer ist.
+  setTimeout(() => void checkUpdates().catch(() => undefined), 20_000);
+  // Eine frische Installation bringt den Stand des Abbilds mit: gleich nachsehen.
+  setTimeout(() => void maybeRefreshGeoip(), 30_000);
+  log('gestartet');
+}

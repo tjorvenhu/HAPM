@@ -1,0 +1,4 @@
+#!/bin/sh
+# `haproxy` im HAPM-Container: führt das Kommando im HAProxy-Container aus,
+# also mit genau der Fassung, die die Konfiguration danach laden muss.
+exec node /app/bin/hapm-ctl.mjs haproxy "$@"

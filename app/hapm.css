@@ -1,0 +1,127 @@
+/* Regeln, die es nur in HAPM gibt: Übersicht, Updates, Konto. */
+
+/* ── Hinweisfläche mit Handlung ──
+ * Eine `.alert`, die mehr trägt als einen Satz: Überschrift und
+ * Erklärung, rechts Knöpfe, darunter über die ganze Breite eine Ausgabe oder
+ * eine Liste von Schritten. Für die Zustände oben auf der Übersicht und die
+ * Übergabe auf der Seite „Updates". */
+.hapm-flag { flex-wrap: wrap; align-items: flex-start; row-gap: 10px; }
+
+.hapm-flag-body { flex: 1 1 18rem; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+
+.hapm-flag-body strong { font-weight: 600; }
+
+/* Die Meldung des Systems unter der eigenen Erklärung, wörtlich und deshalb in Festbreite. */
+.hapm-flag-reason { font-family: var(--font-mono); font-size: 0.75rem; opacity: 0.85; }
+
+.hapm-flag-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto; }
+
+.hapm-flag-detail { flex: 0 0 100%; min-width: 0; }
+
+/* ── Schritte eines Laufs ──
+ * Untereinander, mit Ergebnis je Schritt. Die Reihe aus Kreisen (`.run-steps`)
+ * passt hier nicht: ein Update hat je Bestandteil andere Schritte, und jeder
+ * trägt einen Text, der gelesen werden soll. */
+.hapm-steps { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; list-style: none; }
+
+.hapm-step { display: flex; align-items: flex-start; gap: 8px; font-size: 0.8125rem; line-height: 1.45; }
+
+.hapm-step > svg { flex-shrink: 0; margin-top: 3px; }
+
+.hapm-step.is-ok > svg { color: var(--success); }
+
+.hapm-step.is-failed > svg { color: var(--danger); }
+
+.hapm-step.is-running > svg { color: var(--accent); }
+
+.hapm-step.is-pending { color: var(--text-tertiary); }
+
+.hapm-step-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
+.hapm-step-label { font-weight: 500; }
+
+.hapm-step.is-running .hapm-step-label { font-weight: 600; }
+
+.hapm-step-detail {
+  font-size: 0.75rem; color: var(--text-secondary);
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+
+/* Die aufgeklappten Schritte einer Zeile der Historie. */
+.table tr.hapm-run-detail td,
+.table tr.hapm-run-detail:hover td { background: var(--surface-muted); padding-top: 1rem; padding-bottom: 1rem; }
+
+/* ── Übersicht ──
+ * Zwei Karten nebeneinander, die breite links. `.dash-cols` ist für genau vier
+ * gleich breite gedacht. */
+.hapm-cols { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+
+/* Die Seitenleiste nimmt 280 px: darunter passt die Tabelle der Bestandteile
+   nicht mehr neben die zweite Karte, ohne seitlich zu rollen. */
+@media (max-width: 1560px) {
+  .hapm-cols { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Symbol und Name eines Bestandteils in der ersten Spalte. */
+.hapm-part { display: flex; align-items: center; gap: 10px; min-width: 0; }
+
+.hapm-actions-end { justify-content: flex-end; }
+
+.hapm-muted { color: var(--text-secondary); }
+
+/* Zeilen einer Liste in einer Karte schließen mit deren Rand ab. */
+.hapm-list .activity-row { padding-left: 0; padding-right: 0; }
+
+/* ── Updates ── */
+.hapm-version { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+
+.hapm-digest { font-family: var(--font-mono); font-size: 0.75rem; color: var(--text-tertiary); cursor: help; }
+
+/* Ein Digest hat 71 Zeichen. In einer Zeile ragte er aus der Karte. */
+.hapm-digest[data-tooltip]::before {
+  width: max-content; max-width: 15rem;
+  white-space: normal; overflow-wrap: anywhere; text-align: left;
+}
+
+/* Schalter und Uhrzeit nebeneinander, die Uhrzeit so schmal wie ihr Inhalt. */
+.hapm-auto { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 16px; }
+
+.hapm-auto-switch { flex: 1 1 22rem; cursor: pointer; }
+
+.hapm-auto-time { flex: 0 0 10rem; }
+
+/* ── Sicherung ──
+ * „Aufbewahren" neben Schalter und Uhrzeit (`.hapm-auto`). Breiter als die
+ * Uhrzeit, weil darunter steht, was mit älteren Sicherungen geschieht. */
+.hapm-auto-keep { flex: 0 1 16rem; }
+
+/* ── Allgemein, Benachrichtigungen ──
+ * Knöpfe unter einem Formular in einer Karte, links wie die Felder darüber.
+ * `.page-actions` rückt nach rechts und gehört in den Seitenkopf. */
+.hapm-form-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+/* Ein Schalter je Zeile: Name und Satz links, Schalter rechts, Linie dazwischen.
+   `.form-subsection` wäre ein Kasten je Ereignis, bei zehn Ereignissen eine Wand. */
+.hapm-switch-list { display: flex; flex-direction: column; }
+
+.hapm-switch-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 12px 0; border-bottom: 1px solid var(--border); cursor: pointer;
+}
+
+.hapm-switch-row:last-child { border-bottom: none; }
+
+.hapm-switch-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
+/* ── Konto ──
+ * Die Karte „Passkeys", solange ihre Voraussetzungen fehlen: rot hinterlegt,
+ * wie `.entity-card.is-danger`, und mit der Liste dessen, was einzurichten ist. */
+.card.hapm-card-blocked { border-color: var(--danger); background: var(--danger-light); }
+
+.hapm-requirements { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+
+.hapm-requirements li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+
+.hapm-requirements a { font-weight: 600; color: var(--danger-fg); text-decoration: underline; }
+
+.hapm-requirements span { color: var(--text-secondary); font-size: 0.875rem; }

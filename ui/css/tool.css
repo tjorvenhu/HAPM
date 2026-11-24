@@ -1,0 +1,9 @@
+/* Das Stylesheet von HAPM: der Rahmen (Seitenleiste, Inhaltsfläche) und der Wortschatz
+   der Seiten (Tabellen, Formulare, Karten), dazu die Diagramme. `app/globals.css` bindet
+   nur diese Datei ein und schreibt danach die Schrift und die eigenen Regeln der Seiten.
+   Bausteine dazu: `ui/shell/*` (Rahmen) und `ui/tool/*` (Toast, Bestätigung,
+   Auswahlliste, Skeleton, Karten).
+   Von außen braucht es nichts: Farben, Radien, Schatten und Schriftnamen stehen an :root. */
+@import "./frame.css";
+@import "./tool-vocabulary.css";
+@import "./charts.css";

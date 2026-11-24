@@ -1,0 +1,934 @@
+/* Der Rahmen, Teil 2: Flächen, Seitenleiste, Menüs, Kopfzeile und Schublade unter 1024 px.
+   Setzt die Werte aus `08-shell-tokens.css` voraus.
+*/
+
+.app-shell :focus-visible,
+.shell-page :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Der Scrollbalken des Rahmens gilt für die ganze Seite und steht deshalb ganz oben
+   unter „SCROLLBARS". Hier bleibt nur, was am Rahmen hängt (Abstand zu den runden
+   Ecken bei .app-shell__main). */
+.app-shell__skip {
+  position: fixed;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 300;
+  padding: 0.625rem 1.25rem;
+  border-radius: var(--radius-full);
+  background: var(--primary);
+  color: var(--primary-fg);
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-decoration: none;
+  box-shadow: var(--shadow-solid);
+  transform: translateY(-6rem);
+}
+
+.app-shell__skip:focus-visible {
+  transform: none;
+  color: var(--primary-fg);
+}
+
+.app-shell__sidebar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  flex-shrink: 0;
+  height: 100dvh;
+  padding: 0.75rem 0 0.75rem 0.75rem;
+}
+
+.shell-sidebar {
+  display: flex;
+  flex-direction: column;
+  width: var(--shell-sidebar-width);
+  max-width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-raised);
+}
+
+.app-shell__panel {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  margin: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-raised);
+}
+
+.app-shell__main {
+  flex: 1;
+  min-width: 0;
+  padding: 2.5rem 2rem 6rem;
+  outline: none;
+}
+
+.app-shell__content {
+  width: 100%;
+  max-width: var(--shell-content-width);
+  margin: 0 auto;
+}
+
+/* Ohne Seitenleiste (Anmeldung, zweiter Faktor): Inhalt allein auf der Seitenfläche. */
+.app-shell:not(:has(.app-shell__sidebar)) .app-shell__panel {
+  margin: 0;
+  background: none;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.app-shell:not(:has(.app-shell__sidebar)) .app-shell__main {
+  padding: 0;
+}
+
+.app-shell:not(:has(.app-shell__sidebar)) .app-shell__content {
+  max-width: none;
+}
+
+@media (min-width: 1024px) {
+  /* Ab 1024 px steht der Rahmen fest und füllt das Fenster, nur die Inhaltsfläche scrollt.
+   Darunter scrollt weiter die Seite, sonst klappt die Adressleiste des Handys nicht ein.
+   Ohne Seitenleiste (Anmeldung) bleibt es ebenfalls beim Scrollen der Seite. */
+  .app-shell:has(.app-shell__sidebar) {
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  .app-shell:has(.app-shell__sidebar) .app-shell__panel {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .app-shell:has(.app-shell__sidebar) .app-shell__main {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scroll-padding-top: 2.5rem;
+  }
+
+  /* Der Balken endet vor den runden Ecken der Fläche. */
+  .app-shell__main::-webkit-scrollbar-track {
+    margin-block: 0.75rem;
+  }
+
+  /* Eine Seite, die die Inhaltsfläche genau füllt (`.portal-page--chat`), auch unter
+     einem Hinweis darüber. Mit einer aus dem Fenster gerechneten Höhe scrollte dort
+     die Fläche mit. */
+  .app-shell:has(.app-shell__sidebar) .app-shell__main:has(.portal-page--chat) {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .app-shell:has(.app-shell__sidebar) .app-shell__main:has(.portal-page--chat) > .app-shell__content {
+    flex: 1;
+    min-height: 0;
+  }
+
+  .app-shell:has(.app-shell__sidebar) .portal-page--chat {
+    height: 100%;
+  }
+
+}
+
+/* ── Seitenleiste ── */
+.shell-sidebar__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem 0.5rem;
+  flex-shrink: 0;
+  padding: 1.25rem 0.75rem 0;
+}
+
+/* Das Logo steht mittig über der Leiste und nimmt ihre ganze Breite ein. */
+.shell-sidebar__logo {
+  display: flex;
+  flex: 1 0 100%;
+  align-items: center;
+  justify-content: center;
+  height: 3rem;
+  padding: 0;
+  border-radius: var(--radius-full);
+}
+
+.shell-sidebar__logo img,
+.shell-topbar__logo img {
+  display: block;
+  height: auto;
+  width: 7rem;
+}
+
+.shell-sidebar__logo img { width: 9rem; }
+
+.shell-sidebar__area {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: 1.75rem;
+  margin: 0 0.25rem 0 auto;
+  padding: 0 0.625rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.shell-search {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  width: 100%;
+  height: 2.75rem;
+  padding: 0 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  box-shadow: var(--shadow-raised);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.875rem;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--shell-fast), color var(--shell-fast);
+}
+
+.shell-search:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.shell-search__label {
+  flex: 1;
+}
+
+.shell-search__kbd {
+  padding: 0.125rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.6875rem;
+}
+
+.shell-sidebar__content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 0.75rem 0.75rem 1rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.shell-sidebar__footer {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.75rem 0.75rem 1rem;
+}
+
+.shell-nav__heading {
+  margin: 0;
+  padding: 0 0.875rem 0.375rem;
+  color: var(--text-secondary);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.shell-nav__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shell-nav__row {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.shell-nav__item {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 2.5rem;
+  padding: 0.5rem 0.875rem;
+  border-radius: var(--radius-full);
+  color: var(--text);
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.25;
+  text-decoration: none;
+  transition: background-color var(--shell-fast), color var(--shell-fast);
+}
+
+.shell-nav__item svg {
+  flex-shrink: 0;
+}
+
+/* Die Farbe beim Überfahren steht ausdrücklich hier, auch wenn sie sich nicht ändert: die
+   allgemeine Hover-Farbe für Links (`a:hover` im Wortschatz der Seiten) färbte die
+   Einträge sonst um. Der aktive Eintrag folgt weiter unten und bleibt weiß auf Grün.
+   Dasselbe gilt für Unterseiten und Einträge der Menüs. */
+.shell-nav__item:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.shell-nav__item--parent {
+  padding-right: 2.75rem;
+}
+
+/* Die Fläche des aktiven Eintrags trägt `.shell-nav__pill`, damit sie beim Wechsel
+   gleiten kann (ShellSidebar). Der Eintrag selbst liegt darüber und färbt nur den Text. */
+.shell-nav__item {
+  position: relative;
+}
+
+.shell-nav__pill {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-full);
+  background: var(--primary);
+  pointer-events: none;
+}
+
+.shell-nav__item--active,
+.shell-nav__item--active:hover {
+  background: none;
+  color: var(--primary-fg);
+}
+
+.shell-nav__label {
+  min-width: 0;
+  /* Ein langer Eintrag bricht an einer Silbe mit Trennstrich um, nicht an einer
+     beliebigen Stelle. */
+  overflow-wrap: break-word;
+  hyphens: auto;
+}
+
+.shell-nav__toggle {
+  position: absolute;
+  right: 0.25rem;
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background-color var(--shell-fast), color var(--shell-fast);
+}
+
+.shell-nav__toggle:hover {
+  background: var(--secondary-hover);
+  color: var(--text);
+}
+
+.shell-nav__toggle--on-active,
+.shell-nav__toggle--on-active:hover {
+  color: var(--primary-fg);
+}
+
+.shell-nav__toggle--on-active:hover {
+  background: color-mix(in oklch, var(--primary-fg) 15%, transparent);
+}
+
+.shell-nav__toggle svg {
+  transform: rotate(-90deg);
+  transition: transform 200ms var(--shell-ease);
+}
+
+.shell-nav__toggle[aria-expanded="true"] svg {
+  transform: none;
+}
+
+.shell-count {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  height: 1.25rem;
+  min-width: 1.25rem;
+  margin-left: auto;
+  padding: 0 0.375rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.shell-count--solid {
+  border-color: transparent;
+  background: var(--primary);
+  color: var(--primary-fg);
+  font-weight: 600;
+}
+
+.shell-count--on-active {
+  border-color: transparent;
+  background: color-mix(in oklch, var(--primary-fg) 20%, transparent);
+  color: var(--primary-fg);
+}
+
+/* Unterseiten klappen auf und zu: die Zeile wächst von 0fr auf 1fr, der Inhalt blendet
+   dabei ein. Eingeklappt ist der Block unsichtbar und per `inert` nicht erreichbar. */
+.shell-subnav-wrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    grid-template-rows var(--shell-base) var(--shell-ease),
+    opacity var(--shell-base) var(--shell-ease),
+    visibility 0s var(--shell-base);
+}
+
+.shell-subnav-wrap--open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+  transition:
+    grid-template-rows var(--shell-base) var(--shell-ease),
+    opacity var(--shell-base) var(--shell-ease);
+}
+
+.shell-subnav-clip {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.shell-subnav {
+  display: flex;
+  flex-direction: column;
+  margin: 0.375rem 0 0.25rem 1.4375rem;
+  padding: 0;
+  list-style: none;
+}
+
+/* Ring nach innen: die aufklappende Liste schneidet alles außerhalb ab. */
+.shell-subnav__item:focus-visible {
+  outline-offset: -2px;
+}
+
+.shell-subnav__entry {
+  position: relative;
+  padding-left: 0.75rem;
+}
+
+.shell-subnav__entry::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  background: color-mix(in oklch, var(--border-strong) 35%, transparent);
+}
+
+/* Die Marke auf der Linie trägt den Kontrast der aktuellen Seite. */
+.shell-subnav__entry--active::after {
+  content: "";
+  position: absolute;
+  top: 0.5rem;
+  bottom: 0.5rem;
+  left: -1px;
+  width: 3px;
+  border-radius: var(--radius-full);
+  background: var(--primary);
+}
+
+.shell-subnav__item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.25rem;
+  margin: 1px 0;
+  padding: 0.375rem 0.875rem;
+  border-radius: var(--radius-full);
+  color: var(--text);
+  font-size: 0.875rem;
+  line-height: 1.25;
+  text-decoration: none;
+  transition: background-color var(--shell-fast);
+}
+
+.shell-subnav__item:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.shell-subnav__item--active {
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.shell-footer-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  height: 2.75rem;
+  padding: 0 0.875rem;
+  border: none;
+  border-radius: var(--radius-full);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--shell-fast);
+}
+
+.shell-footer-btn:hover,
+.shell-footer-btn[aria-expanded="true"],
+.shell-profile__btn:hover,
+.shell-profile__btn[aria-expanded="true"] {
+  background: var(--surface);
+}
+
+.shell-footer-btn__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shell-profile {
+  margin-top: 0.25rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.shell-profile__btn {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  height: 3rem;
+  padding: 0.375rem 0.75rem 0.375rem 0.375rem;
+  border: none;
+  border-radius: var(--radius-full);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--shell-fast);
+}
+
+.shell-avatar {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: var(--accent-light);
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.shell-profile__text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.shell-profile__name,
+.shell-profile__mail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shell-profile__name {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.shell-profile__mail {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
+.shell-profile__more {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+/* ── Menü über dem Auslöser ── */
+.shell-menu {
+  position: relative;
+}
+
+.shell-menu__panel {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 0.375rem);
+  z-index: 60;
+  width: max-content;
+  min-width: 100%;
+  max-width: calc(100vw - 2rem);
+  max-height: min(28rem, 70vh);
+  padding: 0.375rem;
+  overflow-y: auto;
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  box-shadow: var(--shadow-overlay);
+  animation: shell-pop-in 200ms var(--shell-ease);
+}
+
+.shell-menu__panel--wide {
+  width: min(24rem, calc(100vw - 2rem));
+}
+
+@keyframes shell-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+.shell-menu__label {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.shell-menu__label-strong {
+  color: var(--text);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.shell-menu__sep {
+  height: 1px;
+  margin: 0.375rem -0.375rem;
+  background: var(--border);
+}
+
+.shell-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  width: 100%;
+  min-height: 2.25rem;
+  padding: 0.5rem 0.75rem;
+  border: none;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.875rem;
+  line-height: 1.35;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.shell-menu__item svg {
+  flex-shrink: 0;
+}
+
+.shell-menu__item:hover {
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+/* Per Tastatur angesteuert steht der Eintrag invertiert (3:1 zur Liste). */
+.app-shell .shell-menu__item:focus-visible {
+  outline: none;
+  background: var(--primary);
+  color: var(--primary-fg);
+}
+
+.shell-menu__shortcut {
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+}
+
+.shell-menu__item:focus-visible .shell-menu__shortcut {
+  color: inherit;
+}
+
+.shell-menu__empty {
+  margin: 0;
+  padding: 0.625rem 0.75rem 0.75rem;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+.shell-notice-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shell-notice {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+}
+
+.shell-notice__link {
+  flex: 1;
+  min-width: 0;
+  align-items: flex-start;
+  padding-top: 0.625rem;
+  padding-bottom: 0.625rem;
+}
+
+.shell-notice__dot {
+  flex-shrink: 0;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-top: 0.375rem;
+  border-radius: 50%;
+  background: var(--primary);
+}
+
+.shell-menu__item:focus-visible .shell-notice__dot {
+  background: currentColor;
+}
+
+.shell-notice__text {
+  font-weight: 600;
+}
+
+.shell-notice__dismiss,
+.shell-icon-btn {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+  transition: background-color var(--shell-fast), color var(--shell-fast);
+}
+
+.shell-notice__dismiss {
+  width: 2rem;
+  height: 2rem;
+  color: var(--text-secondary);
+}
+
+.shell-icon-btn {
+  width: 2.5rem;
+  height: 2.5rem;
+}
+
+.shell-notice__dismiss:hover,
+.shell-icon-btn:hover {
+  background: var(--secondary);
+  color: var(--text);
+}
+
+/* ── Kopfzeile und Schublade unterhalb von 1024 px ── */
+.shell-topbar,
+.shell-overlay {
+  display: none;
+}
+
+.shell-skeleton--logo {
+  width: 7.75rem;
+  height: 2rem;
+  margin: 0.5rem 0.875rem;
+}
+
+.shell-skeleton--pill {
+  width: 100%;
+  height: 2.75rem;
+  border-radius: var(--radius-full);
+}
+
+.shell-skeleton__stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.shell-skeleton--row {
+  height: 2.5rem;
+  border-radius: var(--radius-full);
+}
+
+/* Platzhalter der Inhaltsfläche beim ersten Aufbau (ShellPageSkeleton). */
+.shell-skeleton__page {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: 100%;
+  max-width: var(--shell-content-width, 72rem);
+  margin: 0 auto;
+}
+
+.shell-skeleton--title {
+  width: 16rem;
+  max-width: 70%;
+  height: 2.75rem;
+  border-radius: var(--radius-panel);
+}
+
+.shell-skeleton--lead {
+  width: 24rem;
+  max-width: 90%;
+  height: 1.125rem;
+  margin-bottom: 1rem;
+  border-radius: var(--radius-full);
+}
+
+.shell-skeleton--block {
+  height: 9rem;
+  border-radius: var(--radius-card);
+}
+
+.shell-skeleton--short {
+  width: 60%;
+}
+
+@media (max-width: 1023px) {
+  .app-shell {
+    flex-direction: column;
+  }
+
+  html:has(.app-shell) {
+    overflow-x: clip;
+  }
+
+  .shell-topbar {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    height: 4rem;
+    padding: 0 0.75rem;
+    border-bottom: 1px solid var(--border);
+    background: color-mix(in oklch, var(--surface) 90%, transparent);
+    backdrop-filter: blur(12px);
+  }
+
+  .shell-topbar__logo {
+    display: inline-flex;
+    align-items: center;
+    height: 2.5rem;
+    padding: 0 0.5rem;
+  }
+
+  .shell-topbar__search {
+    margin-left: auto;
+  }
+
+  .shell-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    background: var(--overlay);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity var(--shell-fast) var(--shell-ease), visibility 0s var(--shell-fast);
+  }
+
+  .shell-overlay--open {
+    opacity: 1;
+    visibility: visible;
+    transition: opacity var(--shell-base) var(--shell-ease);
+  }
+
+  /* Die Schublade schwebt: 8 px Abstand rundum, runde Ecken. */
+  .app-shell__sidebar {
+    position: fixed;
+    top: 0.5rem;
+    bottom: 0.5rem;
+    left: 0.5rem;
+    z-index: 210;
+    height: auto;
+    max-width: calc(100vw - 1rem);
+    padding: 0;
+    visibility: hidden;
+    transform: translateX(calc(-100% - 1rem));
+    transition: transform 300ms var(--shell-ease), visibility 0s 300ms;
+  }
+
+  .app-shell__sidebar--open {
+    visibility: visible;
+    transform: none;
+    transition: transform 300ms var(--shell-ease);
+  }
+
+  .app-shell__sidebar .shell-sidebar {
+    box-shadow: var(--shadow-overlay);
+  }
+
+  .app-shell__panel {
+    margin: 0;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+}
+
+@media (max-width: 639px) {
+  .app-shell__main {
+    padding: 1.5rem 1rem 5rem;
+  }
+
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell__sidebar,
+  .app-shell__sidebar--open {
+    transition: none;
+  }
+
+  .shell-menu__panel {
+    animation: none;
+  }
+
+}
