@@ -32,7 +32,7 @@
  * eine Domain angelegt hat.
  */
 
-import { createDocument, updateDocument } from '../db';
+import { createDocument, getDocument, updateDocument } from '../db';
 import { COLLECTIONS } from '../types';
 import { logAudit, type AuditAction } from '../audit';
 import { notify } from '../notifications';
@@ -45,10 +45,12 @@ import {
   deleteStream,
   updateGlobalSettings,
   updateScopes,
+  issueCertificate,
   type ProvisionStep,
   type ProvisionReporter,
 } from './provision';
 import { ensureProxyRecords, removeProxyRecords } from '../dns/sync';
+import type { ChallengeChoice } from './challenge';
 import type { CreateServiceInput, HaproxyService, GlobalSettingsInput } from './config';
 import type { CreateStreamInput, HaproxyStream } from './streams';
 import type { Server, HaproxyRun, HaproxyAction, HaproxyPhase, RunStatus } from '../types';
@@ -81,16 +83,22 @@ interface RunOptions {
   /** Anlegen und Ändern. Beim Löschen gibt es keine Eingabe. */
   input?: CreateServiceInput;
   /**
-   * Welcher acme.sh-DNS-Hook die Challenge setzt. Nur nötig, wenn eine Wildcard
-   * unter den Domains ist — HTTP-01 stellt sie nicht aus.
+   * Wie die Challenge beantwortet wird: die Art der Installation und der
+   * gewählte acme.sh-DNS-Hook (`challenge.ts`). Pflicht bei allem, was ein
+   * Zertifikat ausstellen kann: Anlegen, Ändern, `certificate`.
    *
-   * Bewusst NICHT Teil von `CreateServiceInput`: er steht in keiner Zeile von
-   * `haproxy.cfg` und käme deshalb beim Zurücklesen nicht wieder mit. Ein Feld
+   * Die Route löst die Art aus den Einstellungen auf und gibt sie mit, hier
+   * wird sie nicht gelesen.
+   *
+   * Bewusst NICHT Teil von `CreateServiceInput`: der Hook steht in keiner Zeile
+   * von `haproxy.cfg` und käme deshalb beim Zurücklesen nicht wieder mit. Ein Feld
    * darin wäre eines, das `toCreateInput` erfinden müsste. Er ist ein Parameter
    * des Vorgangs und keine Eigenschaft des Dienstes — die Zone merkt sich acme.sh
    * ohnehin selbst, für jede spätere Erneuerung.
    */
-  dnsHook?: string | null;
+  challenge?: ChallengeChoice;
+  /** Die Domains eines Zertifikats ohne Ziel. Nur bei `action: 'certificate'`. */
+  certificateDomains?: string[];
   /** Löschen: der Dienst, wie ihn die Vorabprüfung gerade gelesen hat. */
   service?: HaproxyService;
   /** Dasselbe für eine TCP-Weiterleitung: die Eingabe beim Anlegen und Ändern,
@@ -126,6 +134,9 @@ function describe(opts: RunOptions): { domains: string | null; targets: string |
   if (opts.action === 'scope-add' || opts.action === 'scope-remove') {
     // Eine Gruppe hat weder Domains noch Ziele. Der Name steht in `serviceId`.
     return { domains: null, targets: null };
+  }
+  if (opts.action === 'certificate') {
+    return { domains: opts.certificateDomains?.join(', ') || null, targets: null };
   }
   /* Eine TCP-Weiterleitung hat keine Domain. In der Domain-Spalte steht deshalb
    * der Port — es ist die Adresse, unter der sie erreichbar war, und genau die
@@ -189,7 +200,18 @@ const AUDIT_ACTIONS: Record<HaproxyAction, { ok: AuditAction; failed: AuditActio
   'stream-create': { ok: 'haproxy_stream_created', failed: 'haproxy_stream_failed' },
   'stream-update': { ok: 'haproxy_stream_updated', failed: 'haproxy_stream_failed' },
   'stream-delete': { ok: 'haproxy_stream_deleted', failed: 'haproxy_stream_delete_failed' },
+  certificate: { ok: 'haproxy_certificate_issued', failed: 'haproxy_certificate_failed' },
 };
+
+/**
+ * Ohne Angabe gibt es keinen Lauf. Eine Vorgabe an dieser Stelle hieße, dass
+ * eine Route, die die Art der Installation vergisst, auf einer internen
+ * Installation still HTTP-01 versucht.
+ */
+function challengeOf(opts: RunOptions): ChallengeChoice {
+  if (!opts.challenge) throw new Error(`Der Vorgang "${opts.action}" braucht die Angabe zur Challenge.`);
+  return opts.challenge;
+}
 
 function auditDetails(opts: RunOptions, failure: string | null): string {
   const { serviceId, input } = opts;
@@ -197,6 +219,9 @@ function auditDetails(opts: RunOptions, failure: string | null): string {
   if (opts.action === 'scope-add' || opts.action === 'scope-remove') {
     const what = opts.action === 'scope-add' ? 'angelegt' : 'entfernt';
     return `Gruppe "${serviceId}" ${what}${suffix}`;
+  }
+  if (opts.action === 'certificate') {
+    return `Zertifikat für ${opts.certificateDomains?.join(', ') ?? serviceId}${suffix}`;
   }
   if (opts.settings) {
     const { targets } = describe(opts);
@@ -320,6 +345,8 @@ export async function startHaproxyRun(opts: RunOptions): Promise<HaproxyRun> {
               action === 'scope-add' ? 'add' : 'remove',
               reporter
             )
+          : action === 'certificate'
+          ? await issueCertificate(server, opts.certificateDomains ?? [], challengeOf(opts), reporter)
           : action === 'stream-create'
           ? await createStream(server, opts.streamInput!, reporter)
           : action === 'stream-update'
@@ -331,8 +358,8 @@ export async function startHaproxyRun(opts: RunOptions): Promise<HaproxyRun> {
           : action === 'delete'
             ? await deleteService(server, serviceId, reporter)
             : action === 'update'
-              ? await updateService(server, serviceId, input!, opts.dnsHook ?? null, reporter)
-              : await createService(server, input!, opts.dnsHook ?? null, reporter);
+              ? await updateService(server, serviceId, input!, challengeOf(opts), reporter)
+              : await createService(server, input!, challengeOf(opts), reporter);
       steps = [...prefix, ...result.steps];
     } catch (err) {
       // Alles, was die Vorabprüfung nicht sehen konnte, weil es erst zwischen
@@ -415,6 +442,24 @@ export async function startHaproxyRun(opts: RunOptions): Promise<HaproxyRun> {
   });
 
   return run;
+}
+
+/**
+ * Auf das Ende eines Laufs warten, für einen Aufrufer, der mehrere
+ * hintereinander ausführt (die Einrichtung, `lib/setup/run.ts`).
+ *
+ * Gelesen wird die Zeile und nicht ein Versprechen im Prozess: sie ist das, was
+ * auch die Oberfläche sieht, und sie steht nach einem Fehler im Schreiben des
+ * Ergebnisses trotzdem auf `error`. Läuft die Zeit ab, kommt die Zeile zurück,
+ * wie sie ist, also mit `running`.
+ */
+export async function waitForRun(runId: string, timeoutMs: number): Promise<HaproxyRun> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const run = await getDocument<HaproxyRun>(COLLECTIONS.HAPROXY_RUNS, runId);
+    if (run.status !== 'running' || Date.now() >= deadline) return run;
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
 }
 
 /** Die Schritte einer Zeile, tolerant gegen eine halb geschriebene Spalte. */

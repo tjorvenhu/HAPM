@@ -44,6 +44,12 @@ export interface DnsProvider {
   /** Wo der Betreiber den Token herbekommt. Spart jedes Mal eine Suche. */
   consoleUrl: string;
   fields: DnsCredentialField[];
+  /**
+   * Was der Hook beim ersten Antrag selbst daneben ablegt. Beim Entfernen geht
+   * es mit: die Erkennung liest jede `SAVED_*`-Zeile, und mit einer übrig
+   * gebliebenen gälte der Hook weiter als eingerichtet, obwohl der Token fehlt.
+   */
+  alsoSaved?: string[];
   note?: string;
 }
 
@@ -56,11 +62,34 @@ export interface DnsProvider {
  * Konfiguration, die nicht funktioniert. Ein weiterer Anbieter ist ein Eintrag
  * hier, kein Umbau.
  *
+ * Hook und Variablennamen stehen so da, wie das mitgelieferte acme.sh sie führt
+ * (`dnsapi/dns_*.sh`, gelesen über `_readaccountconf_mutable`). Die Schreibweise
+ * zählt: `HETZNER_TOKEN` ist nicht `HETZNER_Token`, und ein Token unter dem
+ * falschen Namen liest kein Hook.
+ *
  * Wer einen Hook braucht, der nicht dasteht, richtet ihn von Hand in
  * `account.conf` ein — die Hook-Erkennung (`parseDnsHooks`) findet ihn trotzdem,
  * weil sie aus `account.conf` ableitet und nicht aus dieser Liste.
  */
 export const DNS_PROVIDERS: readonly DnsProvider[] = [
+  {
+    // Die DNS-Konsole von Hetzner (dns.hetzner.com) ist in die Cloud-Konsole
+    // umgezogen. acme.sh bringt dafür `dns_hetznercloud` mit, den früheren Hook
+    // `dns_hetzner` gibt es dort nicht mehr.
+    hook: 'dns_hetznercloud',
+    label: 'Hetzner',
+    consoleUrl: 'https://console.hetzner.com/',
+    fields: [
+      {
+        name: 'HETZNER_TOKEN',
+        label: 'API-Token',
+        required: true,
+        hint: 'Aus der Hetzner-Konsole: im Projekt der Zone unter Sicherheit, API-Tokens. Mit Lese- und Schreibrecht.',
+      },
+    ],
+    alsoSaved: ['HETZNER_API', 'HETZNER_TTL', 'HETZNER_MAX_ATTEMPTS'],
+    note: 'Der Token gilt für alle Zonen seines Projekts.',
+  },
   {
     hook: 'dns_cf',
     label: 'Cloudflare',
@@ -81,12 +110,6 @@ export const DNS_PROVIDERS: readonly DnsProvider[] = [
     ],
     note: 'Der Token wird für jede Zone in diesem Konto benutzt. Eine neue Domain braucht danach nichts mehr.',
   },
-  {
-    hook: 'dns_hetzner',
-    label: 'Hetzner DNS',
-    consoleUrl: 'https://dns.hetzner.com/settings/api-token',
-    fields: [{ name: 'HETZNER_Token', label: 'API-Token', required: true }],
-  },
 ];
 
 export function findDnsProvider(hook: string): DnsProvider | null {
@@ -96,6 +119,19 @@ export function findDnsProvider(hook: string): DnsProvider | null {
 /** Alle Variablennamen, die dieses Modul überhaupt schreibt. */
 export function knownCredentialNames(): string[] {
   return DNS_PROVIDERS.flatMap((provider) => provider.fields.map((field) => field.name));
+}
+
+/**
+ * Welche `SAVED_*`-Zeilen ein Vorgang aus `account.conf` nimmt, bevor er die
+ * neuen anhängt.
+ *
+ * Beim Setzen nur die eigenen Felder: was der Hook daneben führt (bei Hetzner
+ * etwa eine von Hand gesetzte TTL), bleibt. Beim Entfernen alles, was zum Hook
+ * gehört, siehe `DnsProvider.alsoSaved`.
+ */
+export function credentialNamesToClear(provider: DnsProvider, remove: boolean): string[] {
+  const own = provider.fields.map((field) => field.name);
+  return remove ? [...own, ...(provider.alsoSaved ?? [])] : own;
 }
 
 /**

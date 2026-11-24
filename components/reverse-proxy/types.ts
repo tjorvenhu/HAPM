@@ -5,6 +5,7 @@ import type {
   ServiceHealth,
 } from '@/lib/haproxy/config';
 import type { HaproxyStream } from '@/lib/haproxy/streams';
+import type { Exposure } from '@/lib/types';
 
 /**
  * HAProxy mit dem, was gerade in seiner `haproxy.cfg` steht.
@@ -22,6 +23,8 @@ export interface ProxyRow {
   /** Die eingerichteten acme.sh-DNS-Hooks. Leer heißt: keine
    *  Wildcard ausstellbar, denn HTTP-01 kann sie nicht. */
   dnsHooks: string[];
+  /** Intern oder öffentlich. Bei `internal` geht jedes Zertifikat über DNS-01. */
+  exposure: Exposure;
   services: HaproxyService[];
   /** Die TCP-Weiterleitungen derselben Datei: `listen`-Abschnitte in `mode tcp`.
    *  Sie stehen in denselben Marker-Blöcken und deshalb auf denselben

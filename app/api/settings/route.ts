@@ -3,7 +3,13 @@ import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
 import { logAudit, getClientIP } from '@/lib/audit';
 import { getSettings, settingsView as view, updateSettings, type SettingsInput } from '@/lib/settings';
 import { ensureAcme } from '@/lib/acme';
-import { NOTIFICATION_EVENT_TYPES, type NotificationEventType, type Settings, type SmtpSecurity } from '@/lib/types';
+import {
+  NOTIFICATION_EVENT_TYPES,
+  type Exposure,
+  type NotificationEventType,
+  type Settings,
+  type SmtpSecurity,
+} from '@/lib/types';
 
 export async function GET() {
   try {
@@ -29,6 +35,8 @@ const FIELD_LABELS: Record<keyof SettingsInput, string> = {
   mailFrom: 'Absender',
   notifyRecipients: 'Empfänger',
   notifyEvents: 'Ereignisse',
+  exposure: 'Art der Installation',
+  setupStatus: 'Einrichtung',
 };
 
 /** Die Eingabe auf ihre Form prüfen. Was die Werte bedeuten dürfen, prüft `updateSettings`. */
@@ -76,6 +84,14 @@ function readInput(body: Record<string, unknown>): SettingsInput {
       throw new ApiError('Die Ereignisse sind Schalter je Ereignis.');
     }
     input.notifyEvents = events as Partial<Record<NotificationEventType, boolean>>;
+  }
+
+  // `setupStatus` gehört dem Assistenten (`/api/setup/status`) und wird hier nicht angenommen.
+  if ('exposure' in body) {
+    if (typeof body.exposure !== 'string') {
+      throw new ApiError('Die Installation ist entweder intern oder aus dem Internet erreichbar.');
+    }
+    input.exposure = body.exposure as Exposure;
   }
 
   if (Object.keys(input).length === 0) throw new ApiError('Es wurde nichts zum Ändern übergeben.');

@@ -8,7 +8,9 @@ import {
   COLLECTIONS,
   NOTIFICATION_EVENT_TYPES,
   SETTINGS_ID,
+  type Exposure,
   type NotificationEventType,
+  type SetupStatus,
   type Settings,
   type SmtpSecurity,
 } from './types';
@@ -35,7 +37,13 @@ const DEFAULTS: SettingsData = {
   mailFrom: null,
   notifyRecipients: [],
   notifyEvents: allEvents(true),
+  // Die Vorgabe ist das Verhalten vor dieser Einstellung: HTTP-01, DNS-01 nur für Wildcards.
+  exposure: 'public',
+  setupStatus: null,
 };
+
+export const EXPOSURES: readonly Exposure[] = ['internal', 'public'];
+const SETUP_STATUSES: readonly SetupStatus[] = ['open', 'done', 'skipped'];
 
 /**
  * Eine gelesene Zeile mit den Vorgaben für alles, was ihr fehlt.
@@ -54,7 +62,14 @@ export function withDefaults(row: Partial<Settings>): SettingsData {
     smtpSecurity: merged.smtpSecurity ?? DEFAULTS.smtpSecurity,
     notifyRecipients: Array.isArray(merged.notifyRecipients) ? merged.notifyRecipients : [],
     notifyEvents: { ...DEFAULTS.notifyEvents, ...(merged.notifyEvents ?? {}) },
+    exposure: EXPOSURES.includes(merged.exposure) ? merged.exposure : DEFAULTS.exposure,
+    setupStatus: SETUP_STATUSES.includes(merged.setupStatus as SetupStatus) ? merged.setupStatus : null,
   };
+}
+
+/** Ob die Übersicht noch an die Einrichtung erinnert. */
+export function setupOpen(settings: Pick<Settings, 'setupStatus'>): boolean {
+  return settings.setupStatus === 'open';
 }
 
 export async function getSettings(): Promise<Settings> {
@@ -86,6 +101,8 @@ export function settingsView(settings: Settings): SettingsView {
     mailFrom: settings.mailFrom,
     notifyRecipients: settings.notifyRecipients,
     notifyEvents: settings.notifyEvents,
+    exposure: settings.exposure,
+    setupStatus: settings.setupStatus,
     listenPort: Number.isInteger(port) ? port : null,
   };
 }
@@ -181,6 +198,8 @@ export interface SettingsInput {
   notifyRecipients?: string[];
   /** Nur die Schalter, die sich ändern sollen. */
   notifyEvents?: Partial<Record<NotificationEventType, boolean>>;
+  exposure?: Exposure;
+  setupStatus?: SetupStatus;
 }
 
 /**
@@ -259,6 +278,17 @@ export function settingsPatch(
       next[type as NotificationEventType] = enabled;
     }
     patch.notifyEvents = next;
+  }
+
+  if (input.exposure !== undefined) {
+    if (!EXPOSURES.includes(input.exposure)) {
+      throw new ApiError('Die Installation ist entweder intern oder aus dem Internet erreichbar.');
+    }
+    patch.exposure = input.exposure;
+  }
+  if (input.setupStatus !== undefined) {
+    if (!SETUP_STATUSES.includes(input.setupStatus)) throw new ApiError('Unbekannter Stand der Einrichtung.');
+    patch.setupStatus = input.setupStatus;
   }
 
   return patch;

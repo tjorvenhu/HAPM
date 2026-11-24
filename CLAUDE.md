@@ -15,7 +15,8 @@ Next.js (App Router) mit TypeScript strict, pnpm. Drei Container: HAPM, HAProxy
 | `lib/haproxy/`, `app/(app)/reverse-proxy/`, `components/reverse-proxy/` | [`docs/reverse-proxy.md`](docs/reverse-proxy.md): dort steht zu fast jeder Zeile, warum die naheliegende Lösung einmal danebenging |
 | `lib/dns/`, `app/(app)/dns/` | [`docs/dns.md`](docs/dns.md) |
 | `app/api/internal/` | [`docs/reverse-proxy-api.md`](docs/reverse-proxy-api.md) |
-| `lib/docker/`, `lib/updates/`, `lib/bootstrap.ts`, `Dockerfile`, Compose | [`docs/betrieb.md`](docs/betrieb.md) |
+| `lib/docker/`, `lib/updates/`, `lib/bootstrap.ts`, `Dockerfile`, Compose, `install.sh` | [`docs/betrieb.md`](docs/betrieb.md) |
+| `app/setup/`, `app/api/setup/`, `lib/setup/`, `lib/haproxy/challenge.ts` | [`docs/betrieb.md`](docs/betrieb.md), Abschnitt „Ersteinrichtung", und [`docs/reverse-proxy.md`](docs/reverse-proxy.md), „Interne Installation" |
 | `lib/db/`, `lib/setup-db.ts`, `bin/hapm-admin.mjs` | [`docs/betrieb.md`](docs/betrieb.md), Abschnitt „Postgres" |
 | `lib/auth/`, `lib/session.ts`, `lib/two-factor.ts`, `app/api/auth/`, `app/api/account/` | die Köpfe der Dateien: dort steht zu jeder Stelle, warum sie so ist |
 | `ui/`, `components/`, `app/globals.css`, `app/hapm.css` | unten „Regeln, die überall gelten", Punkte „Oberfläche" und „Design" |
@@ -29,7 +30,9 @@ Next.js (App Router) mit TypeScript strict, pnpm. Drei Container: HAPM, HAProxy
   `serverId` in Routen und Läufen ist immer dieser, in der API darf sie fehlen.
   In der Oberfläche gibt es keine Auswahl einer Maschine.
 - **„Auf der Maschine" heißt: im HAPM-Container.** Er teilt sich `/etc/haproxy`,
-  `/run/haproxy` (Sockets) und das Log über Volumes mit dem HAProxy-Container.
+  `/run/haproxy` (Sockets) und das Log über Volumes mit dem HAProxy-Container
+  (auf dem Server Unterordner von `HAPM_STORAGE`, Vorgabe `data/` neben
+  `docker-compose.yml`).
   `haproxy …` im HAPM-Container ist ein Verweis auf `bin/hapm-ctl.mjs` und läuft
   im HAProxy-Container, `hapm-reload` lädt über den Master-Socket neu und meldet,
   ob der neue Prozess steht. Kein `systemctl`.
@@ -38,7 +41,14 @@ Next.js (App Router) mit TypeScript strict, pnpm. Drei Container: HAPM, HAProxy
   Platzhalter-Zertifikat, acme.sh (`lib/bootstrap.ts`, `lib/acme.ts`). Danach
   ist `haproxy.cfg` die Wahrheit: gelesen wird bei jedem Aufruf aus der Datei,
   es gibt keine Kopie in der Datenbank. Eine frische Installation hat keine
-  Gruppe, die erste legt der Benutzer an.
+  Gruppe: die erste legt der Benutzer an, oder der Assistent (Gruppe `HAPM`),
+  wenn er die Oberfläche als Ziel einrichtet.
+- **Die Ersteinrichtung ist ein Assistent** (`app/setup/`, `lib/setup/`): Konto,
+  Art der Installation, DNS-Anbieter, Adresse der Oberfläche, Ausführen. Die
+  Art (`exposure` in den Einstellungen) entscheidet, wie Zertifikate
+  ausgestellt werden: `internal` heißt DNS-01 für jedes, `public` HTTP-01 und
+  DNS-01 nur für Wildcards. Die eine Regel dafür steht in
+  `lib/haproxy/challenge.ts`, die Routen geben die Art an den Vorgang mit.
 - **Postgres als Dokumentenspeicher** (`lib/db/postgres-driver.ts`,
   `lib/db/sql.ts`). Je Collection eine Tabelle mit dem Dokument als `jsonb`, ein
   neues Feld braucht keine Migration. Wonach gefiltert wird, gehört in

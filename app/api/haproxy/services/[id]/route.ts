@@ -7,6 +7,7 @@ import {
   precheckUpdate,
 } from '@/lib/haproxy/provision';
 import { startHaproxyRun } from '@/lib/haproxy/runner';
+import { getSettings } from '@/lib/settings';
 import { selectedDnsDomains } from '@/lib/dns/zones';
 import { readServiceRequest } from '@/lib/haproxy/password-lock';
 import { HaproxyConfigError, validateCreateInput } from '@/lib/haproxy/config';
@@ -63,10 +64,12 @@ export async function PATCH(request: Request, { params }: Params) {
     if (invalid) throw new ApiError(invalid);
 
     const dnsHook = String(body.dnsHook ?? '').trim() || null;
+    // Intern oder öffentlich: davon hängt ab, ob HTTP-01 überhaupt geht (`challenge.ts`).
+    const challenge = { exposure: (await getSettings()).exposure, dnsHook };
 
     let current;
     try {
-      current = await precheckUpdate(server, id, input, dnsHook);
+      current = await precheckUpdate(server, id, input, challenge);
     } catch (err) {
       if (err instanceof HaproxyConfigError) throw new ApiError(err.message, 409);
       throw err;
@@ -83,7 +86,7 @@ export async function PATCH(request: Request, { params }: Params) {
       action: 'update',
       serviceId: id,
       input,
-      dnsHook,
+      challenge,
       dns: {
         ensure: selectedDnsDomains(body.dnsDomains, input.domains),
         remove: dropped,

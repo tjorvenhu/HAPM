@@ -125,3 +125,50 @@
 .hapm-requirements a { font-weight: 600; color: var(--danger-fg); text-decoration: underline; }
 
 .hapm-requirements span { color: var(--text-secondary); font-size: 0.875rem; }
+
+/* ── Einrichtung ──
+ * Der Assistent steht in der Anmeldekarte, braucht aber mehr Breite als ein
+ * Anmeldeformular: Auswahlkarten und die Schritte des Ausführens. */
+.hapm-setup .auth-card { max-width: 36rem; }
+
+.hapm-setup-progress { display: flex; flex-direction: column; gap: 6px; margin-bottom: 1.5rem; }
+
+.hapm-setup-progress span { font-size: 0.8125rem; color: var(--text-secondary); text-align: center; }
+
+.hapm-setup-bar { height: 4px; border-radius: var(--radius-full); background: var(--surface-muted); overflow: hidden; }
+
+.hapm-setup-bar i { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+
+/* Eine Auswahl aus wenigen Möglichkeiten, jede mit ihrer Folge darunter. */
+.hapm-choices { display: flex; flex-direction: column; gap: 12px; }
+
+.hapm-choice {
+  display: flex; align-items: flex-start; gap: 12px; width: 100%; padding: 16px;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-panel);
+  background: var(--surface); color: var(--text); font: inherit; text-align: left; cursor: pointer;
+}
+
+.hapm-choice:hover:not(:disabled) { border-color: var(--accent); }
+
+.hapm-choice.is-selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+
+.hapm-choice:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.hapm-choice > svg { flex-shrink: 0; margin-top: 2px; color: var(--accent); }
+
+.hapm-choice-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+
+.hapm-choice-text strong { font-weight: 600; }
+
+.hapm-choice-text span { font-size: 0.875rem; line-height: 1.45; color: var(--text-secondary); }
+
+/* Knöpfe unter einem Schritt: der Hauptknopf oben, die Nebenwege darunter in einer Zeile. */
+.hapm-setup-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+
+/* Der DNS-Eintrag, den der Benutzer selbst anlegt, und die Zusammenfassung vor dem Ausführen. */
+.hapm-setup-note {
+  display: flex; flex-direction: column; gap: 6px; padding: 12px 16px;
+  border-radius: var(--radius-panel); background: var(--surface-muted); font-size: 0.875rem; line-height: 1.45;
+}
+
+.hapm-setup-note code { font-family: var(--font-mono); font-size: 0.8125rem; overflow-wrap: anywhere; }

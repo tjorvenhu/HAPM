@@ -57,7 +57,7 @@ export async function waitForDatabase(timeoutMs = WAIT_MS): Promise<void> {
   throw new Error(
     `Postgres ist nach ${Math.round(timeoutMs / 1000)} Sekunden nicht erreichbar über ${describeTarget()}: ${reason}. ` +
       `Läuft der Container ${process.env.HAPM_POSTGRES_CONTAINER || 'hapm-postgres'}, und bindet HAPM ` +
-      'das Volume postgres-run unter /var/run/postgresql ein?'
+      'dessen Ordner mit dem Socket unter /var/run/postgresql ein?'
   );
 }
 

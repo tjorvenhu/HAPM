@@ -249,7 +249,7 @@ Feld, bevor du aus einer leeren Liste einen Schluss ziehst.**
   "preset": "default",                // Pflicht
   "healthcheck": true,
   "dnsDomains": "auto",               // optional
-  "dnsHook": "dns_cf"                 // nur bei einer Wildcard
+  "dnsHook": "dns_cf"                 // nur für DNS-01, und nur bei mehreren Hooks nötig
 }
 → data: { runId: string; serverId: string; serviceId: string }
 ```
@@ -542,7 +542,7 @@ Token weg, und auffallen würde es zwei Monate später.
 | `preset` | `default`, `nextcloud` oder `coolify`. Eine feste Liste Zeilen im Backend; `coolify` setzt `timeout tunnel 1h`, ohne das reißen Terminal und Live-Ansicht mitten in der Arbeit ab. |
 | `healthcheck` | **Geht nicht, wenn `domains[0]` eine Wildcard ist** — `*.kunde.example` ist als Host-Header kein gültiger Name, das Ziel antwortete mit 404 und HAProxy nähme ein funktionierendes Backend aus dem Betrieb. Der Wert wird in dem Fall stillschweigend auf `false` normalisiert, nicht abgelehnt. |
 | `dnsDomains` | Fehlt → bei Cloudflare wird nichts angefasst. `"auto"` → jede Domain, für die unter `/dns` eine Zone eingerichtet ist. Eine Liste → genau diese, geschnitten mit `domains`. |
-| `dnsHook` | Nur bei einer Wildcard nötig, aus `dnsHooks` von `GET /proxies`. Let's Encrypt stellt Wildcards ausschließlich über DNS-01 aus. Ist genau einer eingerichtet, nimm den. |
+| `dnsHook` | Der acme.sh-Hook für DNS-01, aus `dnsHooks` von `GET /proxies`. DNS-01 gilt bei einer Wildcard und, in einer als intern eingerichteten Installation, bei jeder Domain. Ist genau ein Hook eingerichtet, darf das Feld fehlen. Bei mehreren muss es gesetzt sein. |
 
 ## Fallen, die Zeit kosten
 

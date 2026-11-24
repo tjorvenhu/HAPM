@@ -37,6 +37,7 @@ import {
   type HaproxyService,
   type CreateServiceInput,
 } from '@/lib/haproxy/config';
+import { needsDnsChallenge } from '@/lib/haproxy/challenge';
 import type { DomainMatch } from '@/lib/dns/zones';
 import type { ProxyRow } from './types';
 
@@ -418,18 +419,28 @@ export default function ServiceFormModal({
    *  nicht etwas anderes ankündigt, als danach passiert. */
   const certNeeded = edit ? certificateChanged(edit.service.domains, input.domains) : false;
 
-  /* ── Wildcards ──
+  /* ── Wildcards und interne Installationen ──
    *
-   * Der Hook wird verlangt, sobald eine Wildcard dabei ist und ein Zertifikat
-   * fällig wäre — beim Anlegen immer, beim Bearbeiten nur bei geänderten
-   * Domains. Die Liste kommt aus der Probe: welche Hooks acme.sh kennt, steht
+   * Der Hook wird verlangt, sobald das Zertifikat über DNS-01 ausgestellt wird
+   * und eines fällig wäre — beim Anlegen immer, beim Bearbeiten nur bei
+   * geänderten Domains. DNS-01 ist es bei einer Wildcard und bei jeder Domain
+   * einer internen Installation (`needsDnsChallenge`, dieselbe Regel wie in der
+   * Route). Die Liste kommt aus der Probe: welche Hooks acme.sh kennt, steht
    * in dessen Konfiguration, und HAPM hält die Zugangsdaten nicht selbst. */
   const healthcheckAllowed = healthcheckPossible(input.domains);
   const selectedProxy = proxies.find((p) => p.$id === serverId) ?? null;
   const hasWildcard = input.domains.some(isWildcardDomain);
   const dnsHooks = selectedProxy?.dnsHooks ?? [];
-  const dnsHookNeeded = hasWildcard && (!editingId || certNeeded);
+  const dnsHookNeeded =
+    needsDnsChallenge(input.domains, selectedProxy?.exposure ?? 'public') &&
+    (!editingId || certNeeded);
   const dnsHookMissing = dnsHookNeeded && dnsHooks.length === 0;
+  /**
+   * Ohne Wildcard steht die Auswahl nur da, wenn es etwas zu wählen gibt: in
+   * einer internen Installation ginge sie sonst bei jedem Ziel auf und zeigte
+   * immer denselben einen Eintrag. Bei einer Wildcard bleibt sie wie bisher.
+   */
+  const dnsHookSelectShown = dnsHookNeeded && !dnsHookMissing && (hasWildcard || dnsHooks.length > 1);
 
   /**
    * Gibt es genau einen eingerichteten Hook, ist er gewählt.
@@ -559,9 +570,11 @@ export default function ServiceFormModal({
     if (dnsHookNeeded && !effectiveDnsHook) {
       setFormError(
         dnsHooks.length === 0
-          ? 'Eine Wildcard-Domain lässt Let’s Encrypt nur über DNS-01 ausstellen, und es ist kein ' +
+          ? (hasWildcard
+              ? 'Eine Wildcard-Domain lässt Let’s Encrypt nur über DNS-01 ausstellen, und es ist kein '
+              : 'In dieser internen Installation wird jedes Zertifikat über DNS-01 ausgestellt, und es ist kein ') +
               'DNS-Hook von acme.sh eingerichtet. Die Zugangsdaten stehen unter Reverse-Proxy, Einstellungen.'
-          : 'Für eine Wildcard-Domain muss der DNS-Hook gewählt werden, der die Challenge setzt.'
+          : 'Bitte wählen Sie den DNS-Hook, der die Challenge setzt.'
       );
       return;
     }
@@ -578,7 +591,9 @@ export default function ServiceFormModal({
             serverId,
             ...input,
             lockPassword: lockingByPassword ? lockPassword : '',
-            dnsHook: dnsHookNeeded ? effectiveDnsHook : '',
+            // Was das Formular nicht zeigt, schickt es nicht: ohne Auswahl
+            // nimmt die Route den einen eingerichteten Hook selbst.
+            dnsHook: dnsHookSelectShown ? effectiveDnsHook : '',
             dnsDomains,
           }),
         }
@@ -872,20 +887,35 @@ export default function ServiceFormModal({
                     über DNS läuft. */}
                 {dnsHookNeeded && (
                   <div className="form-group">
-                    <label className="form-label">DNS-Hook für die Wildcard</label>
+                    <label className="form-label">
+                      {hasWildcard ? 'DNS-Hook für die Wildcard' : 'Zertifikat über DNS'}
+                    </label>
                     {dnsHookMissing ? (
                       <div className="alert alert-warning">
-                        Es ist kein DNS-Hook von acme.sh eingerichtet. Eine Wildcard lässt
-                        Let’s Encrypt nur über DNS-01 ausstellen. Die Zugangsdaten der Zone werden
-                        unter Reverse-Proxy, Einstellungen hinterlegt: einmal dort eingetragen,
-                        merkt acme.sh sie sich für jede Erneuerung.
+                        {hasWildcard
+                          ? 'Es ist kein DNS-Hook von acme.sh eingerichtet. Eine Wildcard lässt Let’s Encrypt nur über DNS-01 ausstellen.'
+                          : 'Es ist kein DNS-Hook von acme.sh eingerichtet. In dieser internen Installation wird jedes Zertifikat über DNS-01 ausgestellt.'}{' '}
+                        Die Zugangsdaten der Zone werden unter Reverse-Proxy, Einstellungen
+                        hinterlegt: einmal dort eingetragen, merkt acme.sh sie sich für jede
+                        Erneuerung.
                       </div>
                     ) : (
-                      <Select
-                        value={effectiveDnsHook}
-                        onChange={setDnsHook}
-                        options={hookOptions}
-                      />
+                      <>
+                        {dnsHookSelectShown && (
+                          <Select
+                            value={effectiveDnsHook}
+                            onChange={setDnsHook}
+                            options={hookOptions}
+                          />
+                        )}
+                        {!hasWildcard && (
+                          <span className="form-hint">
+                            {dnsHookSelectShown
+                              ? 'Interne Installation: das Zertifikat wird über DNS ausgestellt.'
+                              : `Interne Installation: ausgestellt wird über ${effectiveDnsHook}.`}
+                          </span>
+                        )}
+                      </>
                     )}
                   </div>
                 )}

@@ -35,6 +35,7 @@ import { usePolling } from '@/components/usePolling';
 import { useNow } from '@/components/useNow';
 import Skeleton, { SkeletonRows } from '@/components/Skeleton';
 import GeoipReminder from '@/components/GeoipReminder';
+import SetupReminder from '@/components/SetupReminder';
 import {
   COMPONENT_LABELS,
   RUN_STATUS_CLASS,
@@ -68,6 +69,7 @@ const ACTION_LABELS: Record<HaproxyAction, string> = {
   'stream-create': 'TCP angelegt',
   'stream-update': 'TCP geändert',
   'stream-delete': 'TCP gelöscht',
+  certificate: 'Zertifikat',
 };
 
 const BOOTSTRAP_LABELS: Record<BootstrapState['status'], string> = {
@@ -648,6 +650,8 @@ export default function DashboardPage() {
           <span>Die Angaben sind nicht aktuell: {error}</span>
         </div>
       )}
+
+      <SetupReminder />
 
       {!docker.available && (
         <div className="alert alert-danger sys-block hapm-flag">

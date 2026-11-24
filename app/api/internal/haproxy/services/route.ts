@@ -3,6 +3,7 @@ import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
 import { serviceActor } from '@/lib/audit';
 import { precheckCreate, probeProxy } from '@/lib/haproxy/provision';
 import { startHaproxyRun } from '@/lib/haproxy/runner';
+import { getSettings } from '@/lib/settings';
 import {
   haproxyActor,
   proxyServers,
@@ -142,9 +143,11 @@ export async function POST(request: Request) {
 
     // Nicht Teil der Eingabe: der Hook steht in keiner Zeile der Konfiguration.
     const dnsHook = String(body.dnsHook ?? '').trim() || null;
+    // Intern oder öffentlich: davon hängt ab, ob HTTP-01 überhaupt geht (`challenge.ts`).
+    const challenge = { exposure: (await getSettings()).exposure, dnsHook };
 
     try {
-      await precheckCreate(server, input, dnsHook);
+      await precheckCreate(server, input, challenge);
     } catch (err) {
       if (err instanceof HaproxyConfigError) throw new ApiError(err.message, 409);
       throw err;
@@ -155,7 +158,7 @@ export async function POST(request: Request) {
       action: 'create',
       serviceId: input.id,
       input,
-      dnsHook,
+      challenge,
       dns: { ensure: await readDnsDomains(body.dnsDomains, input.domains) },
       actor: haproxyActor(serviceActor(service), request),
     });

@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, AtSign, Globe, Loader2, Plus, Save } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { AlertTriangle, AtSign, Globe, Home, ListChecks, Loader2, Network, Plus, Save } from 'lucide-react';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
@@ -10,6 +11,21 @@ import { useConfirm } from '@/components/ConfirmDialog';
 import { SkeletonDetail } from '@/components/Skeleton';
 // Nur der Typ: die Datei dahinter erreicht `lib/db`.
 import type { SettingsView } from '@/lib/settings';
+import type { Exposure } from '@/lib/types';
+
+/** Dieselben zwei Möglichkeiten wie im Assistenten, mit der Folge für künftige Zertifikate. */
+const EXPOSURE_CHOICES: { value: Exposure; title: string; text: string }[] = [
+  {
+    value: 'internal',
+    title: 'Nur im eigenen Netz',
+    text: 'Jedes neue Zertifikat wird über den DNS-Anbieter ausgestellt. Dafür müssen unter Reverse-Proxy, Einstellungen DNS-Zugangsdaten hinterlegt sein.',
+  },
+  {
+    value: 'public',
+    title: 'Aus dem Internet erreichbar',
+    text: "Neue Zertifikate prüft Let's Encrypt über Port 80. Der DNS-Anbieter wird nur für Wildcards gebraucht.",
+  },
+];
 
 interface SaveResult {
   settings: SettingsView;
@@ -20,6 +36,7 @@ export default function GeneralSettingsPage() {
   const { apiFetch } = useApp();
   const { notify } = useToast();
   const confirm = useConfirm();
+  const router = useRouter();
 
   const [settings, setSettings] = useState<SettingsView | null>(null);
   const [error, setError] = useState('');
@@ -30,6 +47,8 @@ export default function GeneralSettingsPage() {
   const [emailDraft, setEmailDraft] = useState<string | null>(null);
   const [emailError, setEmailError] = useState('');
   const [savingEmail, setSavingEmail] = useState(false);
+  const [savingExposure, setSavingExposure] = useState(false);
+  const [reopening, setReopening] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -118,11 +137,58 @@ export default function GeneralSettingsPage() {
     }
   }
 
+  async function saveExposure(next: Exposure) {
+    if (!settings || next === settings.exposure) return;
+    const confirmed = await confirm({
+      title: next === 'internal' ? 'Auf „Nur im eigenen Netz" umstellen?' : 'Auf „Aus dem Internet erreichbar" umstellen?',
+      message:
+        next === 'internal'
+          ? 'Jedes neue Zertifikat wird danach über den DNS-Anbieter ausgestellt. Ohne hinterlegte DNS-Zugangsdaten lässt sich dann kein Ziel mehr anlegen. Bestehende Zertifikate behalten ihre Methode, auch bei der Erneuerung.'
+          : "Neue Zertifikate werden danach über Port 80 geprüft. Erreicht Let's Encrypt den Server nicht, scheitert jeder neue Antrag. Bestehende Zertifikate behalten ihre Methode, auch bei der Erneuerung.",
+      confirmLabel: 'Umstellen',
+    });
+    if (!confirmed) return;
+
+    setSavingExposure(true);
+    try {
+      const result = await patch({ exposure: next });
+      setSettings(result.settings);
+      notify({ variant: 'success', message: 'Die Art der Installation ist umgestellt. Sie gilt für neue Zertifikate.' });
+    } catch (err: unknown) {
+      notify({
+        variant: 'error',
+        message: err instanceof Error ? err.message : 'Die Einstellung ließ sich nicht speichern.',
+      });
+    } finally {
+      setSavingExposure(false);
+    }
+  }
+
+  async function reopenSetup() {
+    setReopening(true);
+    try {
+      const res = await apiFetch('/api/setup/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'open' }),
+      });
+      const body = await res.json();
+      if (!body.success) throw new Error(body.error || 'Die Einrichtung ließ sich nicht öffnen.');
+      router.push('/setup?schritt=exposure');
+    } catch (err: unknown) {
+      notify({
+        variant: 'error',
+        message: err instanceof Error ? err.message : 'Die Einrichtung ließ sich nicht öffnen.',
+      });
+      setReopening(false);
+    }
+  }
+
   const header = (
     <div className="page-header">
       <div>
         <h1 className="page-title">Allgemein</h1>
-        <p className="page-subtitle">Die Adresse von HAPM und der Kontakt bei Let&apos;s Encrypt.</p>
+        <p className="page-subtitle">Adresse, Art der Installation und der Kontakt bei Let&apos;s Encrypt.</p>
       </div>
     </div>
   );
@@ -204,6 +270,50 @@ export default function GeneralSettingsPage() {
             </Link>
           </div>
         </form>
+      </div>
+
+      <div className="card sys-block">
+        <div className="card-header">
+          <div>
+            <h2 className="card-title">
+              <Network size={17} strokeWidth={1.5} />
+              Art der Installation
+            </h2>
+            <p className="card-subtitle">Sie bestimmt, wie neue Zertifikate ausgestellt werden.</p>
+          </div>
+        </div>
+
+        <div className="card-body">
+          <div className="hapm-choices">
+            {EXPOSURE_CHOICES.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={`hapm-choice${settings.exposure === option.value ? ' is-selected' : ''}`}
+                aria-pressed={settings.exposure === option.value}
+                disabled={savingExposure}
+                onClick={() => void saveExposure(option.value)}
+              >
+                {option.value === 'internal' ? <Home size={18} strokeWidth={1.5} /> : <Globe size={18} strokeWidth={1.5} />}
+                <span className="hapm-choice-text">
+                  <strong>{option.title}</strong>
+                  <span>{option.text}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+
+          <div className="alert alert-info">
+            <span>Bestehende Zertifikate behalten ihre Methode, auch bei der Erneuerung.</span>
+          </div>
+
+          <div className="hapm-form-actions">
+            <button className="btn btn-secondary" type="button" disabled={reopening} onClick={reopenSetup}>
+              {reopening ? <Loader2 size={16} strokeWidth={1.5} className="spin" /> : <ListChecks size={16} strokeWidth={1.5} />}
+              Einrichtung erneut öffnen
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="card sys-block">

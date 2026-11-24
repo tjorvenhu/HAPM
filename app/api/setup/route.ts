@@ -2,7 +2,8 @@ import { isAPIError } from 'better-auth/api';
 import { auth, sessionHeaders } from '@/lib/auth/config';
 import { forwardAuthCookies } from '@/lib/auth/passkeys';
 import { countUsers, createUser, recordLogin } from '@/lib/auth/users';
-import { csrfFor } from '@/lib/session';
+import { csrfFor, getSession } from '@/lib/session';
+import { readSetupView } from '@/lib/setup';
 import { clear2FACookie } from '@/lib/two-factor';
 import { updateSettings } from '@/lib/settings';
 import { ensureAcme } from '@/lib/acme';
@@ -13,10 +14,12 @@ import { ok, fail, handleError, jsonBody, ApiError } from '@/lib/api';
 
 /**
  * Die Ersteinrichtung: das erste Konto und die Adresse für Let's Encrypt.
+ * Alles danach (Erreichbarkeit, DNS-Anbieter, Adresse der Oberfläche) sind
+ * angemeldete Aufrufe unter `/api/setup/*`.
  *
- * Ohne Sitzung erreichbar, weil es auf einer frischen Installation noch kein
- * Konto gibt, mit dem man sich anmelden könnte. Deshalb ist die Route tot,
- * sobald eines existiert.
+ * Anlegen geht ohne Sitzung, weil es auf einer frischen Installation noch kein
+ * Konto gibt, mit dem man sich anmelden könnte. Deshalb ist POST tot, sobald
+ * eines existiert.
  *
  * Zwei Sperren, weil die Zählung allein ein Wettlauf ist: zwei gleichzeitige
  * Anfragen sähen beide null Konten. Das erste Konto bekommt deshalb eine feste
@@ -26,9 +29,19 @@ import { ok, fail, handleError, jsonBody, ApiError } from '@/lib/api';
 const ALREADY_DONE = 'Die Ersteinrichtung ist bereits abgeschlossen.';
 const BOOTSTRAP_ID = 'bootstrap';
 
+/**
+ * Ohne Anmeldung nur, ob es schon ein Konto gibt: das braucht die Anmeldeseite,
+ * und mehr geht einen Fremden nicht an. Mit Anmeldung der Stand des Assistenten.
+ */
 export async function GET() {
   try {
-    return ok({ needsSetup: (await countUsers()) === 0 });
+    const needsSetup = (await countUsers()) === 0;
+    if (needsSetup) return ok({ needsSetup });
+
+    const session = await getSession();
+    if (!session.userId || !session.twoFactorVerified) return ok({ needsSetup });
+
+    return ok({ needsSetup, setup: await readSetupView() });
   } catch (err) {
     return handleError(err);
   }
@@ -62,7 +75,9 @@ export async function POST(request: Request) {
       throw err;
     });
 
-    const settings = await updateSettings({ acmeEmail: acmeEmail || user.email });
+    // Ab hier ist die Einrichtung offen: die Übersicht erinnert daran, bis sie
+    // abgeschlossen oder ausdrücklich übersprungen ist.
+    const settings = await updateSettings({ acmeEmail: acmeEmail || user.email, setupStatus: 'open' });
 
     let acme: { ok: boolean; detail: string };
     try {

@@ -64,7 +64,9 @@ export type HaproxyAction =
   | 'scope-remove'
   | 'stream-create'
   | 'stream-update'
-  | 'stream-delete';
+  | 'stream-delete'
+  /** Ein Zertifikat ohne Ziel, etwa die Wildcard aus der Einrichtung. */
+  | 'certificate';
 
 export type HaproxyPhase =
   | 'dns'
@@ -205,7 +207,61 @@ export interface Settings extends DbDoc {
   notifyRecipients: string[];
   /** Je Ereignis ein Schalter. Ein Ereignis, das hier fehlt, gilt als eingeschaltet. */
   notifyEvents: Record<NotificationEventType, boolean>;
+  /**
+   * Ob Let's Encrypt diesen Server erreicht. `internal`: nein, jedes Zertifikat
+   * geht über DNS-01. `public`: HTTP-01, DNS-01 nur für Wildcards.
+   */
+  exposure: Exposure;
+  /**
+   * Der Stand der Einrichtung nach dem ersten Konto. `null` steht in jeder
+   * Zeile, die es vor dem Assistenten gab: mit Konto gilt sie als abgeschlossen.
+   */
+  setupStatus: SetupStatus | null;
 }
+
+export type Exposure = 'internal' | 'public';
+
+/** `skipped`: ausdrücklich nicht zu Ende geführt, die Übersicht erinnert nicht mehr. */
+export type SetupStatus = 'open' | 'done' | 'skipped';
+
+/* ── Der Assistent der Einrichtung (eine Zeile, Kennung SETUP_ID) ──
+ *
+ * Was der Benutzer im Assistenten gewählt hat und wie weit das Ausführen kam.
+ * Ein Token steht hier nie: er geht durch nach `account.conf`.
+ */
+export type SetupStageKey = 'dns' | 'scope' | 'certificate' | 'service' | 'publicUrl';
+export type SetupStageStatus = 'pending' | 'running' | 'ok' | 'error';
+
+export interface SetupStage {
+  key: SetupStageKey;
+  status: SetupStageStatus;
+  detail: string | null;
+  /** Der Lauf in `haproxy_runs`, falls der Schritt einer war. */
+  runId: string | null;
+}
+
+export interface SetupExecution {
+  startedAt: string;
+  /** `true`, solange der Prozess daran arbeitet. Nach einem Neustart steht es noch da, siehe `settleExecution`. */
+  running: boolean;
+  stages: SetupStage[];
+}
+
+export interface SetupState extends DbDoc {
+  /** `null`, solange im Assistenten nichts gewählt wurde. */
+  exposure: Exposure | null;
+  dns: 'pending' | 'configured' | 'skipped';
+  /** Der acme.sh-Hook des gewählten Anbieters. */
+  dnsHook: string | null;
+  address: 'pending' | 'set' | 'skipped';
+  domain: string | null;
+  wildcard: boolean;
+  /** Die Basis der Wildcard: `example.org` für `*.example.org`. */
+  wildcardBase: string | null;
+  execution: SetupExecution | null;
+}
+
+export const SETUP_ID = 'main';
 
 export const SETTINGS_ID = 'main';
 
@@ -307,4 +363,5 @@ export const COLLECTIONS = {
   NOTIFICATION_STATE: 'notification_state',
   BACKUP_SETTINGS: 'backup_settings',
   BACKUP_RUNS: 'backup_runs',
+  SETUP_STATE: 'setup_state',
 } as const;

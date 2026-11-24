@@ -10,7 +10,10 @@
 # TCP-Weiterleitungen auf beliebigen Ports, HAPM für die ACME-Challenge
 # (127.0.0.1:8888) und um zu sehen, welche Ports auf dem Server belegt sind.
 # Das geht nur unter Linux. Postgres, die Datenbank von HAPM, hat gar kein Netz:
-# HAPM erreicht es über einen Unix-Socket in einem geteilten Volume.
+# HAPM erreicht es über einen Unix-Socket in einem geteilten Ordner.
+#
+# Alle Daten liegen in einem Ordner auf dem Server: HAPM_STORAGE, ohne Angabe
+# `data` neben dieser Datei. Wer ihn sichert oder umzieht, hat alles.
 
 name: hapm
 
@@ -32,13 +35,13 @@ services:
       postgres:
         condition: service_healthy
     volumes:
-      - data:/data
-      - haproxy-etc:/etc/haproxy
-      - haproxy-run:/run/haproxy
-      - haproxy-log:/var/log/haproxy
-      - acme:/root/.acme.sh
+      - ${HAPM_STORAGE:-./data}/hapm:/data
+      - ${HAPM_STORAGE:-./data}/haproxy:/etc/haproxy
+      - ${HAPM_STORAGE:-./data}/run/haproxy:/run/haproxy
+      - ${HAPM_STORAGE:-./data}/log:/var/log/haproxy
+      - ${HAPM_STORAGE:-./data}/acme:/root/.acme.sh
       # Der Unix-Socket von Postgres. Darüber, und nur darüber, spricht HAPM mit der Datenbank.
-      - postgres-run:/var/run/postgresql
+      - ${HAPM_STORAGE:-./data}/run/postgres:/var/run/postgresql
       # Darüber prüft HAPM die Konfiguration im HAProxy-Container, liest dessen
       # Log und spielt Updates ein. Der Socket gibt vollen Zugriff auf Docker.
       - /var/run/docker.sock:/var/run/docker.sock
@@ -51,8 +54,8 @@ services:
     container_name: hapm-postgres
     restart: unless-stopped
     # Kein Netz. Postgres lauscht auf keinem Port (`listen_addresses=` leer),
-    # sondern nur auf seinem Unix-Socket, und den teilt es über das Volume
-    # `postgres-run` mit HAPM.
+    # sondern nur auf seinem Unix-Socket, und den teilt es über den Ordner
+    # `run/postgres` mit HAPM.
     network_mode: none
     # Kleine Werte: ein Werkzeug mit einer Handvoll Benutzern und einer Zeile
     # Statistik je Minute und Abschnitt. HAPM hält höchstens fünf Verbindungen.
@@ -66,8 +69,8 @@ services:
       # dorthin, es gibt keinen Port.
       POSTGRES_HOST_AUTH_METHOD: trust
     volumes:
-      - postgres-data:/var/lib/postgresql/data
-      - postgres-run:/var/run/postgresql
+      - ${HAPM_STORAGE:-./data}/postgres:/var/lib/postgresql/data
+      - ${HAPM_STORAGE:-./data}/run/postgres:/var/run/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U hapm -d hapm"]
       interval: 5s
@@ -90,8 +93,8 @@ services:
       hapm:
         condition: service_healthy
     volumes:
-      - haproxy-etc:/etc/haproxy:ro
-      - haproxy-run:/run/haproxy
+      - ${HAPM_STORAGE:-./data}/haproxy:/etc/haproxy:ro
+      - ${HAPM_STORAGE:-./data}/run/haproxy:/run/haproxy
     ulimits:
       nofile:
         soft: 65536
@@ -101,12 +104,3 @@ services:
       options:
         max-size: "50m"
         max-file: "3"
-
-volumes:
-  data:
-  haproxy-etc:
-  haproxy-run:
-  haproxy-log:
-  acme:
-  postgres-data:
-  postgres-run:

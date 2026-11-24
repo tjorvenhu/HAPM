@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { execFileSync } from 'child_process';
-import { mkdtempSync, writeFileSync, readFileSync, statSync, rmSync } from 'fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, statSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import {
@@ -8,8 +8,11 @@ import {
   findDnsProvider,
   validateDnsCredentials,
   credentialLines,
+  credentialNamesToClear,
   writeCredentialsCommand,
 } from '@/lib/haproxy/dns-credentials';
+import { DNS_HOOK_PROBE } from '@/lib/haproxy/provision';
+import { parseDnsHooks } from '@/lib/haproxy/certs';
 
 /**
  * Das Ablegen der DNS-Zugangsdaten, von einer echten Bash nachgerechnet.
@@ -68,7 +71,7 @@ function runAgainst(content: string, names: string[], stdin: string) {
 const EXISTING = [
   "ACCOUNT_EMAIL='ops@example.org'",
   "SAVED_CF_Token='alterwert'",
-  "SAVED_HETZNER_Token='fremderanbieter'",
+  "SAVED_HETZNER_TOKEN='fremderanbieter'",
   'UPGRADE_HASH=abc',
   '',
 ].join('\n');
@@ -80,7 +83,7 @@ describe('writeCredentialsCommand', () => {
     expect(text).toContain("SAVED_CF_Token='neu'");
     expect(text).not.toContain('alterwert');
     // Der andere Anbieter und die übrigen Zeilen bleiben unangetastet.
-    expect(text).toContain("SAVED_HETZNER_Token='fremderanbieter'");
+    expect(text).toContain("SAVED_HETZNER_TOKEN='fremderanbieter'");
     expect(text).toContain("ACCOUNT_EMAIL='ops@example.org'");
     expect(text).toContain('UPGRADE_HASH=abc');
   });
@@ -89,7 +92,7 @@ describe('writeCredentialsCommand', () => {
     const { text } = runAgainst(EXISTING, ['CF_Token', 'CF_Account_ID'], '');
 
     expect(text).not.toContain('SAVED_CF_Token');
-    expect(text).toContain("SAVED_HETZNER_Token='fremderanbieter'");
+    expect(text).toContain("SAVED_HETZNER_TOKEN='fremderanbieter'");
     expect(text).toContain("ACCOUNT_EMAIL='ops@example.org'");
   });
 
@@ -172,7 +175,7 @@ describe('validateDnsCredentials', () => {
 
   it('lehnt ein Feld ab, das dem Anbieter nicht gehört', () => {
     expect(
-      validateDnsCredentials({ ...cf, values: { CF_Token: 'abc', HETZNER_Token: 'x' } })
+      validateDnsCredentials({ ...cf, values: { CF_Token: 'abc', HETZNER_TOKEN: 'x' } })
     ).not.toBeNull();
   });
 
@@ -215,5 +218,115 @@ describe('DNS_PROVIDERS', () => {
         expect(field.name).toMatch(/^[A-Za-z0-9_]+$/);
       }
     }
+  });
+});
+
+/**
+ * Schreiben, Erkennen und Ausstellen müssen denselben Namen meinen.
+ *
+ * Geschrieben wird `SAVED_<Feld>`, erkannt wird der Hook, dessen Skript dieses
+ * Feld liest, und ausgestellt wird mit `--dns <hook>`. Steht ein Anbieter hier
+ * mit einem Hook, den acme.sh nicht (mehr) mitbringt, oder mit einer Variable
+ * in anderer Schreibweise, dann speichert das Formular scheinbar erfolgreich,
+ * und kein Hook gilt als eingerichtet.
+ *
+ * Die beiden Skripte unten sind die Zeilen, mit denen das mitgelieferte acme.sh
+ * (3.1.x) seine Variablen liest: `dnsapi/dns_hetznercloud.sh` und
+ * `dnsapi/dns_cf.sh`. Ändert acme.sh sie, ändert sich diese Fixture mit.
+ */
+describe('Schreiben und Erkennen passen zusammen', () => {
+  const HOOK_SCRIPTS: Record<string, string> = {
+    'dns_hetznercloud.sh': [
+      'HETZNER_TOKEN="${HETZNER_TOKEN:-$(_readaccountconf_mutable HETZNER_TOKEN)}"',
+      'HETZNER_API="${HETZNER_API:-$(_readaccountconf_mutable HETZNER_API)}"',
+      'HETZNER_TTL="${HETZNER_TTL:-$(_readaccountconf_mutable HETZNER_TTL)}"',
+      'HETZNER_MAX_ATTEMPTS="${HETZNER_MAX_ATTEMPTS:-$(_readaccountconf_mutable HETZNER_MAX_ATTEMPTS)}"',
+      '',
+    ].join('\n'),
+    'dns_cf.sh': [
+      'CF_Token="${CF_Token:-$(_readaccountconf_mutable CF_Token)}"',
+      'CF_Account_ID="${CF_Account_ID:-$(_readaccountconf_mutable CF_Account_ID)}"',
+      '',
+    ].join('\n'),
+    // Ein fremder Hook, der zu keinem Anbieter der Liste gehört.
+    'dns_other.sh': 'OTHER_Key="${OTHER_Key:-$(_readaccountconf_mutable OTHER_Key)}"\n',
+  };
+
+  function acmeHome(conf: string): string {
+    dir = mkdtempSync(join(tmpdir(), 'acme-'));
+    mkdirSync(join(dir, 'dnsapi'));
+    for (const [name, text] of Object.entries(HOOK_SCRIPTS)) {
+      writeFileSync(join(dir, 'dnsapi', name), text);
+    }
+    writeFileSync(join(dir, 'account.conf'), conf, { mode: 0o600 });
+    return dir;
+  }
+
+  function detectedHooks(home: string): string[] {
+    const probe = DNS_HOOK_PROBE.replace(
+      'conf=/root/.acme.sh/account.conf; dir=/root/.acme.sh/dnsapi',
+      `conf='${posix(join(home, 'account.conf'))}'; dir='${posix(join(home, 'dnsapi'))}'`
+    );
+    return parseDnsHooks(execFileSync('bash', ['-c', probe]).toString());
+  }
+
+  function write(home: string, hook: string, values: Record<string, string>, remove: boolean) {
+    const provider = findDnsProvider(hook)!;
+    const lines = credentialLines({ hook, values, remove });
+    execFileSync(
+      'bash',
+      ['-c', scriptFor(credentialNamesToClear(provider, remove), join(home, 'account.conf'))],
+      { input: remove ? '' : `${lines.join('\n')}\n` }
+    );
+  }
+
+  it.each(DNS_PROVIDERS.map((provider) => provider.hook))('%s wird nach dem Speichern erkannt', (hook) => {
+    const provider = findDnsProvider(hook)!;
+    const home = acmeHome("ACCOUNT_EMAIL='ops@example.org'\n");
+    expect(detectedHooks(home)).toEqual([]);
+
+    const values = Object.fromEntries(
+      provider.fields.filter((field) => field.required).map((field) => [field.name, 'abc123'])
+    );
+    write(home, hook, values, false);
+
+    expect(detectedHooks(home)).toEqual([hook]);
+  });
+
+  it('kennt Hetzner unter dem Hook, den acme.sh mitbringt', () => {
+    // `dns_hetzner` (die frühere DNS-Konsole) gibt es in acme.sh nicht mehr.
+    expect(findDnsProvider('dns_hetzner')).toBeNull();
+    expect(findDnsProvider('dns_hetznercloud')?.fields.map((field) => field.name)).toEqual(['HETZNER_TOKEN']);
+  });
+
+  it('entfernt auch, was der Hook selbst daneben abgelegt hat', () => {
+    // Nach dem ersten Antrag stehen API-Adresse, TTL und Versuche als SAVED_* in
+    // der Datei. Blieben sie stehen, gälte der Hook ohne Token weiter als eingerichtet.
+    const home = acmeHome(
+      [
+        "SAVED_HETZNER_TOKEN='abc123'",
+        "SAVED_HETZNER_API='https://api.hetzner.cloud/v1'",
+        "SAVED_HETZNER_TTL='120'",
+        "SAVED_HETZNER_MAX_ATTEMPTS='120'",
+        "SAVED_OTHER_Key='bleibt'",
+        '',
+      ].join('\n')
+    );
+    expect(detectedHooks(home)).toEqual(['dns_hetznercloud', 'dns_other']);
+
+    write(home, 'dns_hetznercloud', { HETZNER_TOKEN: '' }, true);
+
+    expect(detectedHooks(home)).toEqual(['dns_other']);
+    expect(readFileSync(join(home, 'account.conf'), 'utf8')).toContain("SAVED_OTHER_Key='bleibt'");
+  });
+
+  it('lässt beim Setzen stehen, was der Hook daneben führt', () => {
+    const home = acmeHome("SAVED_HETZNER_TOKEN='alt'\nSAVED_HETZNER_TTL='300'\n");
+    write(home, 'dns_hetznercloud', { HETZNER_TOKEN: 'neu' }, false);
+
+    const text = readFileSync(join(home, 'account.conf'), 'utf8');
+    expect(text).toContain("SAVED_HETZNER_TOKEN='neu'");
+    expect(text).not.toContain("'alt'");
+    expect(text).toContain("SAVED_HETZNER_TTL='300'");
   });
 });

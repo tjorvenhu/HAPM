@@ -4,7 +4,7 @@ HAPM bringt HAProxy mit. Hier steht, wie die Container zusammenhängen, was beim
 ersten Start geschieht und wie Updates, Benachrichtigungen und Sicherung
 ablaufen.
 
-## Drei Container, sieben Volumes
+## Drei Container, ein Ordner mit Daten
 
 | Container | Abbild | Aufgabe |
 |---|---|---|
@@ -12,15 +12,42 @@ ablaufen.
 | `hapm-haproxy` | `haproxy:lts` (offiziell, unverändert) | HAProxy |
 | `hapm-postgres` | `postgres:17-alpine` (offiziell, unverändert) | Die Datenbank von HAPM |
 
-| Volume | In `hapm` | In `hapm-haproxy` | In `hapm-postgres` | Inhalt |
+Alle Daten liegen in einem Ordner auf dem Server: `HAPM_STORAGE`, ohne Angabe
+`data` neben `docker-compose.yml` (mit dem Installationsskript also
+`/opt/hapm/data`). Die Container bekommen seine Unterordner einzeln eingebunden:
+
+| Unterordner | In `hapm` | In `hapm-haproxy` | In `hapm-postgres` | Inhalt |
 |---|---|---|---|---|
-| `data` | `/data` | | | `secrets.json`, Zähler der Anmeldeversuche |
-| `haproxy-etc` | `/etc/haproxy` | `/etc/haproxy` (nur lesend) | | `haproxy.cfg`, `certs/`, `errors/`, `hapm-lock/`, Sicherungen |
-| `haproxy-run` | `/run/haproxy` | `/run/haproxy` | | `admin.sock` (Stats), `master.sock` (Neuladen) |
-| `haproxy-log` | `/var/log/haproxy` | | | `haproxy.log`, der Mitschnitt für die Statistik |
-| `acme` | `/root/.acme.sh` | | | acme.sh, Konto, Zertifikate, Erneuerungseinträge |
-| `postgres-data` | | | `/var/lib/postgresql/data` | Die Datenbank: Konten, Sitzungen, Passkeys, Einstellungen, Protokoll, Statistik |
-| `postgres-run` | `/var/run/postgresql` | | `/var/run/postgresql` | Der Unix-Socket von Postgres, sonst nichts |
+| `hapm/` | `/data` | | | `secrets.json`, Zähler der Anmeldeversuche |
+| `haproxy/` | `/etc/haproxy` | `/etc/haproxy` (nur lesend) | | `haproxy.cfg`, `certs/`, `errors/`, `hapm-lock/`, Sicherungen |
+| `run/haproxy/` | `/run/haproxy` | `/run/haproxy` | | `admin.sock` (Stats), `master.sock` (Neuladen) |
+| `log/` | `/var/log/haproxy` | | | `haproxy.log`, der Mitschnitt für die Statistik |
+| `acme/` | `/root/.acme.sh` | | | acme.sh, Konto, Zertifikate, Erneuerungseinträge |
+| `postgres/` | | | `/var/lib/postgresql/data` | Die Datenbank: Konten, Sitzungen, Passkeys, Einstellungen, Protokoll, Statistik |
+| `run/postgres/` | `/var/run/postgresql` | | `/var/run/postgresql` | Der Unix-Socket von Postgres, sonst nichts |
+
+**Ordner statt Docker-Volumes**, damit auf dem Server sichtbar ist, wo alles
+liegt, und damit sich der Ort wählen lässt (eine eigene Platte, ein Ordner, den
+ohnehin jemand sichert). Die Sockets liegen mit darin: das geht, weil der
+Ordner auf einem Linux-Dateisystem liegt. `docker-compose.dev.yml` und
+`scripts/verify/compose.yml` bleiben bei Volumes, unter Docker Desktop trägt ein
+eingebundener Ordner des Rechners keinen Unix-Socket.
+
+**`install.sh`** legt den Ordner nur für root lesbar an (dort liegen private
+Schlüssel, die Container brauchen den Zugang von außen nicht) und schreibt eine
+Kennung hinein (`.hapm-storage`). An ihr erkennt `--uninstall`, dass der Ordner
+HAPM gehört. Gelöscht werden dort nur die Unterordner aus der Tabelle: liegt
+daneben etwas anderes, etwa ein Ordner mit Sicherungen, bleibt es liegen. Ein
+Abbild entfernt `--uninstall` nur, wenn kein anderer Container daraus läuft,
+und fragt das vorher ab: trägt ein Abbild zwei Namen, löst `docker image rm`
+den einen auch dann, wenn ein fremder Container unter ihm läuft.
+
+**Umzug aus 0.2.0.** Bis dahin lagen die Daten in Docker-Volumes (`hapm_data`,
+`hapm_haproxy-etc`, …). Findet `install.sh` das Volume `hapm_postgres-data` und
+noch keine Datenbank im Ordner, hält es den Stack an und kopiert die Volumes
+hinein, bevor es mit der neuen `docker-compose.yml` startet. Die Volumes bleiben
+liegen, bis jemand sie löscht. Wer von Hand aktualisiert (`docker compose pull`
+mit neuer `docker-compose.yml`), ohne das Skript, stünde vor einem leeren HAPM.
 
 Dieselben Pfade in HAPM und HAProxy sind der Punkt: `lib/haproxy/` schreibt
 `/etc/haproxy/haproxy.cfg.hapm-new` und lässt `haproxy -c -f` darauf laufen,
@@ -47,7 +74,7 @@ anderen Daten von HAPM dort (`lib/db/`).
 
 **Kein Netz, kein Port, kein Passwort.** Der Container läuft mit
 `network_mode: none`, Postgres lauscht nur auf seinem Unix-Socket
-(`listen_addresses=''`). Der Socket liegt im Volume `postgres-run`, das HAPM
+(`listen_addresses=''`). Der Socket liegt im Ordner `run/postgres`, den HAPM
 unter demselben Pfad einbindet. Wer den Socket erreicht, ist HAPM, deshalb
 `POSTGRES_HOST_AUTH_METHOD: trust`: ein Passwort schützte hier vor niemandem
 und wäre nur ein Wert mehr, der in einer Umgebungsvariable steht. Von außen
@@ -159,11 +186,54 @@ Der HAProxy-Container wartet in Compose auf `service_healthy` von HAPM, und der
 Healthcheck (`/api/health`) antwortet erst nach diesen Schritten. Das Ergebnis
 steht in der Übersicht.
 
-Was danach der Benutzer tut, in dieser Reihenfolge: das erste Konto anlegen,
-unter „Reverse-Proxy" eine Gruppe anlegen, in der Gruppe das erste Ziel. Eine
-Gruppe ist ein Marker-Paar in `haproxy.cfg`, und jedes Ziel steht in einer.
-Solange es keine gibt, führen Übersicht und die Seite „Reverse-Proxy" zum
-Anlegen der ersten.
+Was danach der Benutzer tut, führt der Assistent unter `/setup` (nächster
+Abschnitt). Wer ihn überspringt, legt unter „Reverse-Proxy" selbst eine Gruppe
+an und in der Gruppe das erste Ziel. Eine Gruppe ist ein Marker-Paar in
+`haproxy.cfg`, und jedes Ziel steht in einer. Solange es keine gibt, führen
+Übersicht und die Seite „Reverse-Proxy" zum Anlegen der ersten.
+
+### Der Assistent: `/setup`, `lib/setup/`
+
+Fünf Schritte in einer Seite. Nach dem ersten besteht das Konto, alles danach
+sind angemeldete Aufrufe unter `/api/setup/*` und darf scheitern oder liegen
+bleiben.
+
+1. **Konto** und die Adresse für Let's Encrypt (`POST /api/setup`, ohne Sitzung
+   und nur, solange es kein Konto gibt).
+2. **Erreichbarkeit:** nur im eigenen Netz oder aus dem Internet. Die Wahl steht
+   sofort in den Einstellungen (`exposure`). An ihr hängt, ob Zertifikate über
+   HTTP-01 oder immer über DNS-01 ausgestellt werden, siehe
+   [`reverse-proxy.md`](reverse-proxy.md), „Interne Installation".
+3. **DNS-Anbieter** (Hetzner, Cloudflare). Intern Pflicht, öffentlich nur für
+   Wildcards nötig und überspringbar. Der Token wird dem Anbieter einmal
+   vorgezeigt (`lib/setup/token-check.ts`) und geht dann über denselben Weg wie
+   unter Reverse-Proxy, Einstellungen nach `account.conf`. HAPM speichert ihn
+   nicht. Lehnt der Anbieter ihn ab, wird nichts abgelegt.
+4. **Adresse der Oberfläche:** die Domain für HAPM, auf Wunsch mit einem
+   Wildcard-Zertifikat für die Basis darüber. Den DNS-Eintrag auf diesen Server
+   legt der Benutzer selbst an. Die Seite fragt das DNS, worauf die Domain
+   zeigt, und sagt das Ergebnis. Aufgehalten wird damit niemand.
+5. **Ausführen** (`lib/setup/run.ts`): Gruppe `HAPM`, Zertifikat, Ziel `hapm`
+   auf `127.0.0.1:<PORT>`, `publicUrl`. Jeder Schritt ist ein gewöhnlicher Lauf
+   mit derselben Vorabprüfung wie in der Oberfläche und steht in der Historie.
+
+**Der Zustand liegt in der Datenbank**, in einer Zeile der Collection
+`setup_state`: Art, gewählter Hook, Domain, Wildcard und der Stand des
+Ausführens. Welcher Schritt dran ist, wird daraus abgeleitet (`resumeStep`) und
+nicht gespeichert. Ein Neuladen oder eine Rückkehr nach Tagen landet deshalb
+dort, wo noch etwas fehlt.
+
+**Scheitern ist kein Ende.** Jeder Schritt des Ausführens fragt zuerst die
+Maschine, ob er schon getan ist. Nach einem falschen Token wird dieselbe Folge
+noch einmal gestartet, und Gruppe oder Zertifikat werden vorgefunden. Die Folge
+läuft im Prozess: nach einem Neustart von HAPM gilt sie als abgebrochen und
+lässt sich erneut starten.
+
+**Offen, abgeschlossen, übersprungen** (`setupStatus` in den Einstellungen).
+Solange die Einrichtung offen ist, steht oben in der Übersicht eine Fläche, die
+zurück in den Assistenten führt. Eine Installation, die es vor dem Assistenten
+gab, trägt keinen Wert und gilt als abgeschlossen. Unter „Allgemein" lässt sich
+die Art umstellen und die Einrichtung erneut öffnen.
 
 ## Updates: `lib/updates/`
 
@@ -306,28 +376,38 @@ Nicht im Archiv: das Zugriffsprotokoll und die Abbilder.
 ### Zurückspielen
 
 HAPM spielt eine Sicherung nicht selbst zurück: dafür muss der Stack stehen,
-in dem es läuft. Auf einem leeren Server, mit `docker-compose.yml` im Ordner
-`hapm` (die Volumes heißen dann `hapm_…`):
+in dem es läuft. Auf einem Server mit Docker, auf dem HAPM noch nicht läuft, in
+einem leeren Ordner mit `docker-compose.yml` (hier `/opt/hapm`):
 
 ```bash
-# 1. Alles anlegen, aber nur die Datenbank starten
-docker compose up --no-start
-docker compose start postgres
+cd /opt/hapm
 
-# 2. Die Datenbank einspielen
-docker run --rm -v /srv/hapm-backup:/b:ro alpine tar -xzOf /b/hapm-backup-JJJJMMTT-HHMMSS.tar.gz ./database.sql \
-  | docker exec -i hapm-postgres psql -U hapm -d hapm -q -v ON_ERROR_STOP=1
+# 1. Das Archiv auspacken
+mkdir /tmp/hapm-restore
+tar -xzf /srv/hapm-backup/hapm-backup-JJJJMMTT-HHMMSS.tar.gz -C /tmp/hapm-restore
 
-# 3. Schlüssel, HAProxy und acme.sh in die Volumes legen
-docker run --rm -v /srv/hapm-backup:/b:ro \
-  -v hapm_data:/data -v hapm_haproxy-etc:/etc/haproxy -v hapm_acme:/root/.acme.sh alpine sh -c \
-  'mkdir /r && tar -xzf /b/hapm-backup-JJJJMMTT-HHMMSS.tar.gz -C /r && cp -a /r/data/. /data/ && cp -a /r/haproxy/. /etc/haproxy/ && cp -a /r/.acme.sh/. /root/.acme.sh/'
+# 2. Nur die Datenbank starten und einspielen
+docker compose up -d --wait postgres
+docker exec -i hapm-postgres psql -U hapm -d hapm -q -v ON_ERROR_STOP=1 < /tmp/hapm-restore/database.sql
+
+# 3. Schlüssel, HAProxy und acme.sh in den Ordner der Daten legen
+mkdir -p data/hapm data/haproxy data/acme
+cp -a /tmp/hapm-restore/data/. data/hapm/
+cp -a /tmp/hapm-restore/haproxy/. data/haproxy/
+cp -a /tmp/hapm-restore/.acme.sh/. data/acme/
+rm -rf /tmp/hapm-restore
 
 # 4. Starten
 docker compose up -d
 ```
 
-Geprüft im November 2026 gegen den ganzen Stack: alle Volumes gelöscht,
+Die Namen im Archiv sind die aus dem Container (`data/`, `haproxy/`,
+`.acme.sh/`), die Unterordner auf dem Server heißen `hapm/`, `haproxy/` und
+`acme/`: daher das Kopieren Stück für Stück. HAPM darf erst starten, wenn die
+Datenbank eingespielt ist, sonst legt es eine frische an.
+
+Geprüft im November 2026 gegen den ganzen Stack: mit `install.sh --uninstall`
+alles entfernt,
 zurückgespielt, danach Anmeldung, Ziele und das ausgestellte Zertifikat wieder
 da. Der Lauf, aus dem das Archiv stammt, steht nach dem Zurückspielen als
 abgebrochen in der Historie: der Stand der Datenbank wurde mitten in ihm

@@ -3,6 +3,7 @@ import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
 import { getClientIP } from '@/lib/audit';
 import { getProxyServer, probeProxy, precheckCreate } from '@/lib/haproxy/provision';
 import { startHaproxyRun } from '@/lib/haproxy/runner';
+import { getSettings } from '@/lib/settings';
 import { selectedDnsDomains } from '@/lib/dns/zones';
 import { readServiceRequest } from '@/lib/haproxy/password-lock';
 import {
@@ -18,6 +19,7 @@ import {
 } from '@/lib/haproxy/config';
 import type { HaproxyStream } from '@/lib/haproxy/streams';
 import { LOCAL_SERVER_ID, localServer } from '@/lib/helpers';
+import type { Exposure } from '@/lib/types';
 
 /**
  * Die Reverse-Proxy-Ziele.
@@ -43,6 +45,9 @@ interface ProxyRow {
    *  Zone bedient, steht nur in acme.sh. Leer heißt: keine Wildcard möglich,
    *  und der Dialog sagt das, statt es beim Speichern zu melden. */
   dnsHooks: string[];
+  /** Intern oder öffentlich. Bei `internal` geht jedes Zertifikat über DNS-01,
+   *  und das Formular zeigt die Auswahl des Hooks auch ohne Wildcard. */
+  exposure: Exposure;
   services: HaproxyService[];
   /** Die Gruppen: die Marker-Paare der Konfiguration. */
   scopes: HaproxyScopeInfo[];
@@ -73,12 +78,13 @@ export async function GET() {
     await requireSession();
 
     const servers = [localServer()];
+    const { exposure } = await getSettings();
 
     // Ein Fehler steht in der Zeile und wirft nicht: HAProxy, das gerade nicht
     // antwortet, ist eine Auskunft.
     const rows: ProxyRow[] = await Promise.all(
       servers.map(async (server) => {
-        const base = { $id: server.$id, name: server.name, host: server.host };
+        const base = { $id: server.$id, name: server.name, host: server.host, exposure };
         try {
           const probe = await probeProxy(server);
           if (!probe.configReadable) {
@@ -178,9 +184,11 @@ export async function POST(request: Request) {
     // Nicht Teil der Eingabe: der Hook steht in keiner Zeile der Konfiguration,
     // siehe `RunOptions.dnsHook`.
     const dnsHook = String(body.dnsHook ?? '').trim() || null;
+    // Intern oder öffentlich: davon hängt ab, ob HTTP-01 überhaupt geht (`challenge.ts`).
+    const challenge = { exposure: (await getSettings()).exposure, dnsHook };
 
     try {
-      await precheckCreate(server, input, dnsHook);
+      await precheckCreate(server, input, challenge);
     } catch (err) {
       // Ein Namens- oder Domainkonflikt ist eine Auskunft an den Benutzer und
       // kein 500er.
@@ -193,7 +201,7 @@ export async function POST(request: Request) {
       action: 'create',
       serviceId: input.id,
       input,
-      dnsHook,
+      challenge,
       dns: { ensure: selectedDnsDomains(body.dnsDomains, input.domains) },
       actor: { userId: session.userId, email: session.email, ip: getClientIP(request) },
     });

@@ -55,6 +55,7 @@ const RUN_ACTION_LABELS: Record<HaproxyAction, string> = {
   'stream-create': 'Weiterleitung anlegen',
   'stream-update': 'Weiterleitung ändern',
   'stream-delete': 'Weiterleitung entfernen',
+  certificate: 'Zertifikat ausstellen',
 };
 
 function formatWhen(value: Date | string): string {

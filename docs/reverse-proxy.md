@@ -609,7 +609,8 @@ Bequemlichkeit, sondern die Bedingung.
 **Ist genau ein Hook eingerichtet, steht er im Dialog vorausgewählt** und die
 Auswahl trägt kein „Bitte wählen". Abgeleitet und nicht in den Zustand
 geschrieben: die Hook-Liste kommt mit der Probe, und ein Wert, den ein
-Effekt nachziehen müsste, stünde genau einen Render lang falsch da.
+Effekt nachziehen müsste, stünde genau einen Render lang falsch da. Die Route
+verlangt ihn in dem Fall auch nicht: fehlt `dnsHook`, nimmt sie den einen.
 
 **Ein Wildcard-Zertifikat gehört nicht EINEM Dienst.** „Ein Zertifikat entsteht
 und vergeht mit seinem Dienst" trägt hier nicht: `app.kunde.example` und
@@ -658,6 +659,81 @@ gesperrt" über die **Länge** beider Listen wäre deshalb falsch: `domains: ['*
 `lockedDomains: ['intern.kunde.example']` sind beide einelementig und meinen das
 Gegenteil voneinander — über die Länge gegangen wäre der ganze Dienst gesperrt
 statt einer einzigen Adresse. `locksEveryDomain` vergleicht die Mengen.
+
+### Interne Installation: DNS-01 für jedes Zertifikat
+
+Eine Installation ist entweder **öffentlich** oder **intern** (`exposure` in den
+Einstellungen, gewählt in der Einrichtung, umschaltbar unter „Allgemein").
+Intern heißt: Let's Encrypt erreicht den Server nicht. HTTP-01 scheiterte dort
+bei jeder Domain, und jeder Fehlversuch zählt gegen das Kontingent. Also geht
+dort **jedes** Zertifikat über DNS-01, nicht nur die Wildcard.
+
+- **Die Regel steht an einer Stelle** (`lib/haproxy/challenge.ts`,
+  `planChallenge`): DNS-01, wenn eine Wildcard dabei ist **oder** die
+  Installation intern ist, sonst HTTP-01. Sie ist rein, und
+  `tests/haproxy/challenge.test.ts` rechnet jede Kombination aus Art, Wildcard
+  und Zahl der Hooks nach.
+- **`provision.ts` liest die Einstellungen nicht.** Die Art kommt als Parameter
+  des Vorgangs herein (`ChallengeChoice`: `exposure` und der gewählte Hook),
+  aufgelöst in den Routen, weitergereicht vom Runner. Mitten in einem Vorgang,
+  der HAProxy schreibt, wird keine Datenbank gefragt, und die Regel bleibt ohne
+  sie prüfbar. Der Runner hat dafür **keine Vorgabe**: ein Lauf, der ein
+  Zertifikat ausstellen kann und die Angabe nicht trägt, scheitert, statt auf
+  einer internen Installation still HTTP-01 zu versuchen.
+- **Der Hook ergibt sich, wenn es nur einen gibt.** Ist genau einer
+  eingerichtet, wird er genommen, ohne dass der Aufrufer ihn nennt. Sind es
+  mehrere, muss er gewählt sein: welcher Anbieter die Zone führt, lässt sich
+  nicht raten. Ein genannter Hook, der nicht eingerichtet ist, wird abgelehnt,
+  auch wenn genau ein anderer da wäre. Das gilt für Wildcards genauso, und für
+  `/api/internal/haproxy/services` wie für die Oberfläche.
+- **Ohne Hook sagt die Vorabprüfung, was fehlt**: bei einer internen
+  Installation, dass sie intern ist und unter Reverse-Proxy, Einstellungen die
+  DNS-Zugangsdaten fehlen. Eine Meldung über Wildcards wäre dort falsch.
+- **Das Formular zeigt die Auswahl nur, wenn es etwas zu wählen gibt.** Ohne
+  Wildcard steht in einer internen Installation ein Satz („das Zertifikat wird
+  über DNS ausgestellt") und die Auswahl erst ab zwei Hooks. Sonst ginge sie bei
+  jedem Ziel auf und zeigte immer denselben Eintrag. Was das Formular nicht
+  zeigt, schickt es nicht: ohne Auswahl bleibt `dnsHook` leer, und die Route
+  nimmt den einen Hook selbst. Die Art kennt das Formular aus
+  `/api/haproxy/services` (`exposure` je Proxy).
+- **Die Erneuerung bleibt unberührt.** acme.sh merkt sich die Methode je
+  Zertifikat in dessen Erneuerungseintrag. Wer die Art umstellt, ändert nur
+  künftige Anträge: ein über HTTP-01 ausgestelltes Zertifikat wird weiter über
+  HTTP-01 erneuert. Das steht auch auf der Seite „Allgemein" neben dem Schalter.
+
+**Die Anbieter heißen so, wie das mitgelieferte acme.sh sie führt.** Hetzner
+ist `dns_hetznercloud` mit `HETZNER_TOKEN` (ein Token aus der Hetzner-Konsole,
+Lesen und Schreiben). Den früheren Hook `dns_hetzner` gibt es in acme.sh nicht
+mehr: ein Eintrag darunter speicherte scheinbar erfolgreich, und kein Hook galt
+danach als eingerichtet. `tests/haproxy/dns-credentials.test.ts` lässt deshalb
+eine echte Bash schreiben **und** erkennen und besteht darauf, dass der erkannte
+Hook der des Anbieters ist. Der Hetzner-Hook legt beim ersten Antrag selbst
+weitere `SAVED_*`-Zeilen ab (API-Adresse, TTL). Beim Entfernen gehen sie mit
+(`alsoSaved`), sonst gälte der Hook ohne Token weiter als eingerichtet.
+
+### Ein Zertifikat ohne Ziel
+
+`issueCertificate` (`provision.ts`) stellt ein Zertifikat aus, ohne dass ein
+Ziel dazu entsteht. Der Fall ist die Wildcard aus der Einrichtung:
+`example.org` samt `*.example.org` wird einmal ausgestellt, und jedes Ziel
+darunter findet es danach vor (`findCertificateFor`), statt ein eigenes zu
+beantragen.
+
+- **Derselbe Antrag, derselbe Deploy-Hook.** Es ist `issueAndDeploy`, wie beim
+  Anlegen eines Ziels, nur ohne die Konfiguration: `haproxy.cfg` nennt kein
+  einzelnes Zertifikat, HAProxy lädt das Verzeichnis, und der Deploy-Hook lädt
+  neu. Auch hier wird erst nachgesehen und nur beantragt, was fehlt.
+- **Ein abgekoppelter Lauf wie die anderen** (`action: 'certificate'`), mit
+  Vorabprüfung (`precheckCertificate`), Schritten und einer Zeile in der
+  Historie. In `serviceId` steht die Hauptdomain, in `domains` alle.
+- **Die Basis steht vorn, die Wildcard dahinter.** Die erste Domain benennt
+  Erneuerungseintrag und PEM-Datei, und `example.org.pem` ist der Name, den man
+  beim Nachsehen erwartet.
+- **Abgeräumt wird es wie jedes andere:** es bleibt, solange ein Ziel es
+  braucht (`certificateUsers`). Braucht es keines, steht es auf der
+  Zertifikatsseite mit leerer Spalte „Benutzt von".
+- Eine eigene Route dafür gibt es nicht. Aufgerufen wird es aus der Einrichtung
+  (`lib/setup/run.ts`).
 
 ### Die Zertifikatsseite: `/reverse-proxy/zertifikate`
 

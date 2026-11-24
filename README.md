@@ -15,8 +15,11 @@ Zertifikate von Let's Encrypt richtet HAPM selbst ein.
   dahinter, auf Wunsch nur für bestimmte Absender.
 - **Gruppen:** Ziele stehen in Gruppen, etwa „Websites" und „Intern". Jede
   Gruppe hat ihre eigene Seite.
+- **Einrichtung mit Assistent:** Konto, Art der Installation, DNS-Anbieter und
+  die Adresse der Oberfläche. Am Ende ist HAPM selbst per HTTPS erreichbar.
 - **Zertifikate:** Let's Encrypt über acme.sh, automatisch erneuert. Wildcards
-  über DNS-01 (Zugangsdaten des DNS-Anbieters in den Einstellungen).
+  über DNS-01 (Hetzner oder Cloudflare). Für Server, die nur im eigenen Netz
+  stehen, läuft jedes Zertifikat über DNS-01.
 - **Sperren:** einzelne Domains nur für bestimmte Adressen oder hinter einer
   Passwortabfrage, die HAProxy selbst ausliefert.
 - **DNS:** Zonen bei Cloudflare anbinden und den Eintrag zu einem Ziel gleich
@@ -56,20 +59,48 @@ Auf einem frischen Debian oder Ubuntu, als root:
 curl -fsSL https://raw.githubusercontent.com/tjorvenhu/HAPM/main/install.sh | sh
 ```
 
-Das Skript installiert Docker samt Compose-Plugin, wenn es fehlt, legt
-`/opt/hapm` an, holt `docker-compose.yml`, startet HAPM und nennt am Ende die
-Adresse der Oberfläche. Lauscht auf Port 80 oder 443 schon ein anderer
-Webserver, bricht es ab und nennt ihn. Ein zweiter Lauf holt neue Abbilder und
-startet neu, ohne Daten oder Einstellungen anzufassen.
+Das Skript installiert Docker samt Compose-Plugin, wenn es fehlt, fragt nach dem
+Ordner der Installation (Vorgabe `/opt/hapm`), holt `docker-compose.yml`,
+startet HAPM und nennt am Ende die Adresse der Oberfläche. Lauscht auf Port 80
+oder 443 schon ein anderer Webserver, bricht es ab und nennt ihn. Ein zweiter
+Lauf holt neue Abbilder und startet neu, ohne Daten oder Einstellungen
+anzufassen.
 
-| Variable | Vorgabe | Bedeutung |
-|---|---|---|
-| `HAPM_DIR` | `/opt/hapm` | Ordner der Installation |
-| `HAPM_PORT` | `7080` | Port der Oberfläche |
-| `HAPM_IMAGE` | siehe `docker-compose.yml` | ein anderes Abbild von HAPM |
-| `HAPM_FORCE` | | mit `1` auch starten, wenn Port 80 oder 443 belegt ist |
+Alles liegt in einem Ordner: `docker-compose.yml` und `.env` in `/opt/hapm`,
+die Daten (Konfiguration, Zertifikate, Datenbank) darunter in `data/`. Beides
+lässt sich angeben:
 
-Mit einer Variable: `curl -fsSL … | HAPM_PORT=9000 sh`.
+| Angabe | Variable | Vorgabe | Bedeutung |
+|---|---|---|---|
+| `--dir ORDNER` | `HAPM_DIR` | `/opt/hapm` | Ordner der Installation |
+| `--storage ORDNER` | `HAPM_STORAGE` | `<dir>/data` | Ordner der Daten, wenn sie woanders liegen sollen, etwa auf einer eigenen Platte |
+| `--port PORT` | `HAPM_PORT` | `7080` | Port der Oberfläche |
+| `--image ABBILD` | `HAPM_IMAGE` | siehe `docker-compose.yml` | ein anderes Abbild von HAPM |
+| `--force` | `HAPM_FORCE=1` | | auch starten, wenn Port 80 oder 443 belegt ist |
+| `--yes` | `HAPM_YES=1` | | nichts nachfragen, die Vorgaben nehmen |
+
+Mit einer Angabe:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/tjorvenhu/HAPM/main/install.sh | sh -s -- --dir /srv/hapm --port 9000
+```
+
+Wo die Daten liegen, entscheidet die erste Installation. Ein späterer Lauf
+ändert das nicht. Zum Umziehen: `docker compose down`, den Ordner verschieben,
+`HAPM_STORAGE` in `.env` ändern, `docker compose up -d`.
+
+### Wieder entfernen
+
+```bash
+sh /opt/hapm/install.sh --uninstall
+```
+
+Das entfernt alles, was zu HAPM gehört: die Container, ihre Abbilder, die Daten
+und den Ordner der Installation. Vorher zeigt das Skript, was es entfernt, und
+fragt nach. Docker und alle anderen Container bleiben. Ein Abbild, das ein
+anderer Container braucht, bleibt ebenfalls, und Sicherungen in einem eigenen
+Ordner fasst das Skript nicht an. Mit `--keep-data` bleiben die Daten liegen,
+mit `--yes` entfällt die Rückfrage.
 
 ### Von Hand auf einem frischen Debian
 
@@ -96,25 +127,49 @@ curl -fsSLO https://raw.githubusercontent.com/tjorvenhu/HAPM/main/docker-compose
 docker compose up -d
 ```
 
+Die Daten liegen dann in `/opt/hapm/data`. Ein anderer Ordner: vor dem Start
+`HAPM_STORAGE=/pfad` in eine Datei `.env` daneben schreiben.
+
 ### Nach der Installation
-Danach `http://<adresse-des-servers>:7080` öffnen. Die ersten Schritte:
 
-1. Das erste Konto anlegen.
-2. Unter „Reverse-Proxy" eine Gruppe anlegen. Eine Gruppe fasst Ziele zusammen,
-   etwa „Websites" oder „Intern". Jedes Ziel gehört in eine Gruppe, eine frische
-   Installation hat noch keine.
-3. In der Gruppe das erste Ziel anlegen: die Domain und die Adresse des Dienstes
-   dahinter. Das Zertifikat stellt HAPM dabei aus. Die Domain muss dafür schon
-   auf den Server zeigen.
+`http://<adresse-des-servers>:7080` öffnen. Ein Assistent führt in fünf
+Schritten durch die Einrichtung:
 
-Die Oberfläche spricht zunächst unverschlüsselt auf Port 7080. Zwei Dinge sind
-deshalb als Erstes sinnvoll:
+1. **Konto.** Das erste Konto, mit dem HAPM verwaltet wird.
+2. **Erreichbarkeit.** Steht der Server nur im eigenen Netz, oder ist er aus dem
+   Internet erreichbar? Davon hängt ab, wie Zertifikate ausgestellt werden: aus
+   dem Internet prüft Let's Encrypt jede Domain über Port 80. Im eigenen Netz
+   erreicht Let's Encrypt den Server nicht, dort läuft jedes Zertifikat über den
+   DNS-Anbieter.
+3. **DNS-Anbieter.** Hetzner oder Cloudflare, mit einem API-Token. Im eigenen
+   Netz ist der Schritt Pflicht. Bei einem Server im Internet lässt er sich
+   überspringen: er wird nur für Wildcard-Zertifikate gebraucht.
+4. **Adresse der Oberfläche.** Die Domain, unter der HAPM erreichbar sein soll,
+   etwa `hapm.example.org`. Den DNS-Eintrag dafür legt man selbst an, HAPM zeigt,
+   welchen. Mit einem DNS-Anbieter gibt es auf Wunsch gleich ein
+   Wildcard-Zertifikat für `*.example.org`: weitere Ziele unter dieser Domain
+   brauchen dann kein eigenes.
+5. **Einrichten.** HAPM legt die Gruppe „HAPM" an, stellt das Zertifikat aus und
+   trägt sich selbst als Ziel ein. Danach ist die Oberfläche per HTTPS
+   erreichbar.
+
+Scheitert ein Schritt, etwa an einem falschen Token oder einem fehlenden
+DNS-Eintrag, bleibt das Konto bestehen. Die Eingaben lassen sich ändern und der
+Schritt wiederholen, oder die Einrichtung wird später fortgesetzt: die Übersicht
+erinnert daran. Unter „Allgemein" lässt sich die Art der Installation später
+umstellen und die Einrichtung erneut öffnen.
+
+Solange keine Adresse eingerichtet ist, spricht die Oberfläche unverschlüsselt
+auf Port 7080. In jedem Fall sinnvoll:
 
 1. Port 7080 in der Firewall nur für die eigene Adresse öffnen.
-2. HAPM selbst als Ziel anlegen: eine Domain auf `127.0.0.1:7080`. Dann gibt es
-   die Oberfläche über HTTPS mit Zertifikat, und sie lässt sich auf bestimmte
-   Adressen beschränken. Mit `HAPM_BIND=127.0.0.1` in `.env` ist Port 7080 danach
+2. Sobald die Oberfläche über ihre Domain erreichbar ist: `HAPM_BIND=127.0.0.1`
+   in `.env` setzen und `docker compose up -d` ausführen. Port 7080 ist danach
    von außen nicht mehr erreichbar.
+
+Weitere Ziele entstehen unter „Reverse-Proxy". Jedes Ziel gehört in eine Gruppe,
+etwa „Websites" oder „Intern". Wer die Einrichtung überspringt, legt dort zuerst
+eine Gruppe an: eine frische Installation hat keine.
 
 ### Einstellungen in `.env`
 
@@ -124,6 +179,7 @@ Alle Angaben sind freiwillig, siehe [`.env.example`](.env.example).
 |---|---|---|
 | `HAPM_PORT` | `7080` | Port der Oberfläche |
 | `HAPM_BIND` | `0.0.0.0` | Adresse, auf der die Oberfläche lauscht. Mit `127.0.0.1` ist sie nur noch über HAProxy erreichbar |
+| `HAPM_STORAGE` | `./data` | Ordner der Daten auf dem Server: Konfiguration, Zertifikate, Datenbank |
 | `TZ` | `Europe/Berlin` | Zeitzone |
 | `HAPM_ACME_SERVER` | `letsencrypt` | Zertifizierungsstelle. `letsencrypt_test` stellt Testzertifikate aus und schont das Kontingent |
 | `HAPROXY_IMAGE` | `haproxy:lts` | Abbild von HAProxy. `haproxy:latest` folgt dem neuesten Zweig |
@@ -135,8 +191,11 @@ Alle Angaben sind freiwillig, siehe [`.env.example`](.env.example).
   TCP-Weiterleitungen auf beliebigen Ports. Es geht nur unter Linux.
 - **Die Datenbank ist ein dritter Container** (`postgres:17-alpine`). Er hat
   kein Netz und keinen Port: HAPM erreicht ihn über einen Unix-Socket in einem
-  geteilten Volume. Die Hauptversion steht fest, ein Wechsel auf die nächste
+  geteilten Ordner. Die Hauptversion steht fest, ein Wechsel auf die nächste
   braucht einen Umzug der Daten.
+- **Alle Daten liegen in einem Ordner auf dem Server** (`data/` neben
+  `docker-compose.yml`, oder `HAPM_STORAGE`). Dort liegen private Schlüssel.
+  Das Installationsskript legt den Ordner so an, dass nur root ihn lesen kann.
 - **HAPM bindet den Docker-Socket ein.** Darüber prüft es die Konfiguration im
   HAProxy-Container, liest dessen Log und spielt Updates ein. Der Socket gibt
   vollen Zugriff auf Docker. Wer sich an HAPM anmelden kann, hat damit Zugriff
@@ -156,23 +215,27 @@ Alle Angaben sind freiwillig, siehe [`.env.example`](.env.example).
 
 Unter „Sicherung" schreibt HAPM täglich oder auf Knopfdruck ein Archiv in einen
 Ordner auf dem Server: Datenbank, Schlüssel, `/etc/haproxy` mit Zertifikaten,
-acme.sh. Zurückgespielt wird von Hand, auf einem leeren Server mit
-`docker-compose.yml` im Ordner `hapm` (hier mit `/srv/hapm-backup` als Ordner der
-Sicherungen):
+acme.sh. Zurückgespielt wird von Hand, auf einem Server mit Docker, auf dem HAPM
+noch nicht läuft. In einem leeren Ordner mit `docker-compose.yml` (hier
+`/opt/hapm`, mit `/srv/hapm-backup` als Ordner der Sicherungen):
 
 ```bash
-# 1. Alles anlegen, aber nur die Datenbank starten
-docker compose up --no-start
-docker compose start postgres
+cd /opt/hapm
 
-# 2. Die Datenbank einspielen
-docker run --rm -v /srv/hapm-backup:/b:ro alpine tar -xzOf /b/hapm-backup-JJJJMMTT-HHMMSS.tar.gz ./database.sql \
-  | docker exec -i hapm-postgres psql -U hapm -d hapm -q -v ON_ERROR_STOP=1
+# 1. Das Archiv auspacken
+mkdir /tmp/hapm-restore
+tar -xzf /srv/hapm-backup/hapm-backup-JJJJMMTT-HHMMSS.tar.gz -C /tmp/hapm-restore
 
-# 3. Schlüssel, HAProxy und acme.sh in die Volumes legen
-docker run --rm -v /srv/hapm-backup:/b:ro \
-  -v hapm_data:/data -v hapm_haproxy-etc:/etc/haproxy -v hapm_acme:/root/.acme.sh alpine sh -c \
-  'mkdir /r && tar -xzf /b/hapm-backup-JJJJMMTT-HHMMSS.tar.gz -C /r && cp -a /r/data/. /data/ && cp -a /r/haproxy/. /etc/haproxy/ && cp -a /r/.acme.sh/. /root/.acme.sh/'
+# 2. Nur die Datenbank starten und einspielen
+docker compose up -d --wait postgres
+docker exec -i hapm-postgres psql -U hapm -d hapm -q -v ON_ERROR_STOP=1 < /tmp/hapm-restore/database.sql
+
+# 3. Schlüssel, HAProxy und acme.sh in den Ordner der Daten legen
+mkdir -p data/hapm data/haproxy data/acme
+cp -a /tmp/hapm-restore/data/. data/hapm/
+cp -a /tmp/hapm-restore/haproxy/. data/haproxy/
+cp -a /tmp/hapm-restore/.acme.sh/. data/acme/
+rm -rf /tmp/hapm-restore
 
 # 4. Starten
 docker compose up -d

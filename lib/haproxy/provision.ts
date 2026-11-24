@@ -55,7 +55,7 @@ import {
   type CreateServiceInput,
   type HaproxyService,
   type BackendServerState,
-  isWildcardDomain,
+  isValidDomain,
   usesLockPages,
   supportsPasswordLock,
   LOCK_PAGE_DIR,
@@ -100,10 +100,17 @@ import {
 import {
   findDnsProvider,
   credentialLines,
+  credentialNamesToClear,
   writeCredentialsCommand,
   validateDnsCredentials,
   type DnsCredentialInput,
 } from './dns-credentials';
+import {
+  planChallenge,
+  challengeArgs,
+  type ChallengeChoice,
+  type ChallengePlan,
+} from './challenge';
 import type { Server, HaproxyPhase } from '../types';
 
 /**
@@ -137,8 +144,11 @@ const ACME_PORT = '8888';
  * Ermittelt wird der Hook über seine eigene Variable: für jeden `SAVED_*`-Namen
  * in `account.conf` wird die `dnsapi/dns_*.sh` gesucht, die ihn liest. Damit
  * steht in diesem Code kein einziger Anbietername.
+ *
+ * Exportiert für `tests/haproxy/dns-credentials.test.ts`: dort rechnet eine
+ * echte Bash nach, dass geschriebene Zugangsdaten auch erkannt werden.
  */
-const DNS_HOOK_PROBE = [
+export const DNS_HOOK_PROBE = [
   'conf=/root/.acme.sh/account.conf; dir=/root/.acme.sh/dnsapi',
   'if [ -r "$conf" ] && [ -d "$dir" ]; then',
   '  sed -n "s/^SAVED_\\([A-Za-z0-9_]*\\)=.*/\\1/p" "$conf" | sort -u | while read -r v; do',
@@ -356,7 +366,7 @@ export async function writeDnsCredentials(
     const res = await sshExec(
       ssh,
       withStdin(
-        ['sh', '-c', writeCredentialsCommand(provider.fields.map((field) => field.name))],
+        ['sh', '-c', writeCredentialsCommand(credentialNamesToClear(provider, input.remove))],
         // Ohne abschließenden Zeilenumbruch klebte die erste neue Zeile an der
         // letzten der Datei, falls die keinen hatte.
         `${credentialLines(input).join('\n')}\n`
@@ -722,69 +732,32 @@ function pemPath(mainDomain: string): string {
 }
 
 /**
- * Wie die Challenge beantwortet wird.
+ * Ob sich für diese Domains überhaupt ein Zertifikat ausstellen lässt, und wie:
+ * geprüft, bevor irgendetwas geschrieben wird.
  *
- * `standalone` ist der bisherige Weg: acme.sh nimmt die HTTP-01-Anfrage auf
- * Port 8888 entgegen, HAProxy leitet sie dorthin. Für eine Wildcard geht das
- * nicht — Let's Encrypt stellt sie ausschließlich über DNS-01 aus, und daran
- * ändert keine Einstellung etwas.
- */
-function challengeArgs(domains: string[], dnsHook: string | null): string[] {
-  const wildcard = domains.some(isWildcardDomain);
-  if (!wildcard) return ['--standalone', '--httpport', ACME_PORT];
-  if (!dnsHook) {
-    // Kommt hier nur an, wenn die Vorabprüfung umgangen wurde. Ein Antrag ohne
-    // Challenge-Methode liefe in eine Meldung von acme.sh, die nicht sagt, was
-    // fehlt.
-    throw new ApiError('Für eine Wildcard-Domain wird ein DNS-Hook gebraucht.');
-  }
-  return ['--dns', dnsHook];
-}
-
-/**
- * Ob sich für diese Domains überhaupt ein Zertifikat ausstellen lässt — geprüft,
- * bevor irgendetwas geschrieben wird.
+ * Die Regel selbst steht in `challenge.ts` (HTTP-01, außer bei einer Wildcard
+ * oder einer internen Installation). Hier kommt dazu, was die Maschine sagt:
+ * ob acme.sh da ist und welche DNS-Hooks eingerichtet sind.
  *
- * Der Hook wird verlangt, sobald eine Wildcard dabei ist, auch wenn ein
- * passendes Zertifikat vielleicht schon auf der Maschine liegt. Das
- * nachzusehen wäre eine zweite Runde in jeder Vorabprüfung, für einen Fall,
- * den es nur gibt, wenn jemand ein Zertifikat ohne Dienst hinterlassen hat. Ist
- * es doch da, kostet der gewählte Hook nichts: `issueAndDeploy` beantragt dann
- * gar nicht erst.
+ * Der Hook wird verlangt, sobald DNS-01 nötig ist, auch wenn ein passendes
+ * Zertifikat vielleicht schon auf der Maschine liegt. Das nachzusehen wäre
+ * eine zweite Runde in jeder Vorabprüfung. Ist es doch da, kostet der Hook
+ * nichts: `issueAndDeploy` beantragt dann gar nicht erst.
  */
 function assertIssuable(
-  server: Server,
   probe: ProxyProbe,
   domains: string[],
-  dnsHook: string | null
-): void {
+  challenge: ChallengeChoice
+): ChallengePlan {
   if (!probe.acmeReady) {
     throw new ApiError(
       `acme.sh (${ACME}) oder das Zertifikatsverzeichnis (${HAPROXY_CERT_DIR}) fehlt. Ohne beides lässt sich ` +
         'kein Zertifikat ausstellen. HAPM legt beides beim Start an. Ob das geklappt hat, steht in der Übersicht.'
     );
   }
-  if (!domains.some(isWildcardDomain)) return;
-
-  if (probe.dnsHooks.length === 0) {
-    throw new ApiError(
-      "Eine Wildcard-Domain lässt Let's Encrypt nur über DNS-01 ausstellen, und dafür sind noch keine " +
-        'DNS-Zugangsdaten hinterlegt. Sie werden unter Einstellungen eingetragen. Einmal hinterlegt, ' +
-        'merkt acme.sh sie sich für jede Erneuerung.'
-    );
-  }
-  if (!dnsHook) {
-    throw new ApiError(
-      'Für eine Wildcard-Domain muss der DNS-Hook gewählt werden, der die Challenge setzt. ' +
-        `Eingerichtet: ${probe.dnsHooks.join(', ')}.`
-    );
-  }
-  if (!probe.dnsHooks.includes(dnsHook)) {
-    throw new ApiError(
-      `Der DNS-Hook "${dnsHook}" ist nicht eingerichtet. ` +
-        `Zur Auswahl stehen: ${probe.dnsHooks.join(', ')}.`
-    );
-  }
+  const plan = planChallenge(domains, challenge, probe.dnsHooks);
+  if (plan.method === 'unavailable') throw new ApiError(plan.message);
+  return plan;
 }
 
 /**
@@ -799,7 +772,7 @@ function assertIssuable(
 async function issueAndDeploy(
   ssh: Awaited<ReturnType<typeof getSSHConfig>>,
   domains: string[],
-  dnsHook: string | null,
+  plan: ChallengePlan,
   certs: AcmeCertificate[],
   steps: StepLog
 ): Promise<boolean> {
@@ -829,7 +802,7 @@ async function issueAndDeploy(
       '--issue',
       '--server',
       acmeServer(),
-      ...challengeArgs(domains, dnsHook),
+      ...challengeArgs(plan, ACME_PORT),
       '--keylength',
       'ec-256',
       ...domains.flatMap((domain) => ['-d', domain]),
@@ -849,7 +822,7 @@ async function issueAndDeploy(
   await steps.push({
     label: issue.code === 2 ? 'Zertifikat war noch gültig' : 'Zertifikat ausgestellt',
     ok: true,
-    detail: domains.join(', '),
+    detail: `${domains.join(', ')} (${plan.method === 'dns' ? `DNS-01 über ${plan.hook}` : 'HTTP-01'})`,
   });
 
   const deploy = await sshExec(
@@ -949,7 +922,7 @@ async function dropCertificate(
 export async function createService(
   server: Server,
   input: CreateServiceInput,
-  dnsHook: string | null,
+  challenge: ChallengeChoice,
   reporter?: ProvisionReporter
 ): Promise<ProvisionResult> {
   return withProxyLock(server.$id, async () => {
@@ -964,7 +937,7 @@ export async function createService(
         `${HAPROXY_CFG} ist nicht lesbar. Ob die Ersteinrichtung durchgelaufen ist, steht in der Übersicht.`
       );
     }
-    assertIssuable(server, probe, input.domains, dnsHook);
+    const plan = assertIssuable(probe, input.domains, challenge);
     assertLockSupported(server, probe, input);
 
     // Wirft bei doppelter ID oder belegter Domain — bevor irgendetwas passiert,
@@ -975,7 +948,7 @@ export async function createService(
     /* ── Zertifikat ── */
     await steps.phase('certificate');
     const certs = await probeCertificates(ssh);
-    if (!(await issueAndDeploy(ssh, input.domains, dnsHook, certs, steps))) {
+    if (!(await issueAndDeploy(ssh, input.domains, plan, certs, steps))) {
       return { steps: steps.steps };
     }
 
@@ -1136,7 +1109,7 @@ export async function updateService(
   server: Server,
   oldId: string,
   input: CreateServiceInput,
-  dnsHook: string | null,
+  challenge: ChallengeChoice,
   reporter?: ProvisionReporter
 ): Promise<ProvisionResult> {
   return withProxyLock(server.$id, async () => {
@@ -1174,12 +1147,12 @@ export async function updateService(
     const newMain = input.domains[0];
     const mainChanged = oldMain !== null && oldMain.toLowerCase() !== newMain.toLowerCase();
 
-    if (certNeeded) assertIssuable(server, probe, input.domains, dnsHook);
+    const plan = certNeeded ? assertIssuable(probe, input.domains, challenge) : null;
 
     await steps.phase('certificate');
-    if (certNeeded) {
+    if (plan) {
       const certs = await probeCertificates(ssh);
-      if (!(await issueAndDeploy(ssh, input.domains, dnsHook, certs, steps))) {
+      if (!(await issueAndDeploy(ssh, input.domains, plan, certs, steps))) {
         return { steps: steps.steps };
       }
     } else {
@@ -1272,10 +1245,10 @@ async function readableProbe(server: Server): Promise<ProxyProbe> {
 export async function precheckCreate(
   server: Server,
   input: CreateServiceInput,
-  dnsHook: string | null
+  challenge: ChallengeChoice
 ): Promise<void> {
   const probe = await readableProbe(server);
-  assertIssuable(server, probe, input.domains, dnsHook);
+  assertIssuable(probe, input.domains, challenge);
   assertLockSupported(server, probe, input);
   // Wirft als HaproxyConfigError bei doppelter ID oder belegter Domain.
   addService(probe.raw, input);
@@ -1292,7 +1265,7 @@ export async function precheckUpdate(
   server: Server,
   oldId: string,
   input: CreateServiceInput,
-  dnsHook: string | null
+  challenge: ChallengeChoice
 ): Promise<HaproxyService> {
   const probe = await readableProbe(server);
   const current = probe.services.find((s) => s.id === oldId);
@@ -1307,11 +1280,68 @@ export async function precheckUpdate(
     );
   }
   if (certificateChanged(current.domains, input.domains)) {
-    assertIssuable(server, probe, input.domains, dnsHook);
+    assertIssuable(probe, input.domains, challenge);
   }
   assertLockSupported(server, probe, input);
   replaceService(probe.raw, oldId, input);
   return current;
+}
+
+/* ── Ein Zertifikat ohne Ziel ──
+ *
+ * Der Fall ist die Wildcard aus der Einrichtung: `*.example.org` wird einmal
+ * ausgestellt, und jedes Ziel darunter findet es danach vor
+ * (`findCertificateFor`), statt ein eigenes zu beantragen. Es ist derselbe
+ * Antrag und derselbe Deploy-Hook wie beim Anlegen eines Ziels, nur ohne die
+ * Konfiguration: `haproxy.cfg` nennt kein einzelnes Zertifikat, HAProxy lädt
+ * das Verzeichnis, und der Deploy-Hook lädt neu.
+ *
+ * Abgeräumt wird es wie jedes andere: es bleibt, solange ein Ziel es braucht.
+ * Braucht es keines, steht es auf der Zertifikatsseite mit leerer Spalte
+ * „Benutzt von".
+ */
+
+export function validateCertificateDomains(domains: string[]): string | null {
+  if (domains.length === 0) return 'Mindestens eine Domain wird benötigt.';
+  for (const domain of domains) {
+    if (!isValidDomain(domain)) return `"${domain}" ist keine gültige Domain.`;
+  }
+  return null;
+}
+
+export async function precheckCertificate(
+  server: Server,
+  domains: string[],
+  challenge: ChallengeChoice
+): Promise<void> {
+  const invalid = validateCertificateDomains(domains);
+  if (invalid) throw new ApiError(invalid);
+  const probe = await readableProbe(server);
+  assertIssuable(probe, domains, challenge);
+}
+
+export async function issueCertificate(
+  server: Server,
+  domains: string[],
+  challenge: ChallengeChoice,
+  reporter?: ProvisionReporter
+): Promise<ProvisionResult> {
+  const invalid = validateCertificateDomains(domains);
+  if (invalid) throw new ApiError(invalid);
+
+  return withProxyLock(server.$id, async () => {
+    const steps = new StepLog(reporter);
+    await steps.phase('preflight');
+
+    const ssh = await getSSHConfig(server);
+    const probe = await probeProxy(server);
+    const plan = assertIssuable(probe, domains, challenge);
+
+    await steps.phase('certificate');
+    const certs = await probeCertificates(ssh);
+    await issueAndDeploy(ssh, domains, plan, certs, steps);
+    return { steps: steps.steps };
+  });
 }
 
 /* ── TCP-Weiterleitungen ──
