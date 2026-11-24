@@ -421,5 +421,9 @@ docker build -t hapm .
 
 Ohne Secret und ohne Build-Argument, das nötig wäre (`HAPM_VERSION` setzt die
 Versionsangabe). Die CI (`.github/workflows/image.yml`) baut für amd64 und arm64
-und veröffentlicht nach GHCR. Ihre Tests gegen die Datenbank laufen nur, wenn
+und veröffentlicht nach GHCR. Jede Architektur baut auf einem Rechner ihrer Art
+(`ubuntu-latest`, `ubuntu-24.04-arm`) und legt ihr Abbild unter seiner
+Prüfsumme ab, der Job `merge` fasst beide unter den Namen zusammen. Beide auf
+einem amd64-Rechner zu bauen hieße arm64 im Emulator: das brauchte rund 18
+Minuten. Ihre Tests gegen die Datenbank laufen nur, wenn
 `TEST_DATABASE_URL` gesetzt ist.
