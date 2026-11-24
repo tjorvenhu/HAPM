@@ -45,7 +45,7 @@ export async function PATCH(request: Request, { params }: Params) {
     try {
       await precheckStreamUpdate(server, id, input);
     } catch (err) {
-      if (err instanceof HaproxyConfigError) throw new ApiError(err.message, 409);
+      if (err instanceof HaproxyConfigError) throw new ApiError(err, 409);
       throw err;
     }
 
@@ -87,7 +87,7 @@ export async function DELETE(request: Request, { params }: Params) {
     try {
       stream = await precheckStreamDelete(server, id);
     } catch (err) {
-      if (err instanceof HaproxyConfigError) throw new ApiError(err.message, 409);
+      if (err instanceof HaproxyConfigError) throw new ApiError(err, 409);
       throw err;
     }
 

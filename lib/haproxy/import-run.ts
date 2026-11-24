@@ -37,6 +37,7 @@ import {
   type ProvisionStep,
 } from './provision';
 import type { ChallengeChoice } from './challenge';
+import { createTranslator, msgid, type Translator } from '../i18n/translate';
 import type { Server } from '../types';
 
 export interface ImportItem {
@@ -55,10 +56,17 @@ export interface ImportPlan {
   items: ImportItem[];
 }
 
-export function importTitle(entry: { domains: string[]; port: number | null }): string {
+/**
+ * Hauptdomain oder Port. Ohne `t` deutsch: so steht der Titel in den Schritten
+ * eines Laufs, und die werden gespeichert. Eine Meldung der Route gibt `t` mit.
+ */
+export function importTitle(
+  entry: { domains: string[]; port: number | null },
+  t: Translator['t'] = createTranslator('de').t
+): string {
   if (entry.port !== null && entry.domains.length === 0) return `Port ${entry.port}`;
   const more = entry.domains.length - 1;
-  return more > 0 ? `${entry.domains[0]} und ${more} weitere` : (entry.domains[0] ?? '?');
+  return more > 0 ? t('{domain} und {count} weitere', { domain: entry.domains[0], count: more }) : (entry.domains[0] ?? '?');
 }
 
 /** Die Spalte fasst 1024 Zeichen, siehe `describe` im Runner. */
@@ -84,8 +92,13 @@ export function importAuditDetails(plan: ImportPlan, failure: string | null): st
 }
 
 function message(err: unknown): string {
-  return err instanceof Error ? err.message : 'Unbekannter Fehler.';
+  return err instanceof Error ? err.message : msgid('Unbekannter Fehler.');
 }
+
+/* Feste Texte der Schritte: gespeichert als deutscher Schlüssel, die Seite
+ * übersetzt sie beim Zeigen. Was einen Titel oder Zahlen trägt, bleibt deutsch. */
+const IMPORT_ABORTED = msgid('Import abgebrochen');
+const SCOPE_FAILED = msgid('Die Gruppe ließ sich nicht anlegen. Ohne sie gibt es keine Stelle für die Einträge.');
 
 export async function runImport(
   server: Server,
@@ -118,21 +131,13 @@ export async function runImport(
       const result = await updateScopes(server, plan.scope, { action: 'add' }, inner(title));
       await push(...prefixed(title, result.steps));
       if (result.steps.some((step) => !step.ok)) {
-        await push({
-          label: 'Import abgebrochen',
-          ok: false,
-          detail: 'Die Gruppe ließ sich nicht anlegen. Ohne sie gibt es keine Stelle für die Einträge.',
-        });
+        await push({ label: IMPORT_ABORTED, ok: false, detail: SCOPE_FAILED });
         return { steps: done };
       }
     } catch (err) {
       await push(
         { label: `${title}: anlegen`, ok: false, detail: message(err) },
-        {
-          label: 'Import abgebrochen',
-          ok: false,
-          detail: 'Die Gruppe ließ sich nicht anlegen. Ohne sie gibt es keine Stelle für die Einträge.',
-        }
+        { label: IMPORT_ABORTED, ok: false, detail: SCOPE_FAILED }
       );
       return { steps: done };
     }
@@ -159,7 +164,7 @@ export async function runImport(
           id = input.id;
           result = await createStream(server, input, inner(title));
         } else {
-          throw new Error('Der Eintrag hat weder Domain noch Port.');
+          throw new Error(msgid('Der Eintrag hat weder Domain noch Port.'));
         }
       } catch (err) {
         // Belegt seit der Vorschau: eine Auskunft über die Lage, kein Fehler
@@ -193,6 +198,6 @@ export async function runImport(
     ...(skipped.length > 0 ? ['', 'Übersprungen:', ...skipped] : []),
     ...(failed.length > 0 ? ['', 'Gescheitert:', ...failed] : []),
   ];
-  await push({ label: 'Zusammenfassung', ok: failed.length === 0, detail: lines.join('\n') });
+  await push({ label: msgid('Zusammenfassung'), ok: failed.length === 0, detail: lines.join('\n') });
   return { steps: done };
 }

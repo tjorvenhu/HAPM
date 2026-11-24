@@ -23,6 +23,9 @@ import {
 } from '@/lib/haproxy/config';
 import { addStream, assignStreamId, parseStreams, toStreamInput, validateStreamInput } from '@/lib/haproxy/streams';
 import { renderBaseConfig } from '@/lib/haproxy/base-config';
+import { createTranslator, germanText, translate, type Message } from '@/lib/i18n/translate';
+
+const de = (message: Message | null) => (message ? germanText(message) : message);
 
 /**
  * Der Import einer fremden Konfiguration (`lib/haproxy/import.ts`).
@@ -245,11 +248,35 @@ describe('parseImport: Einzelheiten', () => {
   const frontend = (rules: string, backends = 'backend web\n    server web 10.0.0.1:80\n') =>
     parseImport(`defaults\n    mode http\nfrontend f\n    bind :443 ssl crt /x/\n${rules}\n${backends}`);
 
-  it('ein Backend ohne mode und ohne defaults läuft in tcp und passt nicht hinter ein HTTP-Frontend', () => {
+  it('ein Backend mit mode tcp passt nicht hinter ein HTTP-Frontend', () => {
     const r = parseImport(
-      'frontend f\n    mode http\n    bind :443 ssl crt /x/\n    acl a hdr(host) -i a.example.org\n    use_backend web if a\nbackend web\n    server web 10.0.0.1:80\n'
+      'frontend f\n    mode http\n    bind :443 ssl crt /x/\n    acl a hdr(host) -i a.example.org\n    use_backend web if a\nbackend web\n    mode tcp\n    server web 10.0.0.1:80\n'
     );
     expect(r.entries[0].problems.join(' ')).toContain('mode tcp');
+  });
+
+  it('ein Backend ohne mode und ohne defaults folgt dem HTTP-Frontend, das es benutzt', () => {
+    // HAProxy nähme ein tcp-Backend hinter einem HTTP-Frontend gar nicht an:
+    // so etwas ist ein Ausschnitt ohne seinen Block defaults.
+    const r = parseImport(
+      'frontend f\n    mode http\n    bind :443 ssl crt /x/\n    acl a hdr(host) -i a.example.org\n    use_backend web if a\nbackend web\n    server web 10.0.0.1:80\n    timeout tunnel 1h\n'
+    );
+    expect(r.entries[0].problems).toEqual([]);
+    expect(r.entries[0].service?.tunnel).toBe(true);
+  });
+
+  it('ein Ausschnitt ohne mode und ohne defaults, der HTTP benutzt, gilt als HTTP, mit Hinweis', () => {
+    const r = parseImport(
+      'frontend f\n    bind :443 ssl crt /x/\n    acl a hdr(host) -i a.example.org\n    use_backend web if a\nbackend web\n    server web 10.0.0.1:80\n'
+    );
+    expect(r.entries[0].kind).toBe('proxy');
+    expect(r.entries[0].problems).toEqual([]);
+    expect(r.entries[0].notes.join(' ')).toContain('gilt er als mode http');
+  });
+
+  it('ein Abschnitt ohne mode, der nichts von HTTP benutzt, bleibt tcp', () => {
+    const r = parseImport('listen db\n    bind :5432\n    server db1 10.0.0.31:5432\n');
+    expect(r.entries[0].kind).toBe('tcp');
   });
 
   it('Groß- und Kleinschreibung in Schlüsselwörtern und Domains', () => {
@@ -469,9 +496,9 @@ describe('Gruppe, Kontingent, Text', () => {
   it('schlägt IMPORTIERT vor und nicht IMPORT, dessen Seite unter dieser hier läge', () => {
     expect(suggestScopeName(parseScopes(FRESH))).toBe('IMPORTIERT_2');
     expect(suggestScopeName([])).toBe('IMPORTIERT');
-    expect(newScopeError('import', [])).toContain('Seite unter Reverse-Proxy');
+    expect(de(newScopeError('import', []))).toContain('Seite unter Reverse-Proxy');
     expect(newScopeError('logs', [])).not.toBeNull();
-    expect(newScopeError('importiert', parseScopes(FRESH))).toContain('gibt es schon');
+    expect(de(newScopeError('importiert', parseScopes(FRESH)))).toContain('gibt es schon');
     expect(newScopeError('kunden', parseScopes(FRESH))).toBeNull();
   });
 
@@ -488,8 +515,46 @@ describe('Gruppe, Kontingent, Text', () => {
 
   it('nimmt nur Text bis 1 MB', () => {
     expect(importTextError('')).not.toBeNull();
-    expect(importTextError('a'.repeat(IMPORT_MAX_BYTES + 1))).toContain('MB');
-    expect(importTextError('global\u0000')).toContain('Textdatei');
+    expect(de(importTextError('a'.repeat(IMPORT_MAX_BYTES + 1)))).toContain('MB');
+    expect(de(importTextError('global\u0000'))).toContain('Textdatei');
     expect(importTextError(SAMPLE)).toBeNull();
+  });
+});
+
+describe('Sprache', () => {
+  const { t: en } = createTranslator('en');
+  const HTTP_AND_HTTPS =
+    'defaults\n    mode http\n' +
+    'frontend a\n    bind :80\n    acl h hdr(host) -i a.example.org\n    use_backend web if h\n' +
+    'frontend b\n    bind :443 ssl crt /x/\n    acl h hdr(host) -i a.example.org\n    use_backend web if h\n' +
+    'backend web\n    server web 10.0.0.1:80\n';
+
+  it('rechnet Gründe und Hinweise in der Sprache des Aufrufers, ohne ihn auf Deutsch', () => {
+    const english = parseImport('listen db\n    mode tcp\n    bind 10.0.0.5:5432\n    server db 10.0.0.70:5432\n', en);
+    expect(english.entries[0].problems.join(' ')).toContain('bound to a specific address');
+
+    const german = parseImport('listen db\n    mode tcp\n    bind 10.0.0.5:5432\n    server db 10.0.0.70:5432\n');
+    expect(german.entries[0].problems.join(' ')).toContain('bestimmte Adresse');
+  });
+
+  it('erkennt den Hinweis ohne TLS auch auf Englisch', () => {
+    const only80 = parseImport(
+      'defaults\n    mode http\nfrontend f\n    bind :80\n    acl a hdr(host) -i a.example.org\n    use_backend web if a\nbackend web\n    server web 10.0.0.1:80\n',
+      en
+    );
+    expect(only80.entries[0].notes.join(' ')).toContain('without TLS');
+    expect(parseImport(HTTP_AND_HTTPS, en).entries[0].notes.join(' ')).not.toContain('without TLS');
+  });
+
+  it('lässt den Sprachwechsel nicht über den Aufruf hinaus stehen', () => {
+    parseImport(SAMPLE, en);
+    expect(parseImport(SAMPLE).skipped.map((s) => s.reason).join(' ')).toMatch(/Statistikseite/);
+  });
+
+  it('die Prüfungen für den Browser sind Meldungen', () => {
+    expect(translate('en', importTextError('global\u0000')!)).toBe('This is not a text file.');
+    expect(translate('en', newScopeError('importiert', parseScopes(FRESH))!)).toBe(
+      'The group importiert already exists. Select it above.'
+    );
   });
 });

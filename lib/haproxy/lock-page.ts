@@ -27,6 +27,7 @@ import {
   staticNote,
   staticPasswordForm,
 } from '@/ui/static/page';
+import { DEFAULT_LOCALE, msgid, translate, type Locale } from '@/lib/i18n';
 import { buildCommand, withStdin } from '../shell';
 import { LOCK_FIELD, LOCK_PAGE_FILES, LOCK_PASSWORD_MAX } from './config';
 import { activeDesign, designTheme, PAGE_MAX_BYTES, type PageDesign } from './page-design';
@@ -38,39 +39,50 @@ export const LOCK_PAGE_MAX_BYTES = PAGE_MAX_BYTES;
 
 export type LockPageKind = keyof typeof LOCK_PAGE_FILES;
 
-/** Die Texte, wie HAPM sie ohne eigenes Design schreibt. */
+/** Die Texte, wie HAPM sie ohne eigenes Design schreibt. Deutsch, die Schlüssel für `lockPageDefaults`. */
 export const LOCK_PAGE_DEFAULTS = {
-  title: 'Geschützter Bereich',
-  subtitle: 'Diese Seite ist mit einem Passwort geschützt.',
-  submit: 'Öffnen',
+  title: msgid('Geschützter Bereich'),
+  subtitle: msgid('Diese Seite ist mit einem Passwort geschützt.'),
+  submit: msgid('Öffnen'),
 } as const;
 
-function body(kind: LockPageKind, submit: string): string {
+/** Die Vorgaben in der Sprache der Seiten. */
+export function lockPageDefaults(locale: Locale = DEFAULT_LOCALE): { title: string; subtitle: string; submit: string } {
+  return {
+    title: translate(locale, LOCK_PAGE_DEFAULTS.title),
+    subtitle: translate(locale, LOCK_PAGE_DEFAULTS.subtitle),
+    submit: translate(locale, LOCK_PAGE_DEFAULTS.submit),
+  };
+}
+
+function body(kind: LockPageKind, submit: string, locale: Locale): string {
   const form = staticPasswordForm({
     field: LOCK_FIELD,
-    label: 'Passwort',
+    label: translate(locale, 'Passwort'),
     submit,
     maxLength: LOCK_PASSWORD_MAX,
   });
   if (kind === 'ask') return form;
-  if (kind === 'wrong') return staticNote('Das Passwort stimmt nicht.', 'error') + form;
+  if (kind === 'wrong') return staticNote(translate(locale, 'Das Passwort stimmt nicht.'), 'error') + form;
   /* Ohne Formular: jede weitere Eingabe zählte wieder mit und verlängerte die
      Wartezeit. Der Link lädt dieselbe Adresse neu und zeigt danach wieder die
      Abfrage. */
   return (
-    staticNote('Zu viele Versuche. Bitte in zehn Minuten erneut versuchen.', 'warning') +
-    staticButton('Zur Abfrage', '')
+    staticNote(translate(locale, 'Zu viele Versuche. Bitte in zehn Minuten erneut versuchen.'), 'warning') +
+    staticButton(translate(locale, 'Zur Abfrage'), '')
   );
 }
 
 /** Eine der drei Seiten als vollständiges Dokument. Ohne `design` gilt das
  *  gespeicherte. */
 export function renderLockPage(kind: LockPageKind, design: PageDesign = activeDesign()): string {
+  const defaults = lockPageDefaults(design.locale);
   return renderStaticPage(
     {
-      title: design.lock.title ?? LOCK_PAGE_DEFAULTS.title,
-      subtitle: design.lock.subtitle ?? LOCK_PAGE_DEFAULTS.subtitle,
-      body: body(kind, design.lock.submit ?? LOCK_PAGE_DEFAULTS.submit),
+      locale: design.locale,
+      title: design.lock.title ?? defaults.title,
+      subtitle: design.lock.subtitle ?? defaults.subtitle,
+      body: body(kind, design.lock.submit ?? defaults.submit, design.locale),
     },
     designTheme(design)
   );

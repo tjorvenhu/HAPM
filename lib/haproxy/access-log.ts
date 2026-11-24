@@ -32,6 +32,7 @@
  */
 
 import { shellEscape } from '../shell';
+import { msgid } from '../i18n/translate';
 
 /* ══════════════════════════════════════════════════════════════════════
  * Wo das Log liegt
@@ -242,7 +243,7 @@ export interface AnalyseOptions {
  */
 export function analyseCommand(options: AnalyseOptions): string {
   if (options.source.kind === 'none') {
-    throw new Error('Es ist keine Log-Quelle bekannt.');
+    throw new Error(msgid('Es ist keine Log-Quelle bekannt.'));
   }
 
   const limit = Math.min(

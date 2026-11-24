@@ -18,10 +18,13 @@
  * Unterschrieben wird mit dem Namen der Anwendung. HAPM betreibt, wer es
  * installiert hat: wer unsicher ist, wird an den Betreiber der Installation
  * verwiesen, nicht an eine Firma.
+ *
+ * Deutsch und Englisch (`MailContext.locale`, Vorgabe Deutsch). Better-Auth
+ * ruft ohne Sprache auf; welche gilt, entscheidet der Versand
+ * (`lib/auth/mail.ts`) und baut die Mail mit `mailInLocale` neu.
  */
 
-/** An wen sich wendet, wer einer Nachricht nicht traut. */
-const CONTACT = 'den Betreiber dieser Installation';
+import { createTranslator, DEFAULT_LOCALE, type Locale, type Translator } from '../../i18n';
 
 export type MailKind = 'reset-password' | 'verify-email' | 'change-email';
 
@@ -49,6 +52,10 @@ export interface MailContent {
   disclaimer: string;
   userName: string;
   expiresInSeconds: number;
+  /** Damit sich dieselbe Mail in einer anderen Sprache neu bauen lässt (`mailInLocale`). */
+  appName: string;
+  locale: Locale;
+  newEmail?: string;
 }
 
 export interface MailContext {
@@ -58,15 +65,13 @@ export interface MailContext {
   url: string;
   /** Gültigkeitsdauer in Sekunden, wird als „eine Stunde" o. ä. ausformuliert. */
   expiresInSeconds: number;
+  /** Sprache der Mail. Vorgabe Deutsch. */
+  locale?: Locale;
 }
 
-function duration(seconds: number): string {
-  if (seconds % 3600 === 0) {
-    const hours = seconds / 3600;
-    return hours === 1 ? 'eine Stunde' : `${hours} Stunden`;
-  }
-  const minutes = Math.round(seconds / 60);
-  return minutes === 1 ? 'eine Minute' : `${minutes} Minuten`;
+function duration(seconds: number, { plural }: Translator): string {
+  if (seconds % 3600 === 0) return plural(seconds / 3600, { one: 'eine Stunde', other: '{count} Stunden' });
+  return plural(Math.round(seconds / 60), { one: 'eine Minute', other: '{count} Minuten' });
 }
 
 /**
@@ -79,6 +84,7 @@ function duration(seconds: number): string {
  */
 function compose(
   ctx: MailContext,
+  translator: Translator,
   parts: {
     subject: string;
     kind: MailKind;
@@ -86,6 +92,7 @@ function compose(
     paragraphs: string[];
     disclaimer: string;
     linkIntro: string;
+    newEmail?: string;
   }
 ): MailContent {
   return {
@@ -97,8 +104,11 @@ function compose(
     disclaimer: parts.disclaimer,
     userName: ctx.userName,
     expiresInSeconds: ctx.expiresInSeconds,
+    appName: ctx.appName,
+    locale: translator.locale,
+    ...(parts.newEmail === undefined ? {} : { newEmail: parts.newEmail }),
     text: [
-      `Hallo ${ctx.userName},`,
+      translator.t('Hallo {name},', { name: ctx.userName }),
       '',
       ...parts.paragraphs.flatMap((p) => [p, '']),
       parts.linkIntro,
@@ -113,31 +123,37 @@ function compose(
 }
 
 export function resetPasswordMail(ctx: MailContext): MailContent {
-  return compose(ctx, {
-    subject: `${ctx.appName}: neues Passwort festlegen`,
+  const translator = createTranslator(ctx.locale ?? DEFAULT_LOCALE);
+  const { t } = translator;
+  const app = ctx.appName;
+  return compose(ctx, translator, {
+    subject: t('{app}: neues Passwort festlegen', { app }),
     kind: 'reset-password',
-    headline: 'Neues Passwort festlegen',
+    headline: t('Neues Passwort festlegen'),
     paragraphs: [
-      `für Ihr Konto bei ${ctx.appName} wurde ein neues Passwort angefordert.`,
-      `Der Link gilt ${duration(ctx.expiresInSeconds)} und lässt sich nur einmal verwenden.`,
+      t('für Ihr Konto bei {app} wurde ein neues Passwort angefordert.', { app }),
+      t('Der Link gilt {duration} und lässt sich nur einmal verwenden.', {
+        duration: duration(ctx.expiresInSeconds, translator),
+      }),
     ],
-    linkIntro: 'Über diesen Link können Sie eines festlegen:',
-    disclaimer:
-      'Waren Sie das nicht, können Sie diese Nachricht ignorieren. Ihr bisheriges ' +
-      `Passwort bleibt dann unverändert gültig. Wenn Sie unsicher sind, wenden Sie sich an ${CONTACT}.`,
+    linkIntro: t('Über diesen Link können Sie eines festlegen:'),
+    disclaimer: t(
+      'Waren Sie das nicht, können Sie diese Nachricht ignorieren. Ihr bisheriges Passwort bleibt dann unverändert gültig. Wenn Sie unsicher sind, wenden Sie sich an den Betreiber dieser Installation.'
+    ),
   });
 }
 
 export function verifyEmailMail(ctx: MailContext): MailContent {
-  return compose(ctx, {
-    subject: `${ctx.appName}: E-Mail-Adresse bestätigen`,
+  const translator = createTranslator(ctx.locale ?? DEFAULT_LOCALE);
+  const { t } = translator;
+  const app = ctx.appName;
+  return compose(ctx, translator, {
+    subject: t('{app}: E-Mail-Adresse bestätigen', { app }),
     kind: 'verify-email',
-    headline: 'E-Mail-Adresse bestätigen',
-    paragraphs: [`Der Link gilt ${duration(ctx.expiresInSeconds)}.`],
-    linkIntro: `bitte bestätigen Sie diese Adresse für Ihr Konto bei ${ctx.appName}:`,
-    disclaimer:
-      'Haben Sie kein Konto angelegt, können Sie diese Nachricht ignorieren. ' +
-      'Ohne Bestätigung passiert nichts weiter.',
+    headline: t('E-Mail-Adresse bestätigen'),
+    paragraphs: [t('Der Link gilt {duration}.', { duration: duration(ctx.expiresInSeconds, translator) })],
+    linkIntro: t('bitte bestätigen Sie diese Adresse für Ihr Konto bei {app}:', { app }),
+    disclaimer: t('Haben Sie kein Konto angelegt, können Sie diese Nachricht ignorieren. Ohne Bestätigung passiert nichts weiter.'),
   });
 }
 
@@ -149,18 +165,44 @@ export function verifyEmailMail(ctx: MailContext): MailContent {
  * die einzige Prüfung, die der Angreifer nicht selbst beantworten kann.
  */
 export function changeEmailMail(ctx: MailContext & { newEmail: string }): MailContent {
-  return compose(ctx, {
-    subject: `${ctx.appName}: Änderung der E-Mail-Adresse bestätigen`,
+  const translator = createTranslator(ctx.locale ?? DEFAULT_LOCALE);
+  const { t } = translator;
+  const app = ctx.appName;
+  return compose(ctx, translator, {
+    subject: t('{app}: Änderung der E-Mail-Adresse bestätigen', { app }),
     kind: 'change-email',
-    headline: 'Änderung der E-Mail-Adresse',
+    headline: t('Änderung der E-Mail-Adresse'),
     paragraphs: [
-      `für Ihr Konto bei ${ctx.appName} wurde als neue E-Mail-Adresse ${ctx.newEmail} ` +
-        'angefordert. Diese Nachricht geht bewusst an Ihre bisherige Adresse.',
-      `Der Link gilt ${duration(ctx.expiresInSeconds)}.`,
+      t(
+        'für Ihr Konto bei {app} wurde als neue E-Mail-Adresse {email} angefordert. Diese Nachricht geht bewusst an Ihre bisherige Adresse.',
+        { app, email: ctx.newEmail }
+      ),
+      t('Der Link gilt {duration}.', { duration: duration(ctx.expiresInSeconds, translator) }),
     ],
-    linkIntro: 'Bestätigen Sie die Änderung hier:',
-    disclaimer:
-      'Waren Sie das nicht, klicken Sie den Link NICHT an und wenden Sie sich umgehend an ' +
-      `${CONTACT}. Ihr Konto bleibt bis dahin auf dieser Adresse.`,
+    linkIntro: t('Bestätigen Sie die Änderung hier:'),
+    disclaimer: t(
+      'Waren Sie das nicht, klicken Sie den Link NICHT an und wenden Sie sich umgehend an den Betreiber dieser Installation. Ihr Konto bleibt bis dahin auf dieser Adresse.'
+    ),
+    newEmail: ctx.newEmail,
   });
+}
+
+/** Dieselbe Mail in einer anderen Sprache. Gleiche Sprache: unverändert. */
+export function mailInLocale(mail: MailContent, locale: Locale): MailContent {
+  if (mail.locale === locale) return mail;
+  const ctx: MailContext = {
+    appName: mail.appName,
+    userName: mail.userName,
+    url: mail.url,
+    expiresInSeconds: mail.expiresInSeconds,
+    locale,
+  };
+  switch (mail.kind) {
+    case 'reset-password':
+      return resetPasswordMail(ctx);
+    case 'verify-email':
+      return verifyEmailMail(ctx);
+    case 'change-email':
+      return changeEmailMail({ ...ctx, newEmail: mail.newEmail ?? '' });
+  }
 }

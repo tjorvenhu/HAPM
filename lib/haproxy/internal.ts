@@ -32,6 +32,7 @@
  */
 
 import { ApiError } from '../api';
+import { msg, msgid } from '../i18n/translate';
 import { getClientIP } from '../audit';
 import { autoDnsDomains } from '../dns/sync';
 import { selectedDnsDomains } from '../dns/zones';
@@ -72,8 +73,10 @@ export async function resolveProxy(serverId: unknown): Promise<Server> {
 
   if (wanted && wanted !== local.$id) {
     throw new ApiError(
-      `Kein Reverse-Proxy mit der ID "${wanted}". HAPM verwaltet genau einen: ` +
-        `"${local.$id}". serverId kann weggelassen werden.`,
+      msg('Kein Reverse-Proxy mit der ID "{wanted}". HAPM verwaltet genau einen: "{id}". serverId kann weggelassen werden.', {
+        wanted,
+        id: local.$id,
+      }),
       404
     );
   }
@@ -359,7 +362,8 @@ export async function proxyView(server: Server): Promise<ProxyView> {
         adminIps: [],
         serviceCount: 0,
         streamCount: 0,
-        error: 'Die HAProxy-Konfiguration ist nicht lesbar.',
+        // Deutscher Schlüssel: die Route übersetzt ihn mit `t()`.
+        error: msgid('Die HAProxy-Konfiguration ist nicht lesbar.'),
       };
     }
     return {
@@ -385,7 +389,7 @@ export async function proxyView(server: Server): Promise<ProxyView> {
       adminIps: [],
       serviceCount: 0,
       streamCount: 0,
-      error: err instanceof Error ? err.message : 'HAProxy ist nicht erreichbar.',
+      error: err instanceof Error ? err.message : msgid('HAProxy ist nicht erreichbar.'),
     };
   }
 }

@@ -1,5 +1,6 @@
 import { requireServiceToken } from '@/lib/service-auth';
 import { ok, handleError } from '@/lib/api';
+import { getT } from '@/lib/i18n/server';
 import { probeProxy, readCertificates } from '@/lib/haproxy/provision';
 import { certCovers } from '@/lib/haproxy/certs';
 import { proxyServers, resolveProxy } from '@/lib/haproxy/internal';
@@ -20,6 +21,7 @@ import type { Server } from '@/lib/types';
 export async function GET(request: Request) {
   try {
     await requireServiceToken(request);
+    const { t } = await getT();
 
     const wanted = new URL(request.url).searchParams.get('serverId');
     const servers: Server[] = wanted ? [await resolveProxy(wanted)] : await proxyServers();
@@ -56,7 +58,7 @@ export async function GET(request: Request) {
             acmeReady: false,
             dnsHooks: [],
             certificates: [],
-            error: err instanceof Error ? err.message : 'HAProxy ist nicht erreichbar.',
+            error: err instanceof Error ? err.message : t('HAProxy ist nicht erreichbar.'),
           };
         }
       })

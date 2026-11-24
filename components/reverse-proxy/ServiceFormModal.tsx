@@ -46,6 +46,8 @@ import {
 import { needsDnsChallenge } from '@/lib/haproxy/challenge';
 import { refuseSurfaceUpdate } from '@/lib/haproxy/protected';
 import type { DomainMatch } from '@/lib/dns/zones';
+import { msgid } from '@/lib/i18n';
+import { useT } from '@/lib/i18n/react';
 import type { ProxyRow } from './types';
 
 /**
@@ -93,10 +95,10 @@ interface RouteRow {
 /** Die Wörter aus `TargetKindDialog`, damit die Überschrift dieselben trägt.
  *  Die TCP-Weiterleitung fehlt hier: sie ist kein Dienst und hat ein eigenes
  *  Formular. */
-const KIND_TITLES: Record<ServiceKind, string> = {
-  proxy: 'Reverse-Proxy',
-  balance: 'Lastverteilung',
-  redirect: 'HTTP-Weiterleitung',
+const KIND_TITLES: Record<ServiceKind, { create: string; edit: string }> = {
+  proxy: { create: msgid('Reverse-Proxy anlegen'), edit: msgid('Reverse-Proxy bearbeiten') },
+  balance: { create: msgid('Lastverteilung anlegen'), edit: msgid('Lastverteilung bearbeiten') },
+  redirect: { create: msgid('HTTP-Weiterleitung anlegen'), edit: msgid('HTTP-Weiterleitung bearbeiten') },
 };
 
 /**
@@ -108,9 +110,9 @@ const KIND_TITLES: Record<ServiceKind, string> = {
 type Access = 'open' | 'ip' | 'password';
 
 const ACCESS_LABELS: Record<Access, string> = {
-  open: 'Offen',
-  ip: 'Nur Admin-IPs',
-  password: 'Passwort',
+  open: msgid('Offen'),
+  ip: msgid('Nur Admin-IPs'),
+  password: msgid('Passwort'),
 };
 
 /** Ab so vielen Adressen steht im Formular nur noch ihre Anzahl. */
@@ -188,6 +190,7 @@ export default function ServiceFormModal({
   onStarted,
 }: Props) {
   const { apiFetch } = useApp();
+  const { t, plural, rich } = useT();
 
   /**
    * Welches Formular gilt.
@@ -381,7 +384,7 @@ export default function ServiceFormModal({
         className="hapm-row-mark"
         data-tooltip-pos="left"
         data-tooltip={
-          access === 'password' ? 'Mit Passwort gesperrt, siehe Zugriff' : 'Nur für Admin-IPs, siehe Zugriff'
+          t(access === 'password' ? 'Mit Passwort gesperrt, siehe Zugriff' : 'Nur für Admin-IPs, siehe Zugriff')
         }
       >
         <Lock size={15} />
@@ -433,8 +436,11 @@ export default function ServiceFormModal({
     const known = globalHeaders[direction].find((entry) => entry.toLowerCase() === wanted);
     if (!wanted || !known) return '';
     return direction === 'request'
-      ? `Die globalen Einstellungen setzen ${known} schon. Für dieses Ziel gilt der Wert hier.`
-      : `Die globalen Einstellungen setzen ${known} für alle Ziele und überschreiben den Wert hier. Er kommt beim Besucher nicht an.`;
+      ? t('Die globalen Einstellungen setzen {header} schon. Für dieses Ziel gilt der Wert hier.', { header: known })
+      : t(
+          'Die globalen Einstellungen setzen {header} für alle Ziele und überschreiben den Wert hier. Er kommt beim Besucher nicht an.',
+          { header: known }
+        );
   }
 
   /* ── Was geschickt wird, folgt der Kategorie und nicht dem Zustand ──
@@ -562,7 +568,7 @@ export default function ServiceFormModal({
     dnsHooks.length === 1
       ? [{ value: dnsHooks[0], label: dnsHooks[0] }]
       : [
-          { value: '', label: 'Bitte wählen' },
+          { value: '', label: t('Bitte wählen') },
           ...dnsHooks.map((hook) => ({ value: hook, label: hook })),
         ];
 
@@ -570,17 +576,17 @@ export default function ServiceFormModal({
    *  aussieht und offen ist. Leer heißt: nichts zu beanstanden. */
   const accessError =
     access !== 'open' && domainList.length > 0 && effectiveLocked.length === 0
-      ? 'Für die Sperre ist keine Domain ausgewählt.'
+      ? t('Für die Sperre ist keine Domain ausgewählt.')
       : '';
 
   /** Was am Passwort der Sperre noch fehlt. Leer heißt: nichts. */
   const lockPasswordError = !lockingByPassword
     ? ''
     : lockPassword !== ''
-      ? (validateLockPassword(lockPassword) ?? '')
+      ? t(validateLockPassword(lockPassword) ?? '')
       : hasStoredPassword
         ? ''
-        : 'Für die Passwortsperre fehlt das Passwort.';
+        : t('Für die Passwortsperre fehlt das Passwort.');
 
 
   /* ── DNS ──
@@ -652,7 +658,7 @@ export default function ServiceFormModal({
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (inputError) {
-      setFormError(inputError);
+      setFormError(t(inputError));
       return;
     }
     if (accessError || lockPasswordError) {
@@ -660,7 +666,7 @@ export default function ServiceFormModal({
       return;
     }
     if (surfaceError) {
-      setFormError(surfaceError);
+      setFormError(t(surfaceError));
       return;
     }
     // Dieselbe Bedingung, die `assertIssuable` auf dem Server prüft. Hier
@@ -669,17 +675,18 @@ export default function ServiceFormModal({
     if (dnsHookNeeded && !effectiveDnsHook) {
       setFormError(
         dnsHooks.length === 0
-          ? (hasWildcard
-              ? 'Eine Wildcard-Domain lässt Let’s Encrypt nur über DNS-01 ausstellen, und es ist kein '
-              : 'In dieser internen Installation wird jedes Zertifikat über DNS-01 ausgestellt, und es ist kein ') +
-              'DNS-Hook von acme.sh eingerichtet. Die Zugangsdaten stehen unter Reverse-Proxy, Einstellungen.'
-          : 'Bitte wählen Sie den DNS-Hook, der die Challenge setzt.'
+          ? t(
+              hasWildcard
+                ? 'Eine Wildcard-Domain lässt Let’s Encrypt nur über DNS-01 ausstellen, und es ist kein DNS-Hook von acme.sh eingerichtet. Die Zugangsdaten stehen unter Reverse-Proxy, Einstellungen.'
+                : 'In dieser internen Installation wird jedes Zertifikat über DNS-01 ausgestellt, und es ist kein DNS-Hook von acme.sh eingerichtet. Die Zugangsdaten stehen unter Reverse-Proxy, Einstellungen.'
+            )
+          : t('Bitte wählen Sie den DNS-Hook, der die Challenge setzt.')
       );
       return;
     }
     setFormError('');
     setSaving(true);
-    const verb = editingId ? 'Speichern' : 'Anlegen';
+    const failed = t(editingId ? 'Speichern fehlgeschlagen' : 'Anlegen fehlgeschlagen');
     try {
       const res = await apiFetch(
         editingId ? `/api/haproxy/services/${encodeURIComponent(editingId)}` : '/api/haproxy/services',
@@ -698,7 +705,7 @@ export default function ServiceFormModal({
         }
       );
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `${verb} fehlgeschlagen`);
+      if (!res.ok) throw new Error(data.error || failed);
       // Ab hier ist der Vorgang gestartet, nicht fertig. Der Dialog geht zu,
       // damit niemand fünf Minuten vor einem Spinner sitzt; was die Route noch
       // synchron geprüft hat (belegte ID, fremde Domain), steht oben im
@@ -708,13 +715,15 @@ export default function ServiceFormModal({
       const startedId: string = editingId ?? data.data.serviceId;
       onStarted({
         id: data.data.runId,
-        label: `Ziel „${startedId}" ${editingId ? 'ändern' : 'anlegen'}`,
+        label: editingId
+          ? t('Ziel „{id}" ändern', { id: startedId })
+          : t('Ziel „{id}" anlegen', { id: startedId }),
         serviceId: startedId,
         title: input.domains[0] ?? startedId,
         isNew: !editingId,
       });
     } catch (err: unknown) {
-      setFormError(err instanceof Error ? err.message : `${verb} fehlgeschlagen`);
+      setFormError(err instanceof Error ? err.message : failed);
       setSaving(false);
     }
   }
@@ -734,7 +743,7 @@ export default function ServiceFormModal({
             drei dasselbe, wäre die Auswahl davor folgenlos. Beim Bearbeiten
             steht die Art des Eintrags da und nicht die eines Klicks. */}
         <h2 className="modal-title">
-          {`${KIND_TITLES[kind]} ${edit ? 'bearbeiten' : 'anlegen'}`}
+          {t(edit ? KIND_TITLES[kind].edit : KIND_TITLES[kind].create)}
           {editingId && <span className="modal-subject">{editingId}</span>}
         </h2>
         <button
@@ -742,7 +751,7 @@ export default function ServiceFormModal({
           className="modal-close"
           onClick={() => onClose()}
           disabled={saving}
-          aria-label="Dialog schließen"
+          aria-label={t('Dialog schließen')}
         >
           <X size={18} />
         </button>
@@ -757,7 +766,7 @@ export default function ServiceFormModal({
               geänderte Domains kosten ein neues Zertifikat. */}
           {editingId && certNeeded && (
             <div className="alert alert-info">
-              Die Domains ändern sich. Dafür wird ein neues Zertifikat beantragt.
+              {t('Die Domains ändern sich. Dafür wird ein neues Zertifikat beantragt.')}
             </div>
           )}
 
@@ -774,15 +783,13 @@ export default function ServiceFormModal({
                     <Globe size={17} />
                   </span>
                   <div>
-                    <div className="form-section-title">Domains</div>
-                    <div className="form-section-sub">
-                      Die Adressen des Eintrags und seine Gruppe.
-                    </div>
+                    <div className="form-section-title">{t('Domains')}</div>
+                    <div className="form-section-sub">{t('Die Adressen des Eintrags und seine Gruppe.')}</div>
                   </div>
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Gruppe</label>
+                  <label className="form-label">{t('Gruppe')}</label>
                   <Select
                     value={scope}
                     onChange={setScope}
@@ -791,8 +798,7 @@ export default function ServiceFormModal({
                   />
                   {scopeOptions.length === 0 && (
                     <span className="form-hint">
-                      In der Konfiguration steht kein vollständiger Marker-Block. Gruppen legt
-                      man in der Übersicht an.
+                      {t('In der Konfiguration steht kein vollständiger Marker-Block. Gruppen legt man in der Übersicht an.')}
                     </span>
                   )}
                 </div>
@@ -806,13 +812,13 @@ export default function ServiceFormModal({
                     kann — genau das sagt ein eigenes Feld ohne X daneben. */}
                 <div className="form-group">
                   <label className="form-label">
-                    Hauptdomain
+                    {t('Hauptdomain')}
                     <InfoHint
-                      text={
+                      text={t(
                         editingId
                           ? 'Nach ihr heißt das Zertifikat, und sie steht im Host-Header des Healthchecks. Die Dienst-ID bleibt, auch wenn sich die Hauptdomain ändert.'
                           : 'Nach ihr heißt das Zertifikat, sie steht im Host-Header des Healthchecks, und aus ihr ergibt sich die Dienst-ID, die ACL und Backend benennt.'
-                      }
+                      )}
                     />
                   </label>
                   <div className="form-list-row">
@@ -822,7 +828,7 @@ export default function ServiceFormModal({
                       onChange={(e) =>
                         setDomains(domains.map((d, i) => (i === 0 ? e.target.value : d)))
                       }
-                      placeholder="kunde.example"
+                      placeholder={'kunde.example'}
                       autoComplete="off"
                     />
                     {renderLockMark(domains[0] ?? '')}
@@ -832,13 +838,13 @@ export default function ServiceFormModal({
                       beim Nachsehen in haproxy.cfg. */}
                   {editingId && (
                     <span className="form-hint">
-                      Dienst-ID: <code>{editingId}</code>
+                      {rich('Dienst-ID: {id}', { id: <code>{editingId}</code> })}
                     </span>
                   )}
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Weitere Domains</label>
+                  <label className="form-label">{t('Weitere Domains')}</label>
                   {domains.length > 1 && (
                     <div className="form-list">
                       {domains.slice(1).map((domain, i) => {
@@ -853,14 +859,14 @@ export default function ServiceFormModal({
                                   domains.map((d, j) => (j === index ? e.target.value : d))
                                 )
                               }
-                              placeholder="www.kunde.example"
+                              placeholder={'www.kunde.example'}
                               autoComplete="off"
                             />
                             {renderLockMark(domain)}
                             <button
                               type="button"
                               className="btn btn-ghost btn-icon"
-                              data-tooltip="Zeile entfernen"
+                              data-tooltip={t('Zeile entfernen')}
                               onClick={() => setDomains(domains.filter((_, j) => j !== index))}
                             >
                               <X size={16} />
@@ -878,7 +884,7 @@ export default function ServiceFormModal({
                       onClick={() => setDomains([...domains, ''])}
                     >
                       <Plus size={14} />
-                      Domain hinzufügen
+                      {t('Domain hinzufügen')}
                     </button>
                   </div>
                 </div>
@@ -887,9 +893,10 @@ export default function ServiceFormModal({
                   <div className="form-note">
                     <ShieldCheck size={14} />
                     <span>
-                      Über dieses Ziel ist die Oberfläche von HAPM erreichbar ({surface.url}). Die
-                      Domain <code>{surface.host}</code> bleibt deshalb in der Liste. Die Adresse
-                      lässt sich unter Allgemein ändern.
+                      {rich(
+                        'Über dieses Ziel ist die Oberfläche von HAPM erreichbar ({url}). Die Domain {host} bleibt deshalb in der Liste. Die Adresse lässt sich unter Allgemein ändern.',
+                        { url: surface.url, host: <code>{surface.host}</code> }
+                      )}
                     </span>
                   </div>
                 )}
@@ -902,16 +909,16 @@ export default function ServiceFormModal({
                 {dnsHookNeeded && (
                   <div className="form-group">
                     <label className="form-label">
-                      {hasWildcard ? 'DNS-Hook für die Wildcard' : 'Zertifikat über DNS'}
+                      {t(hasWildcard ? 'DNS-Hook für die Wildcard' : 'Zertifikat über DNS')}
                     </label>
                     {dnsHookMissing ? (
                       <div className="alert alert-warning">
-                        {hasWildcard
-                          ? 'Es ist kein DNS-Hook von acme.sh eingerichtet. Eine Wildcard lässt Let’s Encrypt nur über DNS-01 ausstellen.'
-                          : 'Es ist kein DNS-Hook von acme.sh eingerichtet. In dieser internen Installation wird jedes Zertifikat über DNS-01 ausgestellt.'}{' '}
-                        Die Zugangsdaten der Zone werden unter Reverse-Proxy, Einstellungen
-                        hinterlegt: einmal dort eingetragen, merkt acme.sh sie sich für jede
-                        Erneuerung.
+                        {t(
+                          hasWildcard
+                            ? 'Es ist kein DNS-Hook von acme.sh eingerichtet. Eine Wildcard lässt Let’s Encrypt nur über DNS-01 ausstellen.'
+                            : 'Es ist kein DNS-Hook von acme.sh eingerichtet. In dieser internen Installation wird jedes Zertifikat über DNS-01 ausgestellt.'
+                        )}{' '}
+                        {t('Die Zugangsdaten der Zone werden unter Reverse-Proxy, Einstellungen hinterlegt: einmal dort eingetragen, merkt acme.sh sie sich für jede Erneuerung.')}
                       </div>
                     ) : (
                       <>
@@ -925,8 +932,8 @@ export default function ServiceFormModal({
                         {!hasWildcard && (
                           <span className="form-hint">
                             {dnsHookSelectShown
-                              ? 'Interne Installation: das Zertifikat wird über DNS ausgestellt.'
-                              : `Interne Installation: ausgestellt wird über ${effectiveDnsHook}.`}
+                              ? t('Interne Installation: das Zertifikat wird über DNS ausgestellt.')
+                              : t('Interne Installation: ausgestellt wird über {hook}.', { hook: effectiveDnsHook })}
                           </span>
                         )}
                       </>
@@ -955,8 +962,12 @@ export default function ServiceFormModal({
                       className="form-label"
                       style={{ display: 'flex', alignItems: 'center', gap: 6 }}
                     >
-                      DNS-Einträge
-                      <InfoHint text="Der Eintrag zeigt auf die Domain der Zone selbst, deren A-Eintrag auf diesen Server zeigt. Beim Löschen des Ziels wird angeboten, ihn mitzunehmen." />
+                      {t('DNS-Einträge')}
+                      <InfoHint
+                        text={t(
+                          'Der Eintrag zeigt auf die Domain der Zone selbst, deren A-Eintrag auf diesen Server zeigt. Beim Löschen des Ziels wird angeboten, ihn mitzunehmen.'
+                        )}
+                      />
                       {dnsChecking && <Loader2 size={13} className="spin" />}
                     </label>
                     <div className="form-list">
@@ -970,15 +981,24 @@ export default function ServiceFormModal({
                         const impossible = !match.plan;
                         const locked = settled || foreign || unreadable || impossible;
 
+                        const fqdn = match.plan?.fqdn ?? '';
                         const tooltip = settled
-                          ? `DNS-Zone ${zoneName}: ${match.plan?.fqdn} ist bereits als CNAME auf ${zoneName} eingerichtet.`
+                          ? t('DNS-Zone {zone}: {fqdn} ist bereits als CNAME auf {zone} eingerichtet.', { zone: zoneName, fqdn })
                           : foreign
-                            ? `Dort steht ein ${match.existing?.type}-Eintrag auf ${match.existing?.content}. Er wird nicht angefasst.`
+                            ? t('Dort steht ein {type}-Eintrag auf {content}. Er wird nicht angefasst.', {
+                                type: match.existing?.type ?? '',
+                                content: match.existing?.content ?? '',
+                              })
                             : unreadable
-                              ? `Die Zone ${zoneName} ist gerade nicht lesbar: ${match.error}`
+                              ? t('Die Zone {zone} ist gerade nicht lesbar: {error}', {
+                                  zone: zoneName,
+                                  error: match.error ? t(match.error) : '',
+                                })
                               : impossible
-                                ? (match.blocked ?? '')
-                                : `Legt ${match.plan?.fqdn} als CNAME auf ${zoneName} an${match.zone?.provider === 'cloudflare' ? ', ohne Cloudflare-Proxy' : ''}.`;
+                                ? (match.blocked ? t(match.blocked) : '')
+                                : match.zone?.provider === 'cloudflare'
+                                  ? t('Legt {fqdn} als CNAME auf {zone} an, ohne Cloudflare-Proxy.', { fqdn, zone: zoneName })
+                                  : t('Legt {fqdn} als CNAME auf {zone} an.', { fqdn, zone: zoneName });
 
                         return (
                           <label className="form-list-row" key={match.domain} data-tooltip={tooltip}>
@@ -993,20 +1013,23 @@ export default function ServiceFormModal({
                                     [match.domain]: e.target.checked,
                                   }))
                                 }
-                                aria-label={`DNS-Eintrag für ${match.domain}`}
+                                aria-label={t('DNS-Eintrag für {domain}', { domain: match.domain })}
                               />
                               <span className="toggle-slider" />
                             </span>
                             <span style={{ flex: 1, minWidth: 0 }}>
                               {settled
-                                ? `${match.domain} steht bereits in ${zoneName}`
+                                ? t('{domain} steht bereits in {zone}', { domain: match.domain, zone: zoneName })
                                 : foreign
-                                  ? `${match.domain}: dort steht ein ${match.existing?.type}-Eintrag`
+                                  ? t('{domain}: dort steht ein {type}-Eintrag', {
+                                      domain: match.domain,
+                                      type: match.existing?.type ?? '',
+                                    })
                                   : unreadable
-                                    ? `${match.domain}: Zone ${zoneName} nicht lesbar`
+                                    ? t('{domain}: Zone {zone} nicht lesbar', { domain: match.domain, zone: zoneName })
                                     : impossible
-                                      ? `${match.domain}: hier nicht möglich`
-                                      : `${match.domain} als CNAME in Zone ${zoneName} setzen`}
+                                      ? t('{domain}: hier nicht möglich', { domain: match.domain })
+                                      : t('{domain} als CNAME in Zone {zone} setzen', { domain: match.domain, zone: zoneName })}
                             </span>
                           </label>
                         );
@@ -1019,9 +1042,14 @@ export default function ServiceFormModal({
                   <div className="form-note">
                     <Info size={14} />
                     <span>
-                      Eine Wildcard deckt genau eine Ebene ab: <code>app.kunde.example</code> ja,{' '}
-                      <code>a.b.kunde.example</code> nein, <code>kunde.example</code> selbst auch nicht:
-                      die gehört als eigene Zeile dazu.
+                      {rich(
+                        'Eine Wildcard deckt genau eine Ebene ab: {one} ja, {two} nein, {apex} selbst auch nicht: die gehört als eigene Zeile dazu.',
+                        {
+                          one: <code>{'app.kunde.example'}</code>,
+                          two: <code>{'a.b.kunde.example'}</code>,
+                          apex: <code>{'kunde.example'}</code>,
+                        }
+                      )}
                     </span>
                   </div>
                 )}
@@ -1047,14 +1075,16 @@ export default function ServiceFormModal({
                   </span>
                   <div>
                     <div className="form-section-title">
-                      {redirecting ? 'Weiterleitung' : balancing ? 'Ziele' : 'Ziel'}
+                      {t(redirecting ? 'Weiterleitung' : balancing ? 'Ziele' : 'Ziel')}
                     </div>
                     <div className="form-section-sub">
-                      {redirecting
-                        ? 'Die Domains werden nicht bedient, sondern woanders hingeschickt.'
-                        : balancing
-                          ? 'Die Anfragen werden auf mehrere Ziele verteilt.'
-                          : 'Wohin alles geht, was auf keine Pfad-Regel passt.'}
+                      {t(
+                        redirecting
+                          ? 'Die Domains werden nicht bedient, sondern woanders hingeschickt.'
+                          : balancing
+                            ? 'Die Anfragen werden auf mehrere Ziele verteilt.'
+                            : 'Wohin alles geht, was auf keine Pfad-Regel passt.'
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1063,27 +1093,31 @@ export default function ServiceFormModal({
                   <>
                     <div className="form-group">
                       <label className="form-label">
-                        Zieladresse
-                        <InfoHint text="Ein Zertifikat wird trotzdem ausgestellt: die Weiterleitung antwortet über HTTPS, und der Browser prüft das Zertifikat, bevor er die Antwort liest." />
+                        {t('Zieladresse')}
+                        <InfoHint
+                          text={t(
+                            'Ein Zertifikat wird trotzdem ausgestellt: die Weiterleitung antwortet über HTTPS, und der Browser prüft das Zertifikat, bevor er die Antwort liest.'
+                          )}
+                        />
                       </label>
                       <input
                         className="form-input"
                         value={redirectTo}
                         onChange={(e) => setRedirectTo(e.target.value)}
-                        placeholder="https://example.org"
+                        placeholder={'https://example.org'}
                         autoComplete="off"
                         spellCheck={false}
                         required
                       />
-                      <span className="form-hint">Mit Schema.</span>
+                      <span className="form-hint">{t('Mit Schema.')}</span>
                     </div>
 
                     <div className="form-subsection">
                       <div className="form-subsection-head">
                         <div>
-                          <div className="form-section-title">Pfad übernehmen</div>
+                          <div className="form-section-title">{t('Pfad übernehmen')}</div>
                           <div className="form-section-sub">
-                            Aus, und der Aufruf landet immer auf der Zieladresse selbst.
+                            {t('Aus, und der Aufruf landet immer auf der Zieladresse selbst.')}
                           </div>
                         </div>
                         <label className="toggle-switch">
@@ -1091,7 +1125,7 @@ export default function ServiceFormModal({
                             type="checkbox"
                             checked={redirectKeepPath}
                             onChange={(e) => setRedirectKeepPath(e.target.checked)}
-                            aria-label="Pfad übernehmen"
+                            aria-label={t('Pfad übernehmen')}
                           />
                           <span className="toggle-slider" />
                         </label>
@@ -1099,23 +1133,15 @@ export default function ServiceFormModal({
                       <div className="form-note">
                         <Info size={14} />
                         <span>
-                          {redirectKeepPath ? (
-                            <>
-                              <code>
-                                {domains[0]?.trim() || 'domain.example'}/preise
-                              </code>{' '}
-                              geht auf <code>{(redirectTo.trim() || 'https://ziel.example')}/preise</code>.
-                              Für eine Domain, die umgezogen ist.
-                            </>
-                          ) : (
-                            <>
-                              <code>
-                                {domains[0]?.trim() || 'domain.example'}/preise
-                              </code>{' '}
-                              geht auf <code>{redirectTo.trim() || 'https://ziel.example'}</code>. Für
-                              eine Domain, die nur auf eine andere zeigen soll.
-                            </>
-                          )}
+                          {redirectKeepPath
+                            ? rich('{from} geht auf {to}. Für eine Domain, die umgezogen ist.', {
+                                from: <code>{domains[0]?.trim() || 'domain.example'}{'/preise'}</code>,
+                                to: <code>{redirectTo.trim() || 'https://ziel.example'}{'/preise'}</code>,
+                              })
+                            : rich('{from} geht auf {to}. Für eine Domain, die nur auf eine andere zeigen soll.', {
+                                from: <code>{domains[0]?.trim() || 'domain.example'}{'/preise'}</code>,
+                                to: <code>{redirectTo.trim() || 'https://ziel.example'}</code>,
+                              })}
                         </span>
                       </div>
                     </div>
@@ -1123,9 +1149,9 @@ export default function ServiceFormModal({
                     <div className="form-subsection">
                       <div className="form-subsection-head">
                         <div>
-                          <div className="form-section-title">Dauerhaft (301)</div>
+                          <div className="form-section-title">{t('Dauerhaft (301)')}</div>
                           <div className="form-section-sub">
-                            Aus heißt 302: vorübergehend, und jederzeit zurücknehmbar.
+                            {t('Aus heißt 302: vorübergehend, und jederzeit zurücknehmbar.')}
                           </div>
                         </div>
                         <label className="toggle-switch">
@@ -1133,7 +1159,7 @@ export default function ServiceFormModal({
                             type="checkbox"
                             checked={redirectPermanent}
                             onChange={(e) => setRedirectPermanent(e.target.checked)}
-                            aria-label="Dauerhaft (301)"
+                            aria-label={t('Dauerhaft (301)')}
                           />
                           <span className="toggle-slider" />
                         </label>
@@ -1142,9 +1168,7 @@ export default function ServiceFormModal({
                         <div className="form-note">
                           <Info size={14} />
                           <span>
-                            Ein Browser merkt sich eine 301 und ruft die alte Adresse nicht mehr
-                            auf. Wer sie später ändert, erreicht damit niemanden mehr, der schon
-                            einmal hier war, bis dessen Cache abläuft.
+                            {t('Ein Browser merkt sich eine 301 und ruft die alte Adresse nicht mehr auf. Wer sie später ändert, erreicht damit niemanden mehr, der schon einmal hier war, bis dessen Cache abläuft.')}
                           </span>
                         </div>
                       )}
@@ -1154,12 +1178,12 @@ export default function ServiceFormModal({
                 <>
                 <div className="form-list">
                   <div className="form-list-head">
-                    <span style={{ flex: '0 0 30%' }}>Name</span>
-                    <span style={{ flex: 1 }}>Adresse</span>
+                    <span style={{ flex: '0 0 30%' }}>{t('Name')}</span>
+                    <span style={{ flex: 1 }}>{t('Adresse')}</span>
                     {/* Die Spalte gibt es nur bei der Lastverteilung: ein
                         einzelnes Ziel bekommt ohnehin alles, und ein Feld ohne
                         Frage füllt irgendwann jemand aus. */}
-                    {balancing && <span style={{ width: 76 }}>Gewicht</span>}
+                    {balancing && <span style={{ width: 76 }}>{t('Gewicht')}</span>}
                     <span style={{ width: 34 }} />
                   </div>
                   {backends.map((backend, index) => (
@@ -1211,7 +1235,7 @@ export default function ServiceFormModal({
                             )
                           }
                           placeholder="1"
-                          aria-label={`Gewicht von Ziel ${index + 1}`}
+                          aria-label={t('Gewicht von Ziel {number}', { number: index + 1 })}
                         />
                       )}
                       {/* Beim Reverse-Proxy gibt es genau eine Zeile, also
@@ -1221,7 +1245,7 @@ export default function ServiceFormModal({
                         <button
                           type="button"
                           className="btn btn-ghost btn-icon"
-                          data-tooltip="Zeile entfernen"
+                          data-tooltip={t('Zeile entfernen')}
                           disabled={backends.length === 1}
                           onClick={() => setBackends(backends.filter((_, i) => i !== index))}
                         >
@@ -1240,13 +1264,12 @@ export default function ServiceFormModal({
                       onClick={() => setBackends([...backends, { ...EMPTY_SERVER }])}
                     >
                       <Plus size={14} />
-                      Ziel hinzufügen
+                      {t('Ziel hinzufügen')}
                     </button>
                   </div>
                 )}
                 <span className="form-hint">
-                  Adresse und Port, wie HAProxy sie erreicht, üblicherweise die Adresse im
-                  privaten Netz. Der Name ist frei; leer heißt server1, server2, …
+                  {t('Adresse und Port, wie HAProxy sie erreicht, üblicherweise die Adresse im privaten Netz. Der Name ist frei; leer heißt server1, server2, …')}
                 </span>
                 {/* Der eine Weg von hier ins größere Formular. Ohne ihn wäre
                     ein zweites Ziel hinter einer laufenden Domain nur über
@@ -1259,22 +1282,19 @@ export default function ServiceFormModal({
                       onClick={() => onSwitchKind('balance')}
                     >
                       <Scale size={14} />
-                      Zweites Ziel: auf Lastverteilung umstellen
+                      {t('Zweites Ziel: auf Lastverteilung umstellen')}
                     </button>
                     <span className="form-hint">
-                      Öffnet dasselbe Ziel im Lastverteilungs-Formular, mit Verfahren,
-                      Gewichtung und Sitzungsbindung. Nicht gespeicherte Eingaben in diesem
-                      Formular gehen dabei verloren.
+                      {t('Öffnet dasselbe Ziel im Lastverteilungs-Formular, mit Verfahren, Gewichtung und Sitzungsbindung. Nicht gespeicherte Eingaben in diesem Formular gehen dabei verloren.')}
                     </span>
                   </div>
                 )}
                 {balancing && (
                   <span className="form-hint">
-                    Das Gewicht ist der Anteil eines Ziels im Verhältnis zu den anderen: 2 gegen 1
-                    heißt doppelt so viele Anfragen. Leer heißt, dass keine <code>weight</code>
-                    -Angabe geschrieben wird und HAProxys Vorgabe gilt (alle gleich).{' '}
-                    <strong>0</strong> nimmt ein Ziel aus der Verteilung, ohne seine gebundenen
-                    Sitzungen abzuwerfen: der Weg, einen Server in Ruhe herauszunehmen.
+                    {rich(
+                      'Das Gewicht ist der Anteil eines Ziels im Verhältnis zu den anderen: 2 gegen 1 heißt doppelt so viele Anfragen. Leer heißt, dass keine {weight}-Angabe geschrieben wird und HAProxys Vorgabe gilt (alle gleich). {zero} nimmt ein Ziel aus der Verteilung, ohne seine gebundenen Sitzungen abzuwerfen: der Weg, einen Server in Ruhe herauszunehmen.',
+                      { weight: <code>{'weight'}</code>, zero: <strong>0</strong> }
+                    )}
                   </span>
                 )}
 
@@ -1286,12 +1306,12 @@ export default function ServiceFormModal({
                 <div className="form-subsection">
                   <div className="form-group">
                     <div className="form-label-row">
-                      <label className="form-label">Verteilverfahren</label>
+                      <label className="form-label">{t('Verteilverfahren')}</label>
                       <InfoHint
                         text={
                           balance
-                            ? BALANCE_HINTS[balance]
-                            : 'Es wird keine balance-Zeile geschrieben. Dann gilt, was im defaults-Block der Konfiguration steht, üblicherweise Round Robin. Was dort wirklich steht, weiß dieses Formular nicht, deshalb wird nichts hingeschrieben.'
+                            ? t(BALANCE_HINTS[balance])
+                            : t('Es wird keine balance-Zeile geschrieben. Dann gilt, was im defaults-Block der Konfiguration steht, üblicherweise Round Robin. Was dort wirklich steht, weiß dieses Formular nicht, deshalb wird nichts hingeschrieben.')
                         }
                       />
                     </div>
@@ -1299,8 +1319,8 @@ export default function ServiceFormModal({
                       value={balance ?? ''}
                       onChange={(v) => setBalance(v === '' ? null : (v as HaproxyBalance))}
                       options={[
-                        { value: '', label: 'Vorgabe der Konfiguration' },
-                        ...HAPROXY_BALANCE.map((b) => ({ value: b, label: BALANCE_LABELS[b] })),
+                        { value: '', label: t('Vorgabe der Konfiguration') },
+                        ...HAPROXY_BALANCE.map((b) => ({ value: b, label: t(BALANCE_LABELS[b]) })),
                       ]}
                     />
                   </div>
@@ -1308,17 +1328,22 @@ export default function ServiceFormModal({
                   <div className="form-subsection-head">
                     <div>
                       <div className="form-label-row">
-                        <div className="form-section-title">Sitzungsbindung</div>
+                        <div className="form-section-title">{t('Sitzungsbindung')}</div>
                         {/* Die Zeile aus der Konstante und nicht abgetippt: zwei Quellen
                             für dieselbe Zeile laufen auseinander. */}
                         <InfoHint
-                          text={`HAProxy setzt einen eigenen Cookie und nimmt ihn aus der Anfrage, bevor sie beim Ziel ankommt. Nötig für Anwendungen, die Sitzungen im Arbeitsspeicher halten. Teilen die Ziele ihre Sitzungen (gemeinsame Datenbank, Redis), braucht es sie nicht. In der Konfiguration: „${STICKY_BACKEND_LINE}" im Backend und „cookie <Servername>" an jeder server-Zeile.`}
+                          text={t(
+                            'HAProxy setzt einen eigenen Cookie und nimmt ihn aus der Anfrage, bevor sie beim Ziel ankommt. Nötig für Anwendungen, die Sitzungen im Arbeitsspeicher halten. Teilen die Ziele ihre Sitzungen (gemeinsame Datenbank, Redis), braucht es sie nicht. In der Konfiguration: „{line}" im Backend und „cookie <Servername>" an jeder server-Zeile.',
+                            { line: STICKY_BACKEND_LINE }
+                          )}
                         />
                       </div>
                       <div className="form-section-sub">
-                        {sticky
-                          ? 'Ein Besucher bleibt bei dem Ziel, auf dem er gelandet ist.'
-                          : 'Jede Anfrage kann bei einem anderen Ziel landen.'}
+                        {t(
+                          sticky
+                            ? 'Ein Besucher bleibt bei dem Ziel, auf dem er gelandet ist.'
+                            : 'Jede Anfrage kann bei einem anderen Ziel landen.'
+                        )}
                       </div>
                     </div>
                     <label className="toggle-switch">
@@ -1326,7 +1351,7 @@ export default function ServiceFormModal({
                         type="checkbox"
                         checked={sticky}
                         onChange={(e) => setSticky(e.target.checked)}
-                        aria-label="Sitzungsbindung"
+                        aria-label={t('Sitzungsbindung')}
                       />
                       <span className="toggle-slider" />
                     </label>
@@ -1337,9 +1362,9 @@ export default function ServiceFormModal({
                 <div className="form-subsection">
                   <div className="form-subsection-head">
                     <div>
-                      <div className="form-section-title">Healthcheck</div>
+                      <div className="form-section-title">{t('Healthcheck')}</div>
                       <div className="form-section-sub">
-                        HAProxy prüft die Ziele und nimmt ein totes aus dem Betrieb.
+                        {t('HAProxy prüft die Ziele und nimmt ein totes aus dem Betrieb.')}
                       </div>
                     </div>
                     {/* `label` und nicht `span`: das eigentliche Kästchen ist
@@ -1354,7 +1379,7 @@ export default function ServiceFormModal({
                         checked={input.healthcheck}
                         onChange={(e) => setHealthcheck(e.target.checked)}
                         disabled={!healthcheckAllowed}
-                        aria-label="Healthcheck"
+                        aria-label={t('Healthcheck')}
                       />
                       <span className="toggle-slider" />
                     </label>
@@ -1366,10 +1391,10 @@ export default function ServiceFormModal({
                     <div className="form-note">
                       <Info size={14} />
                       <span>
-                        Aus, weil die Hauptdomain eine Wildcard ist: der Check schickt sie als
-                        Host-Header, und <code>{domains[0]?.trim()}</code> ist kein Hostname. Das
-                        Ziel antwortete mit 404, und HAProxy nähme es aus dem Betrieb. Mit einer
-                        echten Domain an erster Stelle geht der Schalter wieder.
+                        {rich(
+                          'Aus, weil die Hauptdomain eine Wildcard ist: der Check schickt sie als Host-Header, und {domain} ist kein Hostname. Das Ziel antwortete mit 404, und HAProxy nähme es aus dem Betrieb. Mit einer echten Domain an erster Stelle geht der Schalter wieder.',
+                          { domain: <code>{domains[0]?.trim()}</code> }
+                        )}
                       </span>
                     </div>
                   ) : (
@@ -1377,9 +1402,10 @@ export default function ServiceFormModal({
                       <div className="form-note">
                         <Info size={14} />
                         <span>
-                          GET auf <code>/</code>, erwartet wird 200-399, Host-Header{' '}
-                          <code>{domains[0]?.trim() || 'Hauptdomain'}</code>. Antwortet ein Ziel
-                          anders, nimmt HAProxy es aus dem Betrieb.
+                          {rich(
+                            'GET auf {path}, erwartet wird 200-399, Host-Header {host}. Antwortet ein Ziel anders, nimmt HAProxy es aus dem Betrieb.',
+                            { path: <code>/</code>, host: <code>{domains[0]?.trim() || t('Hauptdomain')}</code> }
+                          )}
                         </span>
                       </div>
                     )
@@ -1399,20 +1425,22 @@ export default function ServiceFormModal({
                     <Lock size={17} />
                   </span>
                   <div>
-                    <div className="form-section-title">Zugriff</div>
+                    <div className="form-section-title">{t('Zugriff')}</div>
                     <div className="form-section-sub">
-                      {access === 'open'
-                        ? 'Jede Adresse kommt durch.'
-                        : access === 'ip'
-                          ? 'Nur die Admin-IPs kommen durch, alle anderen bekommen 403.'
-                          : 'Besucher sehen eine Passwortabfrage.'}
+                      {t(
+                        access === 'open'
+                          ? 'Jede Adresse kommt durch.'
+                          : access === 'ip'
+                            ? 'Nur die Admin-IPs kommen durch, alle anderen bekommen 403.'
+                            : 'Besucher sehen eine Passwortabfrage.'
+                      )}
                     </div>
                   </div>
                 </div>
 
                 <div className="form-group">
                   <div>
-                    <div className="segmented" role="group" aria-label="Zugriff">
+                    <div className="segmented" role="group" aria-label={t('Zugriff')}>
                       {(['open', 'ip', 'password'] as const).map((mode) => (
                         <button
                           key={mode}
@@ -1422,7 +1450,7 @@ export default function ServiceFormModal({
                           disabled={accessBlocked[mode]}
                           onClick={() => setAccess(mode)}
                         >
-                          {ACCESS_LABELS[mode]}
+                          {t(ACCESS_LABELS[mode])}
                         </button>
                       ))}
                     </div>
@@ -1431,16 +1459,19 @@ export default function ServiceFormModal({
                       ein Tooltip auf einem gesperrten Knopf erscheint nicht. */}
                   {adminIps.length === 0 && (
                     <span className="form-hint">
-                      {access === 'ip'
-                        ? 'Es sind keine Admin-IPs hinterlegt. Ohne Adressen kommt niemand hinein.'
-                        : 'Für „Nur Admin-IPs" sind keine Adressen hinterlegt.'}{' '}
-                      <Link href="/reverse-proxy/einstellungen">Einstellungen öffnen</Link>
+                      {t(
+                        access === 'ip'
+                          ? 'Es sind keine Admin-IPs hinterlegt. Ohne Adressen kommt niemand hinein.'
+                          : 'Für „Nur Admin-IPs" sind keine Adressen hinterlegt.'
+                      )}{' '}
+                      <Link href="/reverse-proxy/einstellungen">{t('Einstellungen öffnen')}</Link>
                     </span>
                   )}
                   {!passwordPossible && (
                     <span className="form-hint">
-                      Die Passwortsperre braucht HAProxy 2.4 oder neuer. Hier läuft{' '}
-                      {shortVersion(proxyVersion ?? '')}.
+                      {t('Die Passwortsperre braucht HAProxy 2.4 oder neuer. Hier läuft {version}.', {
+                        version: shortVersion(proxyVersion ?? ''),
+                      })}
                     </span>
                   )}
                 </div>
@@ -1449,16 +1480,17 @@ export default function ServiceFormModal({
                   <div className="form-note">
                     <ShieldCheck size={14} />
                     <span>
-                      {adminIps.length === 1
-                        ? 'Eine Adresse ist hinterlegt'
-                        : `${adminIps.length} Adressen sind hinterlegt`}
+                      {plural(adminIps.length, {
+                        one: 'Eine Adresse ist hinterlegt',
+                        other: '{count} Adressen sind hinterlegt',
+                      })}
                       {adminIps.length <= ADMIN_IPS_SHOWN && (
                         <>
                           : <code>{adminIps.join(', ')}</code>
                         </>
                       )}
-                      . Die Liste gilt für alle Ziele.{' '}
-                      <Link href="/reverse-proxy/einstellungen">Einstellungen öffnen</Link>
+                      . {t('Die Liste gilt für alle Ziele.')}{' '}
+                      <Link href="/reverse-proxy/einstellungen">{t('Einstellungen öffnen')}</Link>
                     </span>
                   </div>
                 )}
@@ -1466,7 +1498,7 @@ export default function ServiceFormModal({
                 {access === 'password' && (
                   <div className="form-group">
                     <label className="form-label" htmlFor="service-lock-password">
-                      {hasStoredPassword ? 'Neues Passwort' : 'Passwort'}
+                      {t(hasStoredPassword ? 'Neues Passwort' : 'Passwort')}
                     </label>
                     <div className="form-list-row">
                       <input
@@ -1474,7 +1506,7 @@ export default function ServiceFormModal({
                         className="form-input mono"
                         value={lockPassword}
                         onChange={(e) => setLockPassword(e.target.value)}
-                        placeholder={hasStoredPassword ? 'Leer lassen: das bisherige bleibt' : ''}
+                        placeholder={hasStoredPassword ? t('Leer lassen: das bisherige bleibt') : ''}
                         autoComplete="off"
                         spellCheck={false}
                       />
@@ -1482,17 +1514,19 @@ export default function ServiceFormModal({
                         type="button"
                         className="btn btn-ghost btn-icon"
                         data-tooltip-pos="left"
-                        data-tooltip="Vorschlag erzeugen"
+                        data-tooltip={t('Vorschlag erzeugen')}
                         onClick={() => setLockPassword(suggestPassword())}
-                        aria-label="Vorschlag erzeugen"
+                        aria-label={t('Vorschlag erzeugen')}
                       >
                         <RefreshCw size={16} />
                       </button>
                     </div>
                     <span className="form-hint">
                       {hasStoredPassword
-                        ? 'Ein neues Passwort meldet alle ab, die schon durchgelassen sind.'
-                        : `Mindestens ${LOCK_PASSWORD_MIN} Zeichen. Jetzt notieren: gespeichert wird nur ein Hash.`}
+                        ? t('Ein neues Passwort meldet alle ab, die schon durchgelassen sind.')
+                        : t('Mindestens {min} Zeichen. Jetzt notieren: gespeichert wird nur ein Hash.', {
+                            min: LOCK_PASSWORD_MIN,
+                          })}
                     </span>
                   </div>
                 )}
@@ -1500,16 +1534,16 @@ export default function ServiceFormModal({
                 {/* Bei einer Domain gibt es nichts zu wählen. */}
                 {access !== 'open' && lockChoices.length > 1 && (
                   <div className="form-group">
-                    <label className="form-label">Für welche Domains</label>
+                    <label className="form-label">{t('Für welche Domains')}</label>
                     <div>
-                      <div className="segmented" role="group" aria-label="Für welche Domains">
+                      <div className="segmented" role="group" aria-label={t('Für welche Domains')}>
                         <button
                           type="button"
                           className={lockAll ? 'active' : ''}
                           aria-pressed={lockAll}
                           onClick={() => setLockAll(true)}
                         >
-                          Alle Domains
+                          {t('Alle Domains')}
                         </button>
                         <button
                           type="button"
@@ -1517,7 +1551,7 @@ export default function ServiceFormModal({
                           aria-pressed={!lockAll}
                           onClick={() => setLockAll(false)}
                         >
-                          Nur einzelne
+                          {t('Nur einzelne')}
                         </button>
                       </div>
                     </div>
@@ -1530,7 +1564,7 @@ export default function ServiceFormModal({
                                 type="checkbox"
                                 checked={lockedDomains.includes(domain)}
                                 onChange={() => toggleDomainLock(domain)}
-                                aria-label={`${domain} sperren`}
+                                aria-label={t('{domain} sperren', { domain })}
                               />
                               <span className="toggle-slider" />
                             </span>
@@ -1555,10 +1589,7 @@ export default function ServiceFormModal({
                 <div className="form-note">
                   <Info size={14} />
                   <span>
-                    Eine Weiterleitung hat kein Backend. Pfad-Regeln, Header, Healthcheck und
-                    Verteilverfahren stehen deshalb nicht in diesem Formular: sie alle gehören zu
-                    einem Eintrag mit Zielen. Wer die braucht, legt einen Reverse-Proxy oder eine
-                    Lastverteilung an.
+                    {t('Eine Weiterleitung hat kein Backend. Pfad-Regeln, Header, Healthcheck und Verteilverfahren stehen deshalb nicht in diesem Formular: sie alle gehören zu einem Eintrag mit Zielen. Wer die braucht, legt einen Reverse-Proxy oder eine Lastverteilung an.')}
                   </span>
                 </div>
               )}
@@ -1578,11 +1609,13 @@ export default function ServiceFormModal({
                     <Waypoints size={17} />
                   </span>
                   <div>
-                    <div className="form-section-title">Pfad-Regeln</div>
+                    <div className="form-section-title">{t('Pfad-Regeln')}</div>
                     <div className="form-section-sub">
-                      {routes.length === 0
-                        ? 'Alles geht an das Standard-Backend. Das ist der Normalfall.'
-                        : 'Einzelne Pfade auf einen anderen Port desselben Ziels.'}
+                      {t(
+                        routes.length === 0
+                          ? 'Alles geht an das Standard-Backend. Das ist der Normalfall.'
+                          : 'Einzelne Pfade auf einen anderen Port desselben Ziels.'
+                      )}
                     </div>
                   </div>
                   <span className="form-section-count">{routes.length}</span>
@@ -1594,10 +1627,9 @@ export default function ServiceFormModal({
                     <span className="rp-blank-icon">
                       <Waypoints size={20} />
                     </span>
-                    <strong>Keine Pfad-Regeln</strong>
+                    <strong>{t('Keine Pfad-Regeln')}</strong>
                     <span>
-                      Alles geht an das Standard-Backend. Der Fall dafür ist Coolify: Oberfläche
-                      auf 8000, Terminal auf 6002, Live-Ansicht auf 6001.
+                      {t('Alles geht an das Standard-Backend. Der Fall dafür ist Coolify: Oberfläche auf 8000, Terminal auf 6002, Live-Ansicht auf 6001.')}
                     </span>
                   </div>
                 )}
@@ -1610,24 +1642,24 @@ export default function ServiceFormModal({
                     <div key={routeIndex} className="form-subsection">
                       <div className="form-subsection-head">
                         <div className="form-group" style={{ flex: 1, minWidth: 0 }}>
-                          <label className="form-label">Name</label>
+                          <label className="form-label">{t('Name')}</label>
                           <input
                             className="form-input"
                             value={route.name}
                             onChange={(e) => update({ name: e.target.value })}
-                            placeholder="terminal"
+                            placeholder={'terminal'}
                             autoComplete="off"
                           />
                           <span className="form-hint">
                             {editingId
-                              ? `Backend und ACL: ${editingId}_${route.name || 'name'}`
-                              : 'Nur a-z, 0-9 und _. Er wird Teil des Backend-Namens.'}
+                              ? t('Backend und ACL: {name}', { name: `${editingId}_${route.name || 'name'}` })
+                              : t('Nur a-z, 0-9 und _. Er wird Teil des Backend-Namens.')}
                           </span>
                         </div>
                         <button
                           type="button"
                           className="btn btn-ghost btn-icon"
-                          data-tooltip="Regel entfernen"
+                          data-tooltip={t('Regel entfernen')}
                           onClick={() => setRoutes(routes.filter((_, i) => i !== routeIndex))}
                         >
                           <Trash2 size={16} />
@@ -1635,7 +1667,7 @@ export default function ServiceFormModal({
                       </div>
 
                       <div className="form-group">
-                        <label className="form-label">Pfade</label>
+                        <label className="form-label">{t('Pfade')}</label>
                         <div className="form-list">
                           {route.paths.map((path, pathIndex) => (
                             <div className="form-list-row" key={pathIndex}>
@@ -1649,13 +1681,13 @@ export default function ServiceFormModal({
                                     ),
                                   })
                                 }
-                                placeholder="/terminal/ws"
+                                placeholder={'/terminal/ws'}
                                 autoComplete="off"
                               />
                               <button
                                 type="button"
                                 className="btn btn-ghost btn-icon"
-                                data-tooltip="Zeile entfernen"
+                                data-tooltip={t('Zeile entfernen')}
                                 disabled={route.paths.length === 1}
                                 onClick={() =>
                                   update({
@@ -1675,13 +1707,13 @@ export default function ServiceFormModal({
                             onClick={() => update({ paths: [...route.paths, ''] })}
                           >
                             <Plus size={14} />
-                            Pfad hinzufügen
+                            {t('Pfad hinzufügen')}
                           </button>
                         </div>
                       </div>
 
                       <div className="form-group">
-                        <label className="form-label">Ziele dieser Regel</label>
+                        <label className="form-label">{t('Ziele dieser Regel')}</label>
                         <div className="form-list">
                           {route.servers.map((server, serverIndex) => (
                             <div className="form-list-row" key={serverIndex}>
@@ -1731,12 +1763,12 @@ export default function ServiceFormModal({
                                   })
                                 }
                                 placeholder="1"
-                                aria-label={`Gewicht von Ziel ${serverIndex + 1}`}
+                                aria-label={t('Gewicht von Ziel {number}', { number: serverIndex + 1 })}
                               />
                               <button
                                 type="button"
                                 className="btn btn-ghost btn-icon"
-                                data-tooltip="Zeile entfernen"
+                                data-tooltip={t('Zeile entfernen')}
                                 disabled={route.servers.length === 1}
                                 onClick={() =>
                                   update({
@@ -1758,16 +1790,16 @@ export default function ServiceFormModal({
                             }
                           >
                             <Plus size={14} />
-                            Ziel hinzufügen
+                            {t('Ziel hinzufügen')}
                           </button>
                         </div>
                       </div>
 
                       <div className="form-subsection-head">
                         <div>
-                          <div className="form-section-title">Verbindungsprüfung</div>
+                          <div className="form-section-title">{t('Verbindungsprüfung')}</div>
                           <div className="form-section-sub">
-                            Nur `check` auf der server-Zeile, kein HTTP-Check.
+                            {t('Nur `check` auf der server-Zeile, kein HTTP-Check.')}
                           </div>
                         </div>
                         <label className="toggle-switch">
@@ -1775,7 +1807,7 @@ export default function ServiceFormModal({
                             type="checkbox"
                             checked={route.check}
                             onChange={(e) => update({ check: e.target.checked })}
-                            aria-label="Verbindungsprüfung"
+                            aria-label={t('Verbindungsprüfung')}
                           />
                           <span className="toggle-slider" />
                         </label>
@@ -1798,16 +1830,14 @@ export default function ServiceFormModal({
                         }
                       >
                         <Plus size={14} />
-                        Pfad-Regel hinzufügen
+                        {t('Pfad-Regel hinzufügen')}
                       </button>
                     </div>
 
                     <div className="form-note">
                       <Info size={14} />
                       <span>
-                        Verglichen wird der Anfang des Pfads: /app trifft auch /app/socket. Eine
-                        WebSocket-Strecke antwortet auf ein GET auf / nicht mit 200. Deshalb hier
-                        kein HTTP-Check, sonst nähme HAProxy sie dauerhaft aus dem Betrieb.
+                        {t('Verglichen wird der Anfang des Pfads: /app trifft auch /app/socket. Eine WebSocket-Strecke antwortet auf ein GET auf / nicht mit 200. Deshalb hier kein HTTP-Check, sonst nähme HAProxy sie dauerhaft aus dem Betrieb.')}
                       </span>
                     </div>
                   </>
@@ -1833,11 +1863,13 @@ export default function ServiceFormModal({
                     <SlidersHorizontal size={17} />
                   </span>
                   <div>
-                    <div className="form-section-title">Header und Verbindung</div>
+                    <div className="form-section-title">{t('Header und Verbindung')}</div>
                     <div className="form-section-sub">
-                      {addonCount === 0
-                        ? 'Nichts gesetzt. Das ist der Normalfall.'
-                        : 'Feste Header und lange Verbindungen für dieses Ziel.'}
+                      {t(
+                        addonCount === 0
+                          ? 'Nichts gesetzt. Das ist der Normalfall.'
+                          : 'Feste Header und lange Verbindungen für dieses Ziel.'
+                      )}
                     </div>
                   </div>
                   <span className="form-section-count">{addonCount}</span>
@@ -1849,21 +1881,21 @@ export default function ServiceFormModal({
                     <div className="form-group" key={direction}>
                       <div className="form-label-row">
                         <label className="form-label">
-                          Header der {HEADER_DIRECTION_LABELS[direction]}
+                          {t('Header der {direction}', { direction: t(HEADER_DIRECTION_LABELS[direction]) })}
                         </label>
                         <InfoHint
-                          text={
+                          text={t(
                             direction === 'response'
                               ? 'Gehen mit jeder Antwort dieses Ziels an den Besucher. Der Wert kommt wörtlich an: Ausdrücke wie %[src] werden nicht ausgewertet.'
                               : 'Gehen mit jeder Anfrage an das Ziel. Der Wert kommt wörtlich an: Ausdrücke wie %[src] werden nicht ausgewertet.'
-                          }
+                          )}
                         />
                       </div>
                       {headers[direction].length > 0 && (
                         <div className="form-list">
                           <div className="form-list-head">
-                            <span style={{ flex: '0 0 36%' }}>Name</span>
-                            <span style={{ flex: 1 }}>Wert</span>
+                            <span style={{ flex: '0 0 36%' }}>{t('Name')}</span>
+                            <span style={{ flex: 1 }}>{t('Wert')}</span>
                             <span style={{ width: 34 }} />
                           </div>
                           {headers[direction].map((rule, index) => {
@@ -1883,7 +1915,7 @@ export default function ServiceFormModal({
                                     }
                                     autoComplete="off"
                                     spellCheck={false}
-                                    aria-label={`Name von Header ${index + 1}`}
+                                    aria-label={t('Name von Header {number}', { number: index + 1 })}
                                   />
                                   <input
                                     className="form-input mono"
@@ -1894,13 +1926,13 @@ export default function ServiceFormModal({
                                     placeholder={direction === 'response' ? 'SAMEORIGIN' : '2'}
                                     autoComplete="off"
                                     spellCheck={false}
-                                    aria-label={`Wert von Header ${index + 1}`}
+                                    aria-label={t('Wert von Header {number}', { number: index + 1 })}
                                   />
                                   <button
                                     type="button"
                                     className="btn btn-ghost btn-icon"
                                     data-tooltip-pos="left"
-                                    data-tooltip="Zeile entfernen"
+                                    data-tooltip={t('Zeile entfernen')}
                                     onClick={() =>
                                       setHeaders((current) => ({
                                         ...current,
@@ -1930,7 +1962,7 @@ export default function ServiceFormModal({
                           }
                         >
                           <Plus size={14} />
-                          Header hinzufügen
+                          {t('Header hinzufügen')}
                         </button>
                         {/* Vorschläge und kein Preset: ein Klick fügt Zeilen
                             ein, die danach gewöhnliche Zeilen sind. */}
@@ -1940,7 +1972,7 @@ export default function ServiceFormModal({
                               key={suggestion.label}
                               type="button"
                               className="btn btn-ghost btn-sm"
-                              data-tooltip={suggestion.hint}
+                              data-tooltip={t(suggestion.hint)}
                               onClick={() => insertHeaders('response', suggestion.headers)}
                             >
                               {suggestion.label}
@@ -1955,16 +1987,21 @@ export default function ServiceFormModal({
                     <div className="form-subsection-head">
                       <div>
                         <div className="form-label-row">
-                          <div className="form-section-title">Lange Verbindungen</div>
+                          <div className="form-section-title">{t('Lange Verbindungen')}</div>
                           {/* Die Zeile aus der Konstante und nicht abgetippt. */}
                           <InfoHint
-                            text={`Für WebSocket, Terminal und Live-Ansicht. Ohne den Schalter beendet HAProxy eine offene Verbindung nach der Zeit aus dem defaults-Block, üblicherweise nach einer Minute ohne Daten. In der Konfiguration: „${TUNNEL_LINE}" in jedem Backend des Eintrags, auch in denen der Pfad-Regeln.`}
+                            text={t(
+                              'Für WebSocket, Terminal und Live-Ansicht. Ohne den Schalter beendet HAProxy eine offene Verbindung nach der Zeit aus dem defaults-Block, üblicherweise nach einer Minute ohne Daten. In der Konfiguration: „{line}" in jedem Backend des Eintrags, auch in denen der Pfad-Regeln.',
+                              { line: TUNNEL_LINE }
+                            )}
                           />
                         </div>
                         <div className="form-section-sub">
-                          {tunnel
-                            ? 'Eine offene Verbindung bleibt bis zu einer Stunde bestehen.'
-                            : 'Es gilt die Zeit aus der Grundkonfiguration.'}
+                          {t(
+                            tunnel
+                              ? 'Eine offene Verbindung bleibt bis zu einer Stunde bestehen.'
+                              : 'Es gilt die Zeit aus der Grundkonfiguration.'
+                          )}
                         </div>
                       </div>
                       <label className="toggle-switch">
@@ -1972,7 +2009,7 @@ export default function ServiceFormModal({
                           type="checkbox"
                           checked={tunnel}
                           onChange={(e) => setTunnel(e.target.checked)}
-                          aria-label="Lange Verbindungen"
+                          aria-label={t('Lange Verbindungen')}
                         />
                         <span className="toggle-slider" />
                       </label>
@@ -1989,10 +2026,10 @@ export default function ServiceFormModal({
               {/* Erst, wenn eine Domain dasteht: ein leeres Formular ist nicht
                   falsch ausgefüllt, sondern noch gar nicht. */}
               {inputError && domainList.length > 0 && (
-                <div className="alert alert-warning">{inputError}</div>
+                <div className="alert alert-warning">{t(inputError)}</div>
               )}
               {!inputError && surfaceError && (
-                <div className="alert alert-warning">{surfaceError}</div>
+                <div className="alert alert-warning">{t(surfaceError)}</div>
               )}
             </div>
           </div>
@@ -2004,7 +2041,7 @@ export default function ServiceFormModal({
             onClick={() => onClose()}
             disabled={saving}
           >
-            Abbrechen
+            {t('Abbrechen')}
           </button>
           <button
             type="submit"
@@ -2012,7 +2049,7 @@ export default function ServiceFormModal({
             disabled={saving || !!inputError || !!surfaceError || !!accessError}
           >
             {saving && <Loader2 size={16} className="spin" />}
-            {editingId ? 'Speichern' : 'Anlegen'}
+            {t(editingId ? 'Speichern' : 'Anlegen')}
           </button>
         </div>
       </form>

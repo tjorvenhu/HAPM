@@ -34,11 +34,12 @@
  * dem Port sitzt (sshd, ein Postgres, ein Docker-Mapping), weiß diese Datei
  * nicht; danach fragt die Vorabprüfung in `provision.ts`.
  *
- * Ohne Importe außer denen aus `config.ts`, damit Formular und Route dieselbe
- * Prüfung benutzen und `tests/haproxy/streams.test.ts` jede Einfügung an echtem
- * Konfigurationstext nachrechnen kann.
+ * Ohne Importe außer denen aus `config.ts` und `lib/i18n` (rein), damit
+ * Formular und Route dieselbe Prüfung benutzen und `tests/haproxy/streams.test.ts`
+ * jede Einfügung an echtem Konfigurationstext nachrechnen kann.
  */
 
+import { msg, msgid, type Message } from '../i18n/translate';
 import {
   HaproxyConfigError,
   SECTION_KEYWORDS,
@@ -87,23 +88,34 @@ export const STREAM_BALANCE_LABELS: Record<StreamBalance, string> = {
  *  Diensten; `source` steht hier anders da, weil es in `mode tcp` die einzige
  *  Bindung überhaupt ist — einen Cookie gibt es ohne HTTP nicht. */
 export const STREAM_BALANCE_HINTS: Record<StreamBalance, string> = {
-  roundrobin:
-    'balance roundrobin: jede Verbindung an das nächste Ziel, der Reihe nach. Der Normalfall.',
-  leastconn:
-    'balance leastconn: immer an das Ziel mit den wenigsten offenen Verbindungen. Bei TCP meistens die richtige Wahl, denn eine Verbindung bleibt hier lange offen: eine Datenbanksitzung dauert Minuten, keine Millisekunden.',
-  source:
-    'balance source: aus der Quell-IP wird ein Hash, und der bestimmt das Ziel. In mode tcp ist das der einzige Weg zu einer Bindung: einen Cookie gibt es ohne HTTP nicht. Sie bricht, sobald ein Ziel ausfällt oder dazukommt.',
-  random: 'balance random: ein zufällig gewähltes Ziel.',
+  roundrobin: msgid(
+    'balance roundrobin: jede Verbindung an das nächste Ziel, der Reihe nach. Der Normalfall.'
+  ),
+  leastconn: msgid(
+    'balance leastconn: immer an das Ziel mit den wenigsten offenen Verbindungen. Bei TCP meistens die richtige Wahl, denn eine Verbindung bleibt hier lange offen: eine Datenbanksitzung dauert Minuten, keine Millisekunden.'
+  ),
+  source: msgid(
+    'balance source: aus der Quell-IP wird ein Hash, und der bestimmt das Ziel. In mode tcp ist das der einzige Weg zu einer Bindung: einen Cookie gibt es ohne HTTP nicht. Sie bricht, sobald ein Ziel ausfällt oder dazukommt.'
+  ),
+  random: msgid('balance random: ein zufällig gewähltes Ziel.'),
 };
 
 /** Ports, die auf dem Proxy bereits vergeben sind — nicht in der
  *  Datei, sondern durch den Zweck der Maschine. Sie stehen hier als Meldung mit
- *  Grund, damit nicht erst der Reload sagt, was los ist. */
-const RESERVED_PORTS: Record<number, string> = {
-  22: 'SSH. Darüber wird dieser Server verwaltet.',
-  80: 'HTTP. Darüber läuft die Weiterleitung auf HTTPS.',
-  443: 'HTTPS. Das ist das Frontend, in dem die Dienste liegen.',
-  8888: 'Die ACME-Challenge von acme.sh. Ohne den Port lässt sich kein Zertifikat mehr erneuern.',
+ *  Grund, damit nicht erst der Reload sagt, was los ist. Je Port ein ganzer
+ *  Satz, damit der Grund nicht als Wert in einer übersetzten Meldung steht. */
+const RESERVED_PORTS: Record<number, Message> = {
+  22: msg('Port {port} ist auf einem Reverse-Proxy belegt: SSH. Darüber wird dieser Server verwaltet.', { port: 22 }),
+  80: msg('Port {port} ist auf einem Reverse-Proxy belegt: HTTP. Darüber läuft die Weiterleitung auf HTTPS.', {
+    port: 80,
+  }),
+  443: msg('Port {port} ist auf einem Reverse-Proxy belegt: HTTPS. Das ist das Frontend, in dem die Dienste liegen.', {
+    port: 443,
+  }),
+  8888: msg(
+    'Port {port} ist auf einem Reverse-Proxy belegt: Die ACME-Challenge von acme.sh. Ohne den Port lässt sich kein Zertifikat mehr erneuern.',
+    { port: 8888 }
+  ),
 };
 
 export interface HaproxyStream {
@@ -203,7 +215,7 @@ export const STREAM_PORT_MAX = 65535;
  * Was hier NICHT geprüft wird, ist der Portkonflikt. Dafür braucht es die
  * Konfiguration, und die liegt erst in `addStream` vor.
  */
-export function validateStreamInput(input: CreateStreamInput): string | null {
+export function validateStreamInput(input: CreateStreamInput): Message | null {
   return validateStream(input, true);
 }
 
@@ -211,50 +223,60 @@ export function validateStreamInput(input: CreateStreamInput): string | null {
  * Dasselbe für eine Weiterleitung, die es noch nicht gibt: eine leere Kennung
  * heißt dort „wird beim Anlegen vergeben" (`assignStreamId`).
  */
-export function validateNewStream(input: CreateStreamInput): string | null {
+export function validateNewStream(input: CreateStreamInput): Message | null {
   return validateStream(input, input.id !== '');
 }
 
-function validateStream(input: CreateStreamInput, idGiven: boolean): string | null {
-  if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(input.scope)) return 'Es wurde keine Gruppe ausgewählt.';
+/** Eine `Message`: das Formular übersetzt sie mit `t()`, die Route wirft sie als `ApiError`. */
+function validateStream(input: CreateStreamInput, idGiven: boolean): Message | null {
+  if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(input.scope)) return msg('Es wurde keine Gruppe ausgewählt.');
   if (idGiven && !isValidServiceId(input.id)) {
-    return 'Die Kennung darf nur a-z, 0-9 und _ enthalten und muss mit einem Buchstaben oder einer Ziffer beginnen.';
+    return msg('Die Kennung darf nur a-z, 0-9 und _ enthalten und muss mit einem Buchstaben oder einer Ziffer beginnen.');
   }
 
   if (!Number.isInteger(input.port) || input.port < STREAM_PORT_MIN || input.port > STREAM_PORT_MAX) {
-    return `Der Port muss eine ganze Zahl zwischen ${STREAM_PORT_MIN} und ${STREAM_PORT_MAX} sein.`;
+    return msg('Der Port muss eine ganze Zahl zwischen {min} und {max} sein.', {
+      min: STREAM_PORT_MIN,
+      max: STREAM_PORT_MAX,
+    });
   }
   const reserved = RESERVED_PORTS[input.port];
-  if (reserved) return `Port ${input.port} ist auf einem Reverse-Proxy belegt: ${reserved}`;
+  if (reserved) return reserved;
 
   if (input.balance !== null && !STREAM_BALANCE.includes(input.balance)) {
-    return 'Unbekanntes Verteilverfahren.';
+    return msg('Unbekanntes Verteilverfahren.');
   }
 
-  if (input.servers.length === 0) return 'Mindestens ein Ziel wird benötigt.';
+  if (input.servers.length === 0) return msg('Mindestens ein Ziel wird benötigt.');
   const seenNames = new Set<string>();
   for (const server of input.servers) {
     if (server.name) {
-      if (!isValidBackendName(server.name)) return `Ungültiger Zielname: ${server.name}`;
+      if (!isValidBackendName(server.name)) return msg('Ungültiger Zielname: {name}', { name: server.name });
       if (seenNames.has(server.name)) {
-        return `Der Zielname ${server.name} steht doppelt. HAProxy lehnt zwei gleich benannte Server in einem Abschnitt ab.`;
+        return msg(
+          'Der Zielname {name} steht doppelt. HAProxy lehnt zwei gleich benannte Server in einem Abschnitt ab.',
+          { name: server.name }
+        );
       }
       seenNames.add(server.name);
     }
     if (!isValidBackendTarget(server.target)) {
-      return `Ungültiges Ziel: ${server.target}. Erwartet wird host:port.`;
+      return msg('Ungültiges Ziel: {target}. Erwartet wird host:port.', { target: server.target });
     }
     if (server.weight !== null && !isValidWeight(server.weight)) {
-      return `Ungültige Gewichtung für ${server.target}: ${server.weight}. HAProxy nimmt eine ganze Zahl von ${WEIGHT_MIN} bis ${WEIGHT_MAX}.`;
+      return msg(
+        'Ungültige Gewichtung für {target}: {weight}. HAProxy nimmt eine ganze Zahl von {min} bis {max}.',
+        { target: server.target, weight: server.weight, min: WEIGHT_MIN, max: WEIGHT_MAX }
+      );
     }
   }
 
   const seenSources = new Set<string>();
   for (const source of input.allowedSources) {
     if (!isValidSourceAddress(source)) {
-      return `Ungültige Absenderadresse: ${source}. Erwartet wird eine IP oder ein CIDR-Block.`;
+      return msg('Ungültige Absenderadresse: {source}. Erwartet wird eine IP oder ein CIDR-Block.', { source });
     }
-    if (seenSources.has(source)) return `Die Adresse ${source} steht doppelt in der Liste.`;
+    if (seenSources.has(source)) return msg('Die Adresse {address} steht doppelt in der Liste.', { address: source });
     seenSources.add(source);
   }
 
@@ -398,16 +420,16 @@ export function parseStreams(text: string): HaproxyStream[] {
     // zurückschriebe — es hat ein Feld.
     const port = c.bindLines === 1 && c.binds.length === 1 ? c.binds[0] : null;
     if (port === null && c.bindLines > 0) extras.push(`bind (${c.bindLines}×, nicht abbildbar)`);
-    if (c.bindLines === 0) extras.push('ohne bind-Zeile');
-    if (c.mode !== 'tcp') extras.push(c.mode === null ? 'ohne mode-Zeile' : `mode ${c.mode}`);
-    if (!c.log) extras.push('ohne option tcplog');
-    if (c.sourceRules > 1) extras.push('mehrere tcp-request-connection-Regeln');
+    if (c.bindLines === 0) extras.push(msgid('ohne bind-Zeile'));
+    if (c.mode !== 'tcp') extras.push(c.mode === null ? msgid('ohne mode-Zeile') : `mode ${c.mode}`);
+    if (!c.log) extras.push(msgid('ohne option tcplog'));
+    if (c.sourceRules > 1) extras.push(msgid('mehrere tcp-request-connection-Regeln'));
 
     // `check` gilt für alle oder für keinen: gemischt geschrieben käme beim
     // Speichern für die Hälfte etwas anderes heraus, als dasteht.
     const check = c.servers.length > 0 && c.servers.every((s) => s.check);
     if (c.servers.some((s) => s.check !== check)) {
-      extras.push('server-Zeilen mit unterschiedlichem check');
+      extras.push(msgid('server-Zeilen mit unterschiedlichem check'));
     }
 
     const scope = scopeOf(c.index);
@@ -590,23 +612,30 @@ export function addStream(text: string, input: CreateStreamInput): string {
   const taken = sectionNamed(lines, input.id);
   if (taken) {
     throw new HaproxyConfigError(
-      `Der Name "${input.id}" ist in der Konfiguration bereits vergeben (${clean(taken)}).`
+      msg('Der Name "{name}" ist in der Konfiguration bereits vergeben ({line}).', {
+        name: input.id,
+        line: clean(taken),
+      })
     );
   }
 
   const conflict = bindConflict(text, input.port);
   if (conflict) {
     throw new HaproxyConfigError(
-      `Port ${input.port} wird in der Konfiguration bereits von "${conflict}" gebunden. ` +
-        'Ein zweiter Abschnitt auf demselben Port kommt durch die Prüfung und scheitert erst beim Reload.'
+      msg(
+        'Port {port} wird in der Konfiguration bereits von "{section}" gebunden. Ein zweiter Abschnitt auf demselben Port kommt durch die Prüfung und scheitert erst beim Reload.',
+        { port: input.port, section: conflict }
+      )
     );
   }
 
   const scope = findBackendScope(lines, input.scope);
   if (!scope) {
     throw new HaproxyConfigError(
-      `In der Konfiguration gibt es keinen Marker "# END AUTO ${input.scope.toUpperCase()} BACKENDS". ` +
-        'Ohne ihn ist nicht bestimmbar, wo der Abschnitt hingehört.'
+      msg(
+        'In der Konfiguration gibt es keinen Marker "# END AUTO {scope} BACKENDS". Ohne ihn ist nicht bestimmbar, wo der Abschnitt hingehört.',
+        { scope: input.scope.toUpperCase() }
+      )
     );
   }
 
@@ -711,7 +740,7 @@ export function removeStream(text: string, id: string): string {
   }
 
   if (!touched) {
-    throw new HaproxyConfigError(`Die TCP-Weiterleitung "${id}" steht nicht in der Konfiguration.`);
+    throw new HaproxyConfigError(msg('Die TCP-Weiterleitung "{id}" steht nicht in der Konfiguration.', { id }));
   }
   return out.join('\n');
 }
@@ -736,7 +765,10 @@ export function replaceStream(text: string, oldId: string, input: CreateStreamIn
 export function toStreamInput(stream: HaproxyStream): CreateStreamInput {
   if (!stream.editable || !stream.scope || stream.port === null) {
     throw new HaproxyConfigError(
-      `"${stream.id}" lässt sich nicht bearbeiten: der Abschnitt enthält Einstellungen, die dieses Formular nicht abbildet.`
+      msg(
+        '"{id}" lässt sich nicht bearbeiten: der Abschnitt enthält Einstellungen, die dieses Formular nicht abbildet.',
+        { id: stream.id }
+      )
     );
   }
   return {

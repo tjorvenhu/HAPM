@@ -20,6 +20,7 @@ Next.js (App Router) mit TypeScript strict, pnpm. Drei Container: HAPM, HAProxy
 | `lib/db/`, `lib/setup-db.ts`, `bin/hapm-admin.mjs` | [`docs/betrieb.md`](docs/betrieb.md), Abschnitt „Postgres" |
 | `lib/auth/`, `lib/session.ts`, `lib/two-factor.ts`, `app/api/auth/`, `app/api/account/` | die Köpfe der Dateien: dort steht zu jeder Stelle, warum sie so ist |
 | `ui/`, `components/`, `app/globals.css`, `app/hapm.css` | unten „Regeln, die überall gelten", Punkte „Oberfläche" und „Design" |
+| `lib/i18n/`, jeder Text für Nutzer (Seiten, Meldungen, Datum, Zahlen) | [`docs/i18n.md`](docs/i18n.md): `t()`, `msg()`, Wörterbuch, Glossar |
 
 ## Wie HAPM gebaut ist
 
@@ -105,7 +106,10 @@ Next.js (App Router) mit TypeScript strict, pnpm. Drei Container: HAPM, HAProxy
   Stylesheets.
 - **Texte:** UI-Texte und Fehlermeldungen deutsch, Code englisch. Kurze,
   konkrete Sätze, keine Gedankenstriche in Texten für Nutzer. Icons aus
-  `lucide-react`, keine Emoji.
+  `lucide-react`, keine Emoji. Jeder Text für Nutzer geht über `t()` (Seite),
+  `msg()` (Meldung einer Route) oder `msgid()`, Datum und Zahlen über
+  `lib/i18n/format.ts`; Englisch steht in `lib/i18n/en/`. Siehe
+  [`docs/i18n.md`](docs/i18n.md).
 - Kennungen, die in `haproxy.cfg` oder auf der Platte stehen (`hapm_lock_…`,
   `/etc/haproxy/hapm-lock`, Cookie `HAPMSRV`, `.hapm-original`), werden nicht
   umbenannt: bestehende Konfigurationen hängen daran.

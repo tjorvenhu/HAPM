@@ -7,6 +7,12 @@
  *   hapm-ctl reload                lädt HAProxy neu und meldet, ob es geklappt hat
  *   hapm-ctl replace <container> <abbild>   ersetzt einen Container durch einen mit neuem Abbild
  *
+ * Für den Helfer beim Zurückspielen einer Sicherung (`lib/backup/restore.ts`):
+ *
+ *   hapm-ctl check <datei>         prüft die Konfiguration, auch wenn HAProxy steht
+ *   hapm-ctl stop|start <container>
+ *   hapm-ctl restore-db <datei>    spielt eine Datenbank aus `pg_dump` in einer Transaktion ein
+ *
  * Im Abbild liegen dafür zwei Verweise: `/usr/local/bin/haproxy` und
  * `/usr/local/bin/hapm-reload`. So bleiben die Kommandos aus `lib/haproxy/`
  * dieselben wie auf einer Maschine mit installiertem HAProxy, und der
@@ -110,6 +116,101 @@ async function haproxy(argv) {
 }
 
 /**
+ * Die Konfiguration prüfen, auch wenn HAProxy gerade nicht läuft: dann in
+ * einem einmaligen Container aus demselben Abbild mit denselben Einbindungen,
+ * ohne Netz. Das Zurückspielen darf ein stehendes HAProxy nicht übergehen.
+ *
+ * @param {string} file
+ */
+async function check(file) {
+  const container = await docker.findContainer(HAPROXY);
+  if (!container) {
+    console.error(`Der Container "${HAPROXY}" existiert nicht.`);
+    return 127;
+  }
+  if (container.State?.Running) return haproxy(['-c', '-f', file]);
+
+  const name = `hapm-check-${Date.now()}`;
+  await docker.createContainer(name, {
+    Image: container.Image,
+    Cmd: ['haproxy', '-c', '-f', file],
+    User: 'root',
+    HostConfig: {
+      Binds: container.HostConfig?.Binds ?? [],
+      Mounts: container.HostConfig?.Mounts ?? [],
+      NetworkMode: 'none',
+    },
+  });
+  try {
+    await docker.start(name);
+    const code = await docker.wait(name, 60_000);
+    const output = await docker.logs(name, { tail: 60 }).catch(() => '');
+    if (output.trim()) console.log(output.trim());
+    return code;
+  } finally {
+    await docker.removeContainer(name, { force: true }).catch(() => undefined);
+  }
+}
+
+/**
+ * Löscht die Sitzungen, die mit der Datenbank zurückgekommen sind: wer
+ * zurückspielt, meldet sich danach mit den Konten der Sicherung neu an, und
+ * kein Cookie aus der Zeit der Sicherung gilt wieder. Eine Sicherung aus einer
+ * Fassung ohne die Tabelle kennt keine. Nicht beim Zurückrollen nach einem
+ * Fehler (`--keep-sessions`): dann gilt wieder der Stand von eben, samt der
+ * Sitzung dessen, der das Zurückspielen begonnen hat.
+ */
+const DELETE_SESSIONS =
+  "DO $$ BEGIN IF to_regclass('public.auth_sessions') IS NOT NULL THEN DELETE FROM public.auth_sessions; END IF; END $$";
+
+/**
+ * Eine Datenbank aus `pg_dump` einspielen, in EINER Transaktion: das Schema
+ * leeren, die Datei einspielen, die Sitzungen löschen. Scheitert eine Zeile,
+ * rollt Postgres alles zurück, und die Datenbank ist, wie sie war.
+ *
+ * Das Schema wird geleert und nicht nur überschrieben: eine Sicherung aus einer
+ * älteren Fassung kennt nicht jede Tabelle, und eine Tabelle von heute bliebe
+ * sonst mit ihrem heutigen Inhalt neben dem alten Stand stehen. Was fehlt,
+ * legt HAPM beim Start an.
+ *
+ * Die Datei geht über die Engine in den Postgres-Container (`/tmp`), dort liest
+ * sie `psql`. Das Abbild von HAPM hat kein `psql`, und die Engine reicht kein
+ * stdin durch.
+ *
+ * @param {string} file
+ * @param {boolean} keepSessions
+ */
+async function restoreDb(file, keepSessions) {
+  const container = process.env.HAPM_POSTGRES_CONTAINER || 'hapm-postgres';
+  const database = process.env.HAPM_DATABASE_NAME || 'hapm';
+  const user = process.env.HAPM_DATABASE_USER || 'hapm';
+  const name = `hapm-restore-${process.pid}-${Date.now()}.sql`;
+  await docker.putFile(container, '/tmp', name, file);
+  try {
+    const result = await docker.exec(
+      container,
+      [
+        'psql', '-X', '-q', '-U', user, '-d', database,
+        '--single-transaction', '-v', 'ON_ERROR_STOP=1',
+        '-c', 'DROP SCHEMA IF EXISTS public CASCADE',
+        '-c', 'CREATE SCHEMA public',
+        '-c', 'ALTER SCHEMA public OWNER TO pg_database_owner',
+        '-c', 'GRANT USAGE ON SCHEMA public TO PUBLIC',
+        '-c', "COMMENT ON SCHEMA public IS 'standard public schema'",
+        '-f', `/tmp/${name}`,
+        ...(keepSessions ? [] : ['-c', DELETE_SESSIONS]),
+      ],
+      { timeoutMs: 30 * 60_000 }
+    );
+    if (result.stdout.trim()) console.log(result.stdout.trim().slice(-2000));
+    if (result.stderr.trim()) console.error(result.stderr.trim().slice(-2000));
+    return result.code;
+  } finally {
+    await docker.exec(container, ['rm', '-f', `/tmp/${name}`]).catch(() => undefined);
+  }
+}
+
+/**
  * Das bisherige Abbild, wie HAPM es vor dem Holen des neuen gelesen hat. Der
  * Helfer bekommt es mit, weil das alte Abbild danach verschwunden sein kann.
  */
@@ -121,6 +222,13 @@ function oldImageFromEnv() {
   } catch {
     return undefined;
   }
+}
+
+function usage() {
+  console.error(
+    'Aufruf: hapm-ctl haproxy <argumente> | reload | replace <container> <abbild> | check <datei> | stop <container> | start <container> | restore-db <datei> [--keep-sessions]'
+  );
+  return 2;
 }
 
 async function main() {
@@ -143,9 +251,22 @@ async function main() {
       if (!result.ok) console.error(result.error);
       return result.ok ? 0 : 1;
     }
+    // Die folgenden ruft der Helfer beim Zurückspielen (`lib/backup/restore.ts`).
+    case 'check':
+      return rest[0] ? check(rest[0]) : usage();
+    case 'stop':
+      if (!rest[0]) return usage();
+      // 30 Sekunden, wie `docker stop`: Zeit genug, laufende Anfragen zu beenden.
+      await docker.stop(rest[0], 30);
+      return 0;
+    case 'start':
+      if (!rest[0]) return usage();
+      await docker.start(rest[0]);
+      return 0;
+    case 'restore-db':
+      return rest[0] ? restoreDb(rest[0], rest[1] === '--keep-sessions') : usage();
     default:
-      console.error('Aufruf: hapm-ctl haproxy <argumente> | reload | replace <container> <abbild>');
-      return 2;
+      return usage();
   }
 }
 

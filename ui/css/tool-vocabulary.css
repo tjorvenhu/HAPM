@@ -874,6 +874,11 @@ a.kpi { color: inherit; }
 /* Beschriftung mit „i" daneben (InfoHint) in einer Zeile. */
 .form-label-row { display: flex; align-items: center; gap: 6px; }
 
+/* Eine Plakette neben der Beschriftung ist höher als die Zeile. Ohne den
+ * Ausgleich rutscht das Feld darunter nach unten und steht nicht mehr auf
+ * einer Linie mit den Feldern daneben. */
+.form-label-row > .badge-status { margin-block: -0.25rem; }
+
 /* ── Die Auswahl, was für ein Ziel es werden soll ──
  *
  * Vier Karten statt eines Dropdowns. Der Unterschied zwischen einem
@@ -2267,3 +2272,53 @@ a.kpi { color: inherit; }
 .btn-warning { background: var(--warning); color: var(--primary-fg); box-shadow: var(--shadow-solid); }
 
 .btn-warning:hover:not(:disabled) { background: var(--warning-fg); color: var(--primary-fg); }
+
+/* ── Tooltips in eigener Ebene (tool/TooltipLayer) ──
+   Läuft die Ebene, schweigen die Tooltips aus CSS oben: sie kennen den Rand des
+   Fensters nicht und wurden links an der Seite oder in Containern mit
+   `overflow` abgeschnitten. Ohne JavaScript gelten sie weiter. Aussehen wie
+   dort, nur bricht ein langer Text um, statt eine Zeile quer über die Seite zu
+   ziehen. */
+.has-tooltip-layer [data-tooltip]::before,
+.has-tooltip-layer [data-tooltip]::after {
+  display: none !important;
+}
+
+.tooltip-layer {
+  position: fixed; z-index: 1100; pointer-events: none;
+  width: max-content; max-width: min(320px, calc(100vw - 16px));
+  background: var(--text); color: var(--surface);
+  font: 500 0.75rem/1.4 var(--font-sans);
+  padding: 0.375rem 0.75rem; border-radius: var(--radius);
+  white-space: normal; overflow-wrap: anywhere;
+  box-shadow: var(--shadow-overlay);
+  animation: tooltip-layer-in 0.12s ease;
+}
+
+.tooltip-layer.is-wide { max-width: min(260px, calc(100vw - 16px)); line-height: 1.45; }
+
+/* Der Pfeil zeigt auf die Mitte des Elements, auch wenn die Blase am Rand verschoben ist. */
+.tooltip-layer::after {
+  content: ''; position: absolute;
+  top: 100%; left: var(--tooltip-arrow); transform: translateX(-50%);
+  border: 5px solid transparent; border-top-color: var(--text);
+}
+
+.tooltip-layer.is-below::after {
+  top: auto; bottom: 100%;
+  border-top-color: transparent; border-bottom-color: var(--text);
+}
+
+.tooltip-layer.is-left::after {
+  top: var(--tooltip-arrow); left: 100%; transform: translateY(-50%);
+  border-top-color: transparent; border-left-color: var(--text);
+}
+
+@keyframes tooltip-layer-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tooltip-layer { animation: none; }
+}

@@ -17,6 +17,10 @@ import {
   shortVersion,
   type CreateServiceInput,
 } from '@/lib/haproxy/config';
+import { germanText, type Message } from '@/lib/i18n/translate';
+
+/** Die Meldung einer Prüfung auf Deutsch, wie sie ohne Sprache herauskommt. */
+const de = (message: Message | null) => (message ? germanText(message) : message);
 
 /**
  * Die Konfiguration ist die Wahrheit, und diese Datei rechnet nach, was HAPM
@@ -287,23 +291,23 @@ describe('removeService', () => {
 
 describe('validateCreateInput', () => {
   it('nimmt eine gültige Eingabe', () => {
-    expect(validateCreateInput(INPUT)).toBeNull();
+    expect(de(validateCreateInput(INPUT))).toBeNull();
   });
 
   it('nimmt eine Wildcard', () => {
     expect(
-      validateCreateInput({ ...INPUT, domains: ['shop-mueller.example', '*.shop-mueller.example'] })
+      de(validateCreateInput({ ...INPUT, domains: ['shop-mueller.example', '*.shop-mueller.example'] }))
     ).toBeNull();
   });
 
   it('lehnt einen Stern ab, der keine Wildcard ist', () => {
     for (const domain of ['*kunde.example', 'a.*.kunde.example', '*.', '*']) {
-      expect(validateCreateInput({ ...INPUT, domains: [domain] })).not.toBeNull();
+      expect(de(validateCreateInput({ ...INPUT, domains: [domain] }))).not.toBeNull();
     }
   });
 
   it('lehnt eine Wildcard auf eine TLD ab — die stellt keine CA aus', () => {
-    expect(validateCreateInput({ ...INPUT, domains: ['*.de'] })).not.toBeNull();
+    expect(de(validateCreateInput({ ...INPUT, domains: ['*.de'] }))).not.toBeNull();
   });
 
   it('bemängelt eine Wildcard als Hauptdomain NICHT — der Healthcheck geht stattdessen aus', () => {
@@ -312,7 +316,7 @@ describe('validateCreateInput', () => {
     // Das ist eine Bedingung und keine Meldung — die Eingabe wird angenommen,
     // der Check fällt weg.
     expect(
-      validateCreateInput({ ...INPUT, domains: ['*.kunde.example'], healthcheck: true })
+      de(validateCreateInput({ ...INPUT, domains: ['*.kunde.example'], healthcheck: true }))
     ).toBeNull();
     expect(healthcheckPossible(['*.kunde.example'])).toBe(false);
     expect(healthcheckPossible(['kunde.example', '*.kunde.example'])).toBe(true);
@@ -339,61 +343,61 @@ describe('validateCreateInput', () => {
 
   it('lässt eine Adresse unter der eigenen Wildcard sperren', () => {
     expect(
-      validateCreateInput({
+      de(validateCreateInput({
         ...INPUT,
         domains: ['kunde.example', '*.kunde.example'],
         lockedDomains: ['intern.kunde.example'],
-      })
+      }))
     ).toBeNull();
     expect(
-      validateCreateInput({
+      de(validateCreateInput({
         ...INPUT,
         domains: ['kunde.example', '*.kunde.example'],
         lockedDomains: ['intern.fremd.example'],
-      })
+      }))
     ).not.toBeNull();
   });
 
   it('lehnt Dienst-IDs ab, die HAProxy oder das Namensschema brechen', () => {
     for (const id of ['Shop', 'shop-mueller', '_shop', 'shop mueller', '']) {
-      expect(validateCreateInput({ ...INPUT, id })).not.toBeNull();
+      expect(de(validateCreateInput({ ...INPUT, id }))).not.toBeNull();
     }
   });
 
   it('lehnt ein Ziel ohne Port und einen Port außerhalb des Bereichs ab', () => {
-    expect(validateCreateInput({ ...INPUT, servers: [{ name: '', target: '10.0.0.1', weight: null }] })).toMatch(
+    expect(de(validateCreateInput({ ...INPUT, servers: [{ name: '', target: '10.0.0.1', weight: null }] }))).toMatch(
       /host:port/
     );
     expect(
-      validateCreateInput({ ...INPUT, servers: [{ name: '', target: '10.0.0.1:99999', weight: null }] })
+      de(validateCreateInput({ ...INPUT, servers: [{ name: '', target: '10.0.0.1:99999', weight: null }] }))
     ).not.toBeNull();
     expect(
-      validateCreateInput({ ...INPUT, servers: [{ name: '', target: '10.0.0.1:0', weight: null }] })
+      de(validateCreateInput({ ...INPUT, servers: [{ name: '', target: '10.0.0.1:0', weight: null }] }))
     ).not.toBeNull();
   });
 
   it('lehnt zwei gleich benannte Server in einem Backend ab', () => {
     // HAProxy tut das auch — nur erst beim Laden, also nach dem Schreiben.
     expect(
-      validateCreateInput({
+      de(validateCreateInput({
         ...INPUT,
         servers: [
           { name: 'a', target: '10.0.0.1:80', weight: null },
           { name: 'a', target: '10.0.0.2:80', weight: null },
         ],
-      })
+      }))
     ).toMatch(/doppelt/);
   });
 
   it('lehnt eine doppelte Domain in derselben Eingabe ab', () => {
     expect(
-      validateCreateInput({ ...INPUT, domains: ['kunde.example', 'KUNDE.example'] })
+      de(validateCreateInput({ ...INPUT, domains: ['kunde.example', 'KUNDE.example'] }))
     ).toMatch(/doppelt/);
   });
 
   it('verlangt mindestens eine Domain und mindestens ein Ziel', () => {
-    expect(validateCreateInput({ ...INPUT, domains: [] })).not.toBeNull();
-    expect(validateCreateInput({ ...INPUT, servers: [] })).not.toBeNull();
+    expect(de(validateCreateInput({ ...INPUT, domains: [] }))).not.toBeNull();
+    expect(de(validateCreateInput({ ...INPUT, servers: [] }))).not.toBeNull();
   });
 });
 

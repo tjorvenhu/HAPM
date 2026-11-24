@@ -9,7 +9,6 @@ import {
   ChevronRight,
   Circle,
   FolderClock,
-  Info,
   ListChecks,
   Loader2,
   Save,
@@ -21,11 +20,12 @@ import { useToast } from '@/components/Toast';
 import { usePolling } from '@/components/usePolling';
 import { useNow } from '@/components/useNow';
 import { SkeletonDetail, SkeletonRows } from '@/components/Skeleton';
-import { RUN_STATUS_CLASS, RUN_STATUS_LABELS, formatClock, formatDateTime } from '@/components/system/format';
-import { fmtBytes } from '@/app/(app)/reverse-proxy/statistiken/format';
+import { RUN_STATUS_CLASS, RUN_STATUS_LABELS, formatClock } from '@/components/system/format';
+import { formatBytes, formatDateTime, msgid, type Translator } from '@/lib/i18n';
+import { useT } from '@/lib/i18n/react';
+import RestorePanel from '@/components/backup/RestorePanel';
 // Nur Typen: die Dateien dahinter erreichen `lib/db` und `lib/docker`.
 import type { BackupOverview, BackupRunForClient } from '@/app/api/backup/route';
-import type { BackupFile } from '@/lib/backup/run';
 import type { HaproxyStep } from '@/lib/types';
 
 type RunView = Omit<BackupRunForClient, 'steps'> & { steps: HaproxyStep[] };
@@ -52,10 +52,10 @@ const KEEP_MAX = 365;
  * gerade läuft.
  */
 const BACKUP_PLAN = [
-  'Datenbank herausschreiben',
-  'Schlüssel dazulegen',
-  'Archiv schreiben',
-  'Alte Sicherungen aufräumen',
+  msgid('Datenbank herausschreiben'),
+  msgid('Schlüssel dazulegen'),
+  msgid('Archiv schreiben'),
+  msgid('Alte Sicherungen aufräumen'),
 ];
 
 function formFrom(settings: BackupData['settings']): FormState {
@@ -74,20 +74,9 @@ function readKeepField(raw: string, previous: string): string {
   return Number(digits) > KEEP_MAX ? previous : digits;
 }
 
-/**
- * Der Zeitpunkt aus dem Dateinamen. Er steht dort in der Uhrzeit des
- * Containers und wird nicht umgerechnet, damit er zum Namen daneben passt.
- */
-function fileTime(name: string): string {
-  const match = /^hapm-backup-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})\d{2}\.tar\.gz$/.exec(name);
-  if (!match) return 'Unbekannt';
-  const [, year, month, day, hour, minute] = match;
-  return `${day}.${month}.${year}, ${hour}:${minute}`;
-}
-
-function triggeredByLabel(value: string | null): string {
+function triggeredByLabel(value: string | null, t: Translator['t']): string {
   if (!value) return '';
-  return value === 'scheduler' ? 'Zeitplan' : value;
+  return value === 'scheduler' ? t('Zeitplan') : value;
 }
 
 function runDuration(run: RunView, now: number): string {
@@ -103,9 +92,10 @@ function pendingSteps(run: RunView): string[] {
 }
 
 function RunSteps({ run }: { run: RunView }) {
+  const { t } = useT();
   const pending = pendingSteps(run);
   if (run.steps.length === 0 && pending.length === 0) {
-    return <p className="form-hint">Zu diesem Lauf sind keine Schritte festgehalten.</p>;
+    return <p className="form-hint">{t('Zu diesem Lauf sind keine Schritte festgehalten.')}</p>;
   }
   return (
     <ul className="hapm-steps">
@@ -113,8 +103,8 @@ function RunSteps({ run }: { run: RunView }) {
         <li key={`${index}-${step.label}`} className={`hapm-step ${step.ok ? 'is-ok' : 'is-failed'}`}>
           {step.ok ? <Check size={14} strokeWidth={1.5} /> : <X size={14} strokeWidth={1.5} />}
           <span className="hapm-step-text">
-            <span className="hapm-step-label">{step.label}</span>
-            {step.detail && <span className="hapm-step-detail">{step.detail}</span>}
+            <span className="hapm-step-label">{t(step.label)}</span>
+            {step.detail && <span className="hapm-step-detail">{t(step.detail)}</span>}
           </span>
         </li>
       ))}
@@ -126,7 +116,7 @@ function RunSteps({ run }: { run: RunView }) {
             <Circle size={14} strokeWidth={1.5} />
           )}
           <span className="hapm-step-text">
-            <span className="hapm-step-label">{label}</span>
+            <span className="hapm-step-label">{t(label)}</span>
           </span>
         </li>
       ))}
@@ -134,38 +124,10 @@ function RunSteps({ run }: { run: RunView }) {
   );
 }
 
-function FileTable({ files }: { files: BackupFile[] }) {
-  return (
-    <div className="table-wrap sys-block">
-      <table className="table">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Zeitpunkt</th>
-            <th className="sys-th-num">Größe</th>
-          </tr>
-        </thead>
-        <tbody>
-          {files.map((file) => (
-            <tr key={file.name}>
-              <td data-label="primary">
-                <span className="ranking-mono">{file.name}</span>
-              </td>
-              <td data-label="Zeitpunkt">{fileTime(file.name)}</td>
-              <td data-label="Größe" className="sys-td-num">
-                <span className="sys-num">{fmtBytes(file.sizeBytes)}</span>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
 export default function BackupPage() {
   const { apiFetch } = useApp();
   const { notify } = useToast();
+  const { t, rich, locale } = useT();
   const now = useNow(1000);
 
   const [data, setData] = useState<BackupData | null>(null);
@@ -185,12 +147,12 @@ export default function BackupPage() {
         setData(body.data as BackupData);
         setError('');
       } else {
-        setError(body.error || 'Die Sicherung konnte nicht geladen werden.');
+        setError(body.error || t('Die Sicherung konnte nicht geladen werden.'));
       }
     } catch {
-      setError('Die Sicherung konnte nicht geladen werden.');
+      setError(t('Die Sicherung konnte nicht geladen werden.'));
     }
-  }, [apiFetch]);
+  }, [apiFetch, t]);
 
   useEffect(() => {
     void load();
@@ -210,19 +172,19 @@ export default function BackupPage() {
       if (finished?.status === 'error') {
         notify({
           variant: 'error',
-          title: 'Sicherung fehlgeschlagen',
-          message: finished.error ?? 'Die Schritte stehen in der Historie.',
+          title: t('Sicherung fehlgeschlagen'),
+          message: finished.error ? t(finished.error) : t('Die Schritte stehen in der Historie.'),
         });
       } else if (finished?.status === 'success') {
         notify({
           variant: 'success',
-          title: 'Sicherung geschrieben',
+          title: t('Sicherung geschrieben'),
           message: `${finished.hostPath}/${finished.fileName}`,
         });
       }
     }
     watchedRun.current = active?.$id ?? null;
-  }, [data, notify]);
+  }, [data, notify, t]);
 
   async function start() {
     setStarting(true);
@@ -230,11 +192,11 @@ export default function BackupPage() {
       const res = await apiFetch('/api/backup', { method: 'POST' });
       const body = await res.json();
       if (!body.success) {
-        notify({ variant: 'error', message: body.error || 'Die Sicherung ließ sich nicht starten.' });
+        notify({ variant: 'error', message: body.error || t('Die Sicherung ließ sich nicht starten.') });
       }
       await load();
     } catch {
-      notify({ variant: 'error', message: 'Die Sicherung ließ sich nicht starten.' });
+      notify({ variant: 'error', message: t('Die Sicherung ließ sich nicht starten.') });
     } finally {
       setStarting(false);
     }
@@ -258,7 +220,7 @@ export default function BackupPage() {
       });
       const body = await res.json();
       if (!body.success) {
-        setFormError(body.error || 'Die Einstellungen ließen sich nicht speichern.');
+        setFormError(body.error || t('Die Einstellungen ließen sich nicht speichern.'));
         return null;
       }
       const next = body.data as BackupData;
@@ -266,7 +228,7 @@ export default function BackupPage() {
       setDraft(null);
       return next;
     } catch {
-      setFormError('Die Einstellungen ließen sich nicht speichern.');
+      setFormError(t('Die Einstellungen ließen sich nicht speichern.'));
       return null;
     } finally {
       setSaving(false);
@@ -282,8 +244,11 @@ export default function BackupPage() {
       variant: 'success',
       message:
         next.settings.enabled && next.settings.hostPath
-          ? `Gesichert wird täglich um ${next.settings.time} Uhr nach ${next.settings.hostPath}.`
-          : 'Gespeichert. Täglich gesichert wird nicht. Von Hand geht es mit „Jetzt sichern".',
+          ? t('Gesichert wird täglich um {time} Uhr nach {path}.', {
+              time: next.settings.time,
+              path: next.settings.hostPath,
+            })
+          : t('Gespeichert. Täglich gesichert wird nicht. Von Hand geht es mit „Jetzt sichern".'),
     });
   }
 
@@ -292,7 +257,7 @@ export default function BackupPage() {
     const next = await persist();
     if (!next) return;
     if (!next.settings.hostPath) {
-      setFormError('Bitte zuerst einen Ordner auf dem Server eintragen.');
+      setFormError(t('Bitte zuerst einen Ordner auf dem Server eintragen.'));
       return;
     }
     await start();
@@ -312,9 +277,9 @@ export default function BackupPage() {
   const header = (
     <div className="page-header">
       <div>
-        <h1 className="page-title">Sicherung</h1>
+        <h1 className="page-title">{t('Sicherung')}</h1>
         <p className="page-subtitle">
-          Datenbank, Schlüssel, Konfiguration und Zertifikate als Archiv in einem Ordner auf dem Server.
+          {t('Datenbank, Schlüssel, Konfiguration und Zertifikate als Archiv in einem Ordner auf dem Server.')}
         </p>
       </div>
       <div className="page-actions">
@@ -323,11 +288,11 @@ export default function BackupPage() {
           className="btn btn-primary"
           onClick={() => void start()}
           disabled={!canStart}
-          data-tooltip={data && !data.settings.hostPath ? 'Erst einen Ordner eintragen und speichern.' : undefined}
+          data-tooltip={data && !data.settings.hostPath ? t('Erst einen Ordner eintragen und speichern.') : undefined}
           data-tooltip-pos="left"
         >
           {locked ? <Loader2 size={16} strokeWidth={1.5} className="spin" /> : <Archive size={16} strokeWidth={1.5} />}
-          Jetzt sichern
+          {t('Jetzt sichern')}
         </button>
       </div>
     </div>
@@ -364,7 +329,7 @@ export default function BackupPage() {
       {!data.available && (
         <div className="alert alert-warning sys-block">
           <AlertTriangle size={16} strokeWidth={1.5} />
-          <span>Die Sicherung braucht Docker. HAPM läuft gerade nicht in einem Container.</span>
+          <span>{t('Die Sicherung braucht Docker. HAPM läuft gerade nicht in einem Container.')}</span>
         </div>
       )}
 
@@ -376,10 +341,11 @@ export default function BackupPage() {
             <div>
               <h2 className="card-title">
                 <Loader2 size={16} strokeWidth={1.5} className="spin" />
-                Sicherung läuft
+                {t('Sicherung läuft')}
               </h2>
               <p className="card-subtitle">
-                Ziel: {activeRun.hostPath}. Der Lauf geht weiter, auch wenn diese Seite geschlossen wird.
+                {t('Ziel: {path}.', { path: activeRun.hostPath })}{' '}
+                {t('Der Lauf geht weiter, auch wenn diese Seite geschlossen wird.')}
               </p>
             </div>
             <span className="run-timer">{runDuration(activeRun, now)}</span>
@@ -392,7 +358,7 @@ export default function BackupPage() {
         <div className="card-header">
           <h2 className="card-title">
             <FolderClock size={17} strokeWidth={1.5} />
-            Wohin und wann
+            {t('Wohin und wann')}
           </h2>
         </div>
 
@@ -401,8 +367,10 @@ export default function BackupPage() {
 
           <div className="form-group">
             <label className="form-label" htmlFor="backup-path">
-              Ordner auf dem Server
-              <InfoHint text="Ein eingebundenes Netzlaufwerk geht genauso, wenn es auf dem Server unter diesem Pfad liegt." />
+              {t('Ordner auf dem Server')}
+              <InfoHint
+                text={t('Ein eingebundenes Netzlaufwerk geht genauso, wenn es auf dem Server unter diesem Pfad liegt.')}
+              />
             </label>
             <input
               id="backup-path"
@@ -415,15 +383,15 @@ export default function BackupPage() {
               autoComplete="off"
               spellCheck={false}
             />
-            <p className="form-hint">Liegt auf dem Server, nicht im Container. Fehlt er, wird er angelegt.</p>
+            <p className="form-hint">{t('Liegt auf dem Server, nicht im Container. Fehlt er, wird er angelegt.')}</p>
           </div>
 
           <div className="hapm-auto">
             <label className="form-subsection hapm-auto-switch">
               <div className="form-subsection-head">
                 <div>
-                  <div className="form-section-title">Täglich sichern</div>
-                  <div className="form-section-sub">Einmal am Tag zur eingestellten Uhrzeit.</div>
+                  <div className="form-section-title">{t('Täglich sichern')}</div>
+                  <div className="form-section-sub">{t('Einmal am Tag zur eingestellten Uhrzeit.')}</div>
                 </div>
                 <span className="toggle-switch">
                   <input
@@ -438,8 +406,12 @@ export default function BackupPage() {
             </label>
             <div className="form-group hapm-auto-time">
               <label className="form-label" htmlFor="backup-time">
-                Uhrzeit
-                <InfoHint text="Es gilt die Zeitzone des Containers, gesetzt über die Variable TZ. Gesichert wird einmal am Tag zu dieser Minute." />
+                {t('Uhrzeit')}
+                <InfoHint
+                  text={t(
+                    'Es gilt die Zeitzone des Containers, gesetzt über die Variable TZ. Gesichert wird einmal am Tag zu dieser Minute.'
+                  )}
+                />
               </label>
               <input
                 id="backup-time"
@@ -453,7 +425,7 @@ export default function BackupPage() {
             </div>
             <div className="form-group hapm-auto-keep">
               <label className="form-label" htmlFor="backup-keep">
-                Aufbewahren
+                {t('Aufbewahren')}
               </label>
               <input
                 id="backup-keep"
@@ -466,14 +438,14 @@ export default function BackupPage() {
                 disabled={saving}
                 onChange={(event) => edit({ keep: readKeepField(event.target.value, form.keep) })}
               />
-              <p className="form-hint">Anzahl Sicherungen. Ältere löscht der nächste Lauf.</p>
+              <p className="form-hint">{t('Anzahl Sicherungen. Ältere löscht der nächste Lauf.')}</p>
             </div>
           </div>
 
           <div className="hapm-form-actions">
             <button className="btn btn-primary" type="submit" disabled={saving || !draft}>
               {saving ? <Loader2 size={16} strokeWidth={1.5} className="spin" /> : <Save size={16} strokeWidth={1.5} />}
-              Speichern
+              {t('Speichern')}
             </button>
             <button
               className="btn btn-secondary"
@@ -482,11 +454,11 @@ export default function BackupPage() {
               onClick={() => void saveAndStart()}
             >
               <Archive size={16} strokeWidth={1.5} />
-              {draft ? 'Speichern und jetzt sichern' : 'Jetzt sichern'}
+              {draft ? t('Speichern und jetzt sichern') : t('Jetzt sichern')}
             </button>
           </div>
           <p className="form-hint">
-            Eine Sicherung von Hand braucht nur den Ordner. Der Schalter „Täglich sichern“ kann aus bleiben.
+            {t('Eine Sicherung von Hand braucht nur den Ordner. Der Schalter „Täglich sichern“ kann aus bleiben.')}
           </p>
         </form>
       </div>
@@ -495,103 +467,73 @@ export default function BackupPage() {
         <div className="card-header">
           <h2 className="card-title">
             <ListChecks size={17} strokeWidth={1.5} />
-            Was gesichert wird
+            {t('Was gesichert wird')}
           </h2>
         </div>
 
         <div className="card-body">
           <dl className="detail-grid">
-            <dt>Datenbank</dt>
-            <dd>Die Datenbank von HAPM: Konten, Einstellungen, Historie.</dd>
-            <dt>Schlüssel</dt>
+            <dt>{t('Datenbank')}</dt>
+            <dd>{t('Die Datenbank von HAPM: Konten, Einstellungen, Historie.')}</dd>
+            <dt>{t('Schlüssel')}</dt>
             <dd>
-              <code>secrets.json</code>, der Schlüssel zu den verschlüsselten Einstellungen.
+              {rich('{file}, der Schlüssel zu den verschlüsselten Einstellungen.', {
+                file: <code>secrets.json</code>,
+              })}
             </dd>
             <dt>HAProxy</dt>
-            <dd>
-              <code>/etc/haproxy</code>: Konfiguration, Zertifikate, Fehlerseiten.
-            </dd>
+            <dd>{rich('{path}: Konfiguration, Zertifikate, Fehlerseiten.', { path: <code>/etc/haproxy</code> })}</dd>
             <dt>acme.sh</dt>
-            <dd>acme.sh mit Konto und Erneuerungseinträgen.</dd>
-            <dt>Nicht gesichert</dt>
-            <dd className="muted">Das Zugriffsprotokoll und die Abbilder.</dd>
+            <dd>{t('acme.sh mit Konto und Erneuerungseinträgen.')}</dd>
+            <dt>{t('Nicht gesichert')}</dt>
+            <dd className="muted">{t('Das Zugriffsprotokoll und die Abbilder.')}</dd>
           </dl>
 
           <div className="alert alert-warning">
             <AlertTriangle size={16} strokeWidth={1.5} />
             <span>
-              Das Archiv enthält private Schlüssel und den Schlüssel zu den verschlüsselten Einstellungen. Es ist
-              nicht verschlüsselt. Der Ordner gehört an einen Ort, an den nur Sie kommen.
+              {t(
+                'Das Archiv enthält private Schlüssel und den Schlüssel zu den verschlüsselten Einstellungen. Es ist nicht verschlüsselt. Der Ordner gehört an einen Ort, an den nur Sie kommen.'
+              )}
             </span>
           </div>
 
-          <div className="form-note">
-            <Info size={14} strokeWidth={1.5} />
-            <span>
-              HAPM spielt eine Sicherung nicht selbst zurück. Die Schritte stehen in der README des Projekts,
-              Abschnitt „Sicherung zurückspielen“.
-            </span>
-          </div>
         </div>
       </div>
 
-      <div className="section-header">
-        <h2 className="section-title">
-          Im Ordner
-          {data.files && <span className="section-count">{data.files.length}</span>}
-        </h2>
-        {data.files && (
-          <span className="section-hint">
-            Stand nach dem letzten Lauf
-            {data.filesAsOf ? ` vom ${formatDateTime(data.filesAsOf)}` : ''}
-            {listedRun ? ` in ${listedRun.hostPath}` : ''}.
-            <InfoHint text="HAPM liest den Ordner nicht laufend. Die Liste stammt aus dem letzten Lauf. Was danach von Hand gelöscht oder dazugelegt wurde, steht hier nicht." />
-          </span>
-        )}
-      </div>
-
-      {data.files === null ? (
-        <div className="empty-state sys-block">
-          <Archive size={32} strokeWidth={1.5} />
-          <h3>Noch keine Sicherung geschrieben</h3>
-          <p>Nach dem ersten erfolgreichen Lauf steht hier, was im Ordner liegt.</p>
-        </div>
-      ) : data.files.length === 0 ? (
-        <div className="empty-state sys-block">
-          <Archive size={32} strokeWidth={1.5} />
-          <h3>Keine Sicherung im Ordner</h3>
-          <p>Nach dem letzten Lauf lag dort kein Archiv.</p>
-        </div>
-      ) : (
-        <FileTable files={data.files} />
-      )}
+      <RestorePanel
+        files={data.files}
+        filesAsOf={data.filesAsOf}
+        listedPath={listedRun?.hostPath ?? null}
+        hostPath={data.settings.hostPath}
+      />
 
       <div className="section-header">
         <h2 className="section-title">
-          Historie
+          {t('Historie')}
           <span className="section-count">{data.runs.length}</span>
         </h2>
-        <span className="section-hint">Die letzten Läufe, der neueste zuerst.</span>
+        <span className="section-hint">{t('Die letzten Läufe, der neueste zuerst.')}</span>
       </div>
 
       {data.runs.length === 0 ? (
         <div className="empty-state">
           <Archive size={32} strokeWidth={1.5} />
-          <h3>Noch kein Lauf</h3>
-          <p>Hier steht jeder Lauf mit seinen Schritten, auch die nach Zeitplan.</p>
+          <h3>{t('Noch kein Lauf')}</h3>
+          <p>{t('Hier steht jeder Lauf mit seinen Schritten, auch die nach Zeitplan.')}</p>
         </div>
       ) : (
         <div className="table-wrap">
           <table className="table">
             <thead>
               <tr>
-                <th>Beginn</th>
-                <th>Ergebnis</th>
-                <th>Datei</th>
-                <th className="sys-th-num">Größe</th>
-                <th>Dauer</th>
-                <th>Ausgelöst von</th>
-                <th aria-label="Schritte" />
+                <th>{t('Beginn')}</th>
+                <th>{t('Ergebnis')}</th>
+                <th>{t('Datei')}</th>
+                <th className="sys-th-num">{t('Größe')}</th>
+                <th>{t('Dauer')}</th>
+                <th>{t('Ausgelöst von')}</th>
+                <th aria-label={t('Schritte')} />
               </tr>
             </thead>
             <tbody>
@@ -601,39 +543,39 @@ export default function BackupPage() {
                   <Fragment key={run.$id}>
                     <tr>
                       <td data-label="primary">
-                        <strong>{formatDateTime(run.startedAt)}</strong>
+                        <strong>{formatDateTime(locale, run.startedAt)}</strong>
                       </td>
-                      <td data-label="Ergebnis">
+                      <td data-label={t('Ergebnis')}>
                         <span className={`badge-status ${RUN_STATUS_CLASS[run.status] ?? 'badge-neutral'}`}>
                           {run.status === 'running' && <Loader2 size={12} strokeWidth={1.5} className="spin" />}
-                          {RUN_STATUS_LABELS[run.status] ?? run.status}
+                          {RUN_STATUS_LABELS[run.status] ? t(RUN_STATUS_LABELS[run.status]) : run.status}
                         </span>
-                        {run.error && <div className="detail-error">{run.error}</div>}
+                        {run.error && <div className="detail-error">{t(run.error)}</div>}
                       </td>
-                      <td data-label="Datei">
+                      <td data-label={t('Datei')}>
                         {run.status === 'success' && run.fileName ? (
                           <span className="ranking-mono">{run.fileName}</span>
                         ) : run.status === 'running' ? (
-                          <span className="hapm-muted">Wird geschrieben</span>
+                          <span className="hapm-muted">{t('Wird geschrieben')}</span>
                         ) : (
-                          <span className="hapm-muted">Keine</span>
+                          <span className="hapm-muted">{t('Keine')}</span>
                         )}
                       </td>
-                      <td data-label="Größe" className="sys-td-num">
-                        {run.sizeBytes !== null && <span className="sys-num">{fmtBytes(run.sizeBytes)}</span>}
+                      <td data-label={t('Größe')} className="sys-td-num">
+                        {run.sizeBytes !== null && <span className="sys-num">{formatBytes(locale, run.sizeBytes)}</span>}
                       </td>
-                      <td data-label="Dauer">
+                      <td data-label={t('Dauer')}>
                         <span className="sys-num">{runDuration(run, now)}</span>
                       </td>
-                      <td data-label="Ausgelöst von">{triggeredByLabel(run.triggeredBy)}</td>
+                      <td data-label={t('Ausgelöst von')}>{triggeredByLabel(run.triggeredBy, t)}</td>
                       <td data-label="actions">
                         <div className="actions hapm-actions-end">
                           <button
                             type="button"
                             className="btn btn-ghost btn-icon btn-sm"
-                            data-tooltip={open ? 'Schritte ausblenden' : 'Schritte anzeigen'}
+                            data-tooltip={open ? t('Schritte ausblenden') : t('Schritte anzeigen')}
                             data-tooltip-pos="left"
-                            aria-label={open ? 'Schritte ausblenden' : 'Schritte anzeigen'}
+                            aria-label={open ? t('Schritte ausblenden') : t('Schritte anzeigen')}
                             aria-expanded={open}
                             onClick={() => toggleRun(run.$id)}
                           >

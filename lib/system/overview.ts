@@ -22,6 +22,7 @@ import { HAPROXY_CERT_DIR, parseScopes, scopeSlug, serviceHealth, type ServiceHe
 import { pemFileName, type AcmeCertificate } from '../haproxy/certs';
 import { CERT_WARN_DAYS, certificateDue, pemExpiry, type CertificateDue } from './certificates';
 import { readUpdateStates } from '../updates/check';
+import { msgid } from '../i18n';
 
 export type { CertificateDue } from './certificates';
 
@@ -256,7 +257,7 @@ const PROXY_UNKNOWN: Omit<SystemProxy, 'error'> = {
 
 function summarizeProxy(probe: ProxyProbe): SystemProxy {
   if (!probe.configReadable) {
-    return { ...PROXY_UNKNOWN, error: 'Die HAProxy-Konfiguration ist nicht lesbar.' };
+    return { ...PROXY_UNKNOWN, error: msgid('Die HAProxy-Konfiguration ist nicht lesbar.') };
   }
 
   const targets = [
@@ -336,7 +337,7 @@ async function readCertificateSummary(probe: Promise<ProxyProbe>): Promise<Syste
   try {
     // Ohne acme.sh ist die Liste leer, weil nicht gefragt werden konnte.
     if (!(await probe).acmeReady) {
-      return { ...unknown, error: 'acme.sh oder das Zertifikatsverzeichnis fehlt.' };
+      return { ...unknown, error: msgid('acme.sh oder das Zertifikatsverzeichnis fehlt.') };
     }
     const now = Date.now();
     const all = (await cachedCertificates()).map((cert) => certificateDue(cert, readExpiry(cert.mainDomain), now));

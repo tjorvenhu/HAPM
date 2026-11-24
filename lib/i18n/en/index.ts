@@ -13,10 +13,27 @@ import { common } from './common';
 import { format } from './format';
 import { setup } from './setup';
 import { shell } from './shell';
+import { proxyForms } from './proxyForms';
+import { proxyPages } from './proxyPages';
+import { proxyServer } from './proxyServer';
+import { system } from './system';
+import { mail } from './mail';
 
 export type Dictionary = Readonly<Record<string, string>>;
 
 /** Die Teile einzeln, für den Test, der doppelte Schlüssel sucht. */
-export const PARTS: Readonly<Record<string, Dictionary>> = { common, format, shell, auth, account, setup };
+export const PARTS: Readonly<Record<string, Dictionary>> = {
+  common,
+  format,
+  shell,
+  auth,
+  account,
+  setup,
+  proxyForms,
+  proxyPages,
+  proxyServer,
+  system,
+  mail,
+};
 
 export const en: Dictionary = Object.freeze(Object.assign({}, ...Object.values(PARTS)));

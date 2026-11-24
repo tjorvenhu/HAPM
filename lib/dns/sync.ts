@@ -38,6 +38,7 @@ import { listZoneRows, withZone } from './store';
 import { isProxyRecord, matchZone, normalizeDomain, proxyRecordPlan } from './zones';
 import { PROVIDER_RULES, type DnsRecord } from './records';
 import type { DnsZone, HaproxyStep } from '../types';
+import { msgid } from '../i18n';
 
 /**
  * Ein Leser je Zone und Vorgang.
@@ -113,6 +114,10 @@ export async function autoDnsDomains(domains: string[]): Promise<string[]> {
  * Der Lauf steht danach auf `error` und nennt den Grund — der Dienst selbst wird
  * trotzdem angelegt, denn eine Domain, die schon anderswo aufgelöst wird,
  * funktioniert auch ohne diesen Eintrag.
+ *
+ * Die Schritte werden am Lauf gespeichert. Texte mit eingesetzten Werten
+ * bleiben deshalb deutsch, bis das Format `{ text, params }` trägt; die ohne
+ * Werte sind `msgid` und werden beim Zeigen übersetzt (docs/i18n.md).
  */
 export async function ensureProxyRecords(domains: string[]): Promise<HaproxyStep[]> {
   if (domains.length === 0) return [];
@@ -126,7 +131,7 @@ export async function ensureProxyRecords(domains: string[]): Promise<HaproxyStep
       steps.push({
         label: `DNS-Eintrag ${domain}`,
         ok: false,
-        detail: 'Für diese Domain ist keine Zone eingerichtet.',
+        detail: msgid('Für diese Domain ist keine Zone eingerichtet.'),
       });
       continue;
     }
@@ -188,7 +193,7 @@ export async function ensureProxyRecords(domains: string[]): Promise<HaproxyStep
       steps.push({
         label: `DNS-Eintrag ${plan.fqdn}`,
         ok: false,
-        detail: err instanceof Error ? err.message : 'Unbekannter Fehler',
+        detail: err instanceof Error ? err.message : msgid('Unbekannter Fehler'),
       });
     }
   }
@@ -233,12 +238,12 @@ export async function removeProxyRecords(domains: string[]): Promise<HaproxyStep
 
       await withZone(zone, (token, ref) => providerFor(zone).deleteRecord(token, ref, existing));
       zones.forget(zone);
-      steps.push({ label: `DNS-Eintrag ${plan.fqdn}`, ok: true, detail: 'Entfernt.' });
+      steps.push({ label: `DNS-Eintrag ${plan.fqdn}`, ok: true, detail: msgid('Entfernt.') });
     } catch (err) {
       steps.push({
         label: `DNS-Eintrag ${plan.fqdn}`,
         ok: false,
-        detail: err instanceof Error ? err.message : 'Unbekannter Fehler',
+        detail: err instanceof Error ? err.message : msgid('Unbekannter Fehler'),
       });
     }
   }

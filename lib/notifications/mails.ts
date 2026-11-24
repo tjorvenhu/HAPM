@@ -8,8 +8,14 @@
  *
  * Behauptet wird nur, was HAPM an dieser Stelle weiß. „Es wurde nichts
  * geändert" steht in einer Mail nur, wenn der Lauf selbst es so meldet.
+ *
+ * Die Sprache kommt mit dem Kontext (`ctx.locale`, die Einstellung „Sprache der
+ * Mails"). Alles, was die Mail selbst schreibt, geht durch `t()`, Datum und
+ * Zahlen durch `lib/i18n/format.ts`. Was von außen kommt (Ausgabe von acme.sh,
+ * Fehlermeldungen eines Laufs, Namen), bleibt, wie es ist.
  */
 
+import { createTranslator, formatDate, formatDateTime, msgid, type Translator } from '../i18n';
 import {
   escapeHtml,
   escapeMultiline,
@@ -46,64 +52,74 @@ const COMPONENT_LABELS: Record<UpdateComponent, string> = {
 };
 
 const RUN_ACTION_LABELS: Record<HaproxyAction, string> = {
-  create: 'Eintrag anlegen',
-  update: 'Eintrag ändern',
-  delete: 'Eintrag entfernen',
-  settings: 'Globale Einstellungen ändern',
-  'scope-add': 'Gruppe anlegen',
-  'scope-remove': 'Gruppe entfernen',
-  'stream-create': 'Weiterleitung anlegen',
-  'stream-update': 'Weiterleitung ändern',
-  'stream-delete': 'Weiterleitung entfernen',
-  certificate: 'Zertifikat ausstellen',
-  import: 'Konfiguration importieren',
+  create: msgid('Eintrag anlegen'),
+  update: msgid('Eintrag ändern'),
+  delete: msgid('Eintrag entfernen'),
+  settings: msgid('Globale Einstellungen ändern'),
+  'scope-add': msgid('Gruppe anlegen'),
+  'scope-remove': msgid('Gruppe entfernen'),
+  'stream-create': msgid('Weiterleitung anlegen'),
+  'stream-update': msgid('Weiterleitung ändern'),
+  'stream-delete': msgid('Weiterleitung entfernen'),
+  certificate: msgid('Zertifikat ausstellen'),
+  import: msgid('Konfiguration importieren'),
 };
 
-function formatWhen(value: Date | string): string {
-  const date = typeof value === 'string' ? new Date(value) : value;
-  if (Number.isNaN(date.getTime())) return 'unbekannt';
-  const day = date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  const time = date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-  return `${day}, ${time} Uhr`;
+export const NOTIFICATION_FOOTER_NOTE = msgid('Welche Ereignisse eine Mail auslösen, steht in HAPM unter „Benachrichtigungen“.');
+
+/** Was eine Mail zum Schreiben braucht: die Übersetzung und die Formate in ihrer Sprache. */
+interface Writer extends Translator {
+  when: (value: Date | string) => string;
+  day: (iso: string) => string;
+  duration: (milliseconds: number) => string;
 }
 
-function formatDay(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return 'unbekannt';
-  return date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
-}
-
-/** „2 Stunden 5 Minuten". Unter einer Minute steht keine Zahl. */
-function formatDuration(milliseconds: number): string {
-  const minutes = Math.floor(Math.max(0, milliseconds) / 60_000);
-  if (minutes < 1) return 'unter einer Minute';
-  const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
-  const days = Math.floor(minutes / 1440);
-  const hours = Math.floor((minutes % 1440) / 60);
-  const rest = minutes % 60;
-  if (days > 0) return hours > 0 ? `${plural(days, 'Tag', 'Tage')} ${plural(hours, 'Stunde', 'Stunden')}` : plural(days, 'Tag', 'Tage');
-  if (hours > 0) return rest > 0 ? `${plural(hours, 'Stunde', 'Stunden')} ${plural(rest, 'Minute', 'Minuten')}` : plural(hours, 'Stunde', 'Stunden');
-  return plural(rest, 'Minute', 'Minuten');
+function writer(ctx: Pick<MailInstallation, 'locale'>): Writer {
+  const translator = createTranslator(ctx.locale);
+  const { t, plural, locale } = translator;
+  return {
+    ...translator,
+    when: (value) => {
+      const date = typeof value === 'string' ? new Date(value) : value;
+      if (Number.isNaN(date.getTime())) return t('unbekannt');
+      return t('{when} Uhr', { when: formatDateTime(locale, date) });
+    },
+    day: (iso) => (Number.isNaN(new Date(iso).getTime()) ? t('unbekannt') : formatDate(locale, iso)),
+    /** „2 Stunden 5 Minuten". Unter einer Minute steht keine Zahl. */
+    duration: (milliseconds) => {
+      const minutes = Math.floor(Math.max(0, milliseconds) / 60_000);
+      if (minutes < 1) return t('unter einer Minute');
+      const days = Math.floor(minutes / 1440);
+      const hours = Math.floor((minutes % 1440) / 60);
+      const rest = minutes % 60;
+      const d = plural(days, { one: '{count} Tag', other: '{count} Tage' });
+      const h = plural(hours, { one: '{count} Stunde', other: '{count} Stunden' });
+      const m = plural(rest, { one: '{count} Minute', other: '{count} Minuten' });
+      if (days > 0) return hours > 0 ? `${d} ${h}` : d;
+      if (hours > 0) return rest > 0 ? `${h} ${m}` : h;
+      return m;
+    },
+  };
 }
 
 /** Ausgabe einer Maschine: gekürzt auf das Ende, dort steht der Fehler. Umbrüche bleiben. */
-function machineTail(value: string, limit = 1500): string {
+function machineTail(value: string, w: Writer, limit = 1500): string {
   const text = value.trim();
-  return escapeMultiline(text.length > limit ? `[...]\n${text.slice(-limit)}` : text || 'Keine Ausgabe.');
+  return escapeMultiline(text.length > limit ? `[...]\n${text.slice(-limit)}` : text || w.t('Keine Ausgabe.'));
 }
 
 /** Eine Fehlermeldung: gekürzt auf den Anfang. */
-function machineHead(value: string, limit = 1000): string {
+function machineHead(value: string, w: Writer, limit = 1000): string {
   const text = value.trim();
-  return escapeMultiline(text.length > limit ? `${text.slice(0, limit)}\n[...]` : text || 'Keine Meldung.');
+  return escapeMultiline(text.length > limit ? `${text.slice(0, limit)}\n[...]` : text || w.t('Keine Meldung.'));
 }
 
 const strong = (value: string) => `<strong>${escapeHtml(value)}</strong>`;
 const code = (value: string) => `<code>${escapeHtml(value)}</code>`;
 
-function triggeredByLabel(value: string | null): string {
-  if (!value) return 'unbekannt';
-  return value === 'scheduler' ? 'Zeitplan' : value;
+function triggeredByLabel(value: string | null, w: Writer): string {
+  if (!value) return w.t('unbekannt');
+  return value === 'scheduler' ? w.t('Zeitplan') : value;
 }
 
 interface Draft {
@@ -115,267 +131,332 @@ interface Draft {
   action?: { label: string; path: string };
 }
 
-function certificateState(cert: ExpiringCertificate): string {
-  if (cert.daysLeft < 0) return `seit dem ${formatDay(cert.expiresAt)} abgelaufen`;
-  if (cert.daysLeft === 0) return `läuft am ${formatDay(cert.expiresAt)} ab, in weniger als 24 Stunden`;
-  return `läuft am ${formatDay(cert.expiresAt)} ab, in ${cert.daysLeft === 1 ? 'einem Tag' : `${cert.daysLeft} Tagen`}`;
+function certificateState(cert: ExpiringCertificate, w: Writer): string {
+  const date = w.day(cert.expiresAt);
+  if (cert.daysLeft < 0) return w.t('seit dem {date} abgelaufen', { date });
+  if (cert.daysLeft === 0) return w.t('läuft am {date} ab, in weniger als 24 Stunden', { date });
+  return w.plural(cert.daysLeft, { one: 'läuft am {date} ab, in einem Tag', other: 'läuft am {date} ab, in {count} Tagen' }, { date });
 }
 
-function certificateSubject(certificates: ExpiringCertificate[]): string {
+function certificateSubject(certificates: ExpiringCertificate[], w: Writer): string {
   const expired = certificates.filter((cert) => cert.daysLeft < 0).length;
   if (certificates.length === 1) {
     const [cert] = certificates;
-    if (cert.daysLeft < 0) return `Zertifikat für ${cert.mainDomain} ist abgelaufen`;
-    if (cert.daysLeft === 0) return `Zertifikat für ${cert.mainDomain} läuft in weniger als 24 Stunden ab`;
-    return `Zertifikat für ${cert.mainDomain} läuft in ${cert.daysLeft === 1 ? 'einem Tag' : `${cert.daysLeft} Tagen`} ab`;
+    const domain = cert.mainDomain;
+    if (cert.daysLeft < 0) return w.t('Zertifikat für {domain} ist abgelaufen', { domain });
+    if (cert.daysLeft === 0) return w.t('Zertifikat für {domain} läuft in weniger als 24 Stunden ab', { domain });
+    return w.plural(
+      cert.daysLeft,
+      { one: 'Zertifikat für {domain} läuft in einem Tag ab', other: 'Zertifikat für {domain} läuft in {count} Tagen ab' },
+      { domain }
+    );
   }
-  if (expired === certificates.length) return `${expired} Zertifikate sind abgelaufen`;
-  if (expired > 0) return `${certificates.length} Zertifikate laufen ab, ${expired} davon ${expired === 1 ? 'ist' : 'sind'} abgelaufen`;
-  return `${certificates.length} Zertifikate laufen in weniger als ${CERT_WARN_DAYS} Tagen ab`;
+  if (expired === certificates.length) return w.t('{count} Zertifikate sind abgelaufen', { count: expired });
+  if (expired > 0) {
+    return w.t(
+      expired === 1
+        ? '{count} Zertifikate laufen ab, {expired} davon ist abgelaufen'
+        : '{count} Zertifikate laufen ab, {expired} davon sind abgelaufen',
+      { count: certificates.length, expired }
+    );
+  }
+  return w.t('{count} Zertifikate laufen in weniger als {days} Tagen ab', { count: certificates.length, days: CERT_WARN_DAYS });
 }
 
-function targetName(kind: TargetKind, id: string, addresses: string[]): string {
-  if (kind === 'stream') return addresses[0] ? `Weiterleitung ${id} (${addresses[0]})` : `Weiterleitung ${id}`;
+function targetName(kind: TargetKind, id: string, addresses: string[], w: Writer): string {
+  if (kind === 'stream') {
+    return addresses[0]
+      ? w.t('Weiterleitung {id} ({address})', { id, address: addresses[0] })
+      : w.t('Weiterleitung {id}', { id });
+  }
   return addresses[0] ?? id;
 }
 
-function targetFacts(kind: TargetKind, id: string, addresses: string[]): MailFact[] {
+function targetFacts(kind: TargetKind, id: string, addresses: string[], w: Writer): MailFact[] {
   return [
-    { label: kind === 'stream' ? 'Weiterleitung' : 'Eintrag', value: id },
+    { label: kind === 'stream' ? w.t('Weiterleitung') : w.t('Eintrag'), value: id },
     ...(addresses.length > 0
-      ? [{ label: kind === 'stream' ? 'Erreichbar über' : 'Domains', value: addresses.join(', ') }]
+      ? [{ label: kind === 'stream' ? w.t('Erreichbar über') : w.t('Domains'), value: addresses.join(', ') }]
       : []),
   ];
 }
 
-function draft(event: NotificationEvent, ctx: NotificationMailContext): Draft {
+function draft(event: NotificationEvent, ctx: NotificationMailContext, w: Writer): Draft {
+  const { t } = w;
   const node = strong(ctx.nodeName);
 
   switch (event.type) {
     case 'certificate_renewal_failed':
       return {
-        subject: 'Erneuerung der Zertifikate gescheitert',
-        eyebrow: 'Zertifikate',
-        heading: 'Erneuerung der Zertifikate gescheitert',
+        subject: t('Erneuerung der Zertifikate gescheitert'),
+        eyebrow: t('Zertifikate'),
+        heading: t('Erneuerung der Zertifikate gescheitert'),
         body:
           mailText(
-            `Der tägliche Lauf von acme.sh auf ${node} hat am ${formatWhen(ctx.now)} einen Fehler gemeldet. Die vorhandenen Zertifikate gelten weiter, bis sie ablaufen.`
+            t(
+              'Der tägliche Lauf von acme.sh auf {node} hat am {when} einen Fehler gemeldet. Die vorhandenen Zertifikate gelten weiter, bis sie ablaufen.',
+              { node, when: w.when(ctx.now) }
+            )
           ) +
-          mailNote(machineTail(event.output), 'danger', 'Ausgabe von acme.sh') +
+          mailNote(machineTail(event.output, w), 'danger', t('Ausgabe von acme.sh')) +
           mailText(
-            'Was zu tun ist: In der Ausgabe steht, an welcher Domain es lag. Häufige Ursachen sind ein DNS-Eintrag, der nicht mehr auf diesen Server zeigt, und ein abgelaufenes Token für die DNS-Prüfung. Der nächste Lauf ist morgen.'
+            t(
+              'Was zu tun ist: In der Ausgabe steht, an welcher Domain es lag. Häufige Ursachen sind ein DNS-Eintrag, der nicht mehr auf diesen Server zeigt, und ein abgelaufenes Token für die DNS-Prüfung. Der nächste Lauf ist morgen.'
+            )
           ),
-        action: { label: 'Zertifikate ansehen', path: '/reverse-proxy/zertifikate' },
+        action: { label: t('Zertifikate ansehen'), path: '/reverse-proxy/zertifikate' },
       };
 
     case 'certificate_expiring': {
       const certificates = [...event.certificates].sort((a, b) => a.daysLeft - b.daysLeft);
-      const subject = certificateSubject(certificates);
+      const subject = certificateSubject(certificates, w);
       return {
         subject,
-        eyebrow: 'Zertifikate',
-        heading: certificates.length === 1 ? subject : 'Zertifikate laufen ab',
+        eyebrow: t('Zertifikate'),
+        heading: certificates.length === 1 ? subject : t('Zertifikate laufen ab'),
         body:
           mailText(
             certificates.length === 1
-              ? `Auf ${node} ist ein Zertifikat weniger als ${CERT_WARN_DAYS} Tage gültig oder schon abgelaufen.`
-              : `Auf ${node} sind ${certificates.length} Zertifikate weniger als ${CERT_WARN_DAYS} Tage gültig oder schon abgelaufen.`
+              ? t('Auf {node} ist ein Zertifikat weniger als {days} Tage gültig oder schon abgelaufen.', {
+                  node,
+                  days: CERT_WARN_DAYS,
+                })
+              : t('Auf {node} sind {count} Zertifikate weniger als {days} Tage gültig oder schon abgelaufen.', {
+                  node,
+                  count: certificates.length,
+                  days: CERT_WARN_DAYS,
+                })
           ) +
           mailFacts(
-            certificates.map((cert) => ({ label: cert.mainDomain, value: certificateState(cert) })),
+            certificates.map((cert) => ({ label: cert.mainDomain, value: certificateState(cert, w) })),
             { stacked: true }
           ) +
           mailText(
-            'Was zu tun ist: acme.sh erneuert Zertifikate von selbst vor dem Ablauf. Steht eines hier, ist das bisher nicht gelungen. Die Ausgabe der letzten Erneuerung steht in der Übersicht. Nach dem Ablauf zeigen Browser für die Domain eine Warnung.'
+            t(
+              'Was zu tun ist: acme.sh erneuert Zertifikate von selbst vor dem Ablauf. Steht eines hier, ist das bisher nicht gelungen. Die Ausgabe der letzten Erneuerung steht in der Übersicht. Nach dem Ablauf zeigen Browser für die Domain eine Warnung.'
+            )
           ),
-        action: { label: 'Zertifikate ansehen', path: '/reverse-proxy/zertifikate' },
+        action: { label: t('Zertifikate ansehen'), path: '/reverse-proxy/zertifikate' },
       };
     }
 
     case 'backend_down': {
-      const name = targetName(event.kind, event.id, event.addresses);
+      const name = targetName(event.kind, event.id, event.addresses, w);
+      const id = strong(event.id);
       return {
-        subject: `${name}: kein Ziel antwortet`,
-        eyebrow: 'Reverse-Proxy',
-        heading: 'Kein Ziel antwortet',
+        subject: t('{name}: kein Ziel antwortet', { name }),
+        eyebrow: t('Reverse-Proxy'),
+        heading: t('Kein Ziel antwortet'),
         body:
           mailText(
             event.kind === 'stream'
-              ? `Für die Weiterleitung ${strong(event.id)} auf ${node} antwortet kein Ziel mehr auf die Prüfung von HAProxy. Verbindungen über diese Weiterleitung kommen nicht zustande.`
-              : `Für den Eintrag ${strong(event.id)} auf ${node} antwortet kein Ziel mehr auf die Prüfung von HAProxy. Anfragen an seine Domains bekommen eine Fehlerseite.`
+              ? t(
+                  'Für die Weiterleitung {id} auf {node} antwortet kein Ziel mehr auf die Prüfung von HAProxy. Verbindungen über diese Weiterleitung kommen nicht zustande.',
+                  { id, node }
+                )
+              : t(
+                  'Für den Eintrag {id} auf {node} antwortet kein Ziel mehr auf die Prüfung von HAProxy. Anfragen an seine Domains bekommen eine Fehlerseite.',
+                  { id, node }
+                )
           ) +
           mailFacts([
-            ...targetFacts(event.kind, event.id, event.addresses),
-            ...(event.targets.length > 0 ? [{ label: 'Ziele', value: event.targets.join(', ') }] : []),
-            { label: 'Seit', value: formatWhen(event.since) },
+            ...targetFacts(event.kind, event.id, event.addresses, w),
+            ...(event.targets.length > 0 ? [{ label: t('Ziele'), value: event.targets.join(', ') }] : []),
+            { label: t('Seit'), value: w.when(event.since) },
           ]) +
           mailText(
-            'Was zu tun ist: Prüfen, ob der Dienst auf dem Ziel läuft und von diesem Server aus erreichbar ist.' +
-              (ctx.recoveryEnabled ? ' Sobald wieder ein Ziel antwortet, kommt eine zweite Mail.' : '')
+            t('Was zu tun ist: Prüfen, ob der Dienst auf dem Ziel läuft und von diesem Server aus erreichbar ist.') +
+              (ctx.recoveryEnabled ? ` ${t('Sobald wieder ein Ziel antwortet, kommt eine zweite Mail.')}` : '')
           ),
-        action: { label: 'Ziele ansehen', path: '/reverse-proxy' },
+        action: { label: t('Ziele ansehen'), path: '/reverse-proxy' },
       };
     }
 
     case 'backend_recovered': {
-      const name = targetName(event.kind, event.id, event.addresses);
+      const name = targetName(event.kind, event.id, event.addresses, w);
       const all = event.up === event.total;
       const downSince = event.downSince ? Date.parse(event.downSince) : Number.NaN;
+      const id = strong(event.id);
       return {
-        subject: all ? `${name}: Ziele antworten wieder` : `${name}: ein Teil der Ziele antwortet wieder`,
-        eyebrow: 'Reverse-Proxy',
-        heading: all ? 'Ziele antworten wieder' : 'Ein Teil der Ziele antwortet wieder',
+        subject: all ? t('{name}: Ziele antworten wieder', { name }) : t('{name}: ein Teil der Ziele antwortet wieder', { name }),
+        eyebrow: t('Reverse-Proxy'),
+        heading: all ? t('Ziele antworten wieder') : t('Ein Teil der Ziele antwortet wieder'),
         body:
           mailText(
-            `${event.kind === 'stream' ? 'Die Weiterleitung' : 'Der Eintrag'} ${strong(event.id)} auf ${node} ist wieder erreichbar.`
+            event.kind === 'stream'
+              ? t('Die Weiterleitung {id} auf {node} ist wieder erreichbar.', { id, node })
+              : t('Der Eintrag {id} auf {node} ist wieder erreichbar.', { id, node })
           ) +
           mailFacts([
-            ...targetFacts(event.kind, event.id, event.addresses),
-            { label: 'Ziele, die antworten', value: `${event.up} von ${event.total}`, tone: all ? 'accent' : undefined },
+            ...targetFacts(event.kind, event.id, event.addresses, w),
+            {
+              label: t('Ziele, die antworten'),
+              value: t('{up} von {total}', { up: event.up, total: event.total }),
+              tone: all ? 'accent' : undefined,
+            },
             ...(Number.isNaN(downSince)
               ? []
               : [
-                  { label: 'Ausfall gemeldet', value: formatWhen(event.downSince as string) },
-                  { label: 'Dauer seit der Meldung', value: formatDuration(ctx.now.getTime() - downSince) },
+                  { label: t('Ausfall gemeldet'), value: w.when(event.downSince as string) },
+                  { label: t('Dauer seit der Meldung'), value: w.duration(ctx.now.getTime() - downSince) },
                 ]),
           ]) +
-          (all ? '' : mailNote('Die übrigen Ziele antworten noch nicht.', 'warning')),
-        action: { label: 'Ziele ansehen', path: '/reverse-proxy' },
+          (all ? '' : mailNote(t('Die übrigen Ziele antworten noch nicht.'), 'warning')),
+        action: { label: t('Ziele ansehen'), path: '/reverse-proxy' },
       };
     }
 
     case 'haproxy_down':
       return {
-        subject: 'HAProxy läuft nicht',
-        eyebrow: 'Reverse-Proxy',
-        heading: 'HAProxy läuft nicht',
+        subject: t('HAProxy läuft nicht'),
+        eyebrow: t('Reverse-Proxy'),
+        heading: t('HAProxy läuft nicht'),
         body:
           mailText(
-            `Der Container ${code(event.container)} auf ${node} läuft nicht. Solange er nicht läuft, ist über diesen Server keine Domain und keine Weiterleitung erreichbar.`
+            t(
+              'Der Container {container} auf {node} läuft nicht. Solange er nicht läuft, ist über diesen Server keine Domain und keine Weiterleitung erreichbar.',
+              { container: code(event.container), node }
+            )
           ) +
           mailFacts([
             {
-              label: 'Zustand',
-              value: event.exists ? (event.status ?? 'unbekannt') : 'Der Container existiert nicht',
+              label: t('Zustand'),
+              value: event.exists ? (event.status ?? t('unbekannt')) : t('Der Container existiert nicht'),
             },
-            { label: 'Seit', value: formatWhen(event.since) },
+            { label: t('Seit'), value: w.when(event.since) },
           ]) +
           mailText(
             event.exists
-              ? `Was zu tun ist: Auf dem Server zeigt ${code(`docker logs ${event.container}`)}, warum er beendet wurde. ${code(`docker start ${event.container}`)} startet ihn wieder.`
-              : `Was zu tun ist: Auf dem Server legt ${code('docker compose up -d')} im Ordner der Installation den Container wieder an.`
+              ? t('Was zu tun ist: Auf dem Server zeigt {logs}, warum er beendet wurde. {start} startet ihn wieder.', {
+                  logs: code(`docker logs ${event.container}`),
+                  start: code(`docker start ${event.container}`),
+                })
+              : t('Was zu tun ist: Auf dem Server legt {command} im Ordner der Installation den Container wieder an.', {
+                  command: code('docker compose up -d'),
+                })
           ) +
           mailText(
-            'Läuft die Oberfläche von HAPM über HAProxy, ist sie so lange nur direkt über den Port von HAPM erreichbar.'
+            t('Läuft die Oberfläche von HAPM über HAProxy, ist sie so lange nur direkt über den Port von HAPM erreichbar.')
           ),
       };
 
     case 'run_failed': {
-      const action = RUN_ACTION_LABELS[event.action] ?? event.action;
+      const action = RUN_ACTION_LABELS[event.action] ? t(RUN_ACTION_LABELS[event.action]) : event.action;
       return {
         subject:
-          event.action === 'settings' ? `Vorgang gescheitert: ${action}` : `Vorgang gescheitert: ${action} (${event.entry})`,
-        eyebrow: 'Reverse-Proxy',
-        heading: 'Vorgang am Reverse-Proxy gescheitert',
+          event.action === 'settings'
+            ? t('Vorgang gescheitert: {action}', { action })
+            : t('Vorgang gescheitert: {action} ({entry})', { action, entry: event.entry }),
+        eyebrow: t('Reverse-Proxy'),
+        heading: t('Vorgang am Reverse-Proxy gescheitert'),
         body:
-          mailText(`Ein Vorgang am Reverse-Proxy auf ${node} ist mit einem Fehler zu Ende gegangen.`) +
+          mailText(t('Ein Vorgang am Reverse-Proxy auf {node} ist mit einem Fehler zu Ende gegangen.', { node })) +
           mailFacts([
-            { label: 'Vorgang', value: action },
-            ...(event.action === 'settings' ? [] : [{ label: 'Name', value: event.entry }]),
-            ...(event.addresses ? [{ label: 'Adressen', value: event.addresses }] : []),
-            { label: 'Ausgelöst von', value: triggeredByLabel(event.triggeredBy) },
-            { label: 'Zeitpunkt', value: formatWhen(ctx.now) },
+            { label: t('Vorgang'), value: action },
+            ...(event.action === 'settings' ? [] : [{ label: t('Name'), value: event.entry }]),
+            ...(event.addresses ? [{ label: t('Adressen'), value: event.addresses }] : []),
+            { label: t('Ausgelöst von'), value: triggeredByLabel(event.triggeredBy, w) },
+            { label: t('Zeitpunkt'), value: w.when(ctx.now) },
           ]) +
-          mailNote(machineHead(event.error), 'danger', 'Fehler') +
-          mailText('Was zu tun ist: Unter „Logs“ steht der Vorgang mit jedem Schritt und dessen Ergebnis.'),
-        action: { label: 'Vorgänge ansehen', path: '/reverse-proxy/logs' },
+          mailNote(machineHead(event.error, w), 'danger', t('Fehler')) +
+          mailText(t('Was zu tun ist: Unter „Logs“ steht der Vorgang mit jedem Schritt und dessen Ergebnis.')),
+        action: { label: t('Vorgänge ansehen'), path: '/reverse-proxy/logs' },
       };
     }
 
     case 'update_available': {
-      const label = COMPONENT_LABELS[event.component];
+      const component = COMPONENT_LABELS[event.component];
       const newVersion = event.latestVersion && event.latestVersion !== event.currentVersion ? event.latestVersion : null;
       const automatic = event.component === 'haproxy' && ctx.autoUpdateHaproxy;
       return {
-        subject: newVersion ? `Update verfügbar: ${label} ${newVersion}` : `Update verfügbar: neues Abbild für ${label}`,
-        eyebrow: 'Updates',
-        heading: `Update für ${label} verfügbar`,
+        subject: newVersion
+          ? t('Update verfügbar: {component} {version}', { component, version: newVersion })
+          : t('Update verfügbar: neues Abbild für {component}', { component }),
+        eyebrow: t('Updates'),
+        heading: t('Update für {component} verfügbar', { component }),
         body:
-          mailText(`Für ${strong(label)} auf ${node} gibt es eine neue Fassung.`) +
+          mailText(t('Für {component} auf {node} gibt es eine neue Fassung.', { component: strong(component), node })) +
           mailFacts([
-            { label: 'Läuft', value: event.currentVersion ?? 'Version unbekannt' },
-            { label: 'Verfügbar', value: newVersion ?? 'Neues Abbild derselben Fassung', tone: 'accent' },
+            { label: t('Läuft'), value: event.currentVersion ?? t('Version unbekannt') },
+            { label: t('Verfügbar'), value: newVersion ?? t('Neues Abbild derselben Fassung'), tone: 'accent' },
           ]) +
           mailText(
             automatic
-              ? `HAProxy wird um ${escapeHtml(ctx.autoUpdateTime)} Uhr selbsttätig aktualisiert. Unter „Updates“ geht es auch sofort.`
-              : 'Eingespielt wird es unter „Updates“. Von selbst geschieht nichts.'
+              ? t('HAProxy wird um {time} Uhr selbsttätig aktualisiert. Unter „Updates“ geht es auch sofort.', {
+                  time: escapeHtml(ctx.autoUpdateTime),
+                })
+              : t('Eingespielt wird es unter „Updates“. Von selbst geschieht nichts.')
           ),
-        action: { label: 'Updates ansehen', path: '/updates' },
+        action: { label: t('Updates ansehen'), path: '/updates' },
       };
     }
 
     case 'update_completed': {
-      const label = COMPONENT_LABELS[event.component];
+      const component = COMPONENT_LABELS[event.component];
       const changed = Boolean(event.toVersion && event.toVersion !== event.fromVersion);
       return {
-        subject: changed ? `${label} aktualisiert auf ${event.toVersion}` : `Update von ${label} durchgelaufen`,
-        eyebrow: 'Updates',
-        heading: changed ? `${label} aktualisiert` : `Update von ${label} durchgelaufen`,
+        subject: changed
+          ? t('{component} aktualisiert auf {version}', { component, version: event.toVersion ?? '' })
+          : t('Update von {component} durchgelaufen', { component }),
+        eyebrow: t('Updates'),
+        heading: changed
+          ? t('{component} aktualisiert', { component })
+          : t('Update von {component} durchgelaufen', { component }),
         body:
-          mailText(`Das Update von ${strong(label)} auf ${node} ist ohne Fehler durchgelaufen.`) +
+          mailText(t('Das Update von {component} auf {node} ist ohne Fehler durchgelaufen.', { component: strong(component), node })) +
           mailFacts([
-            { label: 'Vorher', value: event.fromVersion ?? 'Version unbekannt' },
-            { label: 'Jetzt', value: event.toVersion ?? 'Version unbekannt', tone: changed ? 'accent' : undefined },
-            { label: 'Ausgelöst von', value: triggeredByLabel(event.triggeredBy) },
-            { label: 'Abgeschlossen', value: formatWhen(ctx.now) },
+            { label: t('Vorher'), value: event.fromVersion ?? t('Version unbekannt') },
+            { label: t('Jetzt'), value: event.toVersion ?? t('Version unbekannt'), tone: changed ? 'accent' : undefined },
+            { label: t('Ausgelöst von'), value: triggeredByLabel(event.triggeredBy, w) },
+            { label: t('Abgeschlossen'), value: w.when(ctx.now) },
           ]) +
           (changed
             ? ''
             : mailText(
-                'Die Versionsnummer ist dieselbe geblieben: Entweder lief schon das neueste Abbild, oder das neue trägt dieselbe Nummer. Die Schritte des Laufs stehen unter „Updates“.'
+                t(
+                  'Die Versionsnummer ist dieselbe geblieben: Entweder lief schon das neueste Abbild, oder das neue trägt dieselbe Nummer. Die Schritte des Laufs stehen unter „Updates“.'
+                )
               )),
-        action: { label: 'Updates ansehen', path: '/updates' },
+        action: { label: t('Updates ansehen'), path: '/updates' },
       };
     }
 
     case 'update_failed': {
-      const label = COMPONENT_LABELS[event.component];
+      const component = COMPONENT_LABELS[event.component];
       return {
-        subject: `Update von ${label} gescheitert`,
-        eyebrow: 'Updates',
-        heading: `Update von ${label} gescheitert`,
+        subject: t('Update von {component} gescheitert', { component }),
+        eyebrow: t('Updates'),
+        heading: t('Update von {component} gescheitert', { component }),
         body:
-          mailText(`Das Update von ${strong(label)} auf ${node} ist mit einem Fehler zu Ende gegangen.`) +
+          mailText(t('Das Update von {component} auf {node} ist mit einem Fehler zu Ende gegangen.', { component: strong(component), node })) +
           mailFacts([
-            { label: 'Fassung vor dem Update', value: event.fromVersion ?? 'Version unbekannt' },
-            { label: 'Ausgelöst von', value: triggeredByLabel(event.triggeredBy) },
-            { label: 'Zeitpunkt', value: formatWhen(ctx.now) },
+            { label: t('Fassung vor dem Update'), value: event.fromVersion ?? t('Version unbekannt') },
+            { label: t('Ausgelöst von'), value: triggeredByLabel(event.triggeredBy, w) },
+            { label: t('Zeitpunkt'), value: w.when(ctx.now) },
           ]) +
-          mailNote(machineHead(event.error), 'danger', 'Fehler') +
-          mailText('Was zu tun ist: Unter „Updates“ steht der Lauf in der Historie, mit jedem Schritt und dessen Ausgabe.'),
-        action: { label: 'Updates ansehen', path: '/updates' },
+          mailNote(machineHead(event.error, w), 'danger', t('Fehler')) +
+          mailText(t('Was zu tun ist: Unter „Updates“ steht der Lauf in der Historie, mit jedem Schritt und dessen Ausgabe.')),
+        action: { label: t('Updates ansehen'), path: '/updates' },
       };
     }
 
     case 'backup_failed':
       return {
-        subject: 'Sicherung gescheitert',
-        eyebrow: 'Sicherung',
-        heading: 'Sicherung gescheitert',
+        subject: t('Sicherung gescheitert'),
+        eyebrow: t('Sicherung'),
+        heading: t('Sicherung gescheitert'),
         body:
-          mailText(`Die Sicherung von HAPM auf ${node} ist am ${formatWhen(ctx.now)} gescheitert.`) +
-          mailNote(machineHead(event.detail), 'danger', 'Fehler') +
-          mailText('Was zu tun ist: Unter „Sicherung“ steht, was eingestellt ist und wie der letzte Lauf ausging.'),
-        action: { label: 'Sicherung ansehen', path: '/backup' },
+          mailText(t('Die Sicherung von HAPM auf {node} ist am {when} gescheitert.', { node, when: w.when(ctx.now) })) +
+          mailNote(machineHead(event.detail, w), 'danger', t('Fehler')) +
+          mailText(t('Was zu tun ist: Unter „Sicherung“ steht, was eingestellt ist und wie der letzte Lauf ausging.')),
+        action: { label: t('Sicherung ansehen'), path: '/backup' },
       };
   }
 }
 
-export const NOTIFICATION_FOOTER_NOTE = 'Welche Ereignisse eine Mail auslösen, steht in HAPM unter „Benachrichtigungen“.';
-
 export function notificationMail(event: NotificationEvent, ctx: NotificationMailContext): NotificationMail {
-  const content = draft(event, ctx);
+  const w = writer(ctx);
+  const content = draft(event, ctx, w);
   const action: MailAction | undefined =
     content.action && ctx.publicUrl ? { label: content.action.label, url: `${ctx.publicUrl}${content.action.path}` } : undefined;
 
@@ -386,28 +467,31 @@ export function notificationMail(event: NotificationEvent, ctx: NotificationMail
       heading: content.heading,
       body: content.body,
       action,
-      footerNote: NOTIFICATION_FOOTER_NOTE,
+      footerNote: w.t(NOTIFICATION_FOOTER_NOTE),
     },
-    { nodeName: ctx.nodeName, publicUrl: ctx.publicUrl }
+    { nodeName: ctx.nodeName, publicUrl: ctx.publicUrl, locale: w.locale }
   );
   return { subject: content.subject, ...rendered };
 }
 
 /** Die Testmail von der Seite „Benachrichtigungen". */
 export function testMail(installation: MailInstallation): NotificationMail {
-  const subject = 'Testmail von HAPM';
+  const { t } = createTranslator(installation.locale);
+  const subject = t('Testmail von HAPM');
   const rendered = renderHapmMail(
     {
       subject,
-      eyebrow: 'Benachrichtigungen',
-      heading: 'Der Versand funktioniert',
+      eyebrow: t('Benachrichtigungen'),
+      heading: t('Der Versand funktioniert'),
       body:
         mailText(
-          `Diese Mail hat HAPM auf ${strong(installation.nodeName)} über das eingerichtete SMTP-Konto verschickt. Kommt sie an, stimmen Server, Anmeldung und Absender.`
-        ) +
-        mailText('Wer sie bekommt und zu welchen Ereignissen, steht unter „Benachrichtigungen“.'),
+          t(
+            'Diese Mail hat HAPM auf {node} über das eingerichtete SMTP-Konto verschickt. Kommt sie an, stimmen Server, Anmeldung und Absender.',
+            { node: strong(installation.nodeName) }
+          )
+        ) + mailText(t('Wer sie bekommt und zu welchen Ereignissen, steht unter „Benachrichtigungen“.')),
       action: installation.publicUrl
-        ? { label: 'Benachrichtigungen öffnen', url: `${installation.publicUrl}/notifications` }
+        ? { label: t('Benachrichtigungen öffnen'), url: `${installation.publicUrl}/notifications` }
         : undefined,
     },
     installation

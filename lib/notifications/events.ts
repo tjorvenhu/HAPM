@@ -2,10 +2,11 @@
  * Die Ereignisse, zu denen HAPM eine Mail verschickt.
  *
  * Rein: nur Typen und Tabellen. Die Seite „Benachrichtigungen" liest hier die
- * Namen und Sätze, `notify` die Sache, für die ein Ereignis gilt, und wie
+ * Namen und Sätze (Schlüssel, `msgid`: die Seite zeigt sie mit `t()`), `notify` die Sache, für die ein Ereignis gilt, und wie
  * lange es danach schweigt.
  */
 
+import { msgid } from '../i18n';
 import type { HaproxyAction, NotificationEventType, UpdateComponent } from '../types';
 
 export interface ExpiringCertificate {
@@ -100,67 +101,67 @@ export interface NotificationEventGroup {
 /** Die Ereignisse in der Reihenfolge und Gliederung der Seite „Benachrichtigungen". */
 export const NOTIFICATION_EVENT_GROUPS: NotificationEventGroup[] = [
   {
-    title: 'Zertifikate',
+    title: msgid('Zertifikate'),
     events: [
       {
         type: 'certificate_renewal_failed',
-        label: 'Erneuerung gescheitert',
-        description: 'Der tägliche Lauf von acme.sh meldet einen Fehler.',
+        label: msgid('Erneuerung gescheitert'),
+        description: msgid('Der tägliche Lauf von acme.sh meldet einen Fehler.'),
       },
       {
         type: 'certificate_expiring',
-        label: 'Zertifikat läuft ab',
-        description: 'Ein Zertifikat ist weniger als 14 Tage gültig. Einmal am Tag.',
+        label: msgid('Zertifikat läuft ab'),
+        description: msgid('Ein Zertifikat ist weniger als 14 Tage gültig. Einmal am Tag.'),
       },
     ],
   },
   {
-    title: 'Reverse-Proxy',
+    title: msgid('Reverse-Proxy'),
     events: [
       {
         type: 'haproxy_down',
-        label: 'HAProxy läuft nicht',
-        description: 'Der Container von HAProxy läuft bei zwei Prüfungen in Folge nicht.',
+        label: msgid('HAProxy läuft nicht'),
+        description: msgid('Der Container von HAProxy läuft bei zwei Prüfungen in Folge nicht.'),
       },
       {
         type: 'backend_down',
-        label: 'Kein Ziel antwortet',
-        description: 'Kein Ziel eines Eintrags antwortet, bei zwei Prüfungen in Folge.',
+        label: msgid('Kein Ziel antwortet'),
+        description: msgid('Kein Ziel eines Eintrags antwortet, bei zwei Prüfungen in Folge.'),
       },
       {
         type: 'backend_recovered',
-        label: 'Ziele antworten wieder',
-        description: 'Ein Eintrag, dessen Ausfall gemeldet wurde, antwortet wieder.',
+        label: msgid('Ziele antworten wieder'),
+        description: msgid('Ein Eintrag, dessen Ausfall gemeldet wurde, antwortet wieder.'),
       },
       {
         type: 'run_failed',
-        label: 'Vorgang gescheitert',
-        description: 'Ein Vorgang am Reverse-Proxy endet mit einem Fehler.',
+        label: msgid('Vorgang gescheitert'),
+        description: msgid('Ein Vorgang am Reverse-Proxy endet mit einem Fehler.'),
       },
     ],
   },
   {
-    title: 'Updates und Sicherung',
+    title: msgid('Updates und Sicherung'),
     events: [
       {
         type: 'update_available',
-        label: 'Update verfügbar',
-        description: 'Die Prüfung findet eine neue Fassung. Einmal je Fassung.',
+        label: msgid('Update verfügbar'),
+        description: msgid('Die Prüfung findet eine neue Fassung. Einmal je Fassung.'),
       },
       {
         type: 'update_completed',
-        label: 'Update eingespielt',
-        description: 'Ein Update ist ohne Fehler durchgelaufen.',
+        label: msgid('Update eingespielt'),
+        description: msgid('Ein Update ist ohne Fehler durchgelaufen.'),
       },
       {
         type: 'update_failed',
-        label: 'Update gescheitert',
-        description: 'Ein Update endet mit einem Fehler.',
+        label: msgid('Update gescheitert'),
+        description: msgid('Ein Update endet mit einem Fehler.'),
       },
       {
         type: 'backup_failed',
-        label: 'Sicherung gescheitert',
-        description: 'Eine Sicherung endet mit einem Fehler.',
+        label: msgid('Sicherung gescheitert'),
+        description: msgid('Eine Sicherung endet mit einem Fehler.'),
       },
     ],
   },

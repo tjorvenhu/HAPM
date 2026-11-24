@@ -3,6 +3,7 @@ import { updateDocument } from '@/lib/db';
 import { COLLECTIONS } from '@/lib/types';
 import { logAudit, getClientIP } from '@/lib/audit';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
+import { msg } from '@/lib/i18n';
 import type { HaproxyRun } from '@/lib/types';
 
 interface AcknowledgeInput {
@@ -33,7 +34,7 @@ export async function POST(request: Request) {
     const ids = Array.isArray(input.ids)
       ? input.ids.filter((id) => typeof id === 'string' && id)
       : [];
-    if (ids.length === 0) throw new ApiError('Keine Einträge angegeben.');
+    if (ids.length === 0) throw new ApiError(msg('Keine Einträge angegeben.'));
 
     // Eine Aktualisierung je Lauf. Die Menge ist durch das begrenzt, was das
     // Dashboard auflistet (die letzten 25 Läufe).

@@ -17,6 +17,10 @@ import {
   type CreateServiceInput,
   type GlobalSettingsInput,
 } from '@/lib/haproxy/config';
+import { germanText, type Message } from '@/lib/i18n/translate';
+
+/** Die Meldung einer Prüfung auf Deutsch, wie sie ohne Sprache herauskommt. */
+const de = (message: Message | null) => (message ? germanText(message) : message);
 
 /**
  * Die Sperre auf Admin-IPs.
@@ -235,7 +239,7 @@ describe('Sperren einzelner Domains', () => {
   it('lehnt eine Domain ab, die dem Eintrag nicht gehört', () => {
     // Sie wäre eine ACL auf eine fremde Domain: der Verkehr dorthin geht
     // woanders hin, und die Sperre stünde wirkungslos in der Datei.
-    expect(validateCreateInput({ ...ZWEI, lockedDomains: ['fremd.example'] })).toMatch(
+    expect(de(validateCreateInput({ ...ZWEI, lockedDomains: ['fremd.example'] }))).toMatch(
       /gehört nicht zu diesem Eintrag/
     );
   });
@@ -269,13 +273,13 @@ describe('isValidSourceAddress', () => {
   });
 
   it('wird von der Prüfung der Einstellungen benutzt', () => {
-    expect(validateGlobalSettings({ ...SETTINGS, adminIps: ['10.0.0.256'] })).toMatch(
+    expect(de(validateGlobalSettings({ ...SETTINGS, adminIps: ['10.0.0.256'] }))).toMatch(
       /Keine gültige Adresse/
     );
-    expect(validateGlobalSettings({ ...SETTINGS, adminIps: ['10.0.0.1', '10.0.0.1'] })).toMatch(
+    expect(de(validateGlobalSettings({ ...SETTINGS, adminIps: ['10.0.0.1', '10.0.0.1'] }))).toMatch(
       /steht doppelt/
     );
-    expect(validateGlobalSettings(SETTINGS)).toBeNull();
+    expect(de(validateGlobalSettings(SETTINGS))).toBeNull();
   });
 });
 

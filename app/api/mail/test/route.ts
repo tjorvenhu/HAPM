@@ -1,5 +1,6 @@
 import { requireCsrf, requireSession } from '@/lib/session';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
+import { msg } from '@/lib/i18n';
 import { logAudit, getClientIP } from '@/lib/audit';
 import { rateLimit } from '@/lib/rate-limit';
 import { validateEmail } from '@/lib/validation';
@@ -21,20 +22,22 @@ export async function POST(request: Request) {
     const body = await jsonBody(request);
 
     if (body.to !== undefined && body.to !== null && typeof body.to !== 'string') {
-      throw new ApiError('Die Adresse für die Testmail muss ein Text sein.');
+      throw new ApiError(msg('Die Adresse für die Testmail muss ein Text sein.'));
     }
     const to = (typeof body.to === 'string' ? body.to.trim() : '') || session.email;
-    if (!validateEmail(to)) throw new ApiError('Die Adresse für die Testmail ist ungültig.');
+    if (!validateEmail(to)) throw new ApiError(msg('Die Adresse für die Testmail ist ungültig.'));
 
     if (!(await mailConfigured())) {
-      throw new ApiError('Es ist kein SMTP-Konto eingerichtet. Server und Absender zuerst speichern.');
+      throw new ApiError(msg('Es ist kein SMTP-Konto eingerichtet. Server und Absender zuerst speichern.'));
     }
 
     // Jede Testmail ist eine echte Mail an eine frei gewählte Adresse.
     const limit = rateLimit(`mail-test:${session.userId}`, LIMIT, WINDOW_MS);
     if (!limit.success) {
       throw new ApiError(
-        `Zu viele Testmails. Der nächste Versuch geht in ${Math.ceil((limit.retryAfter ?? 60) / 60)} Minuten.`,
+        msg('Zu viele Testmails. Der nächste Versuch geht in {minutes} Minuten.', {
+          minutes: Math.ceil((limit.retryAfter ?? 60) / 60),
+        }),
         429
       );
     }

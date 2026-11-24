@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard, Network, BarChart3, ShieldCheck, ScrollText, Globe, SlidersHorizontal,
@@ -61,24 +62,32 @@ const NAV_SECTIONS: NavSection[] = [
       { label: msgid('Benachrichtigungen'), href: '/notifications', icon: Bell },
       { label: msgid('Allgemein'), href: '/system', icon: Settings },
       { label: msgid('Benutzer'), href: '/users', icon: Users },
-      { label: msgid('Konto'), href: '/konto', icon: UserCog },
     ],
   },
 ];
 
 /**
+ * Das eigene Konto steht nicht in der Seitenleiste, sondern im Menü unter dem
+ * Benutzer: es gehört zur Person, nicht zum System. Suche und Browsertitel
+ * kennen es trotzdem.
+ */
+const ACCOUNT_PAGE: NavItem = { label: msgid('Konto'), href: '/konto', icon: UserCog };
+
+/**
  * Jede Seite der Navigation als Suchtreffer, mit ihrem Bereich als Nebenzeile.
  * Speist die Gruppe „Seiten" der globalen Suche.
  */
-export const NAV_PAGES: { title: string; subtitle?: string; href: string }[] = NAV_SECTIONS.flatMap(
-  (section) =>
+export const NAV_PAGES: { title: string; subtitle?: string; href: string }[] = [
+  ...NAV_SECTIONS.flatMap((section) =>
     section.items.map((item) => ({
       title: item.label,
       // „Übersicht" unter „Übersicht" sagt nichts.
       subtitle: section.title === item.label ? undefined : section.title,
       href: item.href,
     }))
-);
+  ),
+  { title: ACCOUNT_PAGE.label, href: ACCOUNT_PAGE.href },
+];
 
 /**
  * Die Seite, die im Browsertitel steht.
@@ -90,11 +99,9 @@ export const NAV_PAGES: { title: string; subtitle?: string; href: string }[] = N
  */
 export function activeArea(pathname: string): string | null {
   let best: NavItem | null = null;
-  for (const section of NAV_SECTIONS) {
-    for (const item of section.items) {
-      const matches = pathname === item.href || pathname.startsWith(`${item.href}/`);
-      if (matches && (!best || item.href.length > best.href.length)) best = item;
-    }
+  for (const item of [...NAV_SECTIONS.flatMap((section) => section.items), ACCOUNT_PAGE]) {
+    const matches = pathname === item.href || pathname.startsWith(`${item.href}/`);
+    if (matches && (!best || item.href.length > best.href.length)) best = item;
   }
   return best?.label ?? null;
 }
@@ -178,7 +185,22 @@ export default function Sidebar({ userName, userEmail, apiFetch, onSearch }: Sid
       logo={<Logo width={132} />}
       counts={Object.entries(counts).map(([key, count]) => ({ key, count: count ?? 0 }))}
       onSearch={onSearch}
-      footer={<ShellProfileMenu name={userName} email={userEmail} onLogout={handleLogout} />}
+      footer={
+        <ShellProfileMenu name={userName} email={userEmail} onLogout={handleLogout}>
+          {(close) => (
+            <Link
+              href={ACCOUNT_PAGE.href}
+              role="menuitem"
+              className="shell-menu__item"
+              aria-current={pathname === ACCOUNT_PAGE.href ? 'page' : undefined}
+              onClick={close}
+            >
+              <UserCog size={16} strokeWidth={1.5} aria-hidden="true" />
+              {t(ACCOUNT_PAGE.label)}
+            </Link>
+          )}
+        </ShellProfileMenu>
+      }
     />
   );
 }

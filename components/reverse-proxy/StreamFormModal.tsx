@@ -19,6 +19,7 @@ import {
   type HaproxyStream,
   type StreamBalance,
 } from '@/lib/haproxy/streams';
+import { useT } from '@/lib/i18n/react';
 import type { ProxyRow } from './types';
 
 /**
@@ -102,6 +103,7 @@ export default function StreamFormModal({
   onStarted,
 }: Props) {
   const { apiFetch } = useApp();
+  const { t, rich } = useT();
 
   /* Anders als bei einem Dienst zählt `acmeReady` hier nicht: eine
    * TCP-Weiterleitung braucht kein Zertifikat. Ohne acme.sh lässt sich ein
@@ -219,12 +221,12 @@ export default function StreamFormModal({
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (inputError) {
-      setFormError(inputError);
+      setFormError(t(inputError));
       return;
     }
     setFormError('');
     setSaving(true);
-    const verb = editingId ? 'Speichern' : 'Anlegen';
+    const failed = t(editingId ? 'Speichern fehlgeschlagen' : 'Anlegen fehlgeschlagen');
     try {
       const res = await apiFetch(
         editingId
@@ -237,18 +239,20 @@ export default function StreamFormModal({
         }
       );
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `${verb} fehlgeschlagen`);
+      if (!res.ok) throw new Error(data.error || failed);
       // Die Kennung einer neuen Weiterleitung steht in der Antwort.
       const startedId: string = editingId ?? data.data.serviceId;
       onStarted({
         id: data.data.runId,
-        label: `TCP-Weiterleitung „${startedId}" ${editingId ? 'ändern' : 'anlegen'}`,
+        label: editingId
+          ? t('TCP-Weiterleitung „{id}" ändern', { id: startedId })
+          : t('TCP-Weiterleitung „{id}" anlegen', { id: startedId }),
         serviceId: startedId,
-        title: `Port ${input.port}`,
+        title: t('Port {port}', { port: input.port }),
         isNew: !editingId,
       });
     } catch (err: unknown) {
-      setFormError(err instanceof Error ? err.message : `${verb} fehlgeschlagen`);
+      setFormError(err instanceof Error ? err.message : failed);
       setSaving(false);
     }
   }
@@ -261,7 +265,7 @@ export default function StreamFormModal({
       <div className="modal modal-form">
         <div className="modal-header">
           <h2 className="modal-title">
-            {editingId ? 'TCP-Weiterleitung bearbeiten' : 'TCP-Weiterleitung anlegen'}
+            {t(editingId ? 'TCP-Weiterleitung bearbeiten' : 'TCP-Weiterleitung anlegen')}
             {editingId && <span className="modal-subject">{editingId}</span>}
           </h2>
           <button
@@ -269,7 +273,7 @@ export default function StreamFormModal({
             className="modal-close"
             onClick={() => onClose()}
             disabled={saving}
-            aria-label="Dialog schließen"
+            aria-label={t('Dialog schließen')}
           >
             <X size={18} />
           </button>
@@ -287,16 +291,15 @@ export default function StreamFormModal({
                       <Cable size={17} />
                     </span>
                     <div>
-                      <div className="form-section-title">Allgemein</div>
+                      <div className="form-section-title">{t('Allgemein')}</div>
                       <div className="form-section-sub">
-                        Ein Port dieses Servers, durchgereicht an ein Ziel dahinter. Kein HTTP,
-                        kein Zertifikat: was durchgeht, sieht HAProxy nicht an.
+                        {t('Ein Port dieses Servers, durchgereicht an ein Ziel dahinter. Kein HTTP, kein Zertifikat: was durchgeht, sieht HAProxy nicht an.')}
                       </div>
                     </div>
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label">Gruppe</label>
+                    <label className="form-label">{t('Gruppe')}</label>
                     <Select
                       value={scope}
                       onChange={setScope}
@@ -306,13 +309,13 @@ export default function StreamFormModal({
 
                   <div className="form-group">
                     <label className="form-label">
-                      Port auf diesem Server
+                      {t('Port auf diesem Server')}
                       <InfoHint
-                        text={
+                        text={t(
                           editingId
                             ? 'Die Kennung des listen-Abschnitts bleibt, auch wenn sich der Port ändert.'
                             : 'Aus dem Port ergibt sich die Kennung des listen-Abschnitts, zum Beispiel tcp_5432.'
-                        }
+                        )}
                       />
                     </label>
                     <input
@@ -332,22 +335,27 @@ export default function StreamFormModal({
                     <span className="form-hint">
                       {portChecking ? (
                         <>
-                          <Loader2 size={12} className="spin" /> Wird auf dem Server geprüft …
+                          <Loader2 size={12} className="spin" /> {t('Wird auf dem Server geprüft …')}
                         </>
                       ) : portCheck === null ? (
-                        `${STREAM_PORT_MIN} bis ${STREAM_PORT_MAX}. HAProxy nimmt danach auf diesem Port Verbindungen an, auf allen Adressen dieses Servers.`
+                        t('{min} bis {max}. HAProxy nimmt danach auf diesem Port Verbindungen an, auf allen Adressen dieses Servers.', {
+                          min: STREAM_PORT_MIN,
+                          max: STREAM_PORT_MAX,
+                        })
                       ) : portCheck.free ? (
                         <>
-                          <Check size={12} /> Frei.{' '}
-                          {portCheck.reason ?? 'Weder in der Konfiguration noch auf dem Server belegt.'}
+                          <Check size={12} /> {t('Frei.')}{' '}
+                          {portCheck.reason
+                            ? t(portCheck.reason)
+                            : t('Weder in der Konfiguration noch auf dem Server belegt.')}
                         </>
                       ) : (
-                        <>Belegt: {portCheck.reason}</>
+                        <>{t('Belegt: {reason}', { reason: portCheck.reason ? t(portCheck.reason) : '' })}</>
                       )}
                     </span>
                     {editingId && (
                       <span className="form-hint">
-                        Kennung: <code>{editingId}</code>
+                        {rich('Kennung: {id}', { id: <code>{editingId}</code> })}
                       </span>
                     )}
                   </div>
@@ -363,12 +371,8 @@ export default function StreamFormModal({
                   <div className="alert alert-info">
                     <ShieldAlert size={16} />
                     <span>
-                      <strong>Die Firewall macht dieser Vorgang nicht auf.</strong> Er ändert nur
-                      die HAProxy-Konfiguration. Damit der Port von außen erreichbar ist, muss er
-                      zusätzlich freigegeben sein: auf diesem Server selbst (nftables, ufw,
-                      firewalld) und, falls davor eine liegt, in der Firewall des Anbieters oder
-                      der Cloud. Ohne das läuft der Eintrag hier durch und die Verbindung von
-                      außen bleibt trotzdem hängen.
+                      <strong>{t('Die Firewall macht dieser Vorgang nicht auf.')}</strong>{' '}
+                      {t('Er ändert nur die HAProxy-Konfiguration. Damit der Port von außen erreichbar ist, muss er zusätzlich freigegeben sein: auf diesem Server selbst (nftables, ufw, firewalld) und, falls davor eine liegt, in der Firewall des Anbieters oder der Cloud. Ohne das läuft der Eintrag hier durch und die Verbindung von außen bleibt trotzdem hängen.')}
                     </span>
                   </div>
 
@@ -385,10 +389,9 @@ export default function StreamFormModal({
                     <div className="alert alert-danger">
                       <ShieldAlert size={16} />
                       <span>
-                        <strong>Port {input.port} ist belegt.</strong> {portCheck.reason} Ein
-                        zweiter Abschnitt auf demselben Port kommt durch die
-                        Konfigurationsprüfung und scheitert erst beim Neuladen: sie liest die
-                        Datei, sie bindet keine Sockets. Der Vorgang wird deshalb hier abgelehnt.
+                        <strong>{t('Port {port} ist belegt.', { port: input.port })}</strong>{' '}
+                        {portCheck.reason ? `${t(portCheck.reason)} ` : ''}
+                        {t('Ein zweiter Abschnitt auf demselben Port kommt durch die Konfigurationsprüfung und scheitert erst beim Neuladen: sie liest die Datei, sie bindet keine Sockets. Der Vorgang wird deshalb hier abgelehnt.')}
                       </span>
                     </div>
                   )}
@@ -401,11 +404,9 @@ export default function StreamFormModal({
                       <ShieldAlert size={17} />
                     </span>
                     <div>
-                      <div className="form-section-title">Erreichbar von</div>
+                      <div className="form-section-title">{t('Erreichbar von')}</div>
                       <div className="form-section-sub">
-                        Leer heißt: von jeder Adresse im Internet. Eine eigene Liste je Eintrag und
-                        nicht die Admin-IPs. Wer an eine Datenbank darf, ist eine andere Frage als
-                        wer eine Verwaltungsoberfläche sehen darf.
+                        {t('Leer heißt: von jeder Adresse im Internet. Eine eigene Liste je Eintrag und nicht die Admin-IPs. Wer an eine Datenbank darf, ist eine andere Frage als wer eine Verwaltungsoberfläche sehen darf.')}
                       </div>
                     </div>
                   </div>
@@ -416,25 +417,24 @@ export default function StreamFormModal({
                     value={allowedSources}
                     onChange={setAllowedSources}
                     heading={false}
-                    emptyHint="Einzelne Adresse oder CIDR-Bereich, IPv4 und IPv6. Eine Zeile pro Absender."
+                    emptyHint={t('Einzelne Adresse oder CIDR-Bereich, IPv4 und IPv6. Eine Zeile pro Absender.')}
                   />
 
                   {input.allowedSources.length === 0 ? (
                     <div className="alert alert-warning">
                       <ShieldAlert size={16} />
                       <span>
-                        Der Port ist danach von überall erreichbar. Für einen Dienst, der selbst
-                        keine Anmeldung verlangt, ist das die Sorte Entscheidung, die man trifft,
-                        ohne sie zu treffen.
+                        {t('Der Port ist danach von überall erreichbar. Für einen Dienst, der selbst keine Anmeldung verlangt, ist das die Sorte Entscheidung, die man trifft, ohne sie zu treffen.')}
                       </span>
                     </div>
                   ) : (
                     <div className="form-note">
                       <Info size={14} />
                       <span>
-                        Abgewiesen wird die Verbindung, bevor ein einziges Byte gelesen wird
-                        (<code>tcp-request connection reject</code>). Für den Absender sieht das
-                        aus, als wäre nichts da.
+                        {rich(
+                          'Abgewiesen wird die Verbindung, bevor ein einziges Byte gelesen wird ({rule}). Für den Absender sieht das aus, als wäre nichts da.',
+                          { rule: <code>{'tcp-request connection reject'}</code> }
+                        )}
                       </span>
                     </div>
                   )}
@@ -449,22 +449,22 @@ export default function StreamFormModal({
                       <Server size={17} />
                     </span>
                     <div>
-                      <div className="form-section-title">Ziele</div>
+                      <div className="form-section-title">{t('Ziele')}</div>
                       <div className="form-section-sub">
-                        Wohin die Verbindungen gehen. Mehr als eines heißt Lastverteilung.
+                        {t('Wohin die Verbindungen gehen. Mehr als eines heißt Lastverteilung.')}
                       </div>
                     </div>
                   </div>
 
                   <div className="form-list">
                     <div className="form-list-head">
-                      <span style={{ flex: '0 0 30%' }}>Name</span>
-                      <span style={{ flex: 1 }}>Adresse</span>
+                      <span style={{ flex: '0 0 30%' }}>{t('Name')}</span>
+                      <span style={{ flex: 1 }}>{t('Adresse')}</span>
                       {/* Erst ab dem zweiten Ziel: bei einem gibt es nichts zu
                           verteilen, und ein Feld ohne Frage füllt irgendwann
                           jemand aus. Dieselbe Regel wie im
                           Lastverteilungs-Formular. */}
-                      {balancing && <span style={{ width: 76 }}>Gewicht</span>}
+                      {balancing && <span style={{ width: 76 }}>{t('Gewicht')}</span>}
                       <span style={{ width: 34 }} />
                     </div>
                     {servers.map((server, index) => (
@@ -512,13 +512,13 @@ export default function StreamFormModal({
                               )
                             }
                             placeholder="1"
-                            aria-label={`Gewicht von Ziel ${index + 1}`}
+                            aria-label={t('Gewicht von Ziel {number}', { number: index + 1 })}
                           />
                         )}
                         <button
                           type="button"
                           className="btn btn-ghost btn-icon"
-                          data-tooltip="Zeile entfernen"
+                          data-tooltip={t('Zeile entfernen')}
                           disabled={servers.length === 1}
                           onClick={() => setServers(servers.filter((_, i) => i !== index))}
                         >
@@ -535,33 +535,32 @@ export default function StreamFormModal({
                       onClick={() => setServers([...servers, { ...EMPTY_SERVER }])}
                     >
                       <Plus size={14} />
-                      Ziel hinzufügen
+                      {t('Ziel hinzufügen')}
                     </button>
                   </div>
                   <span className="form-hint">
-                    Adresse und Port, wie HAProxy sie erreicht. Der Port dort muss nicht der
-                    gleiche sein wie der hier.
+                    {t('Adresse und Port, wie HAProxy sie erreicht. Der Port dort muss nicht der gleiche sein wie der hier.')}
                   </span>
                   {balancing && (
                     <span className="form-hint">
-                      Das Gewicht ist der Anteil eines Ziels im Verhältnis zu den anderen. Leer
-                      heißt, dass keine <code>weight</code>-Angabe geschrieben wird und HAProxys
-                      Vorgabe gilt. <strong>0</strong> nimmt ein Ziel aus der Verteilung, ohne
-                      bestehende Verbindungen zu trennen.
+                      {rich(
+                        'Das Gewicht ist der Anteil eines Ziels im Verhältnis zu den anderen. Leer heißt, dass keine {weight}-Angabe geschrieben wird und HAProxys Vorgabe gilt. {zero} nimmt ein Ziel aus der Verteilung, ohne bestehende Verbindungen zu trennen.',
+                        { weight: <code>{'weight'}</code>, zero: <strong>0</strong> }
+                      )}
                     </span>
                   )}
 
                   <div className="form-subsection">
                     <div className="form-group">
                       <div className="form-label-row">
-                        <label className="form-label">Verteilverfahren</label>
+                        <label className="form-label">{t('Verteilverfahren')}</label>
                         {/* „URI Hash" fehlt in der Auswahl, und das ist kein Versehen:
                             es liest den angefragten Pfad, und den gibt es in mode tcp nicht. */}
                         <InfoHint
                           text={
                             balance
-                              ? STREAM_BALANCE_HINTS[balance]
-                              : 'Es wird keine balance-Zeile geschrieben. Dann gilt, was im defaults-Block der Konfiguration steht. URI Hash steht hier nicht zur Wahl: es liest den angefragten Pfad, und den gibt es ohne HTTP nicht.'
+                              ? t(STREAM_BALANCE_HINTS[balance])
+                              : t('Es wird keine balance-Zeile geschrieben. Dann gilt, was im defaults-Block der Konfiguration steht. URI Hash steht hier nicht zur Wahl: es liest den angefragten Pfad, und den gibt es ohne HTTP nicht.')
                           }
                         />
                       </div>
@@ -569,10 +568,10 @@ export default function StreamFormModal({
                         value={balance ?? ''}
                         onChange={(v) => setBalance(v === '' ? null : (v as StreamBalance))}
                         options={[
-                          { value: '', label: 'Vorgabe der Konfiguration' },
+                          { value: '', label: t('Vorgabe der Konfiguration') },
                           ...STREAM_BALANCE.map((b) => ({
                             value: b,
-                            label: STREAM_BALANCE_LABELS[b],
+                            label: t(STREAM_BALANCE_LABELS[b]),
                           })),
                         ]}
                       />
@@ -580,10 +579,9 @@ export default function StreamFormModal({
 
                     <div className="form-subsection-head">
                       <div>
-                        <div className="form-section-title">Verbindungsprüfung</div>
+                        <div className="form-section-title">{t('Verbindungsprüfung')}</div>
                         <div className="form-section-sub">
-                          HAProxy baut regelmäßig eine Verbindung auf und nimmt ein totes Ziel aus
-                          dem Betrieb.
+                          {t('HAProxy baut regelmäßig eine Verbindung auf und nimmt ein totes Ziel aus dem Betrieb.')}
                         </div>
                       </div>
                       <label className="toggle-switch">
@@ -591,7 +589,7 @@ export default function StreamFormModal({
                           type="checkbox"
                           checked={check}
                           onChange={(e) => setCheck(e.target.checked)}
-                          aria-label="Verbindungsprüfung"
+                          aria-label={t('Verbindungsprüfung')}
                         />
                         <span className="toggle-slider" />
                       </label>
@@ -600,9 +598,7 @@ export default function StreamFormModal({
                       <div className="form-note">
                         <Info size={14} />
                         <span>
-                          Aus heißt: über den Zustand der Ziele ist nichts bekannt, und die Karte
-                          zeigt keine Farbe. HAProxy schickt Verbindungen auch an ein Ziel, das
-                          nicht antwortet.
+                          {t('Aus heißt: über den Zustand der Ziele ist nichts bekannt, und die Karte zeigt keine Farbe. HAProxy schickt Verbindungen auch an ein Ziel, das nicht antwortet.')}
                         </span>
                       </div>
                     )}
@@ -612,9 +608,10 @@ export default function StreamFormModal({
                 <div className="form-note">
                   <Info size={14} />
                   <span>
-                    Der Abschnitt landet im BACKENDS-Block der Gruppe. Geprüft wird die neue
-                    Konfiguration mit <code>haproxy -c</code>, bevor sie eingesetzt wird; scheitert
-                    der Reload, kommt das Backup zurück.
+                    {rich(
+                      'Der Abschnitt landet im BACKENDS-Block der Gruppe. Geprüft wird die neue Konfiguration mit {command}, bevor sie eingesetzt wird; scheitert der Reload, kommt das Backup zurück.',
+                      { command: <code>{'haproxy -c'}</code> }
+                    )}
                   </span>
                 </div>
               </div>
@@ -628,7 +625,7 @@ export default function StreamFormModal({
               onClick={() => onClose()}
               disabled={saving}
             >
-              Abbrechen
+              {t('Abbrechen')}
             </button>
             <button
               type="submit"
@@ -636,7 +633,7 @@ export default function StreamFormModal({
               disabled={saving || !!inputError || portCheck?.free === false}
             >
               {saving ? <Loader2 size={16} className="spin" /> : <Cable size={16} />}
-              {editingId ? 'Speichern' : 'Anlegen'}
+              {t(editingId ? 'Speichern' : 'Anlegen')}
             </button>
           </div>
         </form>

@@ -51,6 +51,7 @@ import {
 } from './provision';
 import { runImport, describeImport, importAuditDetails, type ImportPlan } from './import-run';
 import { ensureProxyRecords, removeProxyRecords } from '../dns/sync';
+import { msgid } from '../i18n/translate';
 import type { ChallengeChoice } from './challenge';
 import type { SurfaceProtection } from './protected';
 import type { CreateServiceInput, HaproxyService, GlobalSettingsInput } from './config';
@@ -169,7 +170,7 @@ function describe(opts: RunOptions): { domains: string | null; targets: string |
     // Kein Dienst, keine Domains. Was sich geändert hat, steht als Zusammenfassung
     // in der Ziel-Spalte — sonst wäre die Zeile in der Historie leer.
     const { httpsLines } = opts.settings;
-    const written = httpsLines.join(' · ') || 'nichts gesetzt';
+    const written = httpsLines.join(' · ') || msgid('nichts gesetzt');
     return {
       domains: null,
       // Die Spalte fasst 1024 Zeichen. Ein Block, der darüber hinausgeht, soll
@@ -348,7 +349,7 @@ export async function startHaproxyRun(opts: RunOptions): Promise<HaproxyRun> {
       await reporter.onPhase?.('dns');
       const dnsSteps = await ensureProxyRecords(toEnsure).catch((err: unknown) => [
         {
-          label: 'DNS-Einträge',
+          label: msgid('DNS-Einträge'),
           ok: false,
           detail: err instanceof Error ? err.message : 'Unbekannter Fehler',
         },
@@ -400,7 +401,7 @@ export async function startHaproxyRun(opts: RunOptions): Promise<HaproxyRun> {
       // Alles, was die Vorabprüfung nicht sehen konnte, weil es erst zwischen
       // ihr und dem Lauf entstanden ist: eine Domain, die inzwischen jemand
       // anders belegt, ein Server, der gerade weg ist.
-      error = err instanceof Error ? err.message : 'Der Vorgang ist fehlgeschlagen.';
+      error = err instanceof Error ? err.message : msgid('Der Vorgang ist fehlgeschlagen.');
     }
 
     /* ── DNS zuletzt: die Einträge, die niemand mehr braucht ──
@@ -416,7 +417,7 @@ export async function startHaproxyRun(opts: RunOptions): Promise<HaproxyRun> {
       await reporter.onPhase?.('cleanup');
       const removed = await removeProxyRecords(toRemove).catch((err: unknown) => [
         {
-          label: 'DNS-Einträge entfernen',
+          label: msgid('DNS-Einträge entfernen'),
           ok: false,
           detail: err instanceof Error ? err.message : 'Unbekannter Fehler',
         },
@@ -457,7 +458,9 @@ export async function startHaproxyRun(opts: RunOptions): Promise<HaproxyRun> {
         action,
         entry: serviceId,
         addresses: domains,
-        error: error ?? (failed ? [failed.label, failed.detail].filter(Boolean).join('\n') : 'Der Vorgang nennt keinen Grund.'),
+        error:
+          error ??
+          (failed ? [failed.label, failed.detail].filter(Boolean).join('\n') : msgid('Der Vorgang nennt keinen Grund.')),
         triggeredBy: actor.email,
       });
     }
@@ -515,13 +518,17 @@ export function parseSteps(raw: string | null): ProvisionStep[] {
  * Textausgabe — hier gibt es stattdessen eine Liste aus Schritt und Ergebnis.
  * Die Übersetzung steht deshalb an einer Stelle und nicht in der Route und der
  * Seite je einmal.
+ *
+ * `t` übersetzt Beschriftung und Detail, wo sie als `msgid` entstanden sind.
+ * Texte mit eingesetzten Werten und Ausgaben von HAProxy oder acme.sh stehen
+ * nicht im Wörterbuch und bleiben, wie sie sind (docs/i18n.md).
  */
-export function stepsAsLog(steps: ProvisionStep[]): string {
+export function stepsAsLog(steps: ProvisionStep[], t: (text: string) => string = (text) => text): string {
   return steps
     .map((step) => {
-      const head = `${step.ok ? '[ok]' : '[fehler]'} ${step.label}`;
+      const head = `${step.ok ? '[ok]' : t(msgid('[fehler]'))} ${t(step.label)}`;
       if (!step.detail) return head;
-      const detail = step.detail
+      const detail = t(step.detail)
         .split('\n')
         .map((line) => `    ${line}`)
         .join('\n');

@@ -35,12 +35,13 @@
  * `renderErrorFile` nimmt das Design, das gerade gilt. Welche Dateien es gibt,
  * wie geschrieben und wie zurückgestellt wird, bleibt davon unberührt.
  *
- * Rein: außer dem Baustein `ui/static/page.ts`, `page-design.ts` und
- * `lib/shell.ts` kein Import. `scripts/verify-proxy-pages.ts` lässt ein echtes
- * HAProxy eine so erzeugte Datei ausliefern.
+ * Rein: außer dem Baustein `ui/static/page.ts`, `page-design.ts`, `lib/i18n`
+ * und `lib/shell.ts` kein Import. `scripts/verify-proxy-pages.ts` lässt ein
+ * echtes HAProxy eine so erzeugte Datei ausliefern.
  */
 
 import { ERROR_PAGE_STATUSES, ERROR_PAGE_TEXTS, renderErrorPage } from '@/ui/static/page';
+import { DEFAULT_LOCALE, msgid, translate, type Locale } from '@/lib/i18n';
 import { buildCommand, withStdin } from '../shell';
 import { clean, HAPROXY_CFG } from './config';
 import { activeDesign, designTheme, PAGE_MAX_BYTES, type PageDesign } from './page-design';
@@ -129,20 +130,34 @@ export function hasErrorPage(status: number): boolean {
  * nur, was er NICHT wissen kann: dass eine 404 auf dem Proxy eine Domain meint
  * und keine Seite.
  */
-const PROXY_TEXTS: Partial<Record<number, { title?: string; text?: string; action?: 'retry' | 'home' | 'none' }>> = {
+type ProxyText = { title?: string; text?: string; action?: 'retry' | 'home' | 'none' };
+
+const PROXY_TEXTS: Partial<Record<number, ProxyText>> = {
   404: {
-    title: 'Seite nicht gefunden',
-    text: 'Unter dieser Adresse ist nichts eingerichtet.',
+    title: msgid('Seite nicht gefunden'),
+    text: msgid('Unter dieser Adresse ist nichts eingerichtet.'),
     // „Zur Startseite" führte auf dieselbe Seite: die ganze Domain ist unbekannt.
     action: 'none',
   },
 };
 
+function proxyTexts(status: number, locale: Locale): ProxyText {
+  const proxy = PROXY_TEXTS[status];
+  if (!proxy) return {};
+  return {
+    ...proxy,
+    ...(proxy.title === undefined ? {} : { title: translate(locale, proxy.title) }),
+    ...(proxy.text === undefined ? {} : { text: translate(locale, proxy.text) }),
+  };
+}
+
 /** Überschrift und Text, wie HAPM sie ohne eigenes Design schreibt. */
-export function defaultErrorPageText(status: number): { title: string; text: string } {
+export function defaultErrorPageText(status: number, locale: Locale = DEFAULT_LOCALE): { title: string; text: string } {
   const base = ERROR_PAGE_TEXTS[status];
   const proxy = PROXY_TEXTS[status];
-  return { title: proxy?.title ?? base?.title ?? '', text: proxy?.text ?? base?.text ?? '' };
+  const title = proxy?.title ?? base?.title;
+  const text = proxy?.text ?? base?.text;
+  return { title: title ? translate(locale, title) : '', text: text ? translate(locale, text) : '' };
 }
 
 /** Die Codes, für die HAPM eine Datei schreiben kann, aufsteigend. */
@@ -171,7 +186,7 @@ export function renderErrorFile(status: number, design: PageDesign = activeDesig
     '\r\n' +
     renderErrorPage(
       status,
-      { ...(PROXY_TEXTS[status] ?? {}), ...(design.errors[status] ?? {}) },
+      { ...proxyTexts(status, design.locale), ...(design.errors[status] ?? {}), locale: design.locale },
       designTheme(design)
     )
   );

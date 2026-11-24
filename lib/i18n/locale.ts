@@ -13,9 +13,6 @@ export const LOCALES: readonly Locale[] = ['de', 'en'];
 /** Deutsch ist die Quelle: jeder Text steht im Code auf Deutsch. */
 export const DEFAULT_LOCALE: Locale = 'de';
 
-/** Solange die Übersetzung nur zum Teil steht: keine Wahl, kein Umschalter. */
-export const UI_LOCALE_FIXED = true;
-
 /**
  * Das Cookie mit der Wahl. Nicht `httpOnly`: der Umschalter vor der Anmeldung
  * setzt es im Browser. Es trägt nichts, was geheim wäre.
@@ -70,8 +67,6 @@ export function resolveLocale(input: {
   cookie?: string | null;
   acceptLanguage?: string | null;
 }): Locale {
-  // Bis die Übersetzung vollständig ist, bleibt die Oberfläche deutsch.
-  if (UI_LOCALE_FIXED) return DEFAULT_LOCALE;
   if (isLocale(input.user)) return input.user;
   if (isLocale(input.cookie)) return input.cookie;
   return localeFromAcceptLanguage(input.acceptLanguage);

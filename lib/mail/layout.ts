@@ -9,7 +9,13 @@
  *
  * Rein: keine Datenbank, kein Versand. Eine neue Mail baut ihren Inhalt aus den
  * Bausteinen (`mailText`, `mailFacts`, `mailNote`), nie aus eigenem HTML.
+ *
+ * Die Sprache gehört zur Installation (`MailInstallation.locale`): die
+ * Einstellung „Sprache der Mails", gelesen von dem, der die Mail verschickt.
+ * Ohne Angabe Deutsch.
  */
+
+import { createTranslator, msgid, type Locale } from '../i18n';
 
 import {
   htmlToText,
@@ -48,8 +54,9 @@ export const MAIL_PRODUCT = 'HAPM';
  * „Diese Mail kommt von der HAPM-Installation auf dem Server …" und bezieht
  * sich darauf.
  */
-export const MAIL_REASON =
-  'Sie bekommen sie, weil Ihre Adresse dort bei einem Konto oder als Empfänger von Benachrichtigungen angegeben ist.';
+export const MAIL_REASON = msgid(
+  'Sie bekommen sie, weil Ihre Adresse dort bei einem Konto oder als Empfänger von Benachrichtigungen angegeben ist.'
+);
 
 export interface HapmMailContent {
   subject: string;
@@ -70,6 +77,8 @@ export interface HapmMailContent {
 export interface MailInstallation {
   nodeName: string;
   publicUrl: string | null;
+  /** Sprache der Mail. Vorgabe `de`. */
+  locale?: Locale;
 }
 
 export function currentInstallation(): MailInstallation {
@@ -90,11 +99,13 @@ export function renderHapmMail(
   installation: MailInstallation = currentInstallation()
 ): { html: string; text: string } {
   const action = content.action && isHttpUrl(content.action.url) ? content.action : undefined;
+  const { t, locale } = createTranslator(installation.locale);
   const sender: MailSender = {
     name: MAIL_PRODUCT,
     nodeName: installation.nodeName,
     url: installation.publicUrl,
-    reason: MAIL_REASON,
+    reason: t(MAIL_REASON),
+    locale,
   };
 
   const html = renderMailHtml(
@@ -117,7 +128,7 @@ export function renderHapmMail(
     action ? `${action.label}: ${action.url}` : '',
     content.afterAction ? htmlToText(content.afterAction) : '',
     content.footerNote ? htmlToText(content.footerNote) : '',
-    [reason ? `${origin} ${reason}` : origin, url ? `Oberfläche: ${url}` : ''].filter(Boolean).join('\n'),
+    [reason ? `${origin} ${reason}` : origin, url ? `${t('Oberfläche:')} ${url}` : ''].filter(Boolean).join('\n'),
   ]
     .filter(Boolean)
     .join('\n\n');

@@ -2,6 +2,8 @@ import { requireSession } from '@/lib/session';
 import { getDocument } from '@/lib/db';
 import { COLLECTIONS } from '@/lib/types';
 import { ok, handleError, ApiError } from '@/lib/api';
+import { msg } from '@/lib/i18n';
+import { getT } from '@/lib/i18n/server';
 import { parseSteps, stepsAsLog } from '@/lib/haproxy/runner';
 import type { HaproxyRun } from '@/lib/types';
 
@@ -26,10 +28,11 @@ export async function GET(request: Request, { params }: Params) {
     try {
       run = await getDocument<HaproxyRun>(COLLECTIONS.HAPROXY_RUNS, id);
     } catch {
-      throw new ApiError('Reverse-Proxy-Vorgang nicht gefunden.', 404);
+      throw new ApiError(msg('Reverse-Proxy-Vorgang nicht gefunden.'), 404);
     }
 
     const steps = parseSteps(run.steps);
+    const { t } = await getT();
 
     return ok({
       $id: run.$id,
@@ -41,8 +44,8 @@ export async function GET(request: Request, { params }: Params) {
       startedAt: run.startedAt,
       completedAt: run.completedAt,
       duration: run.duration,
-      error: run.error,
-      output: stepsAsLog(steps),
+      error: run.error === null ? null : t(run.error),
+      output: stepsAsLog(steps, t),
       steps,
     });
   } catch (err) {

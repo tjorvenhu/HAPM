@@ -33,6 +33,10 @@ import {
   hashLockPassword,
   readServiceRequest,
 } from '@/lib/haproxy/password-lock';
+import { germanText, type Message } from '@/lib/i18n/translate';
+
+/** Die Meldung einer Prüfung auf Deutsch, wie sie ohne Sprache herauskommt. */
+const de = (message: Message | null) => (message ? germanText(message) : message);
 
 /**
  * Die Passwortsperre.
@@ -395,7 +399,7 @@ describe('Das Passwort, das schon dasteht', () => {
 
 describe('Eingabe', () => {
   it('lehnt eine Sperre ohne gesperrte Domain ab', () => {
-    expect(validateCreateInput({ ...SERVICE, lockedDomains: [] })).toMatch(/mindestens eine gesperrte/);
+    expect(de(validateCreateInput({ ...SERVICE, lockedDomains: [] }))).toMatch(/mindestens eine gesperrte/);
   });
 
   it('lehnt alles ab, was nicht nach Hex aussieht', () => {
@@ -406,10 +410,10 @@ describe('Eingabe', () => {
       { ...LOCK, token: `${'b'.repeat(60)}"; }` },
       { ...LOCK, hash: 'A'.repeat(64) },
     ]) {
-      expect(validateCreateInput({ ...SERVICE, passwordLock: bad })).toMatch(/erwartete Form/);
+      expect(de(validateCreateInput({ ...SERVICE, passwordLock: bad }))).toMatch(/erwartete Form/);
     }
-    expect(validateCreateInput(SERVICE)).toBeNull();
-    expect(validateCreateInput({ ...SERVICE, passwordLock: KEEP_PASSWORD })).toBeNull();
+    expect(de(validateCreateInput(SERVICE))).toBeNull();
+    expect(de(validateCreateInput({ ...SERVICE, passwordLock: KEEP_PASSWORD }))).toBeNull();
   });
 
   it('liest aus dem Rumpf nur den Verweis, nie einen Hash', () => {
@@ -430,10 +434,10 @@ describe('Eingabe', () => {
   });
 
   it('prüft das Passwort', () => {
-    expect(validateLockPassword('kurz')).toMatch(/mindestens 8/);
-    expect(validateLockPassword('x'.repeat(129))).toMatch(/höchstens 128/);
-    expect(validateLockPassword('mit\tTabulator')).toMatch(/Steuerzeichen/);
-    expect(validateLockPassword('a b+c%&=ä"\'<>€;')).toBeNull();
+    expect(de(validateLockPassword('kurz'))).toMatch(/mindestens 8/);
+    expect(de(validateLockPassword('x'.repeat(129)))).toMatch(/höchstens 128/);
+    expect(de(validateLockPassword('mit\tTabulator'))).toMatch(/Steuerzeichen/);
+    expect(de(validateLockPassword('a b+c%&=ä"\'<>€;'))).toBeNull();
   });
 });
 
@@ -453,7 +457,7 @@ describe('Aus dem Passwort wird die Sperre', () => {
   it('erzeugt je Aufruf ein eigenes Salz und einen eigenen Cookie-Wert', () => {
     const a = createPasswordLock('dasselbe Passwort');
     const b = createPasswordLock('dasselbe Passwort');
-    expect(validateCreateInput({ ...SERVICE, passwordLock: a })).toBeNull();
+    expect(de(validateCreateInput({ ...SERVICE, passwordLock: a }))).toBeNull();
     expect(a.salt).not.toBe(b.salt);
     expect(a.hash).not.toBe(b.hash);
     expect(a.token).not.toBe(b.token);
@@ -463,7 +467,7 @@ describe('Aus dem Passwort wird die Sperre', () => {
   it('setzt ein mitgeschicktes Passwort ein und lässt das Passwort selbst weg', () => {
     const input = readServiceRequest({ ...SERVICE, passwordLock: undefined, lockPassword: 'ein neues Passwort' });
     expect(input.passwordLock).not.toBe(KEEP_PASSWORD);
-    expect(validateCreateInput(input)).toBeNull();
+    expect(de(validateCreateInput(input))).toBeNull();
     expect(JSON.stringify(input)).not.toContain('ein neues Passwort');
     // Und die Datei, die daraus entsteht, trägt es auch nicht.
     expect(addService(CONFIG, input)).not.toContain('ein neues Passwort');

@@ -7,6 +7,8 @@ import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { SkeletonRows } from '@/components/Skeleton';
 import { InfoHint } from '@/ui/primitives/InfoHint';
+import { useT } from '@/lib/i18n/react';
+import { msgid } from '@/lib/i18n';
 import type { ErrorPageEntry, ErrorPageState } from '@/lib/haproxy/error-pages';
 
 /**
@@ -34,32 +36,32 @@ export interface ErrorPagesRow {
 }
 
 /* Die Klassennamen stehen ausgeschrieben, weil `tests/ui/css-classes.test.ts`
-   sie aus dem Quelltext liest. */
+   sie aus dem Quelltext liest. Beschriftung und Hinweis sind Schlüssel (`msgid`). */
 const STATE: Record<ErrorPageState, { label: string; className: string; hint: string }> = {
   current: {
-    label: 'Aktuell',
+    label: msgid('Aktuell'),
     className: 'badge-success',
-    hint: 'Die Datei trägt das gespeicherte Design.',
+    hint: msgid('Die Datei trägt das gespeicherte Design.'),
   },
   other: {
-    label: 'Andere Seite',
+    label: msgid('Andere Seite'),
     className: 'badge-warning',
-    hint: 'Eine eigene Seite, die von HAProxy oder ein älterer Stand. Wird beim Schreiben ersetzt, das Original bleibt daneben liegen.',
+    hint: msgid('Eine eigene Seite, die von HAProxy oder ein älterer Stand. Wird beim Schreiben ersetzt, das Original bleibt daneben liegen.'),
   },
   foreign: {
-    label: 'Wird nicht angefasst',
+    label: msgid('Wird nicht angefasst'),
     className: 'badge-neutral',
-    hint: 'Liegt außerhalb von /etc/haproxy oder heißt ungewöhnlich.',
+    hint: msgid('Liegt außerhalb von /etc/haproxy oder heißt ungewöhnlich.'),
   },
   unreadable: {
-    label: 'Nicht lesbar',
+    label: msgid('Nicht lesbar'),
     className: 'badge-danger',
-    hint: 'Die Datei fehlt oder beginnt nicht mit einer Statuszeile. Sie bleibt, wie sie ist.',
+    hint: msgid('Die Datei fehlt oder beginnt nicht mit einer Statuszeile. Sie bleibt, wie sie ist.'),
   },
   unsupported: {
-    label: 'Keine Vorlage',
+    label: msgid('Keine Vorlage'),
     className: 'badge-neutral',
-    hint: 'Für diesen Status gibt es keine Seite. Die Datei bleibt, wie sie ist.',
+    hint: msgid('Für diesen Status gibt es keine Seite. Die Datei bleibt, wie sie ist.'),
   },
 };
 
@@ -74,16 +76,17 @@ export default function ErrorPagesPanel({ row, onWritten }: ErrorPagesPanelProps
   const { apiFetch } = useApp();
   const { notify } = useToast();
   const confirm = useConfirm();
+  const { t, plural } = useT();
   const [busy, setBusy] = useState(false);
 
   async function write(target: ErrorPagesRow, count: number) {
     const ok = await confirm({
-      title: 'Fehlerseiten neu schreiben?',
-      message:
-        `${count} Fehlerdatei(en) werden durch die Seite im gespeicherten Design ` +
-        'ersetzt, danach lädt HAProxy neu. Der Status jeder Datei bleibt derselbe. Die bisherige ' +
-        'Fassung bleibt als .hapm-original daneben liegen.',
-      confirmLabel: 'Schreiben',
+      title: t('Fehlerseiten neu schreiben?'),
+      message: plural(count, {
+        one: '{count} Fehlerdatei wird durch die Seite im gespeicherten Design ersetzt, danach lädt HAProxy neu. Der Status der Datei bleibt derselbe. Die bisherige Fassung bleibt als .hapm-original daneben liegen.',
+        other: '{count} Fehlerdateien werden durch die Seite im gespeicherten Design ersetzt, danach lädt HAProxy neu. Der Status jeder Datei bleibt derselbe. Die bisherige Fassung bleibt als .hapm-original daneben liegen.',
+      }),
+      confirmLabel: t('Schreiben'),
     });
     if (!ok) return;
 
@@ -95,7 +98,7 @@ export default function ErrorPagesPanel({ row, onWritten }: ErrorPagesPanelProps
         body: JSON.stringify({ serverId: target.$id }),
       });
       const data = await res.json();
-      if (!data.success) throw new Error(data.error || 'Schreiben fehlgeschlagen');
+      if (!data.success) throw new Error(data.error || t('Schreiben fehlgeschlagen'));
 
       const steps = data.data.steps as { label: string; ok: boolean; detail?: string }[];
       const failed = steps.find((step) => !step.ok);
@@ -104,20 +107,20 @@ export default function ErrorPagesPanel({ row, onWritten }: ErrorPagesPanelProps
         failed
           ? {
               variant: 'error',
-              title: 'Fehlerseiten',
-              message: `${failed.label}: ${failed.detail ?? 'fehlgeschlagen'}`,
+              title: t('Fehlerseiten'),
+              message: `${t(failed.label)}: ${failed.detail ? t(failed.detail) : t('fehlgeschlagen')}`,
             }
           : {
               variant: 'success',
-              title: 'Fehlerseiten',
-              message: 'Geschrieben, geprüft und HAProxy neu geladen.',
+              title: t('Fehlerseiten'),
+              message: t('Geschrieben, geprüft und HAProxy neu geladen.'),
             }
       );
     } catch (err) {
       notify({
         variant: 'error',
-        title: 'Schreiben fehlgeschlagen',
-        message: err instanceof Error ? err.message : 'Unbekannter Fehler.',
+        title: t('Schreiben fehlgeschlagen'),
+        message: err instanceof Error ? err.message : t('Unbekannter Fehler.'),
       });
     } finally {
       setBusy(false);
@@ -132,15 +135,15 @@ export default function ErrorPagesPanel({ row, onWritten }: ErrorPagesPanelProps
         <div>
           <h2 className="card-title">
             <FileWarning size={16} />
-            Dateien auf dem Server
-            <InfoHint text="Geschrieben wird nur, was haproxy.cfg mit einer errorfile-Zeile nennt und unter /etc/haproxy liegt. HAPM legt keine Datei an und schreibt keine solche Zeile. Welchen Status eine Seite trägt, steht in der Datei selbst und bleibt beim Schreiben derselbe." />
+            {t('Dateien auf dem Server')}
+            <InfoHint text={t('Geschrieben wird nur, was haproxy.cfg mit einer errorfile-Zeile nennt und unter /etc/haproxy liegt. HAPM legt keine Datei an und schreibt keine solche Zeile. Welchen Status eine Seite trägt, steht in der Datei selbst und bleibt beim Schreiben derselbe.')} />
           </h2>
-          <p className="card-subtitle">Was die Konfiguration von HAProxy an Fehlerdateien nennt.</p>
+          <p className="card-subtitle">{t('Was die Konfiguration von HAProxy an Fehlerdateien nennt.')}</p>
         </div>
         {row && writable > 0 && (
           <button className="btn btn-primary btn-sm" onClick={() => write(row, writable)} disabled={busy}>
             {busy ? <Loader2 size={15} className="spin" /> : <Paintbrush size={15} />}
-            {writable} auf den gespeicherten Stand bringen
+            {t('{count} auf den gespeicherten Stand bringen', { count: writable })}
           </button>
         )}
       </div>
@@ -151,34 +154,33 @@ export default function ErrorPagesPanel({ row, onWritten }: ErrorPagesPanelProps
         <div className="alert alert-danger">{row.error}</div>
       ) : row.entries.length === 0 ? (
         <span className="form-hint">
-          In der Konfiguration steht keine errorfile-Zeile. HAProxy zeigt seine eigenen Seiten, und
-          hier gibt es nichts zu schreiben.
+          {t('In der Konfiguration steht keine errorfile-Zeile. HAProxy zeigt seine eigenen Seiten, und hier gibt es nichts zu schreiben.')}
         </span>
       ) : (
         <div className="table-wrap">
           <table className="table">
             <thead>
               <tr>
-                <th>Datei</th>
-                <th>Status der Seite</th>
-                <th>Gezeigt bei</th>
-                <th>Zustand</th>
+                <th>{t('Datei')}</th>
+                <th>{t('Status der Seite')}</th>
+                <th>{t('Gezeigt bei')}</th>
+                <th>{t('Zustand')}</th>
               </tr>
             </thead>
             <tbody>
               {row.entries.map((entry) => (
                 <tr key={entry.path}>
                   <td className="mono">{entry.path}</td>
-                  <td>{entry.status ?? 'Unbekannt'}</td>
+                  <td>{entry.status ?? t('Unbekannt')}</td>
                   <td>{entry.codes.join(', ')}</td>
                   <td>
                     <span
                       className={`badge-status ${STATE[entry.state].className}`}
-                      data-tooltip={STATE[entry.state].hint}
+                      data-tooltip={t(STATE[entry.state].hint)}
                       data-tooltip-pos="left"
                     >
                       <span className="dot" />
-                      {STATE[entry.state].label}
+                      {t(STATE[entry.state].label)}
                     </span>
                   </td>
                 </tr>

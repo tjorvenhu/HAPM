@@ -13,6 +13,8 @@ import { HAPROXY_PHASES, HAPROXY_PHASE_LABELS } from '@/components/runPhases';
 import Select from '@/components/Select';
 import type { HaproxyAction, HaproxyStep, RunStatus } from '@/lib/types';
 import { SkeletonRows } from '@/components/Skeleton';
+import { formatDateTime, msgid } from '@/lib/i18n';
+import { useT } from '@/lib/i18n/react';
 
 /**
  * Was am Reverse-Proxy verändert wurde.
@@ -48,20 +50,20 @@ interface RunView {
 }
 
 const ACTION_LABELS: Record<HaproxyAction, string> = {
-  create: 'Angelegt',
-  update: 'Geändert',
-  delete: 'Gelöscht',
-  settings: 'Einstellungen',
-  'scope-add': 'Gruppe angelegt',
-  'scope-remove': 'Gruppe entfernt',
+  create: msgid('Angelegt'),
+  update: msgid('Geändert'),
+  delete: msgid('Gelöscht'),
+  settings: msgid('Einstellungen'),
+  'scope-add': msgid('Gruppe angelegt'),
+  'scope-remove': msgid('Gruppe entfernt'),
   // Sie stehen als eigene Wörter da und nicht unter „Angelegt": in der Zeile
   // steht statt einer Domain ein Port, und wer die Historie liest, soll das am
   // Etikett sehen und nicht erst an der Spalte daneben.
-  'stream-create': 'TCP angelegt',
-  'stream-update': 'TCP geändert',
-  'stream-delete': 'TCP gelöscht',
-  certificate: 'Zertifikat',
-  import: 'Import',
+  'stream-create': msgid('TCP angelegt'),
+  'stream-update': msgid('TCP geändert'),
+  'stream-delete': msgid('TCP gelöscht'),
+  certificate: msgid('Zertifikat'),
+  import: msgid('Import'),
 };
 
 const ACTION_ICONS: Record<HaproxyAction, React.ReactNode> = {
@@ -79,11 +81,11 @@ const ACTION_ICONS: Record<HaproxyAction, React.ReactNode> = {
 };
 
 const STATUS_LABELS: Record<RunStatus, string> = {
-  running: 'Läuft',
-  success: 'Erfolgreich',
-  warning: 'Mit Hinweisen',
-  error: 'Fehlgeschlagen',
-  cancelled: 'Abgebrochen',
+  running: msgid('Läuft'),
+  success: msgid('Erfolgreich'),
+  warning: msgid('Mit Hinweisen'),
+  error: msgid('Fehlgeschlagen'),
+  cancelled: msgid('Abgebrochen'),
 };
 
 const STATUS_CLASS: Record<RunStatus, string> = {
@@ -104,6 +106,7 @@ function formatDuration(seconds: number | null): string {
 
 export default function ReverseProxyLogsPage() {
   const { apiFetch } = useApp();
+  const { t, locale } = useT();
 
   const [runs, setRuns] = useState<RunView[]>([]);
   const [loading, setLoading] = useState(true);
@@ -131,12 +134,12 @@ export default function ReverseProxyLogsPage() {
         if (data.success) setRuns(data.data);
         setError('');
       } catch {
-        setError('Die Protokolle konnten nicht geladen werden.');
+        setError(t('Die Protokolle konnten nicht geladen werden.'));
       } finally {
         setLoading(false);
       }
     },
-    [apiFetch, actionFilter, statusFilter, page]
+    [apiFetch, actionFilter, statusFilter, page, t]
   );
 
   useEffect(() => {
@@ -155,12 +158,13 @@ export default function ReverseProxyLogsPage() {
             style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '0.8125rem' }}
           >
             <ArrowLeft size={14} />
-            Reverse-Proxy
+            {t('Reverse-Proxy')}
           </Link>
-          <h1 className="page-title">Reverse-Proxy-Protokolle</h1>
+          <h1 className="page-title">{t('Reverse-Proxy-Protokolle')}</h1>
           <p className="page-subtitle">
-            Jeder Vorgang mit seinen Schritten: angelegt, geändert, gelöscht. Domains und Ziele
-            stehen mit in der Zeile, damit auch ein entferntes Ziel noch lesbar ist.
+            {t(
+              'Jeder Vorgang mit seinen Schritten: angelegt, geändert, gelöscht. Domains und Ziele stehen mit in der Zeile, damit auch ein entferntes Ziel noch lesbar ist.'
+            )}
           </p>
         </div>
         <div className="page-actions">
@@ -168,7 +172,7 @@ export default function ReverseProxyLogsPage() {
               übergeben und den Ladezustand unterdrücken, den der Knopf zeigt. */}
           <button className="btn btn-secondary" onClick={() => load()} disabled={loading}>
             {loading ? <Loader2 size={16} className="spin" /> : <RefreshCw size={16} />}
-            Aktualisieren
+            {t('Aktualisieren')}
           </button>
         </div>
       </div>
@@ -177,7 +181,7 @@ export default function ReverseProxyLogsPage() {
 
       <div className="form-row sys-block">
         <div className="form-group">
-          <label className="form-label" htmlFor="filterAction">Vorgang</label>
+          <label className="form-label" htmlFor="filterAction">{t('Vorgang')}</label>
           <Select
             id="filterAction"
             value={actionFilter}
@@ -189,16 +193,16 @@ export default function ReverseProxyLogsPage() {
                für dieselben Wörter wären zwei, von denen eine einen neuen
                Vorgang nicht kennt — und der Filter zeigte ihn dann nie an. */
             options={[
-              { value: '', label: 'Alle Vorgänge' },
+              { value: '', label: t('Alle Vorgänge') },
               ...(Object.keys(ACTION_LABELS) as HaproxyAction[]).map((action) => ({
                 value: action,
-                label: ACTION_LABELS[action],
+                label: t(ACTION_LABELS[action]),
               })),
             ]}
           />
         </div>
         <div className="form-group">
-          <label className="form-label" htmlFor="filterStatus">Status</label>
+          <label className="form-label" htmlFor="filterStatus">{t('Status')}</label>
           <Select
             id="filterStatus"
             value={statusFilter}
@@ -207,10 +211,10 @@ export default function ReverseProxyLogsPage() {
               setPage(0);
             }}
             options={[
-              { value: '', label: 'Alle Status' },
-              { value: 'success', label: 'Erfolgreich' },
-              { value: 'error', label: 'Fehlgeschlagen' },
-              { value: 'running', label: 'Läuft' },
+              { value: '', label: t('Alle Status') },
+              { value: 'success', label: t(STATUS_LABELS.success) },
+              { value: 'error', label: t(STATUS_LABELS.error) },
+              { value: 'running', label: t(STATUS_LABELS.running) },
             ]}
           />
         </div>
@@ -221,11 +225,11 @@ export default function ReverseProxyLogsPage() {
       ) : runs.length === 0 ? (
         <div className="empty-state">
           <ScrollText size={40} />
-          <h3>Keine Protokolle</h3>
+          <h3>{t('Keine Protokolle')}</h3>
           <p>
             {actionFilter || statusFilter
-              ? 'Für diesen Filter gibt es keine Einträge.'
-              : 'Sobald ein Ziel angelegt, geändert oder gelöscht wurde, steht der Vorgang hier.'}
+              ? t('Für diesen Filter gibt es keine Einträge.')
+              : t('Sobald ein Ziel angelegt, geändert oder gelöscht wurde, steht der Vorgang hier.')}
           </p>
         </div>
       ) : (
@@ -234,27 +238,27 @@ export default function ReverseProxyLogsPage() {
             <table className="table">
               <thead>
                 <tr>
-                  <th>Zeitpunkt</th>
-                  <th>Vorgang</th>
-                  <th>Dienst</th>
-                  <th>Domains</th>
-                  <th>Ziele</th>
-                  <th>Ausgelöst von</th>
-                  <th>Status</th>
-                  <th>Dauer</th>
-                  <th style={{ textAlign: 'right' }}>Details</th>
+                  <th>{t('Zeitpunkt')}</th>
+                  <th>{t('Vorgang')}</th>
+                  <th>{t('Dienst')}</th>
+                  <th>{t('Domains')}</th>
+                  <th>{t('Ziele')}</th>
+                  <th>{t('Ausgelöst von')}</th>
+                  <th>{t('Status')}</th>
+                  <th>{t('Dauer')}</th>
+                  <th style={{ textAlign: 'right' }}>{t('Details')}</th>
                 </tr>
               </thead>
               <tbody>
                 {runs.map((run) => (
                   <tr key={run.$id}>
                     <td style={{ fontSize: '0.8125rem', whiteSpace: 'nowrap' }}>
-                      {new Date(run.startedAt).toLocaleString('de-DE')}
+                      {formatDateTime(locale, run.startedAt)}
                     </td>
                     <td style={{ fontSize: '0.8125rem', whiteSpace: 'nowrap' }}>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                         {ACTION_ICONS[run.action]}
-                        {ACTION_LABELS[run.action]}
+                        {t(ACTION_LABELS[run.action])}
                       </span>
                     </td>
                     <td style={{ fontSize: '0.8125rem' }}>
@@ -278,14 +282,14 @@ export default function ReverseProxyLogsPage() {
                     </td>
                     <td>
                       <span className={`badge-status ${STATUS_CLASS[run.status]}`}>
-                        {STATUS_LABELS[run.status]}
+                        {t(STATUS_LABELS[run.status])}
                       </span>
                     </td>
                     <td style={{ fontSize: '0.8125rem' }}>{formatDuration(run.duration)}</td>
                     <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                       <button
                         className="btn btn-ghost btn-icon btn-sm"
-                        data-tooltip="Schritte anzeigen"
+                        data-tooltip={t('Schritte anzeigen')}
                         data-tooltip-pos="left"
                         onClick={() => setDetailId(run.$id)}
                       >
@@ -302,7 +306,7 @@ export default function ReverseProxyLogsPage() {
             style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}
           >
             <span style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)' }}>
-              Seite {page + 1}
+              {t('Seite {page}', { page: page + 1 })}
             </span>
             <div style={{ display: 'flex', gap: 8 }}>
               <button
@@ -310,14 +314,14 @@ export default function ReverseProxyLogsPage() {
                 onClick={() => setPage((p) => Math.max(0, p - 1))}
                 disabled={page === 0}
               >
-                Zurück
+                {t('Zurück')}
               </button>
               <button
                 className="btn btn-secondary btn-sm"
                 onClick={() => setPage((p) => p + 1)}
                 disabled={runs.length < PAGE_SIZE}
               >
-                Weiter
+                {t('Weiter')}
               </button>
             </div>
           </div>

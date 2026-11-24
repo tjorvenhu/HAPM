@@ -15,6 +15,9 @@ import {
   type CreateStreamInput,
 } from '@/lib/haproxy/streams';
 import { addService, parseHaproxyConfig, HaproxyConfigError } from '@/lib/haproxy/config';
+import { germanText, type Message } from '@/lib/i18n/translate';
+
+const de = (message: Message | null) => (message ? germanText(message) : message);
 
 /**
  * Eine TCP-Weiterleitung ist ein `listen`-Abschnitt im BACKENDS-Teil einer
@@ -229,29 +232,29 @@ describe('validateStreamInput', () => {
 
   it('lehnt die Ports ab, die ein Reverse-Proxy selbst braucht', () => {
     for (const port of [22, 80, 443, 8888]) {
-      expect(validateStreamInput({ ...INPUT, port })).toContain(`Port ${port}`);
+      expect(de(validateStreamInput({ ...INPUT, port }))).toContain(`Port ${port}`);
     }
   });
 
   it('lehnt balance uri ab: es liest einen Pfad, den es in mode tcp nicht gibt', () => {
     expect(
-      validateStreamInput({ ...INPUT, balance: 'uri' as never })
+      de(validateStreamInput({ ...INPUT, balance: 'uri' as never }))
     ).toBe('Unbekanntes Verteilverfahren.');
   });
 
   it('besteht auf mindestens einem Ziel', () => {
-    expect(validateStreamInput({ ...INPUT, servers: [] })).toContain('Mindestens ein Ziel');
+    expect(de(validateStreamInput({ ...INPUT, servers: [] }))).toContain('Mindestens ein Ziel');
   });
 
   it('prüft die Absenderadressen', () => {
-    expect(validateStreamInput({ ...INPUT, allowedSources: ['kein.host'] })).toContain(
+    expect(de(validateStreamInput({ ...INPUT, allowedSources: ['kein.host'] }))).toContain(
       'Ungültige Absenderadresse'
     );
   });
 
   it('lehnt einen Port außerhalb des Bereichs ab', () => {
-    expect(validateStreamInput({ ...INPUT, port: 0 })).toContain('ganze Zahl');
-    expect(validateStreamInput({ ...INPUT, port: 70000 })).toContain('ganze Zahl');
+    expect(de(validateStreamInput({ ...INPUT, port: 0 }))).toContain('ganze Zahl');
+    expect(de(validateStreamInput({ ...INPUT, port: 70000 }))).toContain('ganze Zahl');
   });
 });
 
@@ -334,7 +337,7 @@ describe('Gewichtung', () => {
 
   it('lehnt einen Wert außerhalb des Bereichs ab', () => {
     expect(
-      validateStreamInput({ ...GEWICHTET, servers: [{ ...GEWICHTET.servers[0], weight: 999 }] })
+      de(validateStreamInput({ ...GEWICHTET, servers: [{ ...GEWICHTET.servers[0], weight: 999 }] }))
     ).toContain('Ungültige Gewichtung');
   });
 

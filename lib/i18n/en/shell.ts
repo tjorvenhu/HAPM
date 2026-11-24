@@ -24,6 +24,7 @@ export const shell: Dictionary = {
   'Navigation öffnen': 'Open navigation',
   'Navigation schließen': 'Close navigation',
   'Seiten im Bereich {area}': 'Pages in {area}',
+  '{count} offen': '{count} pending',
   'Abmelden': 'Sign out',
   'Zum Inhalt springen': 'Skip to content',
   'Wird geladen': 'Loading',
@@ -61,7 +62,6 @@ export const shell: Dictionary = {
   'Keine Daten.': 'No data.',
   'Noch keine Daten.': 'No data yet.',
   'Anteil': 'Share',
-  'Wert': 'Value',
   'Summe': 'Total',
   'Für diesen Zeitraum liegen keine Messwerte vor.': 'There are no measurements for this period.',
 
@@ -74,6 +74,5 @@ export const shell: Dictionary = {
   'Das hat nicht geklappt': 'That did not work',
   'Beim Laden der Seite ist ein Fehler aufgetreten. Was geschehen ist, steht im Log des Containers hapm.':
     'An error occurred while loading the page. The log of the hapm container says what happened.',
-  'Erneut versuchen': 'Try again',
   'Sprache': 'Language',
 };

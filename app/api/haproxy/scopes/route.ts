@@ -1,5 +1,6 @@
 import { requireSession, requireCsrf } from '@/lib/session';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
+import { msg } from '@/lib/i18n';
 import { getClientIP } from '@/lib/audit';
 import { precheckScope } from '@/lib/haproxy/provision';
 import { startHaproxyRun } from '@/lib/haproxy/runner';
@@ -40,7 +41,7 @@ async function run(
       else await precheckScope(server, name, 'remove', protection);
     } catch (err) {
       if (err instanceof HaproxyConfigError) {
-        throw new ApiError(err.message, 409);
+        throw new ApiError(err, 409);
       }
       throw err;
     }
@@ -77,7 +78,7 @@ export async function DELETE(request: Request) {
     await requireCsrf(request);
     const body = await jsonBody<{ name?: string }>(request);
     const name = String(body.name ?? '').trim();
-    if (!name) throw new ApiError('Es wurde keine Gruppe angegeben.');
+    if (!name) throw new ApiError(msg('Es wurde keine Gruppe angegeben.'));
 
     return await run(request, name, 'scope-remove');
   } catch (err) {

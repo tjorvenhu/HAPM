@@ -1,5 +1,7 @@
 import { requireServiceToken } from '@/lib/service-auth';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
+import { msg } from '@/lib/i18n';
+import { getT } from '@/lib/i18n/server';
 import { serviceActor } from '@/lib/audit';
 import { precheckStreamCreate, probeProxy, checkStreamPort } from '@/lib/haproxy/provision';
 import { startHaproxyRun } from '@/lib/haproxy/runner';
@@ -60,15 +62,16 @@ export async function GET(request: Request) {
     if (rawPort !== null) {
       const port = Number(rawPort.trim());
       if (!Number.isInteger(port) || port < 1 || port > 65535) {
-        throw new ApiError('port muss eine ganze Zahl zwischen 1 und 65535 sein.');
+        throw new ApiError(msg('port muss eine ganze Zahl zwischen {min} und {max} sein.', { min: 1, max: 65535 }));
       }
       const server = await resolveProxy(wantedServer);
       const exclude = url.searchParams.get('exclude')?.trim() || undefined;
+      const { t } = await getT();
       return ok({
         serverId: server.$id,
         serverName: server.name,
         port,
-        ...(await checkStreamPort(server, port, exclude)),
+        ...(await checkStreamPort(server, port, exclude, t)),
       });
     }
 
@@ -77,6 +80,7 @@ export async function GET(request: Request) {
     const servers = wantedServer ? [await resolveProxy(wantedServer)] : await proxyServers();
 
     const response: ListResponse = { streams: [], unreachable: [] };
+    const { t } = await getT();
 
     await Promise.all(
       servers.map(async (server) => {
@@ -86,7 +90,7 @@ export async function GET(request: Request) {
             response.unreachable.push({
               serverId: server.$id,
               serverName: server.name,
-              error: 'Die HAProxy-Konfiguration ist nicht lesbar.',
+              error: t('Die HAProxy-Konfiguration ist nicht lesbar.'),
             });
             return;
           }
@@ -95,7 +99,7 @@ export async function GET(request: Request) {
           response.unreachable.push({
             serverId: server.$id,
             serverName: server.name,
-            error: err instanceof Error ? err.message : 'HAProxy ist nicht erreichbar.',
+            error: err instanceof Error ? err.message : t('HAProxy ist nicht erreichbar.'),
           });
         }
       })
@@ -150,7 +154,7 @@ export async function POST(request: Request) {
     try {
       input = await precheckStreamCreate(server, draft);
     } catch (err) {
-      if (err instanceof HaproxyConfigError) throw new ApiError(err.message, 409);
+      if (err instanceof HaproxyConfigError) throw new ApiError(err, 409);
       throw err;
     }
 

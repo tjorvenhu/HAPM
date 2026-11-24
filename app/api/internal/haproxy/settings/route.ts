@@ -98,7 +98,7 @@ export async function PATCH(request: Request) {
     } catch (err) {
       // Fehlender Marker, doppelte Admin-ACL, ein gesperrter Dienst ohne
       // Adressen: eine Auskunft an den Aufrufer und kein 500er.
-      if (err instanceof HaproxyConfigError) throw new ApiError(err.message, 409);
+      if (err instanceof HaproxyConfigError) throw new ApiError(err, 409);
       throw err;
     }
 

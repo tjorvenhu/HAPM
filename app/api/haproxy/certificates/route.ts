@@ -1,5 +1,6 @@
 import { requireSession } from '@/lib/session';
 import { ok, handleError } from '@/lib/api';
+import { getT } from '@/lib/i18n/server';
 import { probeProxy, readCertificates } from '@/lib/haproxy/provision';
 import { certCovers, type AcmeCertificate } from '@/lib/haproxy/certs';
 import { scopeSlug } from '@/lib/haproxy/config';
@@ -60,6 +61,7 @@ interface ProxyCertificates {
 export async function GET() {
   try {
     await requireSession();
+    const { t } = await getT();
 
     const servers = [localServer()];
 
@@ -95,7 +97,7 @@ export async function GET() {
             acmeReady: false,
             dnsHooks: [],
             certificates: [],
-            error: err instanceof Error ? err.message : 'HAProxy ist nicht erreichbar.',
+            error: err instanceof Error ? err.message : t('HAProxy ist nicht erreichbar.'),
           };
         }
       })

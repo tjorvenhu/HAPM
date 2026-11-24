@@ -11,10 +11,18 @@
  *
  * ── Vorgabe heißt: nichts gesetzt ──
  *
- * Eine Farbe `null`, ein Text ohne Eintrag, das Logo `hapm`: daraus entsteht
- * Byte für Byte die Seite, die HAPM ohne dieses Modul schriebe. Eine bestehende
- * Installation erkennt ihre Dateien deshalb nach dem Update weiter als die
- * eigenen. `tests/haproxy/page-design.test.ts` hält die Prüfsummen fest.
+ * Eine Farbe `null`, ein Text ohne Eintrag, das Logo `hapm`, die Sprache `de`:
+ * daraus entsteht Byte für Byte die Seite, die HAPM ohne dieses Modul schriebe.
+ * Eine bestehende Installation erkennt ihre Dateien deshalb nach dem Update
+ * weiter als die eigenen. `tests/haproxy/page-design.test.ts` hält die
+ * Prüfsummen fest, auch die der englischen Fassung.
+ *
+ * ── Die Sprache ──
+ *
+ * `locale` gilt nur für die Texte, die HAPM mitbringt: die Vorgaben je Status
+ * und der Passwortabfrage, Knöpfe, Hinweise, `<html lang>`. Ein eigener Text
+ * bleibt, wie er eingegeben wurde. Eine Zeile ohne das Feld (gespeichert, bevor
+ * es die Wahl gab) ist deutsch.
  *
  * ── Das Logo steckt in der Seite ──
  *
@@ -47,6 +55,7 @@
  */
 
 import { ERROR_PAGE_STATUSES, isHexColor, type StaticTheme } from '@/ui/static/page';
+import { createTranslator, formatNumber, isLocale, DEFAULT_LOCALE, type Locale, type Translator } from '@/lib/i18n';
 
 /** Was eine fertige Seite samt Logo höchstens wiegen darf, in Bytes. */
 export const PAGE_MAX_BYTES = 15_000;
@@ -93,6 +102,8 @@ export interface PageDesign {
   /** Je Status nur, was von der Vorgabe abweicht. */
   errors: Partial<Record<number, ErrorTextOverride>>;
   lock: LockTexts;
+  /** Sprache der Vorgabetexte. Eigene Texte bleiben, wie sie sind. */
+  locale: Locale;
 }
 
 export function defaultPageDesign(): PageDesign {
@@ -103,6 +114,7 @@ export function defaultPageDesign(): PageDesign {
     footer: '',
     errors: {},
     lock: { title: null, subtitle: null, submit: null },
+    locale: 'de',
   };
 }
 
@@ -217,6 +229,8 @@ export type DesignParse = { ok: true; design: PageDesign } | { ok: false; error:
 
 const fail = (error: string): DesignParse => ({ ok: false, error });
 
+type T = Translator['t'];
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -231,47 +245,51 @@ function cleanText(value: string): string {
 }
 
 /** `null` und `undefined` heißen Vorgabe. Ein leerer Text ist keine Vorgabe, sondern ein Fehler. */
-function readText(value: unknown, name: string, max: number): { value: string | null } | { error: string } {
+function readText(value: unknown, name: string, max: number, t: T): { value: string | null } | { error: string } {
   if (value === null || value === undefined) return { value: null };
-  if (typeof value !== 'string') return { error: `${name} ist kein Text.` };
+  if (typeof value !== 'string') return { error: t('{name} ist kein Text.', { name }) };
   const text = cleanText(value);
-  if (!text) return { error: `${name} darf nicht leer sein. Für den Text von HAPM setzen Sie das Feld zurück.` };
-  if (text.length > max) return { error: `${name} ist länger als ${max} Zeichen.` };
+  if (!text) return { error: t('{name} darf nicht leer sein. Für den Text von HAPM setzen Sie das Feld zurück.', { name }) };
+  if (text.length > max) return { error: t('{name} ist länger als {max} Zeichen.', { name, max }) };
   return { value: text };
 }
 
 /** Ein Feld, das leer bleiben darf (Schriftzug, Fußzeile). */
-function readOptionalText(value: unknown, name: string, max: number): { value: string } | { error: string } {
+function readOptionalText(value: unknown, name: string, max: number, t: T): { value: string } | { error: string } {
   if (value === null || value === undefined) return { value: '' };
-  if (typeof value !== 'string') return { error: `${name} ist kein Text.` };
+  if (typeof value !== 'string') return { error: t('{name} ist kein Text.', { name }) };
   const text = cleanText(value);
-  if (text.length > max) return { error: `${name} ist länger als ${max} Zeichen.` };
+  if (text.length > max) return { error: t('{name} ist länger als {max} Zeichen.', { name, max }) };
   return { value: text };
 }
 
-function readColor(value: unknown, name: string): { value: string | null } | { error: string } {
+function readColor(value: unknown, name: string, t: T): { value: string | null } | { error: string } {
   if (value === null || value === undefined || value === '') return { value: null };
-  if (!isHexColor(value)) return { error: `${name} ist keine Farbe in der Form #rrggbb.` };
+  if (!isHexColor(value)) return { error: t('{name} ist keine Farbe in der Form #rrggbb.', { name }) };
   return { value: value.toLowerCase() };
 }
 
-function readLogo(value: unknown): { value: DesignLogo } | { error: string } {
-  if (value === null || value === undefined) return { value: { kind: 'hapm' } };
-  if (!isRecord(value)) return { error: 'Das Logo ist ungültig.' };
-  if (value.kind === 'hapm' || value.kind === 'none') return { value: { kind: value.kind } };
-  if (value.kind !== 'custom' || typeof value.data !== 'string') return { error: 'Das Logo ist ungültig.' };
+/** Derselbe Satz für die Prüfung und für die Route, die einen zu großen Rumpf gar nicht erst liest. */
+export function logoTooLargeMessage(locale: Locale = DEFAULT_LOCALE): string {
+  return createTranslator(locale).t(
+    'Das Logo ist zu groß. Die ganze Seite darf samt Logo höchstens {max} Bytes haben.',
+    { max: formatNumber(locale, PAGE_MAX_BYTES) }
+  );
+}
 
-  if (value.data.length > LOGO_BASE64_MAX) {
-    return {
-      error: `Das Logo ist zu groß. Die ganze Seite darf samt Logo höchstens ${PAGE_MAX_BYTES.toLocaleString('de-DE')} Bytes haben.`,
-    };
-  }
+function readLogo(value: unknown, t: T, locale: Locale): { value: DesignLogo } | { error: string } {
+  if (value === null || value === undefined) return { value: { kind: 'hapm' } };
+  if (!isRecord(value)) return { error: t('Das Logo ist ungültig.') };
+  if (value.kind === 'hapm' || value.kind === 'none') return { value: { kind: value.kind } };
+  if (value.kind !== 'custom' || typeof value.data !== 'string') return { error: t('Das Logo ist ungültig.') };
+
+  if (value.data.length > LOGO_BASE64_MAX) return { error: logoTooLargeMessage(locale) };
   const bytes = base64ToBytes(value.data);
-  if (!bytes) return { error: 'Das Logo ließ sich nicht lesen.' };
+  if (!bytes) return { error: t('Das Logo ließ sich nicht lesen.') };
   const mime = sniffLogoType(bytes);
   if (!mime) {
     return {
-      error: 'Das Logo ist kein SVG, PNG, JPEG oder WebP. Geprüft wird der Inhalt der Datei, nicht ihre Endung.',
+      error: t('Das Logo ist kein SVG, PNG, JPEG oder WebP. Geprüft wird der Inhalt der Datei, nicht ihre Endung.'),
     };
   }
   return { value: { kind: 'custom', mime, data: value.data } };
@@ -283,37 +301,43 @@ function readLogo(value: unknown): { value: DesignLogo } | { error: string } {
  * Die eine Prüfung für Formular, Route und gelesene Zeile. Sie sagt nichts über
  * die Größe der fertigen Seiten: die hängt an den Vorlagen und steht in
  * `design-pages.ts` (`designSizeError`).
+ *
+ * `messages` ist die Sprache des Grundes, also die der Oberfläche, nicht die
+ * der Seiten (`design.locale`).
  */
-export function parsePageDesign(raw: unknown): DesignParse {
-  if (!isRecord(raw)) return fail('Das Design ist ungültig.');
+export function parsePageDesign(raw: unknown, messages: Locale = DEFAULT_LOCALE): DesignParse {
+  const { t } = createTranslator(messages);
+  if (!isRecord(raw)) return fail(t('Das Design ist ungültig.'));
 
   const colorsIn = isRecord(raw.colors) ? raw.colors : {};
-  const accent = readColor(colorsIn.accent, 'Die Akzentfarbe');
+  const accent = readColor(colorsIn.accent, t('Die Akzentfarbe'), t);
   if ('error' in accent) return fail(accent.error);
-  const background = readColor(colorsIn.background, 'Der Hintergrund');
+  const background = readColor(colorsIn.background, t('Der Hintergrund'), t);
   if ('error' in background) return fail(background.error);
-  const text = readColor(colorsIn.text, 'Die Textfarbe');
+  const text = readColor(colorsIn.text, t('Die Textfarbe'), t);
   if ('error' in text) return fail(text.error);
 
-  const logo = readLogo(raw.logo);
+  const logo = readLogo(raw.logo, t, messages);
   if ('error' in logo) return fail(logo.error);
 
-  const brand = readOptionalText(raw.brand, 'Der Schriftzug', DESIGN_TEXT_LIMITS.brand);
+  const brand = readOptionalText(raw.brand, t('Der Schriftzug'), DESIGN_TEXT_LIMITS.brand, t);
   if ('error' in brand) return fail(brand.error);
-  const footer = readOptionalText(raw.footer, 'Die Fußzeile', DESIGN_TEXT_LIMITS.footer);
+  const footer = readOptionalText(raw.footer, t('Die Fußzeile'), DESIGN_TEXT_LIMITS.footer, t);
   if ('error' in footer) return fail(footer.error);
 
   const errors: Partial<Record<number, ErrorTextOverride>> = {};
   if (raw.errors !== null && raw.errors !== undefined) {
-    if (!isRecord(raw.errors)) return fail('Die Texte der Fehlerseiten sind ungültig.');
+    if (!isRecord(raw.errors)) return fail(t('Die Texte der Fehlerseiten sind ungültig.'));
     for (const [key, value] of Object.entries(raw.errors)) {
       const status = Number(key);
-      if (!ERROR_PAGE_STATUSES.includes(status)) return fail(`Für den Status ${key} gibt es keine Fehlerseite.`);
+      if (!ERROR_PAGE_STATUSES.includes(status)) {
+        return fail(t('Für den Status {status} gibt es keine Fehlerseite.', { status: key }));
+      }
       if (value === null || value === undefined) continue;
-      if (!isRecord(value)) return fail(`Die Texte für den Status ${status} sind ungültig.`);
-      const title = readText(value.title, `Die Überschrift für ${status}`, DESIGN_TEXT_LIMITS.title);
+      if (!isRecord(value)) return fail(t('Die Texte für den Status {status} sind ungültig.', { status }));
+      const title = readText(value.title, t('Die Überschrift für {status}', { status }), DESIGN_TEXT_LIMITS.title, t);
       if ('error' in title) return fail(title.error);
-      const body = readText(value.text, `Der Text für ${status}`, DESIGN_TEXT_LIMITS.text);
+      const body = readText(value.text, t('Der Text für {status}', { status }), DESIGN_TEXT_LIMITS.text, t);
       if ('error' in body) return fail(body.error);
       const entry: ErrorTextOverride = {
         ...(title.value === null ? {} : { title: title.value }),
@@ -324,12 +348,16 @@ export function parsePageDesign(raw: unknown): DesignParse {
   }
 
   const lockIn = isRecord(raw.lock) ? raw.lock : {};
-  const lockTitle = readText(lockIn.title, 'Die Überschrift der Passwortabfrage', DESIGN_TEXT_LIMITS.title);
+  const lockTitle = readText(lockIn.title, t('Die Überschrift der Passwortabfrage'), DESIGN_TEXT_LIMITS.title, t);
   if ('error' in lockTitle) return fail(lockTitle.error);
-  const lockSubtitle = readText(lockIn.subtitle, 'Der Text der Passwortabfrage', DESIGN_TEXT_LIMITS.text);
+  const lockSubtitle = readText(lockIn.subtitle, t('Der Text der Passwortabfrage'), DESIGN_TEXT_LIMITS.text, t);
   if ('error' in lockSubtitle) return fail(lockSubtitle.error);
-  const lockSubmit = readText(lockIn.submit, 'Die Beschriftung des Knopfs', DESIGN_TEXT_LIMITS.submit);
+  const lockSubmit = readText(lockIn.submit, t('Die Beschriftung des Knopfs'), DESIGN_TEXT_LIMITS.submit, t);
   if ('error' in lockSubmit) return fail(lockSubmit.error);
+
+  if (raw.locale !== undefined && raw.locale !== null && !isLocale(raw.locale)) {
+    return fail(t('Die Sprache der Vorgabetexte ist Deutsch oder Englisch.'));
+  }
 
   return {
     ok: true,
@@ -340,6 +368,7 @@ export function parsePageDesign(raw: unknown): DesignParse {
       footer: footer.value,
       errors,
       lock: { title: lockTitle.value, subtitle: lockSubtitle.value, submit: lockSubmit.value },
+      locale: isLocale(raw.locale) ? raw.locale : 'de',
     },
   };
 }

@@ -84,6 +84,7 @@ export async function POST(request: Request) {
       acmeEmail: acmeEmail || user.email,
       setupStatus: 'open',
       notifyRecipients: [user.email],
+      mailLocale: await (await import('@/lib/i18n/server')).getRequestLocale(),
     });
 
     let acme: { ok: boolean; detail: string };

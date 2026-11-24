@@ -1,5 +1,6 @@
 import { requireSession, requireCsrf } from '@/lib/session';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
+import { msg } from '@/lib/i18n';
 import { logAudit, getClientIP } from '@/lib/audit';
 import { getProxyServer, writeDnsCredentials } from '@/lib/haproxy/provision';
 import { LOCAL_SERVER_ID } from '@/lib/helpers';
@@ -37,7 +38,7 @@ export async function PUT(request: Request) {
 
     const hook = String(body.hook ?? '').trim();
     const provider = findDnsProvider(hook);
-    if (!provider) throw new ApiError('Unbekannter DNS-Anbieter.');
+    if (!provider) throw new ApiError(msg('Unbekannter DNS-Anbieter.'));
 
     // Nur die Felder des Anbieters, und jedes als getrimmter String. Ein
     // Leerzeichen am Ende eines eingefügten Tokens ist der Fehler, den man beim
@@ -90,7 +91,7 @@ export async function DELETE(request: Request) {
 
     const hook = String(body.hook ?? '').trim();
     const provider = findDnsProvider(hook);
-    if (!provider) throw new ApiError('Unbekannter DNS-Anbieter.');
+    if (!provider) throw new ApiError(msg('Unbekannter DNS-Anbieter.'));
 
     const values = Object.fromEntries(provider.fields.map((field) => [field.name, '']));
     const dnsHooks = await writeDnsCredentials(server, { hook, values, remove: true });

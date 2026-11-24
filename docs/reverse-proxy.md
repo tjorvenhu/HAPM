@@ -231,8 +231,9 @@ HAPM das ab (`lib/haproxy/protected.ts`, rein, `tests/haproxy/protected.test.ts`
   andere Gruppe und, über die API, ein neuer Name. Der Schutz der Gruppe folgt
   dem Ziel.
 - **Der Ausweg** steht in jeder Meldung: unter „Allgemein" die Adresse von HAPM
-  ändern oder leeren, oder dort die Einrichtung erneut öffnen. Danach trifft
-  kein Ziel mehr die Adresse, und der Schutz greift nicht.
+  ändern. Danach trifft kein Ziel mehr die alte Adresse, und der Schutz greift
+  dort nicht mehr. Die Einrichtung lässt sich nicht erneut öffnen und ist kein
+  Ausweg.
 - **`provision.ts` liest die Einstellungen nicht**, wie bei `exposure`. Die
   Routen lesen `publicUrl` und geben es als `SurfaceProtection` mit:
   `precheckDelete`, `precheckUpdate`, `precheckScope(…, 'remove', …)` und über

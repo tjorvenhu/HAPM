@@ -46,6 +46,8 @@ import {
   formatUptime,
   versionStep,
 } from '@/components/system/format';
+import { formatNumber, formatTime, msgid, type Translator } from '@/lib/i18n';
+import { useT } from '@/lib/i18n/react';
 import type { HaproxyAction, UpdateComponent, UpdateState } from '@/lib/types';
 import type { BootstrapState } from '@/lib/bootstrap';
 import type {
@@ -60,25 +62,25 @@ const POLL_MS = 25_000;
 
 /** Dieselben Wörter wie im Protokoll unter /reverse-proxy/logs. */
 const ACTION_LABELS: Record<HaproxyAction, string> = {
-  create: 'Angelegt',
-  update: 'Geändert',
-  delete: 'Gelöscht',
-  settings: 'Einstellungen',
-  'scope-add': 'Gruppe angelegt',
-  'scope-remove': 'Gruppe entfernt',
-  'stream-create': 'TCP angelegt',
-  'stream-update': 'TCP geändert',
-  'stream-delete': 'TCP gelöscht',
-  certificate: 'Zertifikat',
-  import: 'Import',
+  create: msgid('Angelegt'),
+  update: msgid('Geändert'),
+  delete: msgid('Gelöscht'),
+  settings: msgid('Einstellungen'),
+  'scope-add': msgid('Gruppe angelegt'),
+  'scope-remove': msgid('Gruppe entfernt'),
+  'stream-create': msgid('TCP angelegt'),
+  'stream-update': msgid('TCP geändert'),
+  'stream-delete': msgid('TCP gelöscht'),
+  certificate: msgid('Zertifikat'),
+  import: msgid('Import'),
 };
 
 const BOOTSTRAP_LABELS: Record<BootstrapState['status'], string> = {
-  pending: 'Steht noch aus',
-  running: 'Läuft',
-  ok: 'Abgeschlossen',
-  error: 'Mit Fehlern',
-  skipped: 'Übersprungen',
+  pending: msgid('Steht noch aus'),
+  running: msgid('Läuft'),
+  ok: msgid('Abgeschlossen'),
+  error: msgid('Mit Fehlern'),
+  skipped: msgid('Übersprungen'),
 };
 
 type Tone = 'danger' | 'warning' | 'ok';
@@ -99,12 +101,13 @@ function Kpi({
   sub?: string;
   tone?: Tone;
 }) {
+  const { t, locale } = useT();
   return (
     <Link href={href} className={`kpi${tone && value !== null ? ` is-${tone}` : ''}`}>
       <span className="kpi-icon">{icon}</span>
       <span className="kpi-body">
         <span className="kpi-value">
-          {value === null ? <small>Unbekannt</small> : value.toLocaleString('de-DE')}
+          {value === null ? <small>{t('Unbekannt')}</small> : formatNumber(locale, value)}
           {value !== null && sub && <small> {sub}</small>}
         </span>
         <span className="kpi-label">{label}</span>
@@ -146,14 +149,15 @@ function KvRow({
 }
 
 function StepList({ steps }: { steps: BootstrapState['steps'] }) {
+  const { t } = useT();
   return (
     <ul className="hapm-steps hapm-flag-detail">
       {steps.map((step, index) => (
         <li key={`${index}-${step.label}`} className={`hapm-step ${step.ok ? 'is-ok' : 'is-failed'}`}>
           {step.ok ? <Check size={14} strokeWidth={1.5} /> : <X size={14} strokeWidth={1.5} />}
           <span className="hapm-step-text">
-            <span className="hapm-step-label">{step.label}</span>
-            {step.detail && <span className="hapm-step-detail">{step.detail}</span>}
+            <span className="hapm-step-label">{t(step.label)}</span>
+            {step.detail && <span className="hapm-step-detail">{t(step.detail)}</span>}
           </span>
         </li>
       ))}
@@ -174,6 +178,7 @@ function HaproxyDown({
   onRestart: () => Promise<boolean | null>;
 }) {
   const { apiFetch } = useApp();
+  const { t } = useT();
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
   const [logs, setLogs] = useState<string | null>(null);
@@ -187,12 +192,12 @@ function HaproxyDown({
         setLogs(body.data.logs as string);
         setLogError('');
       } else {
-        setLogError(body.error || 'Die Ausgabe ließ sich nicht lesen.');
+        setLogError(body.error || t('Die Ausgabe ließ sich nicht lesen.'));
       }
     } catch {
-      setLogError('Die Ausgabe ließ sich nicht lesen.');
+      setLogError(t('Die Ausgabe ließ sich nicht lesen.'));
     }
-  }, [apiFetch]);
+  }, [apiFetch, t]);
 
   function toggle() {
     const next = !open;
@@ -218,10 +223,12 @@ function HaproxyDown({
       <div className="alert alert-danger sys-block hapm-flag">
         <AlertTriangle size={16} strokeWidth={1.5} />
         <div className="hapm-flag-body">
-          <strong>Der Container von HAProxy fehlt.</strong>
+          <strong>{t('Der Container von HAProxy fehlt.')}</strong>
           <span>
-            Docker kennt keinen Container mit dem Namen „{haproxy.name}“. HAPM legt ihn nicht an, er gehört zum
-            Compose-Stack.
+            {t(
+              'Docker kennt keinen Container mit dem Namen „{name}“. HAPM legt ihn nicht an, er gehört zum Compose-Stack.',
+              { name: haproxy.name }
+            )}
           </span>
         </div>
       </div>
@@ -233,17 +240,19 @@ function HaproxyDown({
     <div className="alert alert-danger sys-block hapm-flag">
       <AlertTriangle size={16} strokeWidth={1.5} />
       <div className="hapm-flag-body">
-        <strong>{looping ? 'HAProxy startet immer wieder neu.' : 'HAProxy läuft nicht.'}</strong>
+        <strong>{looping ? t('HAProxy startet immer wieder neu.') : t('HAProxy läuft nicht.')}</strong>
         <span>
           {looping
-            ? 'Der Container beendet sich kurz nach dem Start. Die Ausgabe nennt den Grund.'
-            : `Zustand des Containers: ${haproxy.status ?? 'unbekannt'}. Solange er steht, ist kein Ziel erreichbar.`}
+            ? t('Der Container beendet sich kurz nach dem Start. Die Ausgabe nennt den Grund.')
+            : t('Zustand des Containers: {status}. Solange er steht, ist kein Ziel erreichbar.', {
+                status: haproxy.status ?? t('unbekannt'),
+              })}
         </span>
       </div>
       <div className="hapm-flag-actions">
         <button type="button" className="btn btn-secondary btn-sm" onClick={toggle} aria-expanded={open}>
           {open ? <ChevronDown size={14} strokeWidth={1.5} /> : <ChevronRight size={14} strokeWidth={1.5} />}
-          Ausgabe
+          {t('Ausgabe')}
         </button>
         <button type="button" className="btn btn-primary btn-sm" onClick={start} disabled={busy}>
           {busy ? (
@@ -253,7 +262,7 @@ function HaproxyDown({
           ) : (
             <Play size={14} strokeWidth={1.5} />
           )}
-          {looping ? 'Neu starten' : 'Starten'}
+          {looping ? t('Neu starten') : t('Starten')}
         </button>
       </div>
       {open &&
@@ -265,7 +274,7 @@ function HaproxyDown({
           </div>
         ) : (
           <pre className="run-log hapm-flag-detail">
-            {logs.trim() || 'Der Container hat nichts ausgegeben.'}
+            {logs.trim() || t('Der Container hat nichts ausgegeben.')}
           </pre>
         ))}
     </div>
@@ -273,13 +282,18 @@ function HaproxyDown({
 }
 
 function RenewalFailed({ at, output }: { at: string; output: string | null }) {
+  const { t, locale } = useT();
   const [open, setOpen] = useState(false);
   return (
     <div className="alert alert-warning sys-block hapm-flag">
       <AlertTriangle size={16} strokeWidth={1.5} />
       <div className="hapm-flag-body">
-        <strong>Die letzte Erneuerung der Zertifikate meldet einen Fehler.</strong>
-        <span>Lauf vom {formatDateTime(at)}. acme.sh versucht es beim nächsten täglichen Lauf erneut.</span>
+        <strong>{t('Die letzte Erneuerung der Zertifikate meldet einen Fehler.')}</strong>
+        <span>
+          {t('Lauf vom {date}. acme.sh versucht es beim nächsten täglichen Lauf erneut.', {
+            date: formatDateTime(at, locale),
+          })}
+        </span>
       </div>
       {output && (
         <div className="hapm-flag-actions">
@@ -290,7 +304,7 @@ function RenewalFailed({ at, output }: { at: string; output: string | null }) {
             aria-expanded={open}
           >
             {open ? <ChevronDown size={14} strokeWidth={1.5} /> : <ChevronRight size={14} strokeWidth={1.5} />}
-            Ausgabe
+            {t('Ausgabe')}
           </button>
         </div>
       )}
@@ -300,6 +314,7 @@ function RenewalFailed({ at, output }: { at: string; output: string | null }) {
 }
 
 function UnhealthyTargets({ proxy }: { proxy: SystemProxy }) {
+  const { t, plural } = useT();
   if (proxy.unhealthy.length === 0) return null;
   const shown = proxy.unhealthy.slice(0, 6);
   const rest = proxy.unhealthy.length - shown.length;
@@ -309,9 +324,10 @@ function UnhealthyTargets({ proxy }: { proxy: SystemProxy }) {
       <Unplug size={16} strokeWidth={1.5} />
       <div className="hapm-flag-body">
         <strong>
-          {proxy.unhealthy.length === 1
-            ? 'Ein Ziel erreicht sein Backend nicht.'
-            : `${proxy.unhealthy.length} Ziele erreichen ihr Backend nicht.`}
+          {plural(proxy.unhealthy.length, {
+            one: 'Ein Ziel erreicht sein Backend nicht.',
+            other: '{count} Ziele erreichen ihr Backend nicht.',
+          })}
         </strong>
         <span>
           {shown.map((target, index) => (
@@ -330,10 +346,10 @@ function UnhealthyTargets({ proxy }: { proxy: SystemProxy }) {
               ) : (
                 target.id
               )}
-              {target.health === 'partial' && ' (teilweise)'}
+              {target.health === 'partial' && ` ${t('(teilweise)')}`}
             </span>
           ))}
-          {rest > 0 && ` und ${rest} weitere`}
+          {rest > 0 && ` ${t('und {count} weitere', { count: rest })}`}
         </span>
       </div>
     </div>
@@ -341,25 +357,26 @@ function UnhealthyTargets({ proxy }: { proxy: SystemProxy }) {
 }
 
 function UpdatesAvailable({ states }: { states: UpdateState[] }) {
+  const { t } = useT();
   const pending = states.filter((state) => state.updateAvailable === true);
   if (pending.length === 0) return null;
   return (
     <div className="alert alert-info sys-block hapm-flag">
       <Download size={16} strokeWidth={1.5} />
       <div className="hapm-flag-body">
-        <strong>{pending.length === 1 ? 'Update verfügbar' : 'Updates verfügbar'}</strong>
+        <strong>{pending.length === 1 ? t('Update verfügbar') : t('Updates verfügbar')}</strong>
         <span>
           {pending
             .map((state) => {
               const step = versionStep(state);
-              return `${COMPONENT_LABELS[state.component]} ${step ?? '(neues Abbild)'}`;
+              return `${COMPONENT_LABELS[state.component]} ${step ?? t('(neues Abbild)')}`;
             })
             .join(', ')}
         </span>
       </div>
       <div className="hapm-flag-actions">
         <Link className="btn btn-primary btn-sm" href="/updates">
-          Zu den Updates
+          {t('Zu den Updates')}
           <ArrowRight size={14} strokeWidth={1.5} />
         </Link>
       </div>
@@ -367,23 +384,29 @@ function UpdatesAvailable({ states }: { states: UpdateState[] }) {
   );
 }
 
+/** Beschriftung und Tooltip sind Schlüssel, die Seite zeigt sie mit `t()`. */
 function containerBadge(container: SystemContainer): { label: string; cls: string; tooltip?: string } {
   if (container.exists === null) {
-    return { label: 'Unbekannt', cls: 'badge-neutral', tooltip: container.error ?? 'Docker ist nicht erreichbar.' };
+    return {
+      label: msgid('Unbekannt'),
+      cls: 'badge-neutral',
+      tooltip: container.error ?? msgid('Docker ist nicht erreichbar.'),
+    };
   }
-  if (container.exists === false) return { label: 'Fehlt', cls: 'badge-danger' };
-  if (container.status === 'restarting') return { label: 'Startet neu', cls: 'badge-danger' };
-  if (!container.running) return { label: 'Gestoppt', cls: 'badge-danger' };
-  if (container.health === 'unhealthy') return { label: 'Läuft, Prüfung schlägt fehl', cls: 'badge-warning' };
-  return { label: 'Läuft', cls: 'badge-success' };
+  if (container.exists === false) return { label: msgid('Fehlt'), cls: 'badge-danger' };
+  if (container.status === 'restarting') return { label: msgid('Startet neu'), cls: 'badge-danger' };
+  if (!container.running) return { label: msgid('Gestoppt'), cls: 'badge-danger' };
+  if (container.health === 'unhealthy') return { label: msgid('Läuft, Prüfung schlägt fehl'), cls: 'badge-warning' };
+  return { label: msgid('Läuft'), cls: 'badge-success' };
 }
 
 function UpdateBadge({ state }: { state: UpdateState | undefined }) {
+  const { t } = useT();
   if (!state) {
     return (
       <span className="badge-status badge-neutral">
         <span className="dot" />
-        Noch nicht geprüft
+        {t('Noch nicht geprüft')}
       </span>
     );
   }
@@ -391,7 +414,7 @@ function UpdateBadge({ state }: { state: UpdateState | undefined }) {
     return (
       <Link href="/updates" className="badge-status badge-warning">
         <span className="dot" />
-        Update verfügbar
+        {t('Update verfügbar')}
       </Link>
     );
   }
@@ -399,53 +422,64 @@ function UpdateBadge({ state }: { state: UpdateState | undefined }) {
     return (
       <span className="badge-status badge-success">
         <span className="dot" />
-        Aktuell
+        {t('Aktuell')}
       </span>
     );
   }
   return (
     <span className="badge-status badge-neutral" data-tooltip={state.error ?? undefined} data-tooltip-pos="left">
       <span className="dot" />
-      Unbekannt
+      {t('Unbekannt')}
     </span>
   );
 }
 
-function certBadge(cert: CertificateDue): { label: string; cls: string } {
-  if (cert.daysLeft === null) return { label: 'Erneuerung überfällig', cls: 'badge-warning' };
-  if (cert.daysLeft < 0) return { label: 'Abgelaufen', cls: 'badge-danger' };
-  if (cert.daysLeft === 0) return { label: 'Läuft heute ab', cls: 'badge-danger' };
-  if (cert.daysLeft === 1) return { label: 'Läuft morgen ab', cls: 'badge-danger' };
-  if (cert.renewalOverdue && cert.daysLeft >= 14) return { label: 'Erneuerung überfällig', cls: 'badge-warning' };
-  return { label: `Läuft in ${cert.daysLeft} Tagen ab`, cls: 'badge-warning' };
+function certBadge(cert: CertificateDue, t: Translator['t']): { label: string; cls: string } {
+  if (cert.daysLeft === null) return { label: t('Erneuerung überfällig'), cls: 'badge-warning' };
+  if (cert.daysLeft < 0) return { label: t('Abgelaufen'), cls: 'badge-danger' };
+  if (cert.daysLeft === 0) return { label: t('Läuft heute ab'), cls: 'badge-danger' };
+  if (cert.daysLeft === 1) return { label: t('Läuft morgen ab'), cls: 'badge-danger' };
+  if (cert.renewalOverdue && cert.daysLeft >= 14) return { label: t('Erneuerung überfällig'), cls: 'badge-warning' };
+  return { label: t('Läuft in {days} Tagen ab', { days: cert.daysLeft }), cls: 'badge-warning' };
 }
 
 function CertificatesCard({ certificates }: { certificates: SystemCertificates }) {
+  const { t, plural, locale } = useT();
+  const days = certificates.warnDays;
   let summary: string;
   if (certificates.total === null) {
-    summary = `Unbekannt. ${certificates.error ?? 'acme.sh war nicht zu fragen.'}`;
+    summary = t('Unbekannt. {reason}', {
+      reason: certificates.error ? t(certificates.error) : t('acme.sh war nicht zu fragen.'),
+    });
   } else if (certificates.total === 0) {
-    summary = 'Noch kein Zertifikat. Das erste entsteht mit dem ersten Ziel.';
+    summary = t('Noch kein Zertifikat. Das erste entsteht mit dem ersten Ziel.');
   } else if (certificates.due.length === 0 && certificates.expiring === 0) {
-    summary =
-      certificates.total === 1
-        ? `Ein Zertifikat. Es läuft in den nächsten ${certificates.warnDays} Tagen nicht ab.`
-        : `${certificates.total} Zertifikate. Keines läuft in den nächsten ${certificates.warnDays} Tagen ab.`;
+    summary = plural(
+      certificates.total,
+      {
+        one: 'Ein Zertifikat. Es läuft in den nächsten {days} Tagen nicht ab.',
+        other: '{count} Zertifikate. Keines läuft in den nächsten {days} Tagen ab.',
+      },
+      { days }
+    );
   } else {
-    summary = certificates.total === 1 ? 'Ein Zertifikat.' : `${certificates.total} Zertifikate.`;
+    summary = plural(certificates.total, { one: 'Ein Zertifikat.', other: '{count} Zertifikate.' });
   }
 
   return (
     <div className="card">
       <div className="card-header">
         <h2 className="card-title">
-          Zertifikate
+          {t('Zertifikate')}
           <InfoHint
-            text={`Hier steht, was in den nächsten ${certificates.warnDays} Tagen abläuft oder was acme.sh schon hätte erneuern sollen. Das Ablaufdatum stammt aus der Datei, die HAProxy lädt.`}
+            text={t(
+              'Hier steht, was in den nächsten {days} Tagen abläuft oder was acme.sh schon hätte erneuern sollen. Das Ablaufdatum stammt aus der Datei, die HAProxy lädt.',
+              { days }
+            )}
           />
         </h2>
         <Link className="btn btn-ghost btn-sm" href="/reverse-proxy/zertifikate">
-          Alle
+          {t('Alle')}
         </Link>
       </div>
       <div className="card-body">
@@ -453,15 +487,20 @@ function CertificatesCard({ certificates }: { certificates: SystemCertificates }
         {certificates.due.length > 0 && (
           <div className="hapm-list">
             {certificates.due.map((cert) => {
-              const badge = certBadge(cert);
+              const badge = certBadge(cert, t);
               return (
                 <div key={cert.mainDomain} className="activity-row">
                   <div className="activity-row-text">
                     <span className="activity-row-name">{cert.mainDomain}</span>
                     <span className="activity-row-sub">
-                      {cert.expiresAt ? `Gültig bis ${formatDate(cert.expiresAt)}` : 'Ablaufdatum nicht lesbar'}
+                      {cert.expiresAt
+                        ? t('Gültig bis {date}', { date: formatDate(cert.expiresAt, locale) })
+                        : t('Ablaufdatum nicht lesbar')}
                       {cert.domains.length > 1 &&
-                        `, ${cert.domains.length - 1} weitere ${cert.domains.length === 2 ? 'Domain' : 'Domains'}`}
+                        `, ${plural(cert.domains.length - 1, {
+                          one: '{count} weitere Domain',
+                          other: '{count} weitere Domains',
+                        })}`}
                     </span>
                   </div>
                   <span className={`badge-status ${badge.cls}`}>{badge.label}</span>
@@ -472,9 +511,10 @@ function CertificatesCard({ certificates }: { certificates: SystemCertificates }
         )}
         {certificates.unreadable > 0 && (
           <p className="form-hint">
-            {certificates.unreadable === 1
-              ? 'Bei einem Zertifikat ist das Ablaufdatum nicht lesbar.'
-              : `Bei ${certificates.unreadable} Zertifikaten ist das Ablaufdatum nicht lesbar.`}
+            {plural(certificates.unreadable, {
+              one: 'Bei einem Zertifikat ist das Ablaufdatum nicht lesbar.',
+              other: 'Bei {count} Zertifikaten ist das Ablaufdatum nicht lesbar.',
+            })}
           </p>
         )}
       </div>
@@ -506,6 +546,7 @@ export default function DashboardPage() {
   const { notify } = useToast();
   const confirm = useConfirm();
   const now = useNow(10_000);
+  const { t, plural, locale } = useT();
 
   const [data, setData] = useState<SystemOverview | null>(null);
   const [error, setError] = useState('');
@@ -519,12 +560,12 @@ export default function DashboardPage() {
         setData(body.data as SystemOverview);
         setError('');
       } else {
-        setError(body.error || 'Die Übersicht konnte nicht geladen werden.');
+        setError(body.error || t('Die Übersicht konnte nicht geladen werden.'));
       }
     } catch {
-      setError('Die Übersicht konnte nicht geladen werden.');
+      setError(t('Die Übersicht konnte nicht geladen werden.'));
     }
-  }, [apiFetch]);
+  }, [apiFetch, t]);
 
   useEffect(() => {
     void load();
@@ -551,17 +592,17 @@ export default function DashboardPage() {
       });
       const body = await res.json();
       if (!body.success) {
-        notify({ variant: 'error', title: 'HAProxy', message: body.error || 'Der Start ist fehlgeschlagen.' });
+        notify({ variant: 'error', title: 'HAProxy', message: body.error || t('Der Start ist fehlgeschlagen.') });
         return null;
       }
       const running = Boolean(body.data.container?.running);
       if (running) {
-        notify({ variant: 'success', message: 'HAProxy läuft.' });
+        notify({ variant: 'success', message: t('HAProxy läuft.') });
       } else {
         notify({
           variant: 'error',
-          title: 'HAProxy läuft nicht',
-          message: 'Der Container hat sich nach dem Start wieder beendet. Die Ausgabe nennt den Grund.',
+          title: t('HAProxy läuft nicht'),
+          message: t('Der Container hat sich nach dem Start wieder beendet. Die Ausgabe nennt den Grund.'),
         });
       }
       await load();
@@ -570,20 +611,21 @@ export default function DashboardPage() {
       // Läuft die Oberfläche über HAProxy, reißt der Neustart die eigene Anfrage mit.
       notify({
         variant: 'info',
-        title: 'Verbindung unterbrochen',
-        message: 'Die Antwort kam nicht an. Der Zustand wird gleich neu gelesen.',
+        title: t('Verbindung unterbrochen'),
+        message: t('Die Antwort kam nicht an. Der Zustand wird gleich neu gelesen.'),
       });
       setTimeout(() => void load(), 4000);
       return null;
     }
-  }, [apiFetch, load, notify]);
+  }, [apiFetch, load, notify, t]);
 
   function confirmRestart() {
     void confirm({
-      title: 'HAProxy neu starten?',
-      message:
-        'Alle offenen Verbindungen werden getrennt. HAProxy ist für wenige Sekunden nicht erreichbar. Läuft diese Oberfläche über HAProxy, bricht auch sie kurz ab.',
-      confirmLabel: 'Neu starten',
+      title: t('HAProxy neu starten?'),
+      message: t(
+        'Alle offenen Verbindungen werden getrennt. HAProxy ist für wenige Sekunden nicht erreichbar. Läuft diese Oberfläche über HAProxy, bricht auch sie kurz ab.'
+      ),
+      confirmLabel: t('Neu starten'),
       variant: 'default',
       onConfirm: async () => {
         await restartHaproxy();
@@ -594,11 +636,14 @@ export default function DashboardPage() {
   const header = (
     <div className="page-header">
       <div>
-        <h1 className="page-title">Übersicht</h1>
+        <h1 className="page-title">{t('Übersicht')}</h1>
         <p className="page-subtitle">
           {data
-            ? `HAProxy auf ${data.hapm.nodeName}. Stand ${new Date(data.generatedAt).toLocaleTimeString('de-DE')}.`
-            : 'Zustand von HAProxy, HAPM und acme.sh.'}
+            ? t('HAProxy auf {node}. Stand {time}.', {
+                node: data.hapm.nodeName,
+                time: formatTime(locale, data.generatedAt, true),
+              })
+            : t('Zustand von HAProxy, HAPM und acme.sh.')}
         </p>
       </div>
       <div className="page-actions">
@@ -608,11 +653,11 @@ export default function DashboardPage() {
           ) : (
             <RefreshCw size={16} strokeWidth={1.5} />
           )}
-          Aktualisieren
+          {t('Aktualisieren')}
         </button>
         <Link className="btn btn-primary" href="/reverse-proxy">
           <Plus size={16} strokeWidth={1.5} />
-          Ziel anlegen
+          {t('Ziel anlegen')}
         </Link>
       </div>
     </div>
@@ -648,7 +693,7 @@ export default function DashboardPage() {
       {error && (
         <div className="alert alert-danger sys-block">
           <AlertTriangle size={16} strokeWidth={1.5} />
-          <span>Die Angaben sind nicht aktuell: {error}</span>
+          <span>{t('Die Angaben sind nicht aktuell: {error}', { error })}</span>
         </div>
       )}
 
@@ -658,12 +703,13 @@ export default function DashboardPage() {
         <div className="alert alert-danger sys-block hapm-flag">
           <AlertTriangle size={16} strokeWidth={1.5} />
           <div className="hapm-flag-body">
-            <strong>Der Docker-Socket ist nicht erreichbar.</strong>
+            <strong>{t('Der Docker-Socket ist nicht erreichbar.')}</strong>
             <span>
-              Ohne ihn kann HAPM den Zustand von HAProxy nicht lesen, die Konfiguration nicht prüfen und keine
-              Updates einspielen.
+              {t(
+                'Ohne ihn kann HAPM den Zustand von HAProxy nicht lesen, die Konfiguration nicht prüfen und keine Updates einspielen.'
+              )}
             </span>
-            {docker.error && <span className="hapm-flag-reason">{docker.error}</span>}
+            {docker.error && <span className="hapm-flag-reason">{t(docker.error)}</span>}
           </div>
         </div>
       )}
@@ -674,8 +720,8 @@ export default function DashboardPage() {
         <div className="alert alert-danger sys-block hapm-flag">
           <AlertTriangle size={16} strokeWidth={1.5} />
           <div className="hapm-flag-body">
-            <strong>Die Ersteinrichtung ist mit Fehlern beendet.</strong>
-            <span>Sie läuft bei jedem Start von HAPM erneut und holt nach, was fehlt.</span>
+            <strong>{t('Die Ersteinrichtung ist mit Fehlern beendet.')}</strong>
+            <span>{t('Sie läuft bei jedem Start von HAPM erneut und holt nach, was fehlt.')}</span>
           </div>
           <StepList steps={bootstrap.steps} />
         </div>
@@ -685,9 +731,9 @@ export default function DashboardPage() {
         <div className="alert alert-warning sys-block hapm-flag">
           <AlertTriangle size={16} strokeWidth={1.5} />
           <div className="hapm-flag-body">
-            <strong>Die Konfiguration von HAProxy war nicht zu lesen.</strong>
-            <span>Ziele, Gruppen und Weiterleitungen sind deshalb unbekannt.</span>
-            <span className="hapm-flag-reason">{proxy.error}</span>
+            <strong>{t('Die Konfiguration von HAProxy war nicht zu lesen.')}</strong>
+            <span>{t('Ziele, Gruppen und Weiterleitungen sind deshalb unbekannt.')}</span>
+            <span className="hapm-flag-reason">{t(proxy.error)}</span>
           </div>
         </div>
       )}
@@ -706,13 +752,14 @@ export default function DashboardPage() {
       {empty && proxy.scopes === 0 && (
         <div className="empty-state sys-block">
           <Layers size={40} strokeWidth={1.5} />
-          <h3>Zuerst eine Gruppe anlegen</h3>
+          <h3>{t('Zuerst eine Gruppe anlegen')}</h3>
           <p>
-            Eine Gruppe fasst Ziele zusammen, etwa „Websites“ oder „Intern“. Jedes Ziel gehört in eine Gruppe.
-            Die erste legen Sie unter „Reverse-Proxy“ an, danach das erste Ziel.
+            {t(
+              'Eine Gruppe fasst Ziele zusammen, etwa „Websites“ oder „Intern“. Jedes Ziel gehört in eine Gruppe. Die erste legen Sie unter „Reverse-Proxy“ an, danach das erste Ziel.'
+            )}
           </p>
           <Link className="btn btn-primary" href="/reverse-proxy">
-            Zum Reverse-Proxy
+            {t('Zum Reverse-Proxy')}
             <ArrowRight size={16} strokeWidth={1.5} />
           </Link>
         </div>
@@ -721,14 +768,15 @@ export default function DashboardPage() {
       {empty && proxy.scopes !== 0 && (
         <div className="empty-state sys-block">
           <Network size={40} strokeWidth={1.5} />
-          <h3>Noch kein Ziel angelegt</h3>
+          <h3>{t('Noch kein Ziel angelegt')}</h3>
           <p>
-            Unter „Reverse-Proxy“ eine Gruppe öffnen und dort „Ziel anlegen“ wählen. Das Zertifikat für die Domain
-            stellt HAPM dabei selbst aus.
+            {t(
+              'Unter „Reverse-Proxy“ eine Gruppe öffnen und dort „Ziel anlegen“ wählen. Das Zertifikat für die Domain stellt HAPM dabei selbst aus.'
+            )}
           </p>
           <Link className="btn btn-primary" href="/reverse-proxy">
             <Plus size={16} strokeWidth={1.5} />
-            Zum Reverse-Proxy
+            {t('Zum Reverse-Proxy')}
           </Link>
         </div>
       )}
@@ -737,53 +785,53 @@ export default function DashboardPage() {
         <Kpi
           href="/reverse-proxy"
           icon={<Network size={16} strokeWidth={1.5} />}
-          label="Ziele"
+          label={t('Ziele')}
           value={proxy.services}
         />
         <Kpi
           href="/reverse-proxy"
           icon={<Layers size={16} strokeWidth={1.5} />}
-          label="Gruppen"
+          label={t('Gruppen')}
           value={proxy.scopes}
         />
         <Kpi
           href="/reverse-proxy"
           icon={<Cable size={16} strokeWidth={1.5} />}
-          label="TCP-Weiterleitungen"
+          label={t('TCP-Weiterleitungen')}
           value={proxy.streams}
         />
         <Kpi
           href="/reverse-proxy"
           icon={<Unplug size={16} strokeWidth={1.5} />}
-          label="Backend nicht erreichbar"
+          label={t('Backend nicht erreichbar')}
           value={unhealthyCount}
-          sub={proxy.checked ? `von ${proxy.checked} geprüften` : undefined}
+          sub={proxy.checked ? t('von {count} geprüften', { count: formatNumber(locale, proxy.checked) }) : undefined}
           tone={proxy.down ? 'danger' : proxy.partial ? 'warning' : proxy.checked ? 'ok' : undefined}
         />
         <Kpi
           href="/reverse-proxy/zertifikate"
           icon={<ShieldCheck size={16} strokeWidth={1.5} />}
-          label="Zertifikate"
+          label={t('Zertifikate')}
           value={certificates.total}
         />
         <Kpi
           href="/reverse-proxy/zertifikate"
           icon={<CalendarClock size={16} strokeWidth={1.5} />}
-          label={`Laufen in ${certificates.warnDays} Tagen ab`}
+          label={t('Laufen in {days} Tagen ab', { days: certificates.warnDays })}
           value={certificates.expiring}
           tone={expired ? 'danger' : certificates.expiring ? 'warning' : undefined}
         />
         <Kpi
           href="/reverse-proxy/logs"
           icon={<AlertTriangle size={16} strokeWidth={1.5} />}
-          label="Vorgänge fehlgeschlagen"
+          label={t('Vorgänge fehlgeschlagen')}
           value={runs.failed}
           tone={runs.failed ? 'danger' : undefined}
         />
         <Kpi
           href="/updates"
           icon={<Download size={16} strokeWidth={1.5} />}
-          label="Updates verfügbar"
+          label={t('Updates verfügbar')}
           value={pendingUpdates}
           tone={pendingUpdates ? 'warning' : undefined}
         />
@@ -792,21 +840,21 @@ export default function DashboardPage() {
       <div className="hapm-cols sys-block">
         <div className="card">
           <div className="card-header">
-            <h2 className="card-title">Bestandteile</h2>
+            <h2 className="card-title">{t('Bestandteile')}</h2>
             <Link className="btn btn-ghost btn-sm" href="/updates">
-              Updates
+              {t('Updates')}
             </Link>
           </div>
           <div className="table-wrap">
             <table className="table">
               <thead>
                 <tr>
-                  <th>Bestandteil</th>
-                  <th>Version</th>
-                  <th>Zustand</th>
-                  <th>Läuft seit</th>
-                  <th>Update</th>
-                  <th aria-label="Aktionen" />
+                  <th>{t('Bestandteil')}</th>
+                  <th>{t('Version')}</th>
+                  <th>{t('Zustand')}</th>
+                  <th>{t('Läuft seit')}</th>
+                  <th>{t('Update')}</th>
+                  <th aria-label={t('Aktionen')} />
                 </tr>
               </thead>
               <tbody>
@@ -822,33 +870,36 @@ export default function DashboardPage() {
                       </div>
                     </div>
                   </td>
-                  <td data-label="Version">{haproxy.version ?? 'Unbekannt'}</td>
-                  <td data-label="Zustand">
+                  <td data-label={t('Version')}>{haproxy.version ?? t('Unbekannt')}</td>
+                  <td data-label={t('Zustand')}>
                     <span
                       className={`badge-status ${haproxyBadge.cls}`}
-                      data-tooltip={haproxyBadge.tooltip}
+                      data-tooltip={haproxyBadge.tooltip ? t(haproxyBadge.tooltip) : undefined}
                     >
                       <span className="dot" />
-                      {haproxyBadge.label}
+                      {t(haproxyBadge.label)}
                     </span>
                   </td>
-                  <td data-label="Läuft seit">
+                  <td data-label={t('Läuft seit')}>
                     {haproxy.startedAt ? (
-                      <span data-tooltip={formatDateTime(haproxy.startedAt)}>{formatUptime(now, haproxy.startedAt)}</span>
+                      <span data-tooltip={formatDateTime(haproxy.startedAt, locale)}>
+                        {formatUptime(now, haproxy.startedAt, locale)}
+                      </span>
                     ) : haproxy.exists === null ? (
-                      'Unbekannt'
+                      t('Unbekannt')
                     ) : (
-                      'Läuft nicht'
+                      t('Läuft nicht')
                     )}
                     {haproxy.restartCount !== null && haproxy.restartCount > 0 && (
                       <div className="detail-sub">
-                        {haproxy.restartCount === 1
-                          ? 'Ein Neustart durch Docker'
-                          : `${haproxy.restartCount} Neustarts durch Docker`}
+                        {plural(haproxy.restartCount, {
+                          one: 'Ein Neustart durch Docker',
+                          other: '{count} Neustarts durch Docker',
+                        })}
                       </div>
                     )}
                   </td>
-                  <td data-label="Update">
+                  <td data-label={t('Update')}>
                     <UpdateBadge state={stateOf('haproxy')} />
                   </td>
                   <td data-label="actions">
@@ -857,9 +908,9 @@ export default function DashboardPage() {
                         <button
                           type="button"
                           className="btn btn-ghost btn-icon btn-sm"
-                          data-tooltip="HAProxy neu starten"
+                          data-tooltip={t('HAProxy neu starten')}
                           data-tooltip-pos="left"
-                          aria-label="HAProxy neu starten"
+                          aria-label={t('HAProxy neu starten')}
                           onClick={confirmRestart}
                         >
                           <RotateCw size={16} strokeWidth={1.5} />
@@ -877,26 +928,28 @@ export default function DashboardPage() {
                       <div>
                         <strong>HAPM</strong>
                         <div className="detail-sub mono">
-                          {hapm.image ?? (hapm.containerized ? 'Abbild unbekannt' : 'Läuft ohne Container')}
+                          {hapm.image ?? (hapm.containerized ? t('Abbild unbekannt') : t('Läuft ohne Container'))}
                         </div>
                       </div>
                     </div>
                   </td>
-                  <td data-label="Version">{hapm.version}</td>
-                  <td data-label="Zustand">
+                  <td data-label={t('Version')}>{hapm.version}</td>
+                  <td data-label={t('Zustand')}>
                     <span className="badge-status badge-success">
                       <span className="dot" />
-                      Läuft
+                      {t('Läuft')}
                     </span>
                   </td>
-                  <td data-label="Läuft seit">
+                  <td data-label={t('Läuft seit')}>
                     {hapm.startedAt ? (
-                      <span data-tooltip={formatDateTime(hapm.startedAt)}>{formatUptime(now, hapm.startedAt)}</span>
+                      <span data-tooltip={formatDateTime(hapm.startedAt, locale)}>
+                        {formatUptime(now, hapm.startedAt, locale)}
+                      </span>
                     ) : (
-                      'Unbekannt'
+                      t('Unbekannt')
                     )}
                   </td>
-                  <td data-label="Update">
+                  <td data-label={t('Update')}>
                     <UpdateBadge state={stateOf('hapm')} />
                   </td>
                   <td data-label="actions" />
@@ -910,34 +963,36 @@ export default function DashboardPage() {
                       <div>
                         <strong>acme.sh</strong>
                         <div className="detail-sub">
-                          {acme.accountEmail ? `Konto: ${acme.accountEmail}` : 'Keine Adresse für das Konto hinterlegt'}
+                          {acme.accountEmail
+                            ? t('Konto: {email}', { email: acme.accountEmail })
+                            : t('Keine Adresse für das Konto hinterlegt')}
                         </div>
                       </div>
                     </div>
                   </td>
-                  <td data-label="Version">{acme.version ?? 'Unbekannt'}</td>
-                  <td data-label="Zustand">
+                  <td data-label={t('Version')}>{acme.version ?? t('Unbekannt')}</td>
+                  <td data-label={t('Zustand')}>
                     {acme.installed === null ? (
                       <span className="badge-status badge-neutral" data-tooltip={acme.error ?? undefined}>
                         <span className="dot" />
-                        Unbekannt
+                        {t('Unbekannt')}
                       </span>
                     ) : acme.installed ? (
                       <span className="badge-status badge-success">
                         <span className="dot" />
-                        Eingerichtet
+                        {t('Eingerichtet')}
                       </span>
                     ) : (
                       <span className="badge-status badge-danger">
                         <span className="dot" />
-                        Nicht installiert
+                        {t('Nicht installiert')}
                       </span>
                     )}
                   </td>
-                  <td data-label="Läuft seit">
-                    <span className="hapm-muted">Läuft bei Bedarf</span>
+                  <td data-label={t('Läuft seit')}>
+                    <span className="hapm-muted">{t('Läuft bei Bedarf')}</span>
                   </td>
-                  <td data-label="Update">
+                  <td data-label={t('Update')}>
                     <UpdateBadge state={stateOf('acme')} />
                   </td>
                   <td data-label="actions" />
@@ -949,58 +1004,68 @@ export default function DashboardPage() {
 
         <div className="card">
           <div className="card-header">
-            <h2 className="card-title">Betrieb</h2>
+            <h2 className="card-title">{t('Betrieb')}</h2>
           </div>
           <div className="dash-kv">
             <KvRow
               label="Docker"
-              value={docker.available ? `Version ${docker.version}` : 'Nicht erreichbar'}
+              value={docker.available ? t('Version {version}', { version: docker.version ?? '' }) : t('Nicht erreichbar')}
               tone={docker.available ? undefined : 'danger'}
             />
             <KvRow
-              label="Ersteinrichtung"
-              value={BOOTSTRAP_LABELS[bootstrap.status]}
+              label={t('Ersteinrichtung')}
+              value={t(BOOTSTRAP_LABELS[bootstrap.status])}
               tone={bootstrap.status === 'error' ? 'danger' : bootstrap.status === 'ok' ? undefined : 'muted'}
-              tooltip={bootstrap.finishedAt ? formatDateTime(bootstrap.finishedAt) : undefined}
+              tooltip={bootstrap.finishedAt ? formatDateTime(bootstrap.finishedAt, locale) : undefined}
             />
             <KvRow
-              label="Statistik"
-              hint="HAPM sammelt die Zähler von HAProxy im Minutentakt ein. Die Angabe gilt seit dem letzten Start von HAPM."
+              label={t('Statistik')}
+              hint={t(
+                'HAPM sammelt die Zähler von HAProxy im Minutentakt ein. Die Angabe gilt seit dem letzten Start von HAPM.'
+              )}
               value={
                 scheduler.lastStatsError
-                  ? 'Fehler'
+                  ? t('Fehler')
                   : scheduler.lastStatsRun
-                    ? formatAgo(now, scheduler.lastStatsRun)
-                    : 'Noch keine Runde'
+                    ? formatAgo(now, scheduler.lastStatsRun, locale)
+                    : t('Noch keine Runde')
               }
               tone={scheduler.lastStatsError ? 'warning' : scheduler.lastStatsRun ? undefined : 'muted'}
               tooltip={scheduler.lastStatsError ?? undefined}
             />
             <KvRow
-              label="Erneuerung"
-              hint="acme.sh erneuert fällige Zertifikate einmal am Tag um 03:17 Uhr. Die Angabe gilt seit dem letzten Start von HAPM."
+              label={t('Erneuerung')}
+              hint={t(
+                'acme.sh erneuert fällige Zertifikate einmal am Tag um 03:17 Uhr. Die Angabe gilt seit dem letzten Start von HAPM.'
+              )}
               value={
                 scheduler.lastRenewal
-                  ? `${formatAgo(now, scheduler.lastRenewal.at)}, ${scheduler.lastRenewal.ok ? 'ohne Fehler' : 'mit Fehler'}`
-                  : 'Noch kein Lauf'
+                  ? t(scheduler.lastRenewal.ok ? '{ago}, ohne Fehler' : '{ago}, mit Fehler', {
+                      ago: formatAgo(now, scheduler.lastRenewal.at, locale),
+                    })
+                  : t('Noch kein Lauf')
               }
               tone={scheduler.lastRenewal ? (scheduler.lastRenewal.ok ? undefined : 'danger') : 'muted'}
-              tooltip={scheduler.lastRenewal ? formatDateTime(scheduler.lastRenewal.at) : undefined}
+              tooltip={scheduler.lastRenewal ? formatDateTime(scheduler.lastRenewal.at, locale) : undefined}
             />
             <KvRow
-              label="Log-Mitschnitt"
-              hint="HAPM schreibt die Ausgabe von HAProxy in eine Datei mit. Daraus liest die Statistik, wer zugreift: Adressen, Länder und Pfade."
+              label={t('Log-Mitschnitt')}
+              hint={t(
+                'HAPM schreibt die Ausgabe von HAProxy in eine Datei mit. Daraus liest die Statistik, wer zugreift: Adressen, Länder und Pfade.'
+              )}
               value={
                 logFollower.connected
-                  ? `Verbunden, ${logFollower.lines.toLocaleString('de-DE')} Zeilen`
-                  : 'Getrennt'
+                  ? plural(logFollower.lines, { one: 'Verbunden, {count} Zeile', other: 'Verbunden, {count} Zeilen' })
+                  : t('Getrennt')
               }
               tone={logFollower.connected ? undefined : 'warning'}
-              tooltip={logFollower.last ? `Letzte Zeile ${formatDateTime(logFollower.last)}` : undefined}
+              tooltip={
+                logFollower.last ? t('Letzte Zeile {time}', { time: formatDateTime(logFollower.last, locale) }) : undefined
+              }
             />
             <KvRow
-              label="Zeitgesteuerte Aufgaben"
-              value={scheduler.started ? 'Aktiv' : 'Nicht gestartet'}
+              label={t('Zeitgesteuerte Aufgaben')}
+              value={scheduler.started ? t('Aktiv') : t('Nicht gestartet')}
               tone={scheduler.started ? undefined : 'warning'}
             />
           </div>
@@ -1011,28 +1076,32 @@ export default function DashboardPage() {
         <div className="card">
           <div className="card-header">
             <h2 className="card-title">
-              Letzte Vorgänge
-              {runs.running ? <span className="section-count">{runs.running} laufen</span> : null}
+              {t('Letzte Vorgänge')}
+              {runs.running ? (
+                <span className="section-count">
+                  {plural(runs.running, { one: '{count} läuft', other: '{count} laufen' })}
+                </span>
+              ) : null}
             </h2>
             <Link className="btn btn-ghost btn-sm" href="/reverse-proxy/logs">
-              Protokoll
+              {t('Protokoll')}
             </Link>
           </div>
           {runs.recent === null ? (
-            <p className="form-hint">Die Historie war nicht zu lesen.</p>
+            <p className="form-hint">{t('Die Historie war nicht zu lesen.')}</p>
           ) : runs.recent.length === 0 ? (
-            <p className="form-hint">Noch kein Vorgang am Reverse-Proxy.</p>
+            <p className="form-hint">{t('Noch kein Vorgang am Reverse-Proxy.')}</p>
           ) : (
             <div className="table-wrap">
               <table className="table">
                 <thead>
                   <tr>
-                    <th>Eintrag</th>
-                    <th>Vorgang</th>
-                    <th>Status</th>
-                    <th>Dauer</th>
-                    <th>Zeitpunkt</th>
-                    <th>Ausgelöst von</th>
+                    <th>{t('Eintrag')}</th>
+                    <th>{t('Vorgang')}</th>
+                    <th>{t('Status')}</th>
+                    <th>{t('Dauer')}</th>
+                    <th>{t('Zeitpunkt')}</th>
+                    <th>{t('Ausgelöst von')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1040,20 +1109,24 @@ export default function DashboardPage() {
                     <tr key={run.$id}>
                       <td data-label="primary">
                         <strong>{run.serviceId}</strong>
-                        {run.error && <div className="detail-error">{run.error}</div>}
+                        {run.error && <div className="detail-error">{t(run.error)}</div>}
                       </td>
-                      <td data-label="Vorgang">{ACTION_LABELS[run.action] ?? run.action}</td>
-                      <td data-label="Status">
+                      <td data-label={t('Vorgang')}>
+                        {ACTION_LABELS[run.action] ? t(ACTION_LABELS[run.action]) : run.action}
+                      </td>
+                      <td data-label={t('Status')}>
                         <span className={`badge-status ${RUN_STATUS_CLASS[run.status] ?? 'badge-neutral'}`}>
                           {run.status === 'running' && <Loader2 size={12} strokeWidth={1.5} className="spin" />}
-                          {RUN_STATUS_LABELS[run.status] ?? run.status}
+                          {RUN_STATUS_LABELS[run.status] ? t(RUN_STATUS_LABELS[run.status]) : run.status}
                         </span>
                       </td>
-                      <td data-label="Dauer">{run.duration !== null ? `${run.duration} s` : ''}</td>
-                      <td data-label="Zeitpunkt">
-                        <span data-tooltip={formatDateTime(run.startedAt)}>{formatAgo(now, run.startedAt)}</span>
+                      <td data-label={t('Dauer')}>{run.duration !== null ? `${run.duration} s` : ''}</td>
+                      <td data-label={t('Zeitpunkt')}>
+                        <span data-tooltip={formatDateTime(run.startedAt, locale)}>
+                          {formatAgo(now, run.startedAt, locale)}
+                        </span>
                       </td>
-                      <td data-label="Ausgelöst von">{run.triggeredBy ?? ''}</td>
+                      <td data-label={t('Ausgelöst von')}>{run.triggeredBy ?? ''}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1067,7 +1140,7 @@ export default function DashboardPage() {
 
       <div className="card">
         <div className="card-header">
-          <h2 className="card-title">Schnellzugriffe</h2>
+          <h2 className="card-title">{t('Schnellzugriffe')}</h2>
         </div>
         <div className="kind-grid">
           <Link className="kind-card" href="/reverse-proxy">
@@ -1075,8 +1148,8 @@ export default function DashboardPage() {
               <Plus size={17} strokeWidth={1.5} />
             </span>
             <span className="kind-card-text">
-              <span className="kind-card-title">Ziel anlegen</span>
-              <span className="kind-card-sub">Domain, Backend und Zertifikat in einem Vorgang.</span>
+              <span className="kind-card-title">{t('Ziel anlegen')}</span>
+              <span className="kind-card-sub">{t('Domain, Backend und Zertifikat in einem Vorgang.')}</span>
             </span>
           </Link>
           <Link className="kind-card" href="/reverse-proxy/statistiken">
@@ -1084,8 +1157,8 @@ export default function DashboardPage() {
               <BarChart3 size={17} strokeWidth={1.5} />
             </span>
             <span className="kind-card-text">
-              <span className="kind-card-title">Statistik</span>
-              <span className="kind-card-sub">Anfragen, Statuscodes, Antwortzeiten und wer zugreift.</span>
+              <span className="kind-card-title">{t('Statistik')}</span>
+              <span className="kind-card-sub">{t('Anfragen, Statuscodes, Antwortzeiten und wer zugreift.')}</span>
             </span>
           </Link>
           <Link className="kind-card" href="/reverse-proxy/logs">
@@ -1093,8 +1166,8 @@ export default function DashboardPage() {
               <ScrollText size={17} strokeWidth={1.5} />
             </span>
             <span className="kind-card-text">
-              <span className="kind-card-title">Protokoll</span>
-              <span className="kind-card-sub">Jeder Vorgang am Reverse-Proxy mit seinen Schritten.</span>
+              <span className="kind-card-title">{t('Protokoll')}</span>
+              <span className="kind-card-sub">{t('Jeder Vorgang am Reverse-Proxy mit seinen Schritten.')}</span>
             </span>
           </Link>
           <Link className="kind-card" href="/reverse-proxy/einstellungen">
@@ -1102,8 +1175,8 @@ export default function DashboardPage() {
               <Settings2 size={17} strokeWidth={1.5} />
             </span>
             <span className="kind-card-text">
-              <span className="kind-card-title">Einstellungen</span>
-              <span className="kind-card-sub">Was für alle Ziele gilt.</span>
+              <span className="kind-card-title">{t('Einstellungen')}</span>
+              <span className="kind-card-sub">{t('Was für alle Ziele gilt.')}</span>
             </span>
           </Link>
           <Link className="kind-card" href="/updates">
@@ -1111,8 +1184,8 @@ export default function DashboardPage() {
               <Container size={17} strokeWidth={1.5} />
             </span>
             <span className="kind-card-text">
-              <span className="kind-card-title">Updates</span>
-              <span className="kind-card-sub">Neue Abbilder prüfen und einspielen.</span>
+              <span className="kind-card-title">{t('Updates')}</span>
+              <span className="kind-card-sub">{t('Neue Abbilder prüfen und einspielen.')}</span>
             </span>
           </Link>
         </div>

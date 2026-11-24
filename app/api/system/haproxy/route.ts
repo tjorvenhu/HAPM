@@ -1,5 +1,6 @@
 import { requireCsrf, requireSession } from '@/lib/session';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
+import { msg } from '@/lib/i18n';
 import { logAudit, getClientIP } from '@/lib/audit';
 import { containerInfo, engine, haproxyContainerName, DockerError } from '@/lib/docker';
 
@@ -10,10 +11,10 @@ const SETTLE_MS = 2000;
 
 function dockerFailure(err: unknown, name: string): ApiError {
   if (err instanceof DockerError && err.status === 404) {
-    return new ApiError(`Der Container "${name}" existiert nicht.`, 404);
+    return new ApiError(msg('Der Container "{name}" existiert nicht.', { name }), 404);
   }
   const detail = err instanceof Error ? err.message : String(err);
-  return new ApiError(`Docker meldet einen Fehler: ${detail}`, 502);
+  return new ApiError(msg('Docker meldet einen Fehler: {detail}', { detail }), 502);
 }
 
 /** Der Container von HAProxy, mit `?logs=1` samt seiner letzten Ausgabe. */
@@ -25,7 +26,7 @@ export async function GET(request: Request) {
     try {
       const container = await containerInfo(name);
       if (!wantsLogs) return ok({ container });
-      if (!container) throw new ApiError(`Der Container "${name}" existiert nicht.`, 404);
+      if (!container) throw new ApiError(msg('Der Container "{name}" existiert nicht.', { name }), 404);
       const logs = await engine.logs(name, { tail: LOG_LINES });
       return ok({ container, logs, lines: LOG_LINES });
     } catch (err) {
@@ -42,7 +43,7 @@ export async function POST(request: Request) {
     await requireCsrf(request);
     const session = await requireSession();
     const body = await jsonBody<{ action?: string }>(request);
-    if (body.action !== 'restart') throw new ApiError('Unbekannte Aktion.');
+    if (body.action !== 'restart') throw new ApiError(msg('Unbekannte Aktion.'));
 
     const name = haproxyContainerName();
     let wasRunning = false;

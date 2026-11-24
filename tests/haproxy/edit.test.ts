@@ -11,6 +11,10 @@ import {
   HaproxyConfigError,
   type CreateServiceInput,
 } from '@/lib/haproxy/config';
+import { germanText, type Message } from '@/lib/i18n/translate';
+
+/** Die Meldung einer Prüfung auf Deutsch, wie sie ohne Sprache herauskommt. */
+const de = (message: Message | null) => (message ? germanText(message) : message);
 
 /**
  * Bearbeiten ist der gefährlichste der drei Vorgänge, und zwar aus einem Grund,
@@ -324,7 +328,7 @@ describe('readServiceInput', () => {
   it('biegt einen fehlenden Bereich nicht auf einen Vorgabewert', () => {
     const input = readServiceInput({ id: 'x', domains: ['a.example'], servers: [] });
     expect(input.scope).toBe('');
-    expect(validateCreateInput(input)).not.toBeNull();
+    expect(de(validateCreateInput(input))).not.toBeNull();
   });
 
   it('überlebt einen Rumpf, der gar nicht passt', () => {

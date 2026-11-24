@@ -13,6 +13,7 @@
 
 import { localExec } from './ssh';
 import { buildCommand, shellEscape } from './shell';
+import { msgid } from './i18n/translate';
 
 export const ACME_HOME = '/root/.acme.sh';
 export const ACME = `${ACME_HOME}/acme.sh`;
@@ -97,7 +98,7 @@ export async function ensureAcme(email: string | null): Promise<{ ok: boolean; d
   }
   const res = await localExec(`${steps.join(' && ')} 2>&1`, 120_000);
   if (res.code !== 0) return { ok: false, detail: res.stdout.trim().slice(-500) };
-  return { ok: true, detail: status.installed ? 'acme.sh ist eingerichtet.' : 'acme.sh wurde installiert.' };
+  return { ok: true, detail: msgid(status.installed ? 'acme.sh ist eingerichtet.' : 'acme.sh wurde installiert.') };
 }
 
 /**

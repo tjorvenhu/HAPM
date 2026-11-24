@@ -5,7 +5,10 @@ import Link from 'next/link';
 import { ArrowRight, ListChecks } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
+import { useConfirm } from '@/components/ConfirmDialog';
 import { SETUP_STEPS } from '@/lib/setup/rules';
+import { msgid } from '@/lib/i18n';
+import { useT } from '@/lib/i18n/react';
 // Nur der Typ: die Datei dahinter erreicht `lib/db`.
 import type { SetupView } from '@/lib/setup';
 
@@ -15,19 +18,22 @@ import type { SetupView } from '@/lib/setup';
  * Das Konto besteht nach dem ersten Schritt des Assistenten, alles danach darf
  * scheitern oder liegen bleiben. Damit „später" nicht „nie" heißt, steht die
  * Fläche hier, bis die Einrichtung abgeschlossen oder ausdrücklich
- * übersprungen ist. Unter „Allgemein" lässt sie sich wieder öffnen.
+ * übersprungen ist. Beides ist endgültig: was danach fehlt, wird unter
+ * „Allgemein" und im Reverse-Proxy eingerichtet.
  */
 
 const STEP_NAMES: Record<string, string> = {
-  exposure: 'Erreichbarkeit',
-  dns: 'DNS-Anbieter',
-  address: 'Adresse der Oberfläche',
-  run: 'Einrichten',
+  exposure: msgid('Erreichbarkeit'),
+  dns: msgid('DNS-Anbieter'),
+  address: msgid('Adresse der Oberfläche'),
+  run: msgid('Einrichten'),
 };
 
 export default function SetupReminder() {
   const { apiFetch } = useApp();
   const { notify } = useToast();
+  const { t } = useT();
+  const confirm = useConfirm();
   const [setup, setSetup] = useState<SetupView | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -48,6 +54,16 @@ export default function SetupReminder() {
   if (!setup || setup.status !== 'open' || setup.step === 'done') return null;
 
   async function skip() {
+    // Übersprungen ist endgültig: die Einrichtung lässt sich danach nicht wieder öffnen.
+    const confirmed = await confirm({
+      title: t('Einrichtung überspringen?'),
+      message: t(
+        'Danach lässt sie sich nicht wieder öffnen. Adresse und Art der Installation stellen Sie unter „Allgemein“ ein, Ziele unter „Reverse-Proxy“.'
+      ),
+      confirmLabel: t('Überspringen'),
+      variant: 'warning',
+    });
+    if (!confirmed) return;
     setBusy(true);
     try {
       const res = await apiFetch('/api/setup/status', {
@@ -56,16 +72,16 @@ export default function SetupReminder() {
         body: JSON.stringify({ status: 'skipped' }),
       });
       const body = await res.json();
-      if (!body.success) throw new Error(body.error || 'Das ließ sich nicht speichern.');
+      if (!body.success) throw new Error(body.error || t('Das ließ sich nicht speichern.'));
       setSetup(body.data.setup as SetupView);
       notify({
         variant: 'success',
-        message: 'Die Einrichtung ist übersprungen. Unter „Allgemein" lässt sie sich erneut öffnen.',
+        message: t('Die Einrichtung ist übersprungen. Adresse und Art der Installation stehen unter „Allgemein".'),
       });
     } catch (err: unknown) {
       notify({
         variant: 'error',
-        message: err instanceof Error ? err.message : 'Das ließ sich nicht speichern.',
+        message: err instanceof Error ? err.message : t('Das ließ sich nicht speichern.'),
       });
     } finally {
       setBusy(false);
@@ -78,17 +94,21 @@ export default function SetupReminder() {
     <div className="alert alert-info sys-block hapm-flag">
       <ListChecks size={16} strokeWidth={1.5} />
       <div className="hapm-flag-body">
-        <strong>Einrichtung abschließen</strong>
+        <strong>{t('Einrichtung abschließen')}</strong>
         <span>
-          Es fehlt noch Schritt {position} von {SETUP_STEPS.length}: {STEP_NAMES[setup.step] ?? setup.step}.
+          {t('Es fehlt noch Schritt {step} von {total}: {name}.', {
+            step: position,
+            total: SETUP_STEPS.length,
+            name: STEP_NAMES[setup.step] ? t(STEP_NAMES[setup.step]) : setup.step,
+          })}
         </span>
       </div>
       <div className="hapm-flag-actions">
         <button className="btn btn-ghost btn-sm" type="button" disabled={busy} onClick={skip}>
-          Überspringen
+          {t('Überspringen')}
         </button>
         <Link className="btn btn-primary btn-sm" href="/setup">
-          Einrichtung fortsetzen
+          {t('Einrichtung fortsetzen')}
           <ArrowRight size={14} strokeWidth={1.5} />
         </Link>
       </div>

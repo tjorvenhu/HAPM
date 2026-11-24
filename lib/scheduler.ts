@@ -28,6 +28,7 @@ import { HEALTH_CHECK_INTERVAL_MS, runDailyChecks, runHealthChecks } from './not
 import { maybeRefreshGeoip } from './geoip/fetch';
 import { getBackupSettings } from './backup/settings';
 import { onBackupFailure, pruneBackupRuns, reconcileBackupRuns, startBackup } from './backup/run';
+import { reconcileRestore } from './backup/restore';
 import { notify } from './notifications';
 
 const UPDATE_CHECK_MS = 6 * 60 * 60 * 1000;
@@ -184,6 +185,8 @@ export async function initializeScheduler(): Promise<void> {
   await reconcileOrphanedHaproxyRuns().catch((err) => log(`Abgleich der Läufe gescheitert: ${err}`));
   await reconcileUpdateRuns().catch((err) => log(`Abgleich der Updates gescheitert: ${err}`));
   await reconcileBackupRuns().catch((err) => log(`Abgleich der Sicherungen gescheitert: ${err}`));
+  // Nach dem Zurückspielen: der Helfer hat sein Ergebnis in eine Datei geschrieben.
+  await reconcileRestore().catch((err) => log(`Abgleich des Zurückspielens gescheitert: ${err}`));
   // Die Sicherung kennt den Mailversand nicht, sie meldet nur, dass sie gescheitert ist.
   onBackupFailure((detail) => void notify({ type: 'backup_failed', detail }));
 

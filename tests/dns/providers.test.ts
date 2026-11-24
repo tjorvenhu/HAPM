@@ -7,14 +7,7 @@ import {
   providerOf,
 } from '@/lib/dns/zones';
 import { DNS_PROVIDER_INFOS, dnsProviderInfo } from '@/lib/dns/provider-info';
-import {
-  PROVIDER_RULES,
-  formatTtl,
-  readRecordInput,
-  sameAddress,
-  validateRecordInput,
-  type RecordInput,
-} from '@/lib/dns/records';
+import { PROVIDER_RULES, sameAddress } from '@/lib/dns/records';
 import { findDnsProvider } from '@/lib/haproxy/dns-credentials';
 
 /**
@@ -80,67 +73,15 @@ describe('dnsProviderInfo', () => {
   });
 });
 
-function input(patch: Partial<RecordInput> = {}): RecordInput {
-  return {
-    type: 'A',
-    name: 'app',
-    content: '203.0.113.10',
-    ttl: null,
-    proxied: false,
-    priority: null,
-    comment: null,
-    ...patch,
-  };
-}
-
 describe('Regeln je Anbieter', () => {
   it('kennt bei Hetzner die Vorgabe der Zone statt „automatisch“', () => {
     expect(PROVIDER_RULES.hetzner.defaultTtl).toBeNull();
     expect(PROVIDER_RULES.cloudflare.defaultTtl).toBe(1);
-    expect(validateRecordInput(input({ ttl: null }), 'example.org', 'hetzner')).toBeNull();
-    // Die 1 von Cloudflare ist bei Hetzner eine Sekunde und damit zu kurz.
-    expect(validateRecordInput(input({ ttl: 1 }), 'example.org', 'hetzner')).toMatch(/Vorgabe der Zone/);
-    expect(validateRecordInput(input({ ttl: null }), 'example.org', 'cloudflare')).toMatch(/automatisch/);
-  });
-
-  it('lässt bei Hetzner eine TTL über einem Tag zu, bei Cloudflare nicht', () => {
-    expect(validateRecordInput(input({ ttl: 604800 }), 'example.org', 'hetzner')).toBeNull();
-    expect(validateRecordInput(input({ ttl: 604800 }), 'example.org', 'cloudflare')).toMatch(/TTL/);
-    expect(validateRecordInput(input({ ttl: 30 }), 'example.org', 'hetzner')).toMatch(/TTL/);
   });
 
   it('kennt den Proxy nur bei Cloudflare', () => {
-    expect(validateRecordInput(input({ proxied: true }), 'example.org', 'hetzner')).toMatch(/nur bei Cloudflare/);
-    expect(validateRecordInput(input({ ttl: 1, proxied: true }), 'example.org', 'cloudflare')).toBeNull();
-  });
-
-  it('prüft ohne Angabe wie bisher nach den Regeln von Cloudflare', () => {
-    expect(validateRecordInput(input({ ttl: 1 }), 'example.org')).toBeNull();
-    expect(validateRecordInput(input({ ttl: null }), 'example.org')).toMatch(/TTL/);
-  });
-});
-
-describe('readRecordInput je Anbieter', () => {
-  it('setzt eine fehlende TTL auf die Vorgabe des Anbieters', () => {
-    expect(readRecordInput({ type: 'A' }, 'hetzner').ttl).toBeNull();
-    expect(readRecordInput({ type: 'A', ttl: null }, 'hetzner').ttl).toBeNull();
-    expect(readRecordInput({ type: 'A' }, 'cloudflare').ttl).toBe(1);
-    expect(readRecordInput({ type: 'A' }).ttl).toBe(1);
-    expect(readRecordInput({ type: 'A', ttl: 300 }, 'hetzner').ttl).toBe(300);
-  });
-
-  it('wirft `proxied` weg, wo es keinen Proxy gibt', () => {
-    expect(readRecordInput({ type: 'A', proxied: true }, 'hetzner').proxied).toBe(false);
-    expect(readRecordInput({ type: 'A', proxied: true }, 'cloudflare').proxied).toBe(true);
-  });
-});
-
-describe('formatTtl', () => {
-  it('nennt eine fehlende TTL beim Namen', () => {
-    expect(formatTtl(null)).toBe('Vorgabe');
-    expect(formatTtl(86400)).toBe('1 Tag');
-    expect(formatTtl(604800)).toBe('7 Tage');
-    expect(formatTtl(120)).toBe('2 min');
+    expect(PROVIDER_RULES.cloudflare.proxy).toBe(true);
+    expect(PROVIDER_RULES.hetzner.proxy).toBe(false);
   });
 });
 

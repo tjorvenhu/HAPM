@@ -4,7 +4,9 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { Monitor, Smartphone } from 'lucide-react';
 import Select from '@/components/Select';
 import { InfoHint } from '@/ui/primitives/InfoHint';
-import { DESIGN_PAGES, designPageHtml, designPageSizes } from '@/lib/haproxy/design-pages';
+import { useT } from '@/lib/i18n/react';
+import { formatNumber } from '@/lib/i18n';
+import { DESIGN_PAGES, designPageHtml, designPageLabel, designPageSizes } from '@/lib/haproxy/design-pages';
 import { PAGE_MAX_BYTES, type PageDesign } from '@/lib/haproxy/page-design';
 
 /**
@@ -30,6 +32,9 @@ import { PAGE_MAX_BYTES, type PageDesign } from '@/lib/haproxy/page-design';
  *
  * `inert`: ein Klick auf „Zur Startseite" lüde sonst HAPM in den Rahmen.
  *
+ * Die Seite im Rahmen spricht die Sprache des Designs (`design.locale`), alles
+ * drumherum die der Oberfläche.
+ *
  * ── Warum verkleinert ──
  *
  * Die Fehlerseite hat unter 640 px eine eigene Anordnung. In einer Spalte von
@@ -52,6 +57,7 @@ interface DesignPreviewProps {
 }
 
 export default function DesignPreview({ design, pageId, onPageChange }: DesignPreviewProps) {
+  const { t, locale } = useT();
   const [viewport, setViewport] = useState<Viewport>('wide');
   const [available, setAvailable] = useState(0);
   const stage = useRef<HTMLDivElement>(null);
@@ -78,9 +84,13 @@ export default function DesignPreview({ design, pageId, onPageChange }: DesignPr
         <Select
           value={page.id}
           onChange={onPageChange}
-          options={DESIGN_PAGES.map((entry) => ({ value: entry.id, label: entry.label, hint: entry.hint }))}
+          options={DESIGN_PAGES.map((entry) => ({
+            value: entry.id,
+            label: designPageLabel(entry, t),
+            hint: t(entry.hint),
+          }))}
         />
-        <div className="segmented" role="group" aria-label="Breite der Vorschau">
+        <div className="segmented" role="group" aria-label={t('Breite der Vorschau')}>
           <button
             type="button"
             className={viewport === 'wide' ? 'active' : ''}
@@ -88,7 +98,7 @@ export default function DesignPreview({ design, pageId, onPageChange }: DesignPr
             onClick={() => setViewport('wide')}
           >
             <Monitor size={15} />
-            Bildschirm
+            {t('Bildschirm')}
           </button>
           <button
             type="button"
@@ -97,7 +107,7 @@ export default function DesignPreview({ design, pageId, onPageChange }: DesignPr
             onClick={() => setViewport('narrow')}
           >
             <Smartphone size={15} />
-            Handy
+            {t('Handy')}
           </button>
         </div>
       </div>
@@ -105,7 +115,7 @@ export default function DesignPreview({ design, pageId, onPageChange }: DesignPr
       <div className="hapm-design-stage" ref={stage} style={{ height: height * scale }}>
         <iframe
           className="hapm-design-frame"
-          title={`Vorschau: ${page.label}`}
+          title={t('Vorschau: {page}', { page: designPageLabel(page, t) })}
           sandbox=""
           inert
           srcDoc={html}
@@ -121,23 +131,23 @@ export default function DesignPreview({ design, pageId, onPageChange }: DesignPr
       <div className="form-group">
         <div className="form-label-row">
           <span className="form-label">
-            Größte Seite: {largest.bytes.toLocaleString('de-DE')} von{' '}
-            {PAGE_MAX_BYTES.toLocaleString('de-DE')} Bytes
+            {t('Größte Seite: {bytes} von {max} Bytes', {
+              bytes: formatNumber(locale, largest.bytes),
+              max: formatNumber(locale, PAGE_MAX_BYTES),
+            })}
           </span>
           <InfoHint
             position="left"
-            text={
-              'HAProxy hält jede dieser Seiten samt Logo in einem Puffer von 16.384 Bytes. Eine größere ' +
-              'Fehlerdatei lehnt es beim Laden ab, eine größere Passwortabfrage beantwortet es mit dem ' +
-              'Fehler 500. HAPM speichert deshalb kein Design, bei dem eine Seite über ' +
-              `${PAGE_MAX_BYTES.toLocaleString('de-DE')} Bytes kommt.`
-            }
+            text={t(
+              'HAProxy hält jede dieser Seiten samt Logo in einem Puffer von {buffer} Bytes. Eine größere Fehlerdatei lehnt es beim Laden ab, eine größere Passwortabfrage beantwortet es mit dem Fehler 500. HAPM speichert deshalb kein Design, bei dem eine Seite über {max} Bytes kommt.',
+              { buffer: formatNumber(locale, 16_384), max: formatNumber(locale, PAGE_MAX_BYTES) }
+            )}
           />
         </div>
         <div className={`hapm-meter${over ? ' is-over' : ''}`}>
           <i style={{ width: `${Math.min(100, (largest.bytes / PAGE_MAX_BYTES) * 100)}%` }} />
         </div>
-        <span className="form-hint">Am größten ist „{largest.page.label}“.</span>
+        <span className="form-hint">{t('Am größten ist „{page}“.', { page: designPageLabel(largest.page, t) })}</span>
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
 /**
  * Domain → Zone, und was daraus für einen Eintrag folgt.
  *
- * **Ohne einen einzigen Import**, aus demselben Grund wie
+ * **Ohne Import außer dem reinen `lib/i18n`**, aus demselben Grund wie
  * `lib/haproxy/config.ts`: das Formular im Browser stellt dieselbe Frage wie
  * die Route auf dem Server — „liegt diese Domain in einer Zone, die wir
  * verwalten, und wie hieße der Eintrag dort?". Zwei Antworten darauf wären ein
@@ -12,6 +12,8 @@
  * Falle wie beim `-m end -i .kunde.example` der HAProxy-ACL, und derselbe Riegel: der
  * Punkt gehört mit verglichen.
  */
+
+import { msgid } from '../i18n';
 
 /** Die Eintragsart, die dieses Werkzeug für ein Proxy-Ziel setzt. */
 export const PROXY_RECORD_TYPE = 'CNAME';
@@ -125,9 +127,8 @@ export function isZoneApex(domain: string, zoneName: string): boolean {
  * Der Name eines Eintrags innerhalb seiner Zone.
  *
  * Hier werden Einträge unter ihrem vollen Namen geführt (so liefert sie
- * Cloudflare, Hetzner rechnet `lib/dns/hetzner-rrsets.ts` dahin um); eingegeben
- * und angezeigt wird der Teil davor. `@` ist die Zone selbst, so schreiben es
- * beide Anbieter.
+ * Cloudflare); Hetzner will den Teil davor, `lib/dns/hetzner-rrsets.ts` rechnet
+ * hin und zurück. `@` ist die Zone selbst, so schreiben es beide Anbieter.
  */
 export function recordName(domain: string, zoneName: string): string {
   const value = normalizeDomain(domain);
@@ -256,18 +257,18 @@ export interface DomainMatch {
  *
  * Eng, weil der Name in jeden Suffixvergleich eingeht: eine Zone `de` deckte
  * jede deutsche Domain ab, und ein Name mit `*` oder `/` darin ist keiner.
- * Zurück kommt die Meldung oder `null`.
+ * Zurück kommt die Meldung (`msgid`, übersetzt erst, wer sie zeigt) oder `null`.
  */
 export function validateZoneName(value: string): string | null {
   const name = normalizeDomain(value);
-  if (name === '') return 'Bitte eine Domain angeben.';
+  if (name === '') return msgid('Bitte eine Domain angeben.');
   if (name.startsWith('*.')) {
-    return 'Eine Zone ist eine Domain, keine Wildcard. Einträge darunter legt man einzeln an.';
+    return msgid('Eine Zone ist eine Domain, keine Wildcard. Einträge darunter legt man einzeln an.');
   }
-  if (!name.includes('.')) return 'Das ist keine vollständige Domain: der Punkt fehlt.';
+  if (!name.includes('.')) return msgid('Das ist keine vollständige Domain: der Punkt fehlt.');
   if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(name)) {
-    return 'Erlaubt sind a-z, 0-9, Bindestrich und Punkt.';
+    return msgid('Erlaubt sind a-z, 0-9, Bindestrich und Punkt.');
   }
-  if (name.length > 253) return 'Die Domain ist zu lang.';
+  if (name.length > 253) return msgid('Die Domain ist zu lang.');
   return null;
 }

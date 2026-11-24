@@ -8,6 +8,7 @@
  */
 
 import { gunzipSync, gzipSync } from 'node:zlib';
+import { msg } from '../i18n/translate';
 import { GeoTableError } from './format';
 
 /** Wo der Datensatz herkommt. Steht im Hinweis, damit niemand suchen muss. */
@@ -66,6 +67,6 @@ export function unpackUpload(bytes: Uint8Array): string {
   try {
     return Buffer.from(gzipped ? gunzipSync(bytes) : bytes).toString('utf8');
   } catch {
-    throw new GeoTableError('Die Datei ließ sich nicht auspacken.');
+    throw new GeoTableError(msg('Die Datei ließ sich nicht auspacken.'));
   }
 }

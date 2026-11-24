@@ -80,7 +80,35 @@ import {
   type StreamBalance,
 } from './streams';
 import { planChallenge } from './challenge';
+import { createTranslator, msg, msgid, type Message, type Translator } from '../i18n/translate';
 import type { Exposure } from '../types';
+
+/* ── Sprache ──
+ *
+ * Gründe und Hinweise setzen einander zusammen („Zeile 12: …", ein Grund aus
+ * einer ACL in dem einer Weiche), deshalb entstehen sie gleich als fertiger
+ * Text in einer Sprache und nicht als `Message`. Die Vorschau rechnet in der
+ * Sprache der Anfrage (`parseImport(text, t)`), alles andere auf Deutsch: was
+ * in einen Lauf übergeht, wird gespeichert und bleibt deutsch.
+ *
+ * Ein Modulwert statt eines Parameters durch jede Funktion: `parseImport` und
+ * `assessImport` laufen synchron durch, dazwischen kommt keine andere Anfrage
+ * an die Reihe, und `withTranslator` stellt den vorigen Wert wieder her. */
+
+type Translate = Translator['t'];
+
+const GERMAN: Translate = createTranslator('de').t;
+let t: Translate = GERMAN;
+
+function withTranslator<T>(translator: Translate | undefined, work: () => T): T {
+  const previous = t;
+  t = translator ?? GERMAN;
+  try {
+    return work();
+  } finally {
+    t = previous;
+  }
+}
 
 /** Größer wird keine Konfiguration, die man von Hand pflegt. Die Grenze gilt
  *  im Browser (Datei, Feld) und in der Route. */
@@ -88,14 +116,14 @@ export const IMPORT_MAX_BYTES = 1_000_000;
 
 /** Warum dieser Text nicht gelesen wird, oder `null`. Dieselbe Prüfung im
  *  Browser (vor dem Hochladen) und in der Route. */
-export function importTextError(text: string): string | null {
-  if (text.trim() === '') return 'Es wurde keine Konfiguration übergeben.';
+export function importTextError(text: string): Message | null {
+  if (text.trim() === '') return msg('Es wurde keine Konfiguration übergeben.');
   if (new TextEncoder().encode(text).length > IMPORT_MAX_BYTES) {
-    return `Die Konfiguration ist größer als ${IMPORT_MAX_BYTES / 1_000_000} MB.`;
+    return msg('Die Konfiguration ist größer als {size} MB.', { size: IMPORT_MAX_BYTES / 1_000_000 });
   }
   // Ein Nullbyte oder ein Zeichen, das beim Lesen als UTF-8 nicht entziffert
   // wurde: dann war es keine Textdatei.
-  if (text.includes('\u0000') || text.includes('�')) return 'Das ist keine Textdatei.';
+  if (text.includes('\u0000') || text.includes('�')) return msg('Das ist keine Textdatei.');
   return null;
 }
 
@@ -238,7 +266,7 @@ function tokenize(text: string): { tokens: Token[]; error: string | null } {
     current += ch;
     started = true;
   }
-  if (mode !== 'plain') return { tokens, error: 'Ein Anführungszeichen ist nicht geschlossen.' };
+  if (mode !== 'plain') return { tokens, error: t('Ein Anführungszeichen ist nicht geschlossen.') };
   flush();
   return { tokens, error: null };
 }
@@ -270,12 +298,12 @@ function readLines(text: string): Line[] {
     out.push({
       no: index + 1,
       text: displayText(source.replace(/\s+/g, ' ')),
-      words: tokens.map((t) => t.text),
-      env: tokens.some((t) => t.env),
+      words: tokens.map((token) => token.text),
+      env: tokens.some((token) => token.env),
       error:
         error ??
         (continued
-          ? 'Ein \\ am Zeilenende setzt in HAProxy keine Zeile fort. So lädt HAProxy die Datei nicht.'
+          ? t('Ein \\ am Zeilenende setzt in HAProxy keine Zeile fort. So lädt HAProxy die Datei nicht.')
           : null),
     });
   });
@@ -299,6 +327,21 @@ interface Section {
   from: string | null;
   /** Der Modus, ausdrücklich oder geerbt. HAProxys eigene Vorgabe ist tcp. */
   mode: string;
+  /** Kein `mode` weder hier noch in Vorgaben: HTTP wurde aus dem Inhalt geschlossen. */
+  modeAssumed?: boolean;
+  /** Kein `mode` und nichts, was auf HTTP deutet: gilt als tcp, kann einem Frontend folgen. */
+  modeOpen?: boolean;
+}
+
+/**
+ * Was nur in mode http geht. Ein Abschnitt, der so etwas enthält und keinen
+ * Modus nennt oder erbt, ist ein eingefügter Ausschnitt ohne seinen Block
+ * `defaults`: in mode tcp nähme HAProxy ihn gar nicht an.
+ */
+const HTTP_ONLY = /\b(hdr|hdr_dom|hdr_end|hdr_beg|hdr_reg|req\.hdr|path|path_beg|path_end|path_reg|url|url_beg|method)\(|\bhttp-(request|response|check)\b|\bredirect\b|\boption\s+(httpchk|forwardfor|http-server-close|httplog)\b|\bcookie\b/i;
+
+function looksLikeHttp(section: Section): boolean {
+  return section.body.some((line) => HTTP_ONLY.test(line.text));
 }
 
 function readSections(lines: Line[], skipped: SkippedLine[]): Section[] {
@@ -320,7 +363,7 @@ function readSections(lines: Line[], skipped: SkippedLine[]): Section[] {
       continue;
     }
     if (!current) {
-      skipped.push({ line: line.no, text: line.text, reason: 'Steht vor dem ersten Abschnitt.' });
+      skipped.push({ line: line.no, text: line.text, reason: t('Steht vor dem ersten Abschnitt.') });
       continue;
     }
     current.body.push(line);
@@ -328,18 +371,46 @@ function readSections(lines: Line[], skipped: SkippedLine[]): Section[] {
 
   // Der Modus: ausdrücklich, sonst aus den benannten Vorgaben, sonst aus dem
   // letzten Block `defaults` davor.
-  const named = new Map<string, string>();
-  let lastDefaults = 'tcp';
+  // `null`: nirgends ausdrücklich genannt.
+  const named = new Map<string, string | null>();
+  let lastDefaults: string | null = null;
   for (const section of sections) {
-    const own = section.body.find((l) => l.words[0]?.toLowerCase() === 'mode')?.words[1]?.toLowerCase();
+    const own = section.body.find((l) => l.words[0]?.toLowerCase() === 'mode')?.words[1]?.toLowerCase() ?? null;
+    const inherited: string | null = section.from ? (named.get(section.from) ?? lastDefaults) : lastDefaults;
     if (section.kind === 'defaults') {
-      const inherited = section.from ? (named.get(section.from) ?? lastDefaults) : 'tcp';
-      section.mode = own ?? inherited;
-      if (section.name) named.set(section.name, section.mode);
-      else lastDefaults = section.mode;
+      const value: string | null = own ?? (section.from ? inherited : null);
+      section.mode = value ?? 'tcp';
+      if (section.name) named.set(section.name, value);
+      else lastDefaults = value;
       continue;
     }
-    section.mode = own ?? (section.from ? (named.get(section.from) ?? lastDefaults) : lastDefaults);
+    const known = own ?? inherited;
+    if (known) {
+      section.mode = known;
+    } else if (looksLikeHttp(section)) {
+      section.mode = 'http';
+      section.modeAssumed = true;
+    } else {
+      section.mode = 'tcp';
+      section.modeOpen = true;
+    }
+  }
+
+  // Ein Backend ohne Modus folgt dem HTTP-Frontend, das es benutzt.
+  const usedByHttp = new Set<string>();
+  for (const section of sections) {
+    if (section.mode !== 'http' || section.kind === 'backend') continue;
+    for (const line of section.body) {
+      const kw = line.words[0]?.toLowerCase();
+      if ((kw === 'use_backend' || kw === 'default_backend') && line.words[1]) usedByHttp.add(line.words[1]);
+    }
+  }
+  for (const section of sections) {
+    if (section.kind === 'backend' && section.modeOpen && section.name && usedByHttp.has(section.name)) {
+      section.mode = 'http';
+      section.modeAssumed = true;
+      section.modeOpen = false;
+    }
   }
   return sections;
 }
@@ -385,7 +456,7 @@ function splitCriterion(criterion: string): { fetch: string; arg: string | null;
 const HOST_CONVERTERS = new Set(['lower', 'field(1,:)']);
 
 function classifyAcl(words: string[]): Meaning {
-  if (words.length === 0) return { kind: 'other', reason: 'Leere Bedingung.' };
+  if (words.length === 0) return { kind: 'other', reason: t('Leere Bedingung.') };
   const { fetch, arg, converters } = splitCriterion(words[0]);
 
   let caseInsensitive = false;
@@ -396,10 +467,10 @@ function classifyAcl(words: string[]): Meaning {
     if (values.length === 0 && word === '-i') caseInsensitive = true;
     else if (values.length === 0 && word === '-m') method = (words[++i] ?? '').toLowerCase();
     else if (values.length === 0 && word === '-f') {
-      return { kind: 'other', reason: 'Die Werte stehen in einer Datei (-f), die hier nicht vorliegt.' };
+      return { kind: 'other', reason: t('Die Werte stehen in einer Datei (-f), die hier nicht vorliegt.') };
     } else if (values.length === 0 && word === '--') continue;
     else if (values.length === 0 && /^-[a-zA-Z]$/.test(word)) {
-      return { kind: 'other', reason: `Den Schalter ${word} kennt HAPM an einer Bedingung nicht.` };
+      return { kind: 'other', reason: t('Den Schalter {flag} kennt HAPM an einer Bedingung nicht.', { flag: word }) };
     } else values.push(word);
   }
 
@@ -409,18 +480,21 @@ function classifyAcl(words: string[]): Meaning {
     const suffix = (host ?? sni)![1] ?? '';
     const bySuffix = suffix === '' ? null : suffix.slice(1);
     if (bySuffix && method) {
-      return { kind: 'other', reason: `${words[0]} mit -m ${method} lässt offen, welcher Vergleich gilt.` };
+      return {
+        kind: 'other',
+        reason: t('{criterion} mit -m {method} lässt offen, welcher Vergleich gilt.', { criterion: words[0], method }),
+      };
     }
     const match = bySuffix ?? method ?? 'str';
     if (!['str', 'end', 'dom'].includes(match)) {
       return {
         kind: 'other',
-        reason: `Der Vergleich „${match}" auf den Hostnamen lässt sich nicht als Liste von Domains schreiben.`,
+        reason: t('Der Vergleich „{match}" auf den Hostnamen lässt sich nicht als Liste von Domains schreiben.', { match }),
       };
     }
     const unknown = converters.find((c) => !HOST_CONVERTERS.has(c));
-    if (unknown) return { kind: 'other', reason: `Die Umwandlung ${unknown} kennt HAPM nicht.` };
-    if (values.length === 0) return { kind: 'other', reason: 'Die Bedingung nennt keine Domain.' };
+    if (unknown) return { kind: 'other', reason: t('Die Umwandlung {converter} kennt HAPM nicht.', { converter: unknown }) };
+    if (values.length === 0) return { kind: 'other', reason: t('Die Bedingung nennt keine Domain.') };
 
     // Ob mit `-i` oder ohne: HAPM vergleicht klein, und Domains sind es auch.
     const domains: string[] = [];
@@ -428,7 +502,10 @@ function classifyAcl(words: string[]): Meaning {
     for (const raw of values) {
       const value = raw.toLowerCase().replace(/:\d+$/, '').replace(/\.$/, '');
       if (value.includes('*')) {
-        return { kind: 'other', reason: `${raw}: ein Stern ist in diesem Vergleich ein Zeichen und keine Wildcard.` };
+        return {
+          kind: 'other',
+          reason: t('{value}: ein Stern ist in diesem Vergleich ein Zeichen und keine Wildcard.', { value: raw }),
+        };
       }
       if (match === 'str') domains.push(value);
       else if (match === 'end' && value.startsWith('.')) domains.push(`*${value}`);
@@ -436,42 +513,56 @@ function classifyAcl(words: string[]): Meaning {
         domains.push(value, `*.${value}`);
         notes.push(
           match === 'dom'
-            ? `${words[0]} ${raw} trifft den Namen auch als Teil eines längeren. Übernommen werden ${value} und *.${value}.`
-            : `${words[0]} ${raw} ohne führenden Punkt trifft auch Namen wie x${value}. Übernommen werden ${value} und *.${value}.`
+            ? t(
+                '{criterion} {value} trifft den Namen auch als Teil eines längeren. Übernommen werden {domain} und *.{domain}.',
+                { criterion: words[0], value: raw, domain: value }
+              )
+            : t(
+                '{criterion} {value} ohne führenden Punkt trifft auch Namen wie x{domain}. Übernommen werden {domain} und *.{domain}.',
+                { criterion: words[0], value: raw, domain: value }
+              )
         );
       }
     }
     const bad = domains.find((d) => !isValidDomain(d));
-    if (bad) return { kind: 'other', reason: `${bad} ist keine Domain, die HAPM anlegen kann.` };
+    if (bad) return { kind: 'other', reason: t('{domain} ist keine Domain, die HAPM anlegen kann.', { domain: bad }) };
     return { kind: 'host', domains: unique(domains), notes };
   }
 
   const path = fetch === 'path_beg' || (fetch === 'path' && method === 'beg');
   if (path && arg === null) {
     if (fetch === 'path_beg' && method) {
-      return { kind: 'other', reason: `${words[0]} mit -m ${method} lässt offen, welcher Vergleich gilt.` };
+      return {
+        kind: 'other',
+        reason: t('{criterion} mit -m {method} lässt offen, welcher Vergleich gilt.', { criterion: words[0], method }),
+      };
     }
     if (caseInsensitive) {
-      return { kind: 'other', reason: 'Einen Pfadvergleich ohne Groß- und Kleinschreibung (-i) kennt HAPM nicht.' };
+      return { kind: 'other', reason: t('Einen Pfadvergleich ohne Groß- und Kleinschreibung (-i) kennt HAPM nicht.') };
     }
-    if (converters.length > 0) return { kind: 'other', reason: `Die Umwandlung ${converters[0]} kennt HAPM nicht.` };
-    if (values.length === 0) return { kind: 'other', reason: 'Die Bedingung nennt keinen Pfad.' };
+    if (converters.length > 0) {
+      return { kind: 'other', reason: t('Die Umwandlung {converter} kennt HAPM nicht.', { converter: converters[0] }) };
+    }
+    if (values.length === 0) return { kind: 'other', reason: t('Die Bedingung nennt keinen Pfad.') };
     const bad = values.find((p) => !isValidRoutePath(p));
-    if (bad) return { kind: 'other', reason: `${bad} ist kein Pfad, wie HAPM ihn vergleicht.` };
+    if (bad) return { kind: 'other', reason: t('{path} ist kein Pfad, wie HAPM ihn vergleicht.', { path: bad }) };
     return { kind: 'path', paths: values };
   }
 
   if (fetch === 'src' && arg === null && converters.length === 0 && !method) {
     const bad = values.find((v) => !isValidSourceAddress(v));
     if (bad || values.length === 0) {
-      return { kind: 'other', reason: `${bad ?? 'src'}: keine Adresse oder kein CIDR-Block.` };
+      return { kind: 'other', reason: t('{value}: keine Adresse oder kein CIDR-Block.', { value: bad ?? 'src' }) };
     }
     return { kind: 'src', sources: values };
   }
 
   if (fetch === 'ssl_fc' && values.length === 0 && converters.length === 0) return { kind: 'ssl' };
 
-  return { kind: 'other', reason: `Die Bedingung ${words.join(' ')} lässt sich in HAPM nicht abbilden.` };
+  return {
+    kind: 'other',
+    reason: t('Die Bedingung {condition} lässt sich in HAPM nicht abbilden.', { condition: words.join(' ') }),
+  };
 }
 
 /** Mehrere `acl`-Zeilen mit demselben Namen sind in HAProxy ein Oder. */
@@ -479,7 +570,7 @@ function combine(meanings: Meaning[]): Meaning {
   const kinds = new Set(meanings.map((m) => m.kind));
   if (kinds.size !== 1) {
     const other = meanings.find((m) => m.kind === 'other');
-    return other ?? { kind: 'other', reason: 'Die ACL mischt Bedingungen verschiedener Art.' };
+    return other ?? { kind: 'other', reason: t('Die ACL mischt Bedingungen verschiedener Art.') };
   }
   const first = meanings[0];
   if (first.kind === 'host') {
@@ -532,7 +623,7 @@ function parseCondition(words: string[], acls: Map<string, Meaning>): Term[][] {
     }
     const meaning = acls.get(word) ?? {
       kind: 'other' as const,
-      reason: `Die ACL ${word} ist nicht definiert oder eine eingebaute, die HAPM nicht abbildet.`,
+      reason: t('Die ACL {acl} ist nicht definiert oder eine eingebaute, die HAPM nicht abbildet.', { acl: word }),
     };
     groups[groups.length - 1].push({ negated, meaning, label: word });
   }
@@ -556,7 +647,7 @@ function splitRule(words: string[]): { action: string[]; cond: string[] | null; 
  *  alle anderen und damit keine bestimmte. */
 function hostDomains(terms: Term[]): string[] {
   return unique(
-    terms.flatMap((t) => (t.meaning.kind === 'host' && !t.negated ? t.meaning.domains : []))
+    terms.flatMap((term) => (term.meaning.kind === 'host' && !term.negated ? term.meaning.domains : []))
   );
 }
 
@@ -600,29 +691,29 @@ interface ServerRead {
 function readServer(words: string[], problems: string[]): ServerRead | null {
   const [, name, address, ...params] = words;
   if (!name || !address) {
-    problems.push(`„${words.join(' ')}": server-Zeile ohne Name oder Adresse.`);
+    problems.push(t('„{line}": server-Zeile ohne Name oder Adresse.', { line: words.join(' ') }));
     return null;
   }
   if (!isValidBackendName(name)) {
-    problems.push(`Der Servername ${name} enthält Zeichen, die HAPM nicht schreibt.`);
+    problems.push(t('Der Servername {name} enthält Zeichen, die HAPM nicht schreibt.', { name }));
     return null;
   }
 
   const addr = address.replace(/^(ipv4|tcp|tcp4)@/i, '');
   if (/^(unix|abns|ipv6|tcp6|fd|sockpair)@/i.test(addr) || addr.startsWith('/')) {
-    problems.push(`server ${name}: die Adresse ${address} ist kein host:port.`);
+    problems.push(t('server {name}: die Adresse {address} ist kein host:port.', { name, address }));
     return null;
   }
   if (addr.startsWith('[') || (addr.match(/:/g) ?? []).length > 1) {
-    problems.push(`server ${name}: IPv6-Ziele (${address}) kennt HAPM noch nicht.`);
+    problems.push(t('server {name}: IPv6-Ziele ({address}) kennt HAPM noch nicht.', { name, address }));
     return null;
   }
   if (!addr.includes(':')) {
-    problems.push(`server ${name}: ${address} hat keinen Port. HAProxy nähme dann den Port der Anfrage.`);
+    problems.push(t('server {name}: {address} hat keinen Port. HAProxy nähme dann den Port der Anfrage.', { name, address }));
     return null;
   }
   if (!isValidBackendTarget(addr)) {
-    problems.push(`server ${name}: ${address} ist kein Ziel, wie HAPM es schreibt (host:port).`);
+    problems.push(t('server {name}: {address} ist kein Ziel, wie HAPM es schreibt (host:port).', { name, address }));
     return null;
   }
 
@@ -636,7 +727,7 @@ function readServer(words: string[], problems: string[]): ServerRead | null {
     else if (param === 'weight') {
       const value = Number(params[++i]);
       if (!isValidWeight(value)) {
-        problems.push(`server ${name}: die Gewichtung ${params[i]} nimmt HAProxy nicht.`);
+        problems.push(t('server {name}: die Gewichtung {weight} nimmt HAProxy nicht.', { name, weight: String(params[i]) }));
         return null;
       }
       weight = value;
@@ -644,7 +735,7 @@ function readServer(words: string[], problems: string[]): ServerRead | null {
     else rest.push(param);
   }
   if (rest.length > 0) {
-    problems.push(`server ${name}: ${rest.join(' ')} bildet HAPM nicht ab.`);
+    problems.push(t('server {name}: {options} bildet HAPM nicht ab.', { name, options: rest.join(' ') }));
     return null;
   }
   return { name, target: addr, check, weight, cookie };
@@ -713,13 +804,13 @@ function readRedirect(
     if (words[i] === 'code') {
       const code = words[++i];
       if (code === '301') permanent = true;
-      else if (code !== '302') problems.push(`Den Code ${code ?? '?'} kennt HAPM nicht, nur 301 und 302.`);
+      else if (code !== '302') problems.push(t('Den Code {code} kennt HAPM nicht, nur 301 und 302.', { code: code ?? '?' }));
     } else {
-      problems.push(`Die Angabe ${words[i]} an der Weiterleitung kennt HAPM nicht.`);
+      problems.push(t('Die Angabe {option} an der Weiterleitung kennt HAPM nicht.', { option: String(words[i]) }));
     }
   }
   if (!isValidRedirectUrl(to)) {
-    problems.push(`Das Ziel ${to} ist keine vollständige Adresse, wie HAPM sie verlangt (https://…).`);
+    problems.push(t('Das Ziel {target} ist keine vollständige Adresse, wie HAPM sie verlangt (https://…).', { target: to }));
   }
   return {
     kind: 'target',
@@ -745,7 +836,7 @@ function readProxyBody(section: Section): ProxyRead {
     problems: [],
     notes: [],
   };
-  const problem = (line: Line, reason: string) => read.problems.push(`Zeile ${line.no}: ${reason}`);
+  const problem = (line: Line, reason: string) => read.problems.push(t('Zeile {line}: {reason}', { line: line.no, reason }));
   const tcp = section.mode === 'tcp';
   const srcAcls = new Map<string, Meaning>();
   for (const line of section.body) {
@@ -762,14 +853,14 @@ function readProxyBody(section: Section): ProxyRead {
       continue;
     }
     if (line.env) {
-      problem(line, `„${line.text}" setzt eine Umgebungsvariable ein, deren Wert hier niemand kennt.`);
+      problem(line, t('„{line}" setzt eine Umgebungsvariable ein, deren Wert hier niemand kennt.', { line: line.text }));
       continue;
     }
     if (kw === 'server') {
       const server = readServer(w, read.problems);
       if (server) {
         if (read.servers.some((s) => s.name === server.name)) {
-          problem(line, `Der Servername ${server.name} steht doppelt.`);
+          problem(line, t('Der Servername {name} steht doppelt.', { name: server.name }));
         } else read.servers.push(server);
       }
       continue;
@@ -780,7 +871,7 @@ function readProxyBody(section: Section): ProxyRead {
     if (kw === 'log' && w[1] === 'global' && w.length === 2) continue;
     if (kw === 'balance') {
       if (w.length === 2 && read.balance === null) read.balance = w[1].toLowerCase();
-      else problem(line, `„${line.text}": ein Verfahren mit Parameter oder ein zweites kennt HAPM nicht.`);
+      else problem(line, t('„{line}": ein Verfahren mit Parameter oder ein zweites kennt HAPM nicht.', { line: line.text }));
       continue;
     }
     if (kw === 'cookie' && !tcp) {
@@ -797,7 +888,7 @@ function readProxyBody(section: Section): ProxyRead {
     }
     if (kw === 'option' && w[1] === 'forwardfor' && !tcp) {
       read.notes.push(
-        'option forwardfor entfällt: HAPM setzt X-Forwarded-For in seinen globalen Einstellungen für alle Ziele.'
+        t('option forwardfor entfällt: HAPM setzt X-Forwarded-For in seinen globalen Einstellungen für alle Ziele.')
       );
       continue;
     }
@@ -808,7 +899,7 @@ function readProxyBody(section: Section): ProxyRead {
     }
     if (kw === 'timeout' && w[1] === 'tunnel' && !tcp) {
       if (w.length === 3 && durationMs(w[2]) === 3_600_000) read.tunnel = true;
-      else problem(line, `timeout tunnel ${w[2] ?? ''}: HAPM kennt für lange Verbindungen genau eine Stunde.`);
+      else problem(line, t('timeout tunnel {value}: HAPM kennt für lange Verbindungen genau eine Stunde.', { value: w[2] ?? '' }));
       continue;
     }
     if ((kw === 'http-request' || kw === 'http-response') && w[1] === 'set-header' && !tcp) {
@@ -817,9 +908,12 @@ function readProxyBody(section: Section): ProxyRead {
       const rule = value === null ? null : { name: w[2], value };
       const invalid = rule ? validateHeaderRule(rule) : null;
       if (!rule) {
-        problem(line, `„${line.text}": ein Header mit Ausdruck oder Bedingung lässt sich nur als fester Text übernehmen.`);
+        problem(
+          line,
+          t('„{line}": ein Header mit Ausdruck oder Bedingung lässt sich nur als fester Text übernehmen.', { line: line.text })
+        );
       } else if (invalid) {
-        problem(line, invalid);
+        problem(line, t(invalid));
       } else {
         (direction === 'request' ? read.requestHeaders : read.responseHeaders).push(rule);
       }
@@ -833,7 +927,7 @@ function readProxyBody(section: Section): ProxyRead {
           line,
           redirect?.kind === 'target' && redirect.problems.length > 0
             ? redirect.problems.join(' ')
-            : `„${line.text}": nur eine Weiterleitung ohne Bedingung lässt sich übernehmen.`
+            : t('„{line}": nur eine Weiterleitung ohne Bedingung lässt sich übernehmen.', { line: line.text })
         );
       } else {
         read.redirect = redirect.target;
@@ -852,7 +946,7 @@ function readProxyBody(section: Section): ProxyRead {
         read.sources = src;
         read.sourceRules++;
       } else {
-        problem(line, `„${line.text}": HAPM kennt hier nur eine Liste erlaubter Absender.`);
+        problem(line, t('„{line}": HAPM kennt hier nur eine Liste erlaubter Absender.', { line: line.text }));
       }
       continue;
     }
@@ -862,12 +956,12 @@ function readProxyBody(section: Section): ProxyRead {
       continue;
     }
     if (kw === 'stats') {
-      problem(line, 'Die Statistikseite von HAProxy übernimmt HAPM nicht. Es zeigt eigene Zahlen.');
+      problem(line, t('Die Statistikseite von HAProxy übernimmt HAPM nicht. Es zeigt eigene Zahlen.'));
       continue;
     }
-    problem(line, `„${line.text}" bildet HAPM nicht ab.`);
+    problem(line, t('„{line}" bildet HAPM nicht ab.', { line: line.text }));
   }
-  if (read.sourceRules > 1) read.problems.push('Mehrere Absenderlisten: HAPM kennt eine.');
+  if (read.sourceRules > 1) read.problems.push(t('Mehrere Absenderlisten: HAPM kennt eine.'));
   return read;
 }
 
@@ -896,6 +990,20 @@ const FRONTEND_SETTINGS = new Set([
   'log-format', 'log-tag', 'declare', 'backlog', 'id', 'enabled', 'disabled', 'filter', 'errorloc',
   'errorloc302', 'errorloc303', 'max-keep-alive-queue', 'http-reuse', 'email-alert',
 ]);
+
+/** Der Hinweis auf ein Frontend ohne TLS. Er fällt weg, sobald dieselbe Domain
+ *  auch über HTTPS lief (`isNoTlsNote`). */
+function noTlsNote(section: string): string {
+  return t('Lief bisher ohne TLS ({section}). In HAPM läuft es über HTTPS mit eigenem Zertifikat, Port 80 leitet um.', {
+    section,
+  });
+}
+
+/** Erkannt am Anfang des Textes in der Sprache, in der gerade gerechnet wird. */
+function isNoTlsNote(note: string): boolean {
+  const [head] = noTlsNote('\u0000').split('\u0000');
+  return note.startsWith(head);
+}
 
 /** Ob `q` (früher) den Verkehr von `p` (später) schon wegnimmt. */
 function shadows(q: string, p: string): boolean {
@@ -927,7 +1035,7 @@ function readHttpFrontend(section: Section, ctx: FrontendContext): void {
   };
   const skip = (line: Line, reason: string) => ctx.skipped.push({ line: line.no, text: line.text, reason });
   const taint = (domains: string[], line: Line, reason: string) => {
-    for (const domain of domains) routeOf(domain, line.no).problems.push(`Zeile ${line.no}: ${reason}`);
+    for (const domain of domains) routeOf(domain, line.no).problems.push(t('Zeile {line}: {reason}', { line: line.no, reason }));
   };
 
   const binds: BindRead[] = [];
@@ -949,7 +1057,7 @@ function readHttpFrontend(section: Section, ctx: FrontendContext): void {
     else if (FRONTEND_SETTINGS.has(kw)) settings.push(line);
     else if (kw === 'stats') {
       // Eine Zeile für die ganze Statistikseite, nicht eine je `stats …`.
-      if (!stats) skip(line, 'Die Statistikseite von HAProxy übernimmt HAPM nicht. Es zeigt eigene Zahlen.');
+      if (!stats) skip(line, t('Die Statistikseite von HAProxy übernimmt HAPM nicht. Es zeigt eigene Zahlen.'));
       stats = true;
     } else if (kw === 'default_backend') defaultBackend = line;
     else if (kw === 'use_backend') rules.push(line);
@@ -962,9 +1070,11 @@ function readHttpFrontend(section: Section, ctx: FrontendContext): void {
     ctx.skipped.push({
       line: settings[0].no,
       text: `${label}: ${keywords.join(', ')}`,
-      reason:
-        'Ports, TLS, Timeouts und Protokoll eines Frontends übernimmt HAPM nicht: es bringt sein eigenes Frontend mit.' +
-        (binds.some((b) => b.ssl) ? ' Auch die Zertifikate hinter „crt" nicht, sie werden neu ausgestellt.' : ''),
+      reason: t(
+        binds.some((b) => b.ssl)
+          ? 'Ports, TLS, Timeouts und Protokoll eines Frontends übernimmt HAPM nicht: es bringt sein eigenes Frontend mit. Auch die Zertifikate hinter „crt" nicht, sie werden neu ausgestellt.'
+          : 'Ports, TLS, Timeouts und Protokoll eines Frontends übernimmt HAPM nicht: es bringt sein eigenes Frontend mit.'
+      ),
     });
   }
 
@@ -979,15 +1089,15 @@ function readHttpFrontend(section: Section, ctx: FrontendContext): void {
     const { action, cond, unless } = splitRule(line.words.slice(legacy ? 1 : 2));
     const redirect = readRedirect(action);
     if (redirect?.kind === 'scheme') {
-      skip(line, 'Die Umleitung auf HTTPS macht HAPM selbst, auf Port 80.');
+      skip(line, t('Die Umleitung auf HTTPS macht HAPM selbst, auf Port 80.'));
       continue;
     }
     if (!redirect) {
-      skip(line, 'Diese Art Weiterleitung kennt HAPM nicht.');
+      skip(line, t('Diese Art Weiterleitung kennt HAPM nicht.'));
       continue;
     }
     if (line.env) {
-      skip(line, 'Die Zeile setzt eine Umgebungsvariable ein, deren Wert hier niemand kennt.');
+      skip(line, t('Die Zeile setzt eine Umgebungsvariable ein, deren Wert hier niemand kennt.'));
       catchAll ??= line;
       continue;
     }
@@ -998,13 +1108,13 @@ function readHttpFrontend(section: Section, ctx: FrontendContext): void {
       groups.length > 0 &&
       groups.every((g) => g.length === 1 && !g[0].negated && g[0].meaning.kind === 'host');
     if (domains.length === 0) {
-      skip(line, 'Die Weiterleitung hängt an keiner Domain und gälte für alle. Das kennt HAPM nicht.');
+      skip(line, t('Die Weiterleitung hängt an keiner Domain und gälte für alle. Das kennt HAPM nicht.'));
       catchAll ??= line;
       continue;
     }
     if (!plain || redirect.problems.length > 0 || !redirect.target) {
       const reason = !plain
-        ? 'Die Weiterleitung hat eine Bedingung über die Domain hinaus.'
+        ? t('Die Weiterleitung hat eine Bedingung über die Domain hinaus.')
         : redirect.problems.join(' ');
       skip(line, reason);
       taint(domains, line, reason);
@@ -1013,7 +1123,13 @@ function readHttpFrontend(section: Section, ctx: FrontendContext): void {
     for (const domain of domains) {
       const route = routeOf(domain, line.no);
       if (route.redirect) {
-        skip(line, `${domain} wird schon in Zeile ${route.redirect.line} weitergeleitet. Diese Regel kam nie zum Zug.`);
+        skip(
+          line,
+          t('{domain} wird schon in Zeile {line} weitergeleitet. Diese Regel kam nie zum Zug.', {
+            domain,
+            line: route.redirect.line,
+          })
+        );
         continue;
       }
       route.redirect = { target: redirect.target, line: line.no };
@@ -1025,55 +1141,58 @@ function readHttpFrontend(section: Section, ctx: FrontendContext): void {
     const { action, cond, unless } = splitRule(line.words.slice(1));
     const backend = action[0] ?? '';
     if (line.env || backend.includes('%[')) {
-      skip(line, 'Die Weiche bestimmt ihr Backend erst zur Laufzeit (Ausdruck oder Map-Datei). Das kennt HAPM nicht.');
+      skip(line, t('Die Weiche bestimmt ihr Backend erst zur Laufzeit (Ausdruck oder Map-Datei). Das kennt HAPM nicht.'));
       catchAll ??= line;
       continue;
     }
     ctx.usedBackends.add(backend);
     if (!ctx.backendNames.has(backend)) {
-      skip(line, `Das Backend ${backend} steht nicht in der Datei.`);
+      skip(line, t('Das Backend {backend} steht nicht in der Datei.', { backend }));
       continue;
     }
     if (!cond) {
-      skip(line, 'Eine Weiche ohne Bedingung nimmt allen Domains darunter den Verkehr. Das kennt HAPM nicht.');
+      skip(line, t('Eine Weiche ohne Bedingung nimmt allen Domains darunter den Verkehr. Das kennt HAPM nicht.'));
       catchAll ??= line;
       continue;
     }
     const groups = parseCondition(cond, acls);
     const domains = hostDomains(groups.flat());
     if (domains.length === 0) {
-      const other = groups.flat().find((t) => t.meaning.kind === 'other');
+      const other = groups.flat().find((term) => term.meaning.kind === 'other');
       skip(
         line,
         other?.meaning.kind === 'other'
-          ? `${other.meaning.reason} Die Weiche kann damit jede Domain treffen.`
-          : 'Die Weiche hängt an keiner Domain und gälte für alle. Das kennt HAPM nicht.'
+          ? t('{reason} Die Weiche kann damit jede Domain treffen.', { reason: other.meaning.reason })
+          : t('Die Weiche hängt an keiner Domain und gälte für alle. Das kennt HAPM nicht.')
       );
       catchAll ??= line;
       continue;
     }
     if (unless) {
-      const reason = 'Eine Weiche mit „unless" kennt HAPM nicht.';
+      const reason = t('Eine Weiche mit „unless" kennt HAPM nicht.');
       skip(line, reason);
       taint(domains, line, reason);
       continue;
     }
 
     for (const group of groups) {
-      const hosts = group.filter((t) => t.meaning.kind === 'host' && !t.negated);
-      const paths = group.filter((t) => t.meaning.kind === 'path' && !t.negated);
-      const rest = group.filter((t) => !hosts.includes(t) && !paths.includes(t));
+      const hosts = group.filter((term) => term.meaning.kind === 'host' && !term.negated);
+      const paths = group.filter((term) => term.meaning.kind === 'path' && !term.negated);
+      const rest = group.filter((term) => !hosts.includes(term) && !paths.includes(term));
       const groupDomains = hostDomains(hosts);
 
       if (rest.length > 0 || hosts.length !== 1 || paths.length > 1) {
         const why =
-          rest.find((t) => t.meaning.kind === 'other')?.meaning as Extract<Meaning, { kind: 'other' }> | undefined;
+          rest.find((term) => term.meaning.kind === 'other')?.meaning as Extract<Meaning, { kind: 'other' }> | undefined;
+        const terms = rest.map((term) => `${term.negated ? '!' : ''}${term.label}`).join(' ');
         const reason =
           rest.length > 0
-            ? `Die Weiche hängt außer an der Domain an ${rest.map((t) => `${t.negated ? '!' : ''}${t.label}`).join(' ')}${why ? ` (${why.reason})` : ''}.`
+            ? why
+              ? t('Die Weiche hängt außer an der Domain an {terms} ({reason}).', { terms, reason: why.reason })
+              : t('Die Weiche hängt außer an der Domain an {terms}.', { terms })
             : hosts.length !== 1
-              ? 'Die Weiche verlangt zwei Domain-Bedingungen zugleich.'
-              : 'Die Weiche verlangt zwei Pfad-Bedingungen zugleich.';
+              ? t('Die Weiche verlangt zwei Domain-Bedingungen zugleich.')
+              : t('Die Weiche verlangt zwei Pfad-Bedingungen zugleich.');
         skip(line, reason);
         if (groupDomains.length === 0) catchAll ??= line;
         taint(groupDomains.length > 0 ? groupDomains : domains, line, reason);
@@ -1085,8 +1204,10 @@ function readHttpFrontend(section: Section, ctx: FrontendContext): void {
         const route = routeOf(domain, line.no);
         if (catchAll) {
           route.problems.push(
-            `Zeile ${catchAll.no} steht davor und kann auch diese Domain treffen. HAPM übernimmt sie nicht, ` +
-              'ohne sie ginge ein Teil des Verkehrs woanders hin als bisher.'
+            t(
+              'Zeile {line} steht davor und kann auch diese Domain treffen. HAPM übernimmt sie nicht, ohne sie ginge ein Teil des Verkehrs woanders hin als bisher.',
+              { line: catchAll.no }
+            )
           );
         }
         // Eine Domain, die eine frühere Wildcard schon bedient: in HAPM stünde
@@ -1096,31 +1217,49 @@ function readHttpFrontend(section: Section, ctx: FrontendContext): void {
         );
         if (shadow && !route.main) {
           route.problems.push(
-            `Zeile ${line.no}: ${shadow[0]} (Zeile ${shadow[1].main?.line ?? shadow[1].redirect?.line}) greift vorher. ` +
-              'In HAPM käme diese Domain zuerst zum Zug, das änderte, wohin ihr Verkehr geht.'
+            t(
+              'Zeile {line}: {domain} (Zeile {earlier}) greift vorher. In HAPM käme diese Domain zuerst zum Zug, das änderte, wohin ihr Verkehr geht.',
+              { line: line.no, domain: shadow[0], earlier: String(shadow[1].main?.line ?? shadow[1].redirect?.line) }
+            )
           );
         }
         if (route.redirect) {
-          skip(line, `${domain} wird schon in Zeile ${route.redirect.line} weitergeleitet. Diese Weiche kam nie zum Zug.`);
+          skip(
+            line,
+            t('{domain} wird schon in Zeile {line} weitergeleitet. Diese Weiche kam nie zum Zug.', {
+              domain,
+              line: route.redirect.line,
+            })
+          );
           continue;
         }
         if (route.main) {
           skip(
             line,
-            `${domain} geht schon in Zeile ${route.main.line} an ${route.main.backend}. Diese Weiche kam nie zum Zug.`
+            t('{domain} geht schon in Zeile {line} an {backend}. Diese Weiche kam nie zum Zug.', {
+              domain,
+              line: route.main.line,
+              backend: route.main.backend,
+            })
           );
           continue;
         }
         if (pathTerm) {
           if (route.paths.some((p) => p.paths.join(' ') === pathTerm.paths.join(' '))) {
-            skip(line, `Die Pfade ${pathTerm.paths.join(' ')} hat ${domain} schon weiter oben. Diese Weiche kam nie zum Zug.`);
+            skip(
+              line,
+              t('Die Pfade {paths} hat {domain} schon weiter oben. Diese Weiche kam nie zum Zug.', {
+                paths: pathTerm.paths.join(' '),
+                domain,
+              })
+            );
             continue;
           }
           route.paths.push({ paths: pathTerm.paths, backend, line: line.no });
         } else {
           route.main = { backend, line: line.no };
         }
-        route.notes.push(...hosts.flatMap((t) => (t.meaning.kind === 'host' ? t.meaning.notes : [])));
+        route.notes.push(...hosts.flatMap((term) => (term.meaning.kind === 'host' ? term.meaning.notes : [])));
       }
     }
   }
@@ -1135,25 +1274,25 @@ function readHttpFrontend(section: Section, ctx: FrontendContext): void {
       const domains = cond ? hostDomains(parseCondition(cond, acls).flat()) : [];
       if (domains.length > 0) {
         const reason = lua
-          ? 'Eine Lua-Aktion für diese Domain übernimmt HAPM nicht.'
-          : `Die Regel „${line.words.slice(0, 2).join(' ')}" für diese Domain bildet HAPM nicht ab.`;
+          ? t('Eine Lua-Aktion für diese Domain übernimmt HAPM nicht.')
+          : t('Die Regel „{rule}" für diese Domain bildet HAPM nicht ab.', { rule: line.words.slice(0, 2).join(' ') });
         skip(line, reason);
         taint(domains, line, reason);
       } else {
         skip(
           line,
           lua
-            ? 'Lua-Aktionen übernimmt HAPM nicht.'
-            : 'Die Regel gilt für alle Domains des Frontends. Was für alle gelten soll, steht in HAPM unter Reverse-Proxy, Einstellungen.'
+            ? t('Lua-Aktionen übernimmt HAPM nicht.')
+            : t('Die Regel gilt für alle Domains des Frontends. Was für alle gelten soll, steht in HAPM unter Reverse-Proxy, Einstellungen.')
         );
       }
       continue;
     }
     if (kw === 'use-server' || kw === 'stick' || kw === 'stick-table') {
-      skip(line, 'Bindungen und Tabellen im Frontend bildet HAPM nicht ab.');
+      skip(line, t('Bindungen und Tabellen im Frontend bildet HAPM nicht ab.'));
       continue;
     }
-    skip(line, `„${line.text}" bildet HAPM nicht ab.`);
+    skip(line, t('„{line}" bildet HAPM nicht ab.', { line: line.text }));
   }
 
   if (defaultBackend) {
@@ -1161,11 +1300,13 @@ function readHttpFrontend(section: Section, ctx: FrontendContext): void {
     ctx.usedBackends.add(name);
     skip(
       defaultBackend,
-      `Was keine Weiche trifft, ging an ${name}. In HAPM antwortet an dieser Stelle die Seite für unbekannte Domains.`
+      t('Was keine Weiche trifft, ging an {backend}. In HAPM antwortet an dieser Stelle die Seite für unbekannte Domains.', {
+        backend: name,
+      })
     );
   }
   if (section.kind === 'listen' && section.body.some((l) => l.words[0].toLowerCase() === 'server')) {
-    skip(section.head, 'Die Ziele dieses listen-Abschnitts bekommen alles, was keine Weiche trifft. Das kennt HAPM nicht.');
+    skip(section.head, t('Die Ziele dieses listen-Abschnitts bekommen alles, was keine Weiche trifft. Das kennt HAPM nicht.'));
   }
 
   /* Was dieses Frontend über seine Domains sagt, mit dem zusammenlegen, was
@@ -1177,16 +1318,21 @@ function readHttpFrontend(section: Section, ctx: FrontendContext): void {
     if (!route.main && !route.redirect && route.paths.length === 0 && route.problems.length === 0) continue;
     if (!route.main && !route.redirect && route.paths.length > 0) {
       route.problems.push(
-        `${domain} hat nur Pfad-Regeln und keine Weiche für den Rest. HAPM braucht für jede Domain ein Ziel.`
+        t('{domain} hat nur Pfad-Regeln und keine Weiche für den Rest. HAPM braucht für jede Domain ein Ziel.', { domain })
       );
     }
     const unusual = ports.filter((p) => p !== 80 && p !== 443);
     if (!tls) {
-      route.notes.push(
-        `Lief bisher ohne TLS (${label}). In HAPM läuft es über HTTPS mit eigenem Zertifikat, Port 80 leitet um.`
-      );
+      route.notes.push(noTlsNote(label));
     } else if (unusual.length > 0) {
-      route.notes.push(`Lief bisher auf Port ${unusual.join(', ')}. In HAPM läuft es auf 443.`);
+      route.notes.push(t('Lief bisher auf Port {ports}. In HAPM läuft es auf 443.', { ports: unusual.join(', ') }));
+    }
+    if (section.modeAssumed) {
+      route.notes.push(
+        t('{section} nennt keinen mode, auch nicht über defaults. Weil er HTTP benutzt, gilt er als mode http.', {
+          section: label,
+        })
+      );
     }
     route.sources.push(label);
 
@@ -1197,14 +1343,18 @@ function readHttpFrontend(section: Section, ctx: FrontendContext): void {
     }
     if (routeSignature(previous) !== routeSignature(route)) {
       previous.problems.push(
-        `${domain} geht in ${previous.sources.join(', ')} woanders hin als in ${label}. HAPM kennt einen Weg je Domain.`
+        t('{domain} geht in {sources} woanders hin als in {section}. HAPM kennt einen Weg je Domain.', {
+          domain,
+          sources: previous.sources.join(', '),
+          section: label,
+        })
       );
     }
     previous.problems.push(...route.problems);
-    previous.notes.push(...route.notes.filter((n) => !n.startsWith('Lief bisher ohne TLS')));
+    previous.notes.push(...route.notes.filter((n) => !isNoTlsNote(n)));
     // Über HTTPS schon erreichbar: dann ist die Fassung ohne TLS die Umleitung
     // davor und nicht der Weg, auf dem die Domain lief.
-    if (tls) previous.notes = previous.notes.filter((n) => !n.startsWith('Lief bisher ohne TLS'));
+    if (tls) previous.notes = previous.notes.filter((n) => !isNoTlsNote(n));
     previous.sources.push(label);
   }
 }
@@ -1245,31 +1395,34 @@ function healthcheckOf(
 ): boolean {
   const checks = read.servers.filter((s) => s.check).length;
   if (checks > 0 && checks < read.servers.length) {
-    problems.push('Nur ein Teil der Ziele wird geprüft. HAPM prüft alle oder keins.');
+    problems.push(t('Nur ein Teil der Ziele wird geprüft. HAPM prüft alle oder keins.'));
     return false;
   }
   const all = checks > 0;
   if (read.httpchk && all) {
     if (!healthcheckPossible(domains)) {
       if (read.servers.length > 1) {
-        problems.push('Der Healthcheck braucht eine Domain ohne Stern. Ohne ihn verteilte HAProxy auch auf tote Ziele.');
+        problems.push(t('Der Healthcheck braucht eine Domain ohne Stern. Ohne ihn verteilte HAProxy auch auf tote Ziele.'));
       } else {
-        notes.push('Der Healthcheck entfällt: er braucht eine Domain ohne Stern.');
+        notes.push(t('Der Healthcheck entfällt: er braucht eine Domain ohne Stern.'));
       }
       return false;
     }
     notes.push(
-      `Healthcheck an. Bisher: „${read.httpchk}". HAPM prüft GET / mit dem Host-Header ${domains[0]} und erwartet 200 bis 399.`
+      t('Healthcheck an. Bisher: „{line}". HAPM prüft GET / mit dem Host-Header {domain} und erwartet 200 bis 399.', {
+        line: read.httpchk,
+        domain: domains[0],
+      })
     );
     return true;
   }
   if (all) {
     if (read.servers.length > 1) {
       problems.push(
-        'Die Ziele werden über die Verbindung geprüft (check ohne option httpchk). HAPM kennt am Hauptziel nur die HTTP-Prüfung.'
+        t('Die Ziele werden über die Verbindung geprüft (check ohne option httpchk). HAPM kennt am Hauptziel nur die HTTP-Prüfung.')
       );
     } else {
-      notes.push('Die Verbindungsprüfung entfällt. Bei einem einzigen Ziel ändert das nichts daran, wohin der Verkehr geht.');
+      notes.push(t('Die Verbindungsprüfung entfällt. Bei einem einzigen Ziel ändert das nichts daran, wohin der Verkehr geht.'));
     }
   }
   return false;
@@ -1278,26 +1431,34 @@ function healthcheckOf(
 function stickyOf(read: ProxyRead, problems: string[], notes: string[]): boolean {
   const marked = read.servers.filter((s) => s.cookie !== null);
   if (!read.cookie) {
-    if (marked.length > 0) problems.push('Cookie-Marken auf den server-Zeilen ohne cookie-Zeile im Backend.');
+    if (marked.length > 0) problems.push(t('Cookie-Marken auf den server-Zeilen ohne cookie-Zeile im Backend.'));
     return false;
   }
   const allowed = new Set(['insert', 'indirect', 'nocache', 'httponly', 'secure']);
   if (!read.cookie.options.includes('insert')) {
-    problems.push(`cookie ${read.cookie.name} ${read.cookie.options.join(' ')}: HAPM kennt nur einen Cookie, den HAProxy selbst setzt (insert).`);
+    problems.push(
+      t('cookie {name} {options}: HAPM kennt nur einen Cookie, den HAProxy selbst setzt (insert).', {
+        name: read.cookie.name,
+        options: read.cookie.options.join(' '),
+      })
+    );
     return false;
   }
   const foreign = read.cookie.options.filter((o) => !allowed.has(o));
   if (foreign.length > 0) {
-    problems.push(`Die Angaben ${foreign.join(' ')} am Cookie kennt HAPM nicht.`);
+    problems.push(t('Die Angaben {options} am Cookie kennt HAPM nicht.', { options: foreign.join(' ') }));
     return false;
   }
   if (marked.length !== read.servers.length) {
-    problems.push('Die Sitzungsbindung steht nicht auf jeder server-Zeile.');
+    problems.push(t('Die Sitzungsbindung steht nicht auf jeder server-Zeile.'));
     return false;
   }
   if (read.cookie.name !== STICKY_COOKIE || marked.some((s) => s.cookie !== s.name)) {
     notes.push(
-      `Die Sitzungsbindung heißt in HAPM ${STICKY_COOKIE} und trägt den Servernamen. Bestehende Bindungen gehen beim ersten Aufruf einmal verloren.`
+      t(
+        'Die Sitzungsbindung heißt in HAPM {cookie} und trägt den Servernamen. Bestehende Bindungen gehen beim ersten Aufruf einmal verloren.',
+        { cookie: STICKY_COOKIE }
+      )
     );
   }
   return true;
@@ -1338,26 +1499,31 @@ function httpEntry(
     sourceParts.push(`backend ${route.main.backend}`);
     const found = backendOf(route.main.backend);
     if (!found) {
-      problems.push(`Das Backend ${route.main.backend} steht nicht in der Datei.`);
+      problems.push(t('Das Backend {backend} steht nicht in der Datei.', { backend: route.main.backend }));
     } else {
       const { section, read } = found;
       if (section.mode !== 'http') {
-        problems.push(`Das Backend ${route.main.backend} läuft in mode ${section.mode} hinter einem HTTP-Frontend.`);
+        problems.push(
+          t('Das Backend {backend} läuft in mode {mode} hinter einem HTTP-Frontend.', {
+            backend: route.main.backend,
+            mode: section.mode,
+          })
+        );
       }
       problems.push(...read.problems);
       notes.push(...read.notes);
       if (read.redirect) {
-        if (read.servers.length > 0) problems.push('Das Backend leitet weiter und hat zugleich Ziele.');
+        if (read.servers.length > 0) problems.push(t('Das Backend leitet weiter und hat zugleich Ziele.'));
         if (read.balance || read.cookie || read.httpchk || read.tunnel || read.requestHeaders.length || read.responseHeaders.length) {
-          problems.push('Das Backend leitet weiter und trägt daneben Einstellungen für Ziele.');
+          problems.push(t('Das Backend leitet weiter und trägt daneben Einstellungen für Ziele.'));
         }
         service.redirect = read.redirect;
       } else {
         if (read.servers.length === 0 && read.problems.length === 0) {
-          problems.push(`Das Backend ${route.main.backend} hat kein Ziel.`);
+          problems.push(t('Das Backend {backend} hat kein Ziel.', { backend: route.main.backend }));
         }
         if (read.balance !== null && !(HAPROXY_BALANCE as readonly string[]).includes(read.balance)) {
-          problems.push(`Das Verfahren balance ${read.balance} kennt HAPM nicht.`);
+          problems.push(t('Das Verfahren balance {balance} kennt HAPM nicht.', { balance: read.balance }));
         }
         service.servers = read.servers.map((s) => ({ name: s.name, target: s.target, weight: s.weight }));
         service.balance = (HAPROXY_BALANCE as readonly string[]).includes(read.balance ?? '')
@@ -1377,27 +1543,37 @@ function httpEntry(
     sourceParts.push(`backend ${path.backend}`);
     const found = backendOf(path.backend);
     if (!found) {
-      problems.push(`Das Backend ${path.backend} steht nicht in der Datei.`);
+      problems.push(t('Das Backend {backend} steht nicht in der Datei.', { backend: path.backend }));
       continue;
     }
     const { read } = found;
-    const where = `Pfad-Regel ${path.paths.join(' ')} (backend ${path.backend})`;
+    const where = t('Pfad-Regel {paths} (backend {backend})', { paths: path.paths.join(' '), backend: path.backend });
     problems.push(...read.problems.map((p) => `${where}: ${p}`));
-    if (read.redirect) problems.push(`${where}: eine Weiterleitung als Pfad-Regel kennt HAPM nicht.`);
-    if (read.servers.length === 0) problems.push(`${where}: kein Ziel.`);
-    if (read.balance) problems.push(`${where}: ein Verfahren an einer Pfad-Regel kennt HAPM nicht.`);
-    if (read.cookie) problems.push(`${where}: eine Sitzungsbindung an einer Pfad-Regel kennt HAPM nicht.`);
-    if (read.httpchk) problems.push(`${where}: eine HTTP-Prüfung an einer Pfad-Regel kennt HAPM nicht, nur check.`);
-    if (read.servers.some((s) => s.weight !== null)) problems.push(`${where}: eine Gewichtung an einer Pfad-Regel kennt HAPM nicht.`);
+    if (read.redirect) problems.push(t('{rule}: eine Weiterleitung als Pfad-Regel kennt HAPM nicht.', { rule: where }));
+    if (read.servers.length === 0) problems.push(t('{rule}: kein Ziel.', { rule: where }));
+    if (read.balance) problems.push(t('{rule}: ein Verfahren an einer Pfad-Regel kennt HAPM nicht.', { rule: where }));
+    if (read.cookie) problems.push(t('{rule}: eine Sitzungsbindung an einer Pfad-Regel kennt HAPM nicht.', { rule: where }));
+    if (read.httpchk) {
+      problems.push(t('{rule}: eine HTTP-Prüfung an einer Pfad-Regel kennt HAPM nicht, nur check.', { rule: where }));
+    }
+    if (read.servers.some((s) => s.weight !== null)) {
+      problems.push(t('{rule}: eine Gewichtung an einer Pfad-Regel kennt HAPM nicht.', { rule: where }));
+    }
     const checks = read.servers.filter((s) => s.check).length;
-    if (checks > 0 && checks < read.servers.length) problems.push(`${where}: nur ein Teil der Ziele wird geprüft.`);
+    if (checks > 0 && checks < read.servers.length) {
+      problems.push(t('{rule}: nur ein Teil der Ziele wird geprüft.', { rule: where }));
+    }
     // HAPM schreibt die Zusätze in JEDES Backend des Eintrags.
     if (
       read.tunnel !== service.tunnel ||
       !sameHeaders(read.requestHeaders, service.requestHeaders) ||
       !sameHeaders(read.responseHeaders, service.responseHeaders)
     ) {
-      problems.push(`${where}: Header und lange Verbindungen stehen dort anders als am Hauptziel. HAPM setzt sie für alle gleich.`);
+      problems.push(
+        t('{rule}: Header und lange Verbindungen stehen dort anders als am Hauptziel. HAPM setzt sie für alle gleich.', {
+          rule: where,
+        })
+      );
     }
     // `coolify_terminal` neben `coolify` heißt in HAPM `terminal`: der Name der
     // Regel steht ohnehin hinter der Kennung des Eintrags.
@@ -1417,12 +1593,12 @@ function httpEntry(
   }
 
   if (service.redirect && service.routes.length > 0) {
-    problems.push('Eine Weiterleitung mit Pfad-Regeln kennt HAPM nicht.');
+    problems.push(t('Eine Weiterleitung mit Pfad-Regeln kennt HAPM nicht.'));
   }
 
   if (problems.length === 0) {
     const invalid = validateNewService({ ...service, scope: 'IMPORT' });
-    if (invalid) problems.push(invalid);
+    if (invalid) problems.push(t(invalid));
   }
 
   const kind: ImportKind = serviceKind(service);
@@ -1436,19 +1612,23 @@ function httpEntry(
     targets: service.redirect
       ? [`→ ${service.redirect.to}`]
       : [
-          ...service.servers.map((s) => (s.weight === null ? s.target : `${s.target} (Gewicht ${s.weight})`)),
+          ...service.servers.map((s) => (s.weight === null ? s.target : t('{target} (Gewicht {weight})', { target: s.target, weight: s.weight }))),
           ...service.routes.map((r) => `${r.paths.join(' ')} → ${r.servers.map((s) => s.target).join(', ')}`),
         ],
     extras: [
       ...(service.redirect
-        ? [`${service.redirect.permanent ? '301' : '302'}, ${service.redirect.keepPath ? 'mit Pfad' : 'ohne Pfad'}`]
+        ? [
+            t(service.redirect.keepPath ? '{code}, mit Pfad' : '{code}, ohne Pfad', {
+              code: service.redirect.permanent ? '301' : '302',
+            }),
+          ]
         : []),
       ...(service.balance ? [`balance ${service.balance}`] : []),
-      ...(service.sticky ? ['Sitzungsbindung'] : []),
-      ...(service.healthcheck ? ['Healthcheck'] : []),
-      ...service.requestHeaders.map((h) => `Header an das Ziel: ${h.name}`),
-      ...service.responseHeaders.map((h) => `Header an den Besucher: ${h.name}`),
-      ...(service.tunnel ? ['Lange Verbindungen'] : []),
+      ...(service.sticky ? [t('Sitzungsbindung')] : []),
+      ...(service.healthcheck ? [t('Healthcheck')] : []),
+      ...service.requestHeaders.map((h) => t('Header an das Ziel: {name}', { name: h.name })),
+      ...service.responseHeaders.map((h) => t('Header an den Besucher: {name}', { name: h.name })),
+      ...(service.tunnel ? [t('Lange Verbindungen')] : []),
     ],
     notes: unique(notes),
     problems: unique(problems),
@@ -1468,25 +1648,31 @@ function streamEntry(
   const notes = [...read.notes];
 
   const ports = unique(binds.map((b) => b.port));
-  if (binds.length === 0) problems.push('Der Abschnitt hat keine bind-Zeile.');
+  if (binds.length === 0) problems.push(t('Der Abschnitt hat keine bind-Zeile.'));
   else if (ports.length !== 1 || ports[0] === null) {
-    problems.push('Der Abschnitt bindet mehrere oder keine lesbaren Ports. HAPM kennt einen je Weiterleitung.');
+    problems.push(t('Der Abschnitt bindet mehrere oder keine lesbaren Ports. HAPM kennt einen je Weiterleitung.'));
   }
-  if (binds.some((b) => b.ssl)) problems.push('TLS am Port (bind … ssl) kennt HAPM bei einer TCP-Weiterleitung nicht: es reicht durch.');
+  if (binds.some((b) => b.ssl)) {
+    problems.push(t('TLS am Port (bind … ssl) kennt HAPM bei einer TCP-Weiterleitung nicht: es reicht durch.'));
+  }
   if (binds.some((b) => !b.wildcard)) {
-    problems.push('Der Port ist an eine bestimmte Adresse gebunden. HAPM bindet an alle, der Port stünde danach weiter offen als vorher.');
+    problems.push(
+      t('Der Port ist an eine bestimmte Adresse gebunden. HAPM bindet an alle, der Port stünde danach weiter offen als vorher.')
+    );
   }
   const foreign = unique(binds.flatMap((b) => b.params.filter((p) => p !== 'v4v6' && p !== 'v6only' && p !== 'ssl')));
-  if (foreign.length > 0) problems.push(`Die Angaben ${foreign.join(' ')} an bind kennt HAPM nicht.`);
-  if (binds.some((b) => b.ipv6)) notes.push('HAPM bindet den Port mit „bind :Port" wie jede TCP-Weiterleitung, ohne eigene IPv6-Zeile.');
+  if (foreign.length > 0) problems.push(t('Die Angaben {options} an bind kennt HAPM nicht.', { options: foreign.join(' ') }));
+  if (binds.some((b) => b.ipv6)) {
+    notes.push(t('HAPM bindet den Port mit „bind :Port" wie jede TCP-Weiterleitung, ohne eigene IPv6-Zeile.'));
+  }
 
-  if (read.servers.length === 0) problems.push('Die Weiterleitung hat kein Ziel.');
+  if (read.servers.length === 0) problems.push(t('Die Weiterleitung hat kein Ziel.'));
   if (read.balance !== null && !(STREAM_BALANCE as readonly string[]).includes(read.balance)) {
-    problems.push(`Das Verfahren balance ${read.balance} kennt HAPM in mode tcp nicht.`);
+    problems.push(t('Das Verfahren balance {balance} kennt HAPM in mode tcp nicht.', { balance: read.balance }));
   }
   const checks = read.servers.filter((s) => s.check).length;
-  if (checks > 0 && checks < read.servers.length) problems.push('Nur ein Teil der Ziele wird geprüft. HAPM prüft alle oder keins.');
-  if (read.servers.some((s) => s.cookie !== null)) problems.push('Eine Cookie-Marke gibt es in mode tcp nicht.');
+  if (checks > 0 && checks < read.servers.length) problems.push(t('Nur ein Teil der Ziele wird geprüft. HAPM prüft alle oder keins.'));
+  if (read.servers.some((s) => s.cookie !== null)) problems.push(t('Eine Cookie-Marke gibt es in mode tcp nicht.'));
 
   const port = ports.length === 1 ? ports[0] : null;
   const stream: CreateStreamInput = {
@@ -1502,7 +1688,7 @@ function streamEntry(
   };
   if (problems.length === 0) {
     const invalid = validateNewStream({ ...stream, scope: 'IMPORT' });
-    if (invalid) problems.push(invalid);
+    if (invalid) problems.push(t(invalid));
   }
 
   return {
@@ -1512,11 +1698,13 @@ function streamEntry(
     line: head.head.no,
     domains: [],
     port,
-    targets: read.servers.map((s) => (s.weight === null ? s.target : `${s.target} (Gewicht ${s.weight})`)),
+    targets: read.servers.map((s) => (s.weight === null ? s.target : t('{target} (Gewicht {weight})', { target: s.target, weight: s.weight }))),
     extras: [
       ...(stream.balance ? [`balance ${stream.balance}`] : []),
-      ...(stream.check ? ['Verbindungsprüfung'] : []),
-      stream.allowedSources.length > 0 ? `nur von ${stream.allowedSources.join(', ')}` : 'offen für alle',
+      ...(stream.check ? [t('Verbindungsprüfung')] : []),
+      stream.allowedSources.length > 0
+        ? t('nur von {sources}', { sources: stream.allowedSources.join(', ') })
+        : t('offen für alle'),
     ],
     notes: unique(notes),
     problems: unique(problems),
@@ -1527,13 +1715,24 @@ function streamEntry(
 
 /* ── Der ganze Text ── */
 
+/** Deutsche Schlüssel (`msgid`), übersetzt beim Einsetzen. */
 const SECTION_REASONS: Record<string, string> = {
-  global: 'Globale Einstellungen übernimmt HAPM nicht: es bringt eigene mit (Prozess, Log, Statistik, TLS-Vorgaben).',
-  defaults: 'Die Vorgaben (Timeouts, Log, Fehlerseiten) übernimmt HAPM nicht: es bringt eigene mit.',
-  userlist: 'Benutzerlisten für Basic-Auth kennt HAPM nicht. Für einen Zugang mit Passwort gibt es am Eintrag die Passwortsperre.',
+  global: msgid('Globale Einstellungen übernimmt HAPM nicht: es bringt eigene mit (Prozess, Log, Statistik, TLS-Vorgaben).'),
+  defaults: msgid('Die Vorgaben (Timeouts, Log, Fehlerseiten) übernimmt HAPM nicht: es bringt eigene mit.'),
+  userlist: msgid(
+    'Benutzerlisten für Basic-Auth kennt HAPM nicht. Für einen Zugang mit Passwort gibt es am Eintrag die Passwortsperre.'
+  ),
 };
 
-export function parseImport(text: string): ImportResult {
+/**
+ * Den Text lesen. Gründe und Hinweise stehen in der Sprache von `translator`,
+ * ohne ihn auf Deutsch (so, wie ein Lauf sie speichert).
+ */
+export function parseImport(text: string, translator?: Translate): ImportResult {
+  return withTranslator(translator, () => readImport(text));
+}
+
+function readImport(text: string): ImportResult {
   const skipped: SkippedLine[] = [];
   const sections = readSections(readLines(text), skipped);
   const entries: ImportEntry[] = [];
@@ -1556,12 +1755,19 @@ export function parseImport(text: string): ImportResult {
   const ctx: FrontendContext = { routes: new Map(), skipped, usedBackends: new Set(), backendNames };
 
   for (const section of sections) {
-    const range = `${section.head.text} (Zeile ${section.head.no}${section.body.length > 0 ? ` bis ${section.body[section.body.length - 1].no}` : ''})`;
+    const range =
+      section.body.length > 0
+        ? t('{line} (Zeile {from} bis {to})', {
+            line: section.head.text,
+            from: section.head.no,
+            to: section.body[section.body.length - 1].no,
+          })
+        : t('{line} (Zeile {from})', { line: section.head.text, from: section.head.no });
     if (section.kind === 'global') {
-      skipped.push({ line: section.head.no, text: range, reason: SECTION_REASONS.global });
+      skipped.push({ line: section.head.no, text: range, reason: t(SECTION_REASONS.global) });
       for (const line of section.body) {
         if (/^lua-/.test(line.words[0])) {
-          skipped.push({ line: line.no, text: line.text, reason: 'Lua-Skripte übernimmt HAPM nicht.' });
+          skipped.push({ line: line.no, text: line.text, reason: t('Lua-Skripte übernimmt HAPM nicht.') });
         }
       }
       continue;
@@ -1570,7 +1776,9 @@ export function parseImport(text: string): ImportResult {
       skipped.push({
         line: section.head.no,
         text: range,
-        reason: SECTION_REASONS[section.kind] ?? `Abschnitte der Art ${section.kind} kennt HAPM nicht.`,
+        reason: SECTION_REASONS[section.kind]
+          ? t(SECTION_REASONS[section.kind])
+          : t('Abschnitte der Art {kind} kennt HAPM nicht.', { kind: section.kind }),
       });
       continue;
     }
@@ -1581,7 +1789,7 @@ export function parseImport(text: string): ImportResult {
       continue;
     }
     if (section.mode !== 'tcp') {
-      skipped.push({ line: section.head.no, text: range, reason: `mode ${section.mode} kennt HAPM nicht.` });
+      skipped.push({ line: section.head.no, text: range, reason: t('mode {mode} kennt HAPM nicht.', { mode: section.mode }) });
       continue;
     }
 
@@ -1605,7 +1813,7 @@ export function parseImport(text: string): ImportResult {
     });
     const extra: string[] = [];
     if (section.body.some((l) => l.words[0].toLowerCase() === 'use_backend')) {
-      extra.push('Weichen in mode tcp (etwa nach SNI, TLS wird durchgereicht) kennt HAPM nicht.');
+      extra.push(t('Weichen in mode tcp (etwa nach SNI, TLS wird durchgereicht) kennt HAPM nicht.'));
     }
     const defaultLine = section.body.find((l) => l.words[0].toLowerCase() === 'default_backend');
     const backendName = defaultLine?.words[1] ?? '';
@@ -1614,11 +1822,13 @@ export function parseImport(text: string): ImportResult {
       ctx.usedBackends.add(splitRule(l.words.slice(1)).action[0] ?? '');
     }
     const target = defaultLine ? backendOf(backendName) : null;
-    if (!defaultLine) extra.push('Das Frontend hat kein default_backend.');
-    else if (!target) extra.push(`Das Backend ${backendName} steht nicht in der Datei.`);
-    else if (target.section.mode !== 'tcp') extra.push(`Das Backend ${backendName} läuft nicht in mode tcp.`);
+    if (!defaultLine) extra.push(t('Das Frontend hat kein default_backend.'));
+    else if (!target) extra.push(t('Das Backend {backend} steht nicht in der Datei.', { backend: backendName }));
+    else if (target.section.mode !== 'tcp') {
+      extra.push(t('Das Backend {backend} läuft nicht in mode tcp.', { backend: backendName }));
+    }
     // Die Ziele kommen aus dem Backend, Port und Absender aus dem Frontend.
-    if (own.servers.length > 0) extra.push('Das Frontend trägt eigene server-Zeilen.');
+    if (own.servers.length > 0) extra.push(t('Das Frontend trägt eigene server-Zeilen.'));
     const read: ProxyRead = {
       ...(target?.read ?? own),
       problems: [...own.problems, ...(target?.read.problems ?? [])],
@@ -1626,7 +1836,9 @@ export function parseImport(text: string): ImportResult {
       sourceRules: own.sourceRules,
       notes: [...own.notes, ...(target?.read.notes ?? [])],
     };
-    if (target && target.read.sources.length > 0) extra.push('Die Absenderliste steht im Backend. HAPM erwartet sie am Port.');
+    if (target && target.read.sources.length > 0) {
+      extra.push(t('Die Absenderliste steht im Backend. HAPM erwartet sie am Port.'));
+    }
     entries.push(streamEntry(section, own.binds, read, extra, `${label} → backend ${backendName}`));
   }
 
@@ -1652,8 +1864,12 @@ export function parseImport(text: string): ImportResult {
   /* Backends, auf die nichts zeigt: sie gehen nirgends hin mit. */
   for (const section of sections) {
     if (section.kind !== 'backend' || !section.name || ctx.usedBackends.has(section.name)) continue;
-    const range = `${section.head.text} (Zeile ${section.head.no})`;
-    skipped.push({ line: section.head.no, text: range, reason: 'Auf dieses Backend zeigt keine Weiche. Es wird nicht übernommen.' });
+    const range = t('{line} (Zeile {from})', { line: section.head.text, from: section.head.no });
+    skipped.push({
+      line: section.head.no,
+      text: range,
+      reason: t('Auf dieses Backend zeigt keine Weiche. Es wird nicht übernommen.'),
+    });
   }
 
   /* Zwei Einträge mit demselben Schlüssel (zweimal derselbe Port): der
@@ -1670,7 +1886,7 @@ export function parseImport(text: string): ImportResult {
     entry.key = `${entry.key}#${n}`;
     seen.set(entry.key, entry);
     if (entry.kind === 'tcp' && entry.port !== null) {
-      entry.problems.push(`Port ${entry.port} steht schon in Zeile ${first.line}.`);
+      entry.problems.push(t('Port {port} steht schon in Zeile {line}.', { port: entry.port, line: first.line }));
       entry.stream = null;
     }
   }
@@ -1705,7 +1921,16 @@ export interface ImportEnvironment {
   busyPorts: Record<number, string>;
 }
 
-export function assessImport(entries: ImportEntry[], env: ImportEnvironment): AssessedEntry[] {
+/** Gegen den Stand von HAPM. Die Gründe stehen in der Sprache von `translator`, ohne ihn auf Deutsch. */
+export function assessImport(
+  entries: ImportEntry[],
+  env: ImportEnvironment,
+  translator?: Translate
+): AssessedEntry[] {
+  return withTranslator(translator, () => assessEntries(entries, env));
+}
+
+function assessEntries(entries: ImportEntry[], env: ImportEnvironment): AssessedEntry[] {
   const services = parseHaproxyConfig(env.config);
   const taken: string[] = [];
 
@@ -1719,7 +1944,10 @@ export function assessImport(entries: ImportEntry[], env: ImportEnvironment): As
         return {
           ...entry,
           state: 'conflict',
-          reason: `Die Domain ${conflict.domain} wird in HAPM schon von „${conflict.service.id}" bedient.`,
+          reason: t('Die Domain {domain} wird in HAPM schon von „{service}" bedient.', {
+            domain: conflict.domain,
+            service: conflict.service.id,
+          }),
           id: null,
         };
       }
@@ -1727,7 +1955,7 @@ export function assessImport(entries: ImportEntry[], env: ImportEnvironment): As
         return {
           ...entry,
           state: 'blocked',
-          reason: 'acme.sh fehlt. Ohne lässt sich kein Zertifikat ausstellen. Der Zustand steht in der Übersicht.',
+          reason: t('acme.sh fehlt. Ohne lässt sich kein Zertifikat ausstellen. Der Zustand steht in der Übersicht.'),
           id: null,
         };
       }
@@ -1736,7 +1964,7 @@ export function assessImport(entries: ImportEntry[], env: ImportEnvironment): As
         { exposure: env.exposure, dnsHook: env.dnsHook },
         env.dnsHooks
       );
-      if (plan.method === 'unavailable') return { ...entry, state: 'blocked', reason: plan.message, id: null };
+      if (plan.method === 'unavailable') return { ...entry, state: 'blocked', reason: t(plan.message), id: null };
       const id = assignServiceId(env.config, entry.service, taken);
       taken.push(id);
       return { ...entry, state: 'ready', reason: null, id };
@@ -1745,7 +1973,12 @@ export function assessImport(entries: ImportEntry[], env: ImportEnvironment): As
     const stream = entry.stream!;
     const bound = bindConflict(env.config, stream.port);
     if (bound) {
-      return { ...entry, state: 'conflict', reason: `Port ${stream.port} ist in HAPM schon gebunden (${bound}).`, id: null };
+      return {
+        ...entry,
+        state: 'conflict',
+        reason: t('Port {port} ist in HAPM schon gebunden ({section}).', { port: stream.port, section: bound }),
+        id: null,
+      };
     }
     const busy = env.busyPorts[stream.port];
     if (busy) return { ...entry, state: 'conflict', reason: `Port ${stream.port}: ${busy}`, id: null };
@@ -1771,11 +2004,11 @@ export interface ImportPreview {
 
 /** Wie `validateScopeName` (dort stehen auch die Namen der Unterseiten), dazu
  *  die Gruppen, die es schon gibt: im Formular steht dafür die Auswahl. */
-export function newScopeError(name: string, existing: Pick<HaproxyScopeInfo, 'name'>[]): string | null {
+export function newScopeError(name: string, existing: Pick<HaproxyScopeInfo, 'name'>[]): Message | null {
   const invalid = validateScopeName(name);
   if (invalid) return invalid;
   if (existing.some((s) => s.name.toUpperCase() === name.trim().toUpperCase())) {
-    return `Die Gruppe ${name.trim()} gibt es schon. Wählen Sie sie oben aus.`;
+    return msg('Die Gruppe {name} gibt es schon. Wählen Sie sie oben aus.', { name: name.trim() });
   }
   return null;
 }

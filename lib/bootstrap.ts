@@ -21,7 +21,10 @@ import { ensureAcme } from './acme';
 import { localExec } from './ssh';
 import { buildCommand } from './shell';
 import { engine, haproxyContainerName } from './docker';
+import { msgid } from './i18n/translate';
 
+/** Feste Beschriftungen und Details sind deutsche Schlüssel (`msgid`), die
+ *  Übersicht übersetzt sie beim Zeigen. Details mit Werten bleiben deutsch. */
 export interface BootstrapStep {
   label: string;
   ok: boolean;
@@ -51,7 +54,7 @@ const FALLBACK_PEM = `${HAPROXY_CERT_DIR}/000-hapm-default.pem`;
  */
 async function ensureFallbackCertificate(): Promise<BootstrapStep> {
   const present = fs.readdirSync(HAPROXY_CERT_DIR).some((name) => name.endsWith('.pem'));
-  if (present) return { label: 'Platzhalter-Zertifikat', ok: true, detail: 'Es liegen schon Zertifikate vor.' };
+  if (present) return { label: msgid('Platzhalter-Zertifikat'), ok: true, detail: msgid('Es liegen schon Zertifikate vor.') };
 
   const dir = fs.mkdtempSync('/tmp/hapm-cert-');
   try {
@@ -64,11 +67,11 @@ async function ensureFallbackCertificate(): Promise<BootstrapStep> {
       60_000
     );
     if (res.code !== 0) {
-      return { label: 'Platzhalter-Zertifikat', ok: false, detail: res.stdout.trim().slice(-300) };
+      return { label: msgid('Platzhalter-Zertifikat'), ok: false, detail: res.stdout.trim().slice(-300) };
     }
     const pem = fs.readFileSync(`${dir}/cert.pem`, 'utf8') + fs.readFileSync(`${dir}/key.pem`, 'utf8');
     fs.writeFileSync(FALLBACK_PEM, pem, { mode: 0o600 });
-    return { label: 'Platzhalter-Zertifikat', ok: true, detail: 'Selbst signiertes Zertifikat angelegt.' };
+    return { label: msgid('Platzhalter-Zertifikat'), ok: true, detail: msgid('Selbst signiertes Zertifikat angelegt.') };
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -109,9 +112,9 @@ function ensureErrorFiles(stored: { design: PageDesign; note: string }): {
   }
   return {
     step: {
-      label: 'Fehlerseiten',
+      label: msgid('Fehlerseiten'),
       ok: true,
-      detail: (written ? `${written} Fehlerseiten angelegt.` : 'Alle Fehlerseiten liegen vor.') + stored.note,
+      detail: (written ? `${written} Fehlerseiten angelegt.` : msgid('Alle Fehlerseiten liegen vor.')) + stored.note,
     },
     statuses: files.map((file) => file.status),
   };
@@ -119,14 +122,14 @@ function ensureErrorFiles(stored: { design: PageDesign; note: string }): {
 
 function ensureBaseConfig(errorStatuses: number[]): BootstrapStep {
   if (fs.existsSync(HAPROXY_CFG)) {
-    return { label: 'Konfiguration', ok: true, detail: `${HAPROXY_CFG} liegt vor und bleibt unverändert.` };
+    return { label: msgid('Konfiguration'), ok: true, detail: `${HAPROXY_CFG} liegt vor und bleibt unverändert.` };
   }
   const ipv6 = fs.existsSync('/proc/net/if_inet6') && fs.readFileSync('/proc/net/if_inet6', 'utf8').trim() !== '';
   fs.writeFileSync(HAPROXY_CFG, renderBaseConfig({ ipv6, errorStatuses }), { mode: 0o644 });
   return {
-    label: 'Konfiguration',
+    label: msgid('Konfiguration'),
     ok: true,
-    detail: `Grundkonfiguration angelegt${ipv6 ? '' : ' (ohne IPv6, die Maschine hat keins)'}.`,
+    detail: msgid(ipv6 ? 'Grundkonfiguration angelegt.' : 'Grundkonfiguration angelegt (ohne IPv6, die Maschine hat keins).'),
   };
 }
 
@@ -142,9 +145,9 @@ async function ensureHaproxyRunning(): Promise<BootstrapStep> {
     if (!container) {
       return { label: 'HAProxy', ok: true, detail: `Der Container "${name}" existiert noch nicht.` };
     }
-    if (container.State?.Running) return { label: 'HAProxy', ok: true, detail: 'läuft' };
+    if (container.State?.Running) return { label: 'HAProxy', ok: true, detail: msgid('läuft') };
     await engine.start(name);
-    return { label: 'HAProxy', ok: true, detail: 'war gestoppt und wurde gestartet.' };
+    return { label: 'HAProxy', ok: true, detail: msgid('war gestoppt und wurde gestartet.') };
   } catch (err) {
     return { label: 'HAProxy', ok: false, detail: err instanceof Error ? err.message : String(err) };
   }
@@ -174,7 +177,7 @@ export async function runBootstrap(acmeEmail: string | null): Promise<BootstrapS
     for (const dir of [HAPROXY_CERT_DIR, ERROR_DIR, LOCK_PAGE_DIR, '/run/haproxy', '/var/log/haproxy']) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    add({ label: 'Verzeichnisse', ok: true });
+    add({ label: msgid('Verzeichnisse'), ok: true });
 
     const errors = ensureErrorFiles(design);
     add(errors.step);
@@ -186,7 +189,7 @@ export async function runBootstrap(acmeEmail: string | null): Promise<BootstrapS
 
     add(await ensureHaproxyRunning());
   } catch (err) {
-    add({ label: 'Einrichtung', ok: false, detail: err instanceof Error ? err.message : String(err) });
+    add({ label: msgid('Einrichtung'), ok: false, detail: err instanceof Error ? err.message : String(err) });
   }
 
   state.status = state.steps.every((step) => step.ok) ? 'ok' : 'error';

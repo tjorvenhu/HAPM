@@ -3,6 +3,7 @@ import { getDocument, updateDocument } from '@/lib/db';
 import { COLLECTIONS } from '@/lib/types';
 import { logAudit, getClientIP } from '@/lib/audit';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
+import { msg } from '@/lib/i18n';
 import { normaliseAllowedIps, serialiseAllowedIps } from '@/lib/ip-allow';
 import type { ServiceToken } from '@/lib/types';
 
@@ -22,7 +23,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     const { id } = await params;
 
     const token = await getDocument<ServiceToken>(COLLECTIONS.SERVICE_TOKENS, id);
-    if (token.revokedAt) throw new ApiError('Token ist bereits zurückgezogen.');
+    if (token.revokedAt) throw new ApiError(msg('Token ist bereits zurückgezogen.'));
 
     await updateDocument<ServiceToken>(COLLECTIONS.SERVICE_TOKENS, id, {
       revokedAt: new Date().toISOString(),
@@ -67,7 +68,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const { id } = await params;
 
     const token = await getDocument<ServiceToken>(COLLECTIONS.SERVICE_TOKENS, id);
-    if (token.revokedAt) throw new ApiError('Ein zurückgezogenes Token lässt sich nicht ändern.');
+    if (token.revokedAt) throw new ApiError(msg('Ein zurückgezogenes Token lässt sich nicht ändern.'));
 
     const body = await jsonBody<{ allowedIps?: string[] }>(request);
 
@@ -79,13 +80,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       try {
         clean = normaliseAllowedIps(body.allowedIps);
       } catch (err) {
-        throw new ApiError(err instanceof Error ? err.message : 'Ungültige Adressliste.');
+        throw new ApiError(err instanceof Error ? err.message : msg('Ungültige Adressliste.'));
       }
       changes.allowedIps = clean.length > 0 ? serialiseAllowedIps(clean) : null;
       notes.push(`Adressen: ${clean.length > 0 ? clean.join(', ') : 'alle'}`);
     }
 
-    if (notes.length === 0) throw new ApiError('Es wurde nichts zum Ändern angegeben.');
+    if (notes.length === 0) throw new ApiError(msg('Es wurde nichts zum Ändern angegeben.'));
 
     await updateDocument<ServiceToken>(COLLECTIONS.SERVICE_TOKENS, id, changes);
 

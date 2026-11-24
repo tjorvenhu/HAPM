@@ -14,7 +14,12 @@
  * Ein Nachladen überträgt beim Öffnen die IP des Empfängers. Die Schrift ist
  * deshalb nur ein Wunsch mit Systemschriften dahinter, das Logo hängt als
  * Anhang an der Mail (`cid:`).
+ *
+ * Was der Rahmen selbst schreibt (Fuß, Hinweis unter dem Knopf, `<html lang>`),
+ * steht in der Sprache des Absenders (`MailSender.locale`, Vorgabe Deutsch).
  */
+
+import { translate, type Locale } from "@/lib/i18n"
 
 /**
  * Wer die Mail verschickt. Daraus entsteht die Fußzeile.
@@ -35,6 +40,8 @@ export interface MailSender {
    * direkt hinter dem Satz zur Herkunft und darf sich auf ihn beziehen.
    */
   reason?: string
+  /** Sprache der Mail. Vorgabe `de`. */
+  locale?: Locale
 }
 
 /** Verweise auf die beiden Logo-Anhänge, die der Versand an jede Mail hängt. */
@@ -416,7 +423,10 @@ function hostOf(url: string): string {
  */
 export function mailSenderLines(sender: MailSender): { origin: string; reason?: string; url?: string } {
   return {
-    origin: `Diese Mail kommt von der ${sender.name}-Installation auf dem Server ${sender.nodeName}.`,
+    origin: translate(sender.locale ?? "de", "Diese Mail kommt von der {name}-Installation auf dem Server {node}.", {
+      name: sender.name,
+      node: sender.nodeName,
+    }),
     reason: sender.reason?.trim() || undefined,
     url: sender.url && isHttpUrl(sender.url) ? sender.url : undefined,
   }
@@ -430,7 +440,10 @@ function footer(sender: MailSender, note?: string): string {
   // Eigene Zeile für die Adresse: eine lange Zeile bräche auf dem Telefon mitten
   // im Servernamen um.
   const lines = [escapeHtml(reason ? `${origin} ${reason}` : origin)]
-  if (url) lines.push(`Oberfl&auml;che: <a href="${escapeHtml(url)}" ${link}>${escapeHtml(hostOf(url))}</a>`)
+  if (url) {
+    const label = escapeHtml(translate(sender.locale ?? "de", "Oberfläche:"))
+    lines.push(`${label} <a href="${escapeHtml(url)}" ${link}>${escapeHtml(hostOf(url))}</a>`)
+  }
   return [
     note ? p(note.replace(/<a href="([^"]*)">/g, `<a href="$1" ${link}>`), "0 0 16px") : "",
     `<p class="v-text" style="margin:0 0 4px;${type(14, 22)};font-weight:600;color:${light.text}">${escapeHtml(sender.name)}</p>`,
@@ -481,6 +494,7 @@ const MOBILE_STYLES = [
 
 /** Baut die vollständige HTML-Mail. */
 export function renderMailHtml(frame: MailFrame, sender: MailSender): string {
+  const locale = sender.locale ?? "de"
   const action = frame.action && isActionUrl(frame.action.url) ? frame.action : undefined
   const body = styleBareTags(frame.body)
   const preheader = frame.preheader ?? htmlToText(frame.body).replace(/\s+/g, " ").slice(0, 140)
@@ -501,7 +515,7 @@ export function renderMailHtml(frame: MailFrame, sender: MailSender): string {
   if (frame.afterAction) content.push(styleBareTags(frame.afterAction))
   if (action && isHttpUrl(action.url) && frame.actionLink !== false) {
     content.push(
-      `<p class="v-muted" style="margin:32px 0 0;${type(13, 20)};color:${light.muted}">Oder diesen Link im Browser &ouml;ffnen:<br><a href="${escapeHtml(action.url)}" target="_blank" rel="noopener" class="v-muted" style="color:${light.muted};text-decoration:underline;word-break:break-all">${escapeHtml(action.url)}</a></p>`
+      `<p class="v-muted" style="margin:32px 0 0;${type(13, 20)};color:${light.muted}">${escapeHtml(translate(locale, "Oder diesen Link im Browser öffnen:"))}<br><a href="${escapeHtml(action.url)}" target="_blank" rel="noopener" class="v-muted" style="color:${light.muted};text-decoration:underline;word-break:break-all">${escapeHtml(action.url)}</a></p>`
     )
   }
 
@@ -515,7 +529,7 @@ export function renderMailHtml(frame: MailFrame, sender: MailSender): string {
 
   return [
     "<!doctype html>",
-    `<html lang="de" dir="ltr" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">`,
+    `<html lang="${locale}" dir="ltr" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">`,
     "<head>",
     `<meta charset="utf-8">`,
     `<meta name="viewport" content="width=device-width,initial-scale=1">`,

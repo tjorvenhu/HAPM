@@ -1,5 +1,6 @@
 import { requireSession, requireCsrf } from '@/lib/session';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
+import { getT } from '@/lib/i18n/server';
 import { getClientIP } from '@/lib/audit';
 import {
   getProxyServer,
@@ -43,6 +44,7 @@ interface SettingsRow {
 export async function GET() {
   try {
     await requireSession();
+    const { t } = await getT();
 
     const servers = [localServer()];
 
@@ -66,7 +68,7 @@ export async function GET() {
             settings: null,
             dnsHooks: [],
             editable: false,
-            error: err instanceof Error ? err.message : 'HAProxy ist nicht erreichbar.',
+            error: err instanceof Error ? err.message : t('HAProxy ist nicht erreichbar.'),
           };
         }
       })
@@ -103,7 +105,7 @@ export async function PATCH(request: Request) {
     } catch (err) {
       // Fehlender Marker, kein default_404, doppelte Admin-ACL: eine Auskunft an
       // den Benutzer und kein 500er.
-      if (err instanceof HaproxyConfigError) throw new ApiError(err.message, 409);
+      if (err instanceof HaproxyConfigError) throw new ApiError(err, 409);
       throw err;
     }
 

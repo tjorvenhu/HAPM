@@ -142,6 +142,19 @@ describe('withDefaults', () => {
   });
 });
 
+describe('Sprache der Mails', () => {
+  it('ist für eine Zeile von vor der Einstellung Deutsch', () => {
+    expect(withDefaults({}).mailLocale).toBe('de');
+    expect(withDefaults({ mailLocale: 'fr' as never }).mailLocale).toBe('de');
+    expect(withDefaults({ mailLocale: 'en' }).mailLocale).toBe('en');
+  });
+
+  it('nimmt nur Deutsch und Englisch an', () => {
+    expect(settingsPatch({ mailLocale: 'en' }, current, encryptPass)).toEqual({ mailLocale: 'en' });
+    expect(() => settingsPatch({ mailLocale: 'fr' as never }, current, encryptPass)).toThrow('Deutsch oder Englisch');
+  });
+});
+
 describe('settingsView', () => {
   it('nennt vom Passwort nur, ob es gesetzt ist', () => {
     const settings = {

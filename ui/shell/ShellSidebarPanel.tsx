@@ -182,7 +182,7 @@ export function ShellSidebarPanel({
     return (
       <span className={onActive ? "shell-count shell-count--on-active" : "shell-count"}>
         <span aria-hidden="true">{count > 99 ? "99+" : count}</span>
-        <span className="sr-only">{count} offen</span>
+        <span className="sr-only">{t("{count} offen", { count })}</span>
       </span>
     )
   }

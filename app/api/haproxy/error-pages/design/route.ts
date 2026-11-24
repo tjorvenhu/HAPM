@@ -7,14 +7,16 @@ import { loadPageDesign, savePageDesign } from '@/lib/haproxy/page-design-store'
 import {
   defaultPageDesign,
   isDefaultDesign,
+  logoTooLargeMessage,
   parsePageDesign,
   LOGO_TYPES,
-  PAGE_MAX_BYTES,
   type PageDesign,
 } from '@/lib/haproxy/page-design';
 import { designSizeError } from '@/lib/haproxy/design-pages';
 import type { ErrorPageEntry } from '@/lib/haproxy/error-pages';
 import { LOCAL_SERVER_ID } from '@/lib/helpers';
+import { msgid, type Locale } from '@/lib/i18n';
+import { getLocale } from '@/lib/i18n/server';
 import type { Server } from '@/lib/types';
 
 /**
@@ -35,6 +37,10 @@ import type { Server } from '@/lib/types';
  * Geprüft wird vorher und vollständig, auch die Größe jeder fertigen Seite:
  * eine zu große Passwortabfrage nimmt `haproxy -c` an und beantwortet HAProxy
  * danach mit 500 (`lib/haproxy/page-design.ts`).
+ *
+ * Die Gründe kommen aus der Prüfung schon in der Sprache der Anfrage: sie setzt
+ * übersetzte Teile (Feld, Seite, Zahl) in einen Satz, den `msg()` nicht trüge.
+ * `handleError` findet zu einem fertigen Satz keinen Eintrag und lässt ihn stehen.
  */
 
 /** Ein Design mit dem größten Logo, das noch passt, bleibt weit darunter. */
@@ -47,7 +53,7 @@ interface DesignResult {
 }
 
 /** Ausliefern, ohne dass ein Wurf die Auskunft „gespeichert" verschluckt. */
-async function deliver(server: Server, design: PageDesign): Promise<DesignResult> {
+async function deliver(server: Server, design: PageDesign, locale: Locale): Promise<DesignResult> {
   try {
     return { design, ...(await applyPageDesign(server)) };
   } catch (err) {
@@ -55,9 +61,10 @@ async function deliver(server: Server, design: PageDesign): Promise<DesignResult
       design,
       steps: [
         {
-          label: 'Ausliefern',
+          // Schlüssel wie die Schritte aus `applyPageDesign`: die Seite zeigt sie mit `t()`.
+          label: msgid('Ausliefern'),
           ok: false,
-          detail: err instanceof ApiError ? err.message : 'HAProxy ist nicht erreichbar.',
+          detail: err instanceof ApiError ? err.localized(locale) : msgid('HAProxy ist nicht erreichbar.'),
         },
       ],
       entries: [],
@@ -83,6 +90,7 @@ function describe(design: PageDesign): string {
     design.brand ? `Schriftzug „${design.brand}“` : '',
     design.footer ? 'Fußzeile' : '',
     texts ? `${texts} eigene Texte` : '',
+    design.locale === 'en' ? 'Vorgabetexte englisch' : '',
   ]
     .filter(Boolean)
     .join(', ');
@@ -121,22 +129,20 @@ export async function PUT(request: Request) {
   try {
     await requireCsrf(request);
     const session = await requireSession();
+    const locale = await getLocale();
 
     if (Number(request.headers.get('content-length') ?? 0) > MAX_BODY_BYTES) {
-      throw new ApiError(
-        `Das Logo ist zu groß. Die ganze Seite darf samt Logo höchstens ${PAGE_MAX_BYTES.toLocaleString('de-DE')} Bytes haben.`,
-        413
-      );
+      throw new ApiError(logoTooLargeMessage(locale), 413);
     }
     const body = await jsonBody<{ serverId?: string; design?: unknown }>(request);
 
-    const parsed = parsePageDesign(body.design);
+    const parsed = parsePageDesign(body.design, locale);
     if (!parsed.ok) throw new ApiError(parsed.error);
-    const tooLarge = designSizeError(parsed.design);
+    const tooLarge = designSizeError(parsed.design, locale);
     if (tooLarge) throw new ApiError(tooLarge);
 
     const server = await getProxyServer(body.serverId || LOCAL_SERVER_ID);
-    const result = await deliver(server, await savePageDesign(parsed.design));
+    const result = await deliver(server, await savePageDesign(parsed.design), locale);
 
     await audit(request, session, server, result);
     return ok(result);
@@ -152,7 +158,7 @@ export async function DELETE(request: Request) {
     const session = await requireSession();
 
     const server = await getProxyServer(LOCAL_SERVER_ID);
-    const result = await deliver(server, await savePageDesign(defaultPageDesign()));
+    const result = await deliver(server, await savePageDesign(defaultPageDesign()), await getLocale());
 
     await audit(request, session, server, result);
     return ok(result);

@@ -16,6 +16,8 @@ import ColorField from '@/components/reverse-proxy/ColorField';
 import DesignPreview from '@/components/reverse-proxy/DesignPreview';
 import ErrorPagesPanel, { type ErrorPagesRow } from '@/components/reverse-proxy/ErrorPagesPanel';
 import { STATIC_THEME_DEFAULTS, isHexColor } from '@/ui/static/page';
+import { useT } from '@/lib/i18n/react';
+import { formatNumber, msgid, LOCALES, LOCALE_NAMES, type Locale } from '@/lib/i18n';
 import {
   base64ToBytes,
   bytesToBase64,
@@ -32,9 +34,15 @@ import {
   type LockTexts,
   type PageDesign,
 } from '@/lib/haproxy/page-design';
-import { DESIGN_PAGES, designSizeError, logoByteBudget, type DesignPage } from '@/lib/haproxy/design-pages';
+import {
+  DESIGN_PAGES,
+  designPageLabel,
+  designSizeError,
+  logoByteBudget,
+  type DesignPage,
+} from '@/lib/haproxy/design-pages';
 import { defaultErrorPageText } from '@/lib/haproxy/error-pages';
-import { LOCK_PAGE_DEFAULTS } from '@/lib/haproxy/lock-page';
+import { lockPageDefaults } from '@/lib/haproxy/lock-page';
 import type { ErrorPageEntry } from '@/lib/haproxy/error-pages';
 import type { ProvisionStep } from '@/lib/haproxy/provision';
 
@@ -50,6 +58,10 @@ import type { ProvisionStep } from '@/lib/haproxy/provision';
  * Geprüft wird hier mit denselben Funktionen wie in der Route
  * (`parsePageDesign`, `designSizeError`). Was hier durchgeht, nimmt die Route
  * an, und umgekehrt.
+ *
+ * Zwei Sprachen, die nichts miteinander zu tun haben: die der Oberfläche
+ * (`useT()`) für alles hier, und die der Seiten (`design.locale`) für deren
+ * Vorgabetexte, auch in den Feldern und in der Vorschau.
  */
 
 interface DesignResult {
@@ -61,22 +73,20 @@ interface DesignResult {
 const COLOR_FIELDS: { key: keyof DesignColors; label: string; hint: string }[] = [
   {
     key: 'accent',
-    label: 'Akzent',
-    hint: 'Knöpfe und Fokusrahmen. Die Schrift auf dem Knopf wird hell oder dunkel, je nachdem, was mehr Kontrast hat.',
+    label: msgid('Akzent'),
+    hint: msgid('Knöpfe und Fokusrahmen. Die Schrift auf dem Knopf wird hell oder dunkel, je nachdem, was mehr Kontrast hat.'),
   },
   {
     key: 'background',
-    label: 'Hintergrund',
-    hint: 'Die Fläche der Seite. Karte und Kopfleiste werden daraus abgeleitet: auf hellem Grund weiß, auf dunklem etwas heller als der Grund.',
+    label: msgid('Hintergrund'),
+    hint: msgid('Die Fläche der Seite. Karte und Kopfleiste werden daraus abgeleitet: auf hellem Grund weiß, auf dunklem etwas heller als der Grund.'),
   },
   {
     key: 'text',
-    label: 'Text',
-    hint: 'Überschrift und Fließtext. Gedämpfter Text und Rahmen entstehen als Mischung aus Text und Hintergrund.',
+    label: msgid('Text'),
+    hint: msgid('Überschrift und Fließtext. Gedämpfter Text und Rahmen entstehen als Mischung aus Text und Hintergrund.'),
   },
 ];
-
-const number = (value: number) => value.toLocaleString('de-DE');
 
 function logoBytes(data: string): number {
   return base64ToBytes(data)?.length ?? 0;
@@ -123,6 +133,7 @@ interface OverrideFieldProps {
  * Vorgabe eintippt, hat keinen eigenen Text, sondern die Vorgabe.
  */
 function OverrideField({ label, value, fallback, max, multiline, onChange }: OverrideFieldProps) {
+  const { t } = useT();
   const custom = value !== null && value !== undefined;
   const shown = custom ? value : fallback;
   const change = (next: string) => onChange(next === fallback ? null : next);
@@ -131,7 +142,7 @@ function OverrideField({ label, value, fallback, max, multiline, onChange }: Ove
     <div className="form-group">
       <div className="form-label-row">
         <span className="form-label">{label}</span>
-        {custom && <span className="badge-status badge-neutral">Eigener Text</span>}
+        {custom && <span className="badge-status badge-neutral">{t('Eigener Text')}</span>}
       </div>
       <div className="hapm-design-field">
         {multiline ? (
@@ -155,8 +166,8 @@ function OverrideField({ label, value, fallback, max, multiline, onChange }: Ove
         <button
           type="button"
           className="btn btn-ghost btn-icon"
-          data-tooltip="Zurück auf den Text von HAPM"
-          aria-label={`${label}: zurück auf den Text von HAPM`}
+          data-tooltip={t('Zurück auf den Text von HAPM')}
+          aria-label={t('{label}: zurück auf den Text von HAPM', { label })}
           disabled={!custom}
           onClick={() => onChange(null)}
         >
@@ -171,6 +182,8 @@ export default function ErrorPagesDesignPage() {
   const { apiFetch } = useApp();
   const { notify } = useToast();
   const confirm = useConfirm();
+  const { t, plural, locale } = useT();
+  const number = (value: number) => formatNumber(locale, value);
 
   const [saved, setSaved] = useState<PageDesign | null>(null);
   /** Erst beim Ändern belegt: ein Nachladen überschreibt sonst, was jemand tippt. */
@@ -188,19 +201,19 @@ export default function ErrorPagesDesignPage() {
     try {
       const res = await apiFetch('/api/haproxy/error-pages/design');
       const data = await res.json();
-      if (!data.success) throw new Error(data.error || 'Das Design ließ sich nicht laden.');
+      if (!data.success) throw new Error(data.error || t('Das Design ließ sich nicht laden.'));
       setSaved(data.data.design as PageDesign);
       setLoadError('');
     } catch (err) {
-      setLoadError(err instanceof Error ? err.message : 'Das Design ließ sich nicht laden.');
+      setLoadError(err instanceof Error ? err.message : t('Das Design ließ sich nicht laden.'));
     }
-  }, [apiFetch]);
+  }, [apiFetch, t]);
 
   const loadRow = useCallback(async () => {
     try {
       const res = await apiFetch('/api/haproxy/error-pages');
       const data = await res.json();
-      if (!data.success) throw new Error(data.error || 'Die Fehlerdateien ließen sich nicht lesen.');
+      if (!data.success) throw new Error(data.error || t('Die Fehlerdateien ließen sich nicht lesen.'));
       const rows = data.data as ErrorPagesRow[];
       setRow(rows[0] ?? null);
     } catch (err) {
@@ -208,10 +221,10 @@ export default function ErrorPagesDesignPage() {
         $id: '',
         name: '',
         entries: [],
-        error: err instanceof Error ? err.message : 'Die Fehlerdateien ließen sich nicht lesen.',
+        error: err instanceof Error ? err.message : t('Die Fehlerdateien ließen sich nicht lesen.'),
       });
     }
-  }, [apiFetch]);
+  }, [apiFetch, t]);
 
   useEffect(() => {
     void loadDesign();
@@ -226,9 +239,10 @@ export default function ErrorPagesDesignPage() {
   const current = draft ?? saved;
   const dirty = draft !== null && !same(draft, saved);
 
-  const parsed = useMemo(() => (current ? parsePageDesign(current) : null), [current]);
+  const parsed = useMemo(() => (current ? parsePageDesign(current, locale) : null), [current, locale]);
   const preview = useMemo(() => (current ? previewable(current) : defaultPageDesign()), [current]);
-  const problem = parsed && !parsed.ok ? parsed.error : parsed?.ok ? designSizeError(parsed.design) : null;
+  const problem =
+    parsed && !parsed.ok ? parsed.error : parsed?.ok ? designSizeError(parsed.design, locale) : null;
 
   const page = DESIGN_PAGES.find((entry) => entry.id === pageId) ?? DESIGN_PAGES[0];
 
@@ -273,10 +287,11 @@ export default function ErrorPagesDesignPage() {
     if (file.size > PAGE_MAX_BYTES) {
       notify({
         variant: 'error',
-        title: 'Logo zu groß',
-        message:
-          `Die Datei hat ${number(file.size)} Bytes. Mit den jetzigen Texten passt ein Logo bis ` +
-          `${number(logoByteBudget(preview))} Bytes. Bitte wählen Sie eine kleinere Datei, etwa ein SVG.`,
+        title: t('Logo zu groß'),
+        message: t(
+          'Die Datei hat {size} Bytes. Mit den jetzigen Texten passt ein Logo bis {budget} Bytes. Bitte wählen Sie eine kleinere Datei, etwa ein SVG.',
+          { size: number(file.size), budget: number(logoByteBudget(preview)) }
+        ),
       });
       return;
     }
@@ -285,15 +300,15 @@ export default function ErrorPagesDesignPage() {
     if (!mime) {
       notify({
         variant: 'error',
-        title: 'Kein Bild',
-        message: 'Die Datei ist kein SVG, PNG, JPEG oder WebP. Geprüft wird der Inhalt der Datei, nicht ihre Endung.',
+        title: t('Kein Bild'),
+        message: t('Die Datei ist kein SVG, PNG, JPEG oder WebP. Geprüft wird der Inhalt der Datei, nicht ihre Endung.'),
       });
       return;
     }
     const logo = { kind: 'custom' as const, mime, data: bytesToBase64(bytes) };
-    const tooLarge = designSizeError({ ...preview, logo });
+    const tooLarge = designSizeError({ ...preview, logo }, locale);
     if (tooLarge) {
-      notify({ variant: 'error', title: 'Logo zu groß', message: tooLarge });
+      notify({ variant: 'error', title: t('Logo zu groß'), message: tooLarge });
       return;
     }
     setLastCustom(logo);
@@ -320,18 +335,19 @@ export default function ErrorPagesDesignPage() {
     if (failed) {
       notify({
         variant: 'error',
-        title: 'Gespeichert, aber nicht ausgeliefert',
-        message: `${failed.label}: ${failed.detail ?? 'fehlgeschlagen'}`,
+        title: t('Gespeichert, aber nicht ausgeliefert'),
+        message: `${t(failed.label)}: ${failed.detail ? t(failed.detail) : t('fehlgeschlagen')}`,
       });
       return;
     }
+    // Die Schritte tragen ihre deutschen Schlüssel, übersetzt wird erst beim Zeigen.
     const reloaded = result.steps.some((step) => step.label.includes('neu geladen'));
     notify({
       variant: 'success',
       title: done,
       message: reloaded
-        ? 'Geschrieben, geprüft und von HAProxy übernommen.'
-        : 'Auf dem Server war keine Datei zu ändern.',
+        ? t('Geschrieben, geprüft und von HAProxy übernommen.')
+        : t('Auf dem Server war keine Datei zu ändern.'),
     });
   }
 
@@ -343,12 +359,12 @@ export default function ErrorPagesDesignPage() {
     const others = row?.entries.filter((entry) => entry.state === 'other').length ?? 0;
     if (others > 0) {
       const ok = await confirm({
-        title: 'Auch abweichende Dateien ersetzen?',
-        message:
-          `${others} Fehlerdatei(en) tragen gerade nicht das gespeicherte Design: eine eigene Seite ` +
-          'oder ein älterer Stand. Sie werden mit ersetzt. Die bisherige Fassung bleibt als ' +
-          '.hapm-original daneben liegen.',
-        confirmLabel: 'Speichern und ausliefern',
+        title: t('Auch abweichende Dateien ersetzen?'),
+        message: plural(others, {
+          one: '{count} Fehlerdatei trägt gerade nicht das gespeicherte Design: eine eigene Seite oder ein älterer Stand. Sie wird mit ersetzt. Die bisherige Fassung bleibt als .hapm-original daneben liegen.',
+          other: '{count} Fehlerdateien tragen gerade nicht das gespeicherte Design: eine eigene Seite oder ein älterer Stand. Sie werden mit ersetzt. Die bisherige Fassung bleibt als .hapm-original daneben liegen.',
+        }),
+        confirmLabel: t('Speichern und ausliefern'),
         variant: 'warning',
       });
       if (!ok) return;
@@ -362,13 +378,13 @@ export default function ErrorPagesDesignPage() {
         body: JSON.stringify({ design: parsed.design }),
       });
       const data = await res.json();
-      if (!data.success) throw new Error(data.error || 'Speichern fehlgeschlagen.');
-      report(data.data as DesignResult, 'Design gespeichert');
+      if (!data.success) throw new Error(data.error || t('Speichern fehlgeschlagen.'));
+      report(data.data as DesignResult, t('Design gespeichert'));
     } catch (err) {
       notify({
         variant: 'error',
-        title: 'Speichern fehlgeschlagen',
-        message: err instanceof Error ? err.message : 'Unbekannter Fehler.',
+        title: t('Speichern fehlgeschlagen'),
+        message: err instanceof Error ? err.message : t('Unbekannter Fehler.'),
       });
     } finally {
       setBusy(null);
@@ -377,11 +393,11 @@ export default function ErrorPagesDesignPage() {
 
   async function reset() {
     const ok = await confirm({
-      title: 'Zurück auf das Design von HAPM?',
-      message:
-        'Farben, Logo, Schriftzug, Fußzeile und alle Texte gehen auf die Vorgabe zurück. ' +
-        'Danach schreibt HAPM die Seiten neu und lädt HAProxy neu.',
-      confirmLabel: 'Zurücksetzen',
+      title: t('Zurück auf das Design von HAPM?'),
+      message: t(
+        'Farben, Logo, Schriftzug, Fußzeile, Sprache und alle Texte gehen auf die Vorgabe zurück. Danach schreibt HAPM die Seiten neu und lädt HAProxy neu.'
+      ),
+      confirmLabel: t('Zurücksetzen'),
       variant: 'warning',
     });
     if (!ok) return;
@@ -390,13 +406,13 @@ export default function ErrorPagesDesignPage() {
     try {
       const res = await apiFetch('/api/haproxy/error-pages/design', { method: 'DELETE' });
       const data = await res.json();
-      if (!data.success) throw new Error(data.error || 'Zurücksetzen fehlgeschlagen.');
-      report(data.data as DesignResult, 'Design von HAPM');
+      if (!data.success) throw new Error(data.error || t('Zurücksetzen fehlgeschlagen.'));
+      report(data.data as DesignResult, t('Design von HAPM'));
     } catch (err) {
       notify({
         variant: 'error',
-        title: 'Zurücksetzen fehlgeschlagen',
-        message: err instanceof Error ? err.message : 'Unbekannter Fehler.',
+        title: t('Zurücksetzen fehlgeschlagen'),
+        message: err instanceof Error ? err.message : t('Unbekannter Fehler.'),
       });
     } finally {
       setBusy(null);
@@ -416,7 +432,9 @@ export default function ErrorPagesDesignPage() {
     }
   }
 
-  const errorDefaults = page.kind === 'error' ? defaultErrorPageText(page.status) : null;
+  const pageLocale: Locale = current?.locale ?? 'de';
+  const errorDefaults = page.kind === 'error' ? defaultErrorPageText(page.status, pageLocale) : null;
+  const lockDefaults = lockPageDefaults(pageLocale);
 
   return (
     <>
@@ -426,31 +444,31 @@ export default function ErrorPagesDesignPage() {
             <FileWarning size={20} />
           </span>
           <div>
-            <h1 className="page-title">Fehlerseiten</h1>
+            <h1 className="page-title">{t('Fehlerseiten')}</h1>
             <div className="page-crumbs">
               <Link className="page-back" href="/reverse-proxy">
                 <ArrowLeft size={14} />
-                Übersicht
+                {t('Übersicht')}
               </Link>
-              <span>Was Besucher sehen, wenn HAProxy selbst antwortet</span>
+              <span>{t('Was Besucher sehen, wenn HAProxy selbst antwortet')}</span>
             </div>
           </div>
         </div>
         <div className="page-actions">
           <button className="btn btn-secondary" onClick={refresh} disabled={refreshing}>
             {refreshing ? <Loader2 size={16} className="spin" /> : <RefreshCw size={16} />}
-            Aktualisieren
+            {t('Aktualisieren')}
           </button>
           {saved && !isDefaultDesign(saved) && (
             <button className="btn btn-secondary" onClick={reset} disabled={busy !== null}>
               {busy === 'reset' ? <Loader2 size={16} className="spin" /> : <RotateCcw size={16} />}
-              Zurück auf das Design von HAPM
+              {t('Zurück auf das Design von HAPM')}
             </button>
           )}
           {dirty && (
             <button className="btn btn-secondary" onClick={() => setDraft(null)} disabled={busy !== null}>
               <Undo2 size={16} />
-              Verwerfen
+              {t('Verwerfen')}
             </button>
           )}
           <button
@@ -459,7 +477,7 @@ export default function ErrorPagesDesignPage() {
             disabled={!dirty || problem !== null || busy !== null}
           >
             {busy === 'save' ? <Loader2 size={16} className="spin" /> : <Save size={16} />}
-            Speichern und ausliefern
+            {t('Speichern und ausliefern')}
           </button>
         </div>
       </div>
@@ -478,15 +496,15 @@ export default function ErrorPagesDesignPage() {
                   <Palette size={17} />
                 </span>
                 <div>
-                  <div className="form-section-title">Farben</div>
-                  <div className="form-section-sub">Leer heißt: die Farbe von HAPM.</div>
+                  <div className="form-section-title">{t('Farben')}</div>
+                  <div className="form-section-sub">{t('Leer heißt: die Farbe von HAPM.')}</div>
                 </div>
               </div>
               {COLOR_FIELDS.map((field) => (
                 <ColorField
                   key={field.key}
-                  label={field.label}
-                  hint={field.hint}
+                  label={t(field.label)}
+                  hint={t(field.hint)}
                   value={current.colors[field.key]}
                   fallback={STATIC_THEME_DEFAULTS[field.key]}
                   onChange={(value) => setColor(field.key, value)}
@@ -501,19 +519,19 @@ export default function ErrorPagesDesignPage() {
                 </span>
                 <div>
                   <div className="form-section-title">
-                    Logo und Name
-                    <InfoHint text="Das Logo steckt als Data-URI in jeder Seite: HAProxy liefert eine Fehlerseite als eine Datei aus und lädt nichts nach. Erlaubt sind SVG, PNG, JPEG und WebP, geprüft am Inhalt der Datei. Ein SVG wird als Bild eingebunden und führt kein Skript aus. HAPM verkleinert keine Bilder." />
+                    {t('Logo und Name')}
+                    <InfoHint text={t('Das Logo steckt als Data-URI in jeder Seite: HAProxy liefert eine Fehlerseite als eine Datei aus und lädt nichts nach. Erlaubt sind SVG, PNG, JPEG und WebP, geprüft am Inhalt der Datei. Ein SVG wird als Bild eingebunden und führt kein Skript aus. HAPM verkleinert keine Bilder.')} />
                   </div>
-                  <div className="form-section-sub">Oben auf jeder Seite.</div>
+                  <div className="form-section-sub">{t('Oben auf jeder Seite.')}</div>
                 </div>
               </div>
 
-              <div className="choice-group" role="group" aria-label="Logo">
+              <div className="choice-group" role="group" aria-label={t('Logo')}>
                 {(
                   [
-                    ['hapm', 'Logo von HAPM'],
-                    ['custom', 'Eigenes'],
-                    ['none', 'Keines'],
+                    ['hapm', msgid('Logo von HAPM')],
+                    ['custom', msgid('Eigenes')],
+                    ['none', msgid('Keines')],
                   ] as const
                 ).map(([kind, label]) => (
                   <button
@@ -523,7 +541,7 @@ export default function ErrorPagesDesignPage() {
                     aria-pressed={current.logo.kind === kind}
                     onClick={() => chooseLogo(kind)}
                   >
-                    {label}
+                    {t(label)}
                   </button>
                 ))}
               </div>
@@ -543,7 +561,10 @@ export default function ErrorPagesDesignPage() {
               {current.logo.kind === 'custom' && (
                 <div className="hapm-design-field">
                   <span className="form-hint">
-                    {LOGO_TYPES[current.logo.mime]}, {number(logoBytes(current.logo.data))} Bytes
+                    {t('{type}, {bytes} Bytes', {
+                      type: LOGO_TYPES[current.logo.mime],
+                      bytes: number(logoBytes(current.logo.data)),
+                    })}
                   </span>
                   <button
                     type="button"
@@ -551,27 +572,29 @@ export default function ErrorPagesDesignPage() {
                     onClick={() => fileInput.current?.click()}
                   >
                     <Upload size={14} />
-                    Andere Datei
+                    {t('Andere Datei')}
                   </button>
                 </div>
               )}
               <span className="form-hint">
-                Mit den jetzigen Texten passt eine Logo-Datei bis {number(logoByteBudget(preview))} Bytes.
+                {t('Mit den jetzigen Texten passt eine Logo-Datei bis {bytes} Bytes.', {
+                  bytes: number(logoByteBudget(preview)),
+                })}
               </span>
 
               <div className="form-group">
                 <div className="form-label-row">
                   <label className="form-label" htmlFor="design-brand">
-                    Name neben dem Logo
+                    {t('Name neben dem Logo')}
                   </label>
-                  <InfoHint text="Optional, etwa der Name der Firma. Steht neben dem Logo oder allein, wenn kein Logo gewählt ist." />
+                  <InfoHint text={t('Optional, etwa der Name der Firma. Steht neben dem Logo oder allein, wenn kein Logo gewählt ist.')} />
                 </div>
                 <input
                   id="design-brand"
                   className="form-input"
                   value={current.brand}
                   maxLength={DESIGN_TEXT_LIMITS.brand}
-                  placeholder="Kein Name"
+                  placeholder={t('Kein Name')}
                   onChange={(event) => edit({ brand: event.target.value })}
                 />
               </div>
@@ -584,11 +607,26 @@ export default function ErrorPagesDesignPage() {
                 </span>
                 <div>
                   <div className="form-section-title">
-                    Texte
-                    <InfoHint text="Je Fall eine Überschrift und ein Text. Die Passwortabfrage hat drei Fassungen (Abfrage, falsches Passwort, zu viele Versuche), die sich Überschrift, Text und Knopf teilen. Die Hinweise darin und der Knopf der Fehlerseiten bleiben, wie sie sind." />
+                    {t('Texte')}
+                    <InfoHint text={t('Je Fall eine Überschrift und ein Text. Die Passwortabfrage hat drei Fassungen (Abfrage, falsches Passwort, zu viele Versuche), die sich Überschrift, Text und Knopf teilen. Die Hinweise darin und der Knopf der Fehlerseiten folgen der Sprache der Vorgabetexte.')} />
                   </div>
-                  <div className="form-section-sub">Ein Fall nach dem anderen, wie in der Vorschau.</div>
+                  <div className="form-section-sub">{t('Ein Fall nach dem anderen, wie in der Vorschau.')}</div>
                 </div>
+              </div>
+
+              <div className="form-group">
+                <div className="form-label-row">
+                  <label className="form-label" htmlFor="design-locale">
+                    {t('Sprache der Vorgabetexte')}
+                  </label>
+                  <InfoHint text={t('Gilt für alles, was HAPM auf den Seiten selbst schreibt: Vorgabetexte, Knöpfe, Hinweise. Eigene Texte bleiben, wie sie eingegeben sind.')} />
+                </div>
+                <Select
+                  id="design-locale"
+                  value={pageLocale}
+                  onChange={(value) => edit({ locale: value })}
+                  options={LOCALES.map((entry) => ({ value: entry, label: LOCALE_NAMES[entry] }))}
+                />
               </div>
 
               <Select
@@ -596,22 +634,22 @@ export default function ErrorPagesDesignPage() {
                 onChange={setPageId}
                 options={DESIGN_PAGES.map((entry) => ({
                   value: entry.id,
-                  label: entry.label,
-                  hint: hasCustomText(entry) ? 'Eigener Text' : entry.hint,
+                  label: designPageLabel(entry, t),
+                  hint: hasCustomText(entry) ? t('Eigener Text') : t(entry.hint),
                 }))}
               />
 
               {page.kind === 'error' && errorDefaults ? (
                 <>
                   <OverrideField
-                    label="Überschrift"
+                    label={t('Überschrift')}
                     value={current.errors[page.status]?.title}
                     fallback={errorDefaults.title}
                     max={DESIGN_TEXT_LIMITS.title}
                     onChange={(value) => setErrorText(page.status, 'title', value)}
                   />
                   <OverrideField
-                    label="Text"
+                    label={t('Text')}
                     value={current.errors[page.status]?.text}
                     fallback={errorDefaults.text}
                     max={DESIGN_TEXT_LIMITS.text}
@@ -622,24 +660,24 @@ export default function ErrorPagesDesignPage() {
               ) : (
                 <>
                   <OverrideField
-                    label="Überschrift"
+                    label={t('Überschrift')}
                     value={current.lock.title}
-                    fallback={LOCK_PAGE_DEFAULTS.title}
+                    fallback={lockDefaults.title}
                     max={DESIGN_TEXT_LIMITS.title}
                     onChange={(value) => setLockText('title', value)}
                   />
                   <OverrideField
-                    label="Text"
+                    label={t('Text')}
                     value={current.lock.subtitle}
-                    fallback={LOCK_PAGE_DEFAULTS.subtitle}
+                    fallback={lockDefaults.subtitle}
                     max={DESIGN_TEXT_LIMITS.text}
                     multiline
                     onChange={(value) => setLockText('subtitle', value)}
                   />
                   <OverrideField
-                    label="Knopf"
+                    label={t('Knopf')}
                     value={current.lock.submit}
-                    fallback={LOCK_PAGE_DEFAULTS.submit}
+                    fallback={lockDefaults.submit}
                     max={DESIGN_TEXT_LIMITS.submit}
                     onChange={(value) => setLockText('submit', value)}
                   />
@@ -649,16 +687,16 @@ export default function ErrorPagesDesignPage() {
               <div className="form-group">
                 <div className="form-label-row">
                   <label className="form-label" htmlFor="design-footer">
-                    Fußzeile
+                    {t('Fußzeile')}
                   </label>
-                  <InfoHint text="Optional, auf jeder Seite unten, etwa ein Kontakt. Ein Link wird daraus nicht: die Seite zeigt den Text, wie er hier steht." />
+                  <InfoHint text={t('Optional, auf jeder Seite unten, etwa ein Kontakt. Ein Link wird daraus nicht: die Seite zeigt den Text, wie er hier steht.')} />
                 </div>
                 <input
                   id="design-footer"
                   className="form-input"
                   value={current.footer}
                   maxLength={DESIGN_TEXT_LIMITS.footer}
-                  placeholder="Keine Fußzeile"
+                  placeholder={t('Keine Fußzeile')}
                   onChange={(event) => edit({ footer: event.target.value })}
                 />
               </div>

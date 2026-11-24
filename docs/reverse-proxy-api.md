@@ -345,8 +345,8 @@ Schritt.
 **Das Ziel der Oberfläche lässt sich nicht entfernen** (`surface: true`, `409`).
 Über es ist HAPM selbst erreichbar. Welches Ziel das ist, ergibt sich aus der
 Adresse von HAPM in den Einstellungen, nicht aus einem Namen. Wer es wirklich
-loswerden will, ändert oder leert zuerst diese Adresse in der Oberfläche unter
-„Allgemein". Über die API geht das nicht. Siehe
+loswerden will, ändert zuerst diese Adresse in der Oberfläche unter
+„Allgemein". Danach lässt sich das Ziel entfernen. Über die API geht das nicht. Siehe
 [`reverse-proxy.md`](reverse-proxy.md), „Das Ziel der Oberfläche ist geschützt".
 
 ### `GET /streams`, `POST /streams`

@@ -1,5 +1,7 @@
 import { requireSession, requireCsrf } from '@/lib/session';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
+import { msg } from '@/lib/i18n';
+import { getT } from '@/lib/i18n/server';
 import { getClientIP } from '@/lib/audit';
 import { getProxyServer, precheckStreamCreate, checkStreamPort } from '@/lib/haproxy/provision';
 import { startHaproxyRun } from '@/lib/haproxy/runner';
@@ -40,7 +42,7 @@ export async function GET(request: Request) {
 
     const port = Number(url.searchParams.get('port'));
     if (!Number.isInteger(port) || port < 1 || port > 65535) {
-      throw new ApiError('Der Port muss eine ganze Zahl zwischen 1 und 65535 sein.');
+      throw new ApiError(msg('Der Port muss eine ganze Zahl zwischen {min} und {max} sein.', { min: 1, max: 65535 }));
     }
 
     // Beim Bearbeiten der eigene Abschnitt: ohne ihn meldete jede Änderung, die
@@ -48,7 +50,8 @@ export async function GET(request: Request) {
     const exclude = url.searchParams.get('exclude')?.trim() || undefined;
 
     const server = await getProxyServer(serverId);
-    return ok(await checkStreamPort(server, port, exclude));
+    const { t } = await getT();
+    return ok(await checkStreamPort(server, port, exclude, t));
   } catch (err) {
     return handleError(err);
   }
@@ -82,7 +85,7 @@ export async function POST(request: Request) {
     try {
       input = await precheckStreamCreate(server, draft);
     } catch (err) {
-      if (err instanceof HaproxyConfigError) throw new ApiError(err.message, 409);
+      if (err instanceof HaproxyConfigError) throw new ApiError(err, 409);
       throw err;
     }
 

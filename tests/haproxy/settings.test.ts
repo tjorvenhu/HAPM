@@ -10,6 +10,10 @@ import {
   type GlobalSettings,
   type GlobalSettingsInput,
 } from '@/lib/haproxy/config';
+import { germanText, type Message } from '@/lib/i18n/translate';
+
+/** Die Meldung einer Prüfung auf Deutsch, wie sie ohne Sprache herauskommt. */
+const de = (message: Message | null) => (message ? germanText(message) : message);
 
 /**
  * Die globalen Einstellungen: der Block unter `# Globale HTTPS-Settings` und
@@ -170,15 +174,15 @@ describe('applyGlobalSettings', () => {
 
 describe('validateGlobalSettings', () => {
   it('nimmt den Normalfall an', () => {
-    expect(validateGlobalSettings(INPUT)).toBeNull();
+    expect(de(validateGlobalSettings(INPUT))).toBeNull();
   });
 
   it('nimmt eine beliebige HAProxy-Zeile an — geprüft wird sie auf der Maschine', () => {
     expect(
-      validateGlobalSettings({
+      de(validateGlobalSettings({
         ...INPUT,
         httpsLines: ['http-request set-header X-Forwarded-For %[src]', 'unsinn ohne bedeutung'],
-      })
+      }))
     ).toBeNull();
   });
 
@@ -186,12 +190,12 @@ describe('validateGlobalSettings', () => {
     // Der Block endet am ersten Kommentar. Die Zeile stünde in der Datei, wäre
     // beim nächsten Lesen aber nicht mehr Teil des Blocks — alles darunter auch nicht.
     expect(
-      validateGlobalSettings({ ...INPUT, httpsLines: ['# nur mal so', 'option forwardfor'] })
+      de(validateGlobalSettings({ ...INPUT, httpsLines: ['# nur mal so', 'option forwardfor'] }))
     ).toMatch(/Kommentar/);
   });
 
   it('lehnt eine Zeile ab, die einen neuen Abschnitt beginnt', () => {
-    expect(validateGlobalSettings({ ...INPUT, httpsLines: ['frontend woanders'] })).toMatch(
+    expect(de(validateGlobalSettings({ ...INPUT, httpsLines: ['frontend woanders'] }))).toMatch(
       /Konfigurationsabschnitt/
     );
   });

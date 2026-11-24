@@ -22,6 +22,7 @@ import { HAPROXY_PHASES, HAPROXY_PHASE_LABELS } from '@/components/runPhases';
 import { HTTPS_MARKER, type GlobalSettings } from '@/lib/haproxy/config';
 import { SkeletonRows } from '@/components/Skeleton';
 import GeoipPanel from '@/components/reverse-proxy/GeoipPanel';
+import { useT } from '@/lib/i18n/react';
 
 /**
  * Die globalen Einstellungen eines Reverse-Proxys.
@@ -61,6 +62,7 @@ export default function ReverseProxySettingsPage() {
   const { apiFetch } = useApp();
   const { notify } = useToast();
   const confirm = useConfirm();
+  const { t, rich } = useT();
 
   const [rows, setRows] = useState<SettingsRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -100,12 +102,12 @@ export default function ReverseProxySettingsPage() {
         if (data.success) setRows(data.data);
         setError('');
       } catch {
-        setError('Die Einstellungen konnten nicht geladen werden.');
+        setError(t('Die Einstellungen konnten nicht geladen werden.'));
       } finally {
         setLoading(false);
       }
     },
-    [apiFetch]
+    [apiFetch, t]
   );
 
   useEffect(() => {
@@ -139,9 +141,9 @@ export default function ReverseProxySettingsPage() {
         variant: ok ? 'success' : 'error',
         title: pendingRun.label,
         message: ok
-          ? 'Durchgelaufen, HAProxy hat die neue Konfiguration übernommen.'
-          : 'Nicht durchgelaufen. Der erste fehlgeschlagene Schritt steht im Protokoll.',
-        action: { label: 'Protokoll', onClick: () => setOpenRunId(pendingRun.id) },
+          ? t('Durchgelaufen, HAProxy hat die neue Konfiguration übernommen.')
+          : t('Nicht durchgelaufen. Der erste fehlgeschlagene Schritt steht im Protokoll.'),
+        action: { label: t('Protokoll'), onClick: () => setOpenRunId(pendingRun.id) },
       });
     };
 
@@ -150,7 +152,7 @@ export default function ReverseProxySettingsPage() {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [pendingRun, apiFetch, load, notify]);
+  }, [pendingRun, apiFetch, load, notify, t]);
 
   async function refresh() {
     setRefreshing(true);
@@ -236,7 +238,7 @@ export default function ReverseProxySettingsPage() {
     // zweite Meinung darüber, was durchgeht.
     const invalid = validateDnsCredentials({ hook: provider.hook, values, remove: false });
     if (invalid) {
-      notify({ variant: 'error', title: provider.label, message: invalid });
+      notify({ variant: 'error', title: provider.label, message: t(invalid) });
       return;
     }
 
@@ -248,7 +250,7 @@ export default function ReverseProxySettingsPage() {
         body: JSON.stringify({ serverId: row.$id, hook: provider.hook, values }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Speichern fehlgeschlagen');
+      if (!res.ok) throw new Error(data.error || t('Speichern fehlgeschlagen'));
 
       // Erst nachladen, dann melden: die Meldung sagt „eingerichtet", und die
       // Zeile darüber soll das dann auch schon zeigen.
@@ -265,14 +267,14 @@ export default function ReverseProxySettingsPage() {
         variant: active ? 'success' : 'error',
         title: provider.label,
         message: active
-          ? 'Zugangsdaten abgelegt. Wildcard-Zertifikate lassen sich ab jetzt ausstellen, auch für neue Domains derselben Zone.'
-          : 'Die Datei wurde geschrieben, acme.sh erkennt daraus aber keinen Hook. Steht der Token unter dem erwarteten Namen?',
+          ? t('Zugangsdaten abgelegt. Wildcard-Zertifikate lassen sich ab jetzt ausstellen, auch für neue Domains derselben Zone.')
+          : t('Die Datei wurde geschrieben, acme.sh erkennt daraus aber keinen Hook. Steht der Token unter dem erwarteten Namen?'),
       });
     } catch (err: unknown) {
       notify({
         variant: 'error',
         title: provider.label,
-        message: err instanceof Error ? err.message : 'Speichern fehlgeschlagen',
+        message: err instanceof Error ? err.message : t('Speichern fehlgeschlagen'),
       });
     } finally {
       setSavingCred(null);
@@ -281,12 +283,11 @@ export default function ReverseProxySettingsPage() {
 
   async function removeCredentials(row: SettingsRow, provider: DnsProvider) {
     const ok = await confirm({
-      title: `${provider.label}-Zugangsdaten entfernen`,
-      message:
-        'Der Token wird aus der acme.sh-Konfiguration gestrichen. Bestehende Zertifikate ' +
-        'bleiben, aber ihre automatische Erneuerung scheitert ab dann, und eine neue Wildcard ' +
-        'lässt sich nicht mehr ausstellen.',
-      confirmLabel: 'Entfernen',
+      title: t('{provider}-Zugangsdaten entfernen', { provider: provider.label }),
+      message: t(
+        'Der Token wird aus der acme.sh-Konfiguration gestrichen. Bestehende Zertifikate bleiben, aber ihre automatische Erneuerung scheitert ab dann, und eine neue Wildcard lässt sich nicht mehr ausstellen.'
+      ),
+      confirmLabel: t('Entfernen'),
       variant: 'danger',
     });
     if (!ok) return;
@@ -300,20 +301,20 @@ export default function ReverseProxySettingsPage() {
         body: JSON.stringify({ serverId: row.$id, hook: provider.hook }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Entfernen fehlgeschlagen');
+      if (!res.ok) throw new Error(data.error || t('Entfernen fehlgeschlagen'));
 
       clearCredentialDraft(key, provider);
       await load(true);
       notify({
         variant: 'success',
         title: provider.label,
-        message: 'Zugangsdaten entfernt.',
+        message: t('Zugangsdaten entfernt.'),
       });
     } catch (err: unknown) {
       notify({
         variant: 'error',
         title: provider.label,
-        message: err instanceof Error ? err.message : 'Entfernen fehlgeschlagen',
+        message: err instanceof Error ? err.message : t('Entfernen fehlgeschlagen'),
       });
     } finally {
       setSavingCred(null);
@@ -331,14 +332,14 @@ export default function ReverseProxySettingsPage() {
         body: JSON.stringify({ serverId: row.$id, ...value }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Speichern fehlgeschlagen');
-      const run = { id: data.data.runId, label: 'Einstellungen speichern' };
+      if (!res.ok) throw new Error(data.error || t('Speichern fehlgeschlagen'));
+      const run = { id: data.data.runId, label: t('Einstellungen speichern') };
       setPendingRun(run);
       notify({
         variant: 'info',
-        title: `${run.label} läuft`,
-        message: 'Prüfen, Backup, einsetzen, neu laden. Der Fortschritt steht unten rechts.',
-        action: { label: 'Schritte ansehen', onClick: () => setOpenRunId(run.id) },
+        title: t('{label} läuft', { label: run.label }),
+        message: t('Prüfen, Backup, einsetzen, neu laden. Der Fortschritt steht unten rechts.'),
+        action: { label: t('Schritte ansehen'), onClick: () => setOpenRunId(run.id) },
       });
       // Die Bearbeitung ist ab hier auf dem Weg zur Maschine; der nächste
       // Ladevorgang bringt den echten Stand.
@@ -348,8 +349,8 @@ export default function ReverseProxySettingsPage() {
     } catch (err) {
       notify({
         variant: 'error',
-        title: 'Speichern fehlgeschlagen',
-        message: err instanceof Error ? err.message : 'Unbekannter Fehler.',
+        title: t('Speichern fehlgeschlagen'),
+        message: err instanceof Error ? err.message : t('Unbekannter Fehler.'),
       });
     } finally {
       setSaving(null);
@@ -364,20 +365,20 @@ export default function ReverseProxySettingsPage() {
             <ShieldCheck size={20} />
           </span>
           <div>
-            <h1 className="page-title">Einstellungen</h1>
+            <h1 className="page-title">{t('Einstellungen')}</h1>
             <div className="page-crumbs">
               <Link className="page-back" href="/reverse-proxy">
                 <ArrowLeft size={14} />
-                Übersicht
+                {t('Übersicht')}
               </Link>
-              <span>Was für alle Dienste gilt</span>
+              <span>{t('Was für alle Dienste gilt')}</span>
             </div>
           </div>
         </div>
         <div className="page-actions">
           <button className="btn btn-secondary" onClick={refresh} disabled={refreshing}>
             {refreshing ? <Loader2 size={16} className="spin" /> : <RefreshCw size={16} />}
-            Aktualisieren
+            {t('Aktualisieren')}
           </button>
         </div>
       </div>
@@ -394,10 +395,11 @@ export default function ReverseProxySettingsPage() {
       ) : rows.length === 0 ? (
         <div className="empty-state">
           <Network size={40} />
-          <h3>HAProxy antwortet nicht</h3>
+          <h3>{t('HAProxy antwortet nicht')}</h3>
           <p>
-            Ohne HAProxy gibt es hier nichts einzustellen. Sein Zustand steht in der{' '}
-            <Link href="/dashboard">Übersicht</Link>.
+            {rich('Ohne HAProxy gibt es hier nichts einzustellen. Sein Zustand steht in der {overview}.', {
+              overview: <Link href="/dashboard">{t('Übersicht')}</Link>,
+            })}
           </p>
         </div>
       ) : (
@@ -421,7 +423,7 @@ export default function ReverseProxySettingsPage() {
                     disabled={!dirty || saving === row.$id}
                   >
                     {saving === row.$id ? <Loader2 size={16} className="spin" /> : <Save size={16} />}
-                    Speichern
+                    {t('Speichern')}
                   </button>
                 )}
               </div>
@@ -431,9 +433,10 @@ export default function ReverseProxySettingsPage() {
               {!row.error && row.settings?.httpsLines == null && (
                 <div className="alert alert-warning">
                   <span>
-                    In der Konfiguration steht keine Zeile <code>{HTTPS_MARKER}</code>. Ohne sie
-                    ist nicht bestimmbar, wo die globalen Einstellungen hingehören. Hier wird
-                    deshalb nichts angeboten.
+                    {rich(
+                      'In der Konfiguration steht keine Zeile {marker}. Ohne sie ist nicht bestimmbar, wo die globalen Einstellungen hingehören. Hier wird deshalb nichts angeboten.',
+                      { marker: <code>{HTTPS_MARKER}</code> }
+                    )}
                   </span>
                 </div>
               )}
@@ -447,10 +450,12 @@ export default function ReverseProxySettingsPage() {
                           <ShieldCheck size={17} />
                         </span>
                         <div>
-                          <div className="form-section-title">HTTPS-Einstellungen</div>
+                          <div className="form-section-title">{t('HTTPS-Einstellungen')}</div>
                           <div className="form-section-sub">
-                            Die Zeilen unter <code>{HTTPS_MARKER}</code>, eine je Feld. Sie gelten
-                            für jeden Dienst und werden so übernommen, wie sie hier stehen.
+                            {rich(
+                              'Die Zeilen unter {marker}, eine je Feld. Sie gelten für jeden Dienst und werden so übernommen, wie sie hier stehen.',
+                              { marker: <code>{HTTPS_MARKER}</code> }
+                            )}
                           </div>
                         </div>
                       </div>
@@ -475,7 +480,7 @@ export default function ReverseProxySettingsPage() {
                             <button
                               type="button"
                               className="btn btn-ghost btn-icon"
-                              data-tooltip="Zeile entfernen"
+                              data-tooltip={t('Zeile entfernen')}
                               disabled={value.httpsLines.length === 1}
                               onClick={() =>
                                 edit(row, {
@@ -496,18 +501,17 @@ export default function ReverseProxySettingsPage() {
                           onClick={() => edit(row, { httpsLines: [...value.httpsLines, ''] })}
                         >
                           <Plus size={14} />
-                          Zeile hinzufügen
+                          {t('Zeile hinzufügen')}
                         </button>
                       </div>
 
                       <div className="form-note">
                         <Info size={14} />
                         <span>
-                          Jede Zeile geht unverändert in die Konfiguration. Geprüft wird sie von
-                          HAProxy selbst (<code>haproxy -c</code>). Ist etwas daran falsch, wird
-                          nichts eingesetzt und der Fehler steht im Protokoll des Vorgangs.
-                          Kommentare und Zeilen wie <code>backend …</code> gehen hier nicht: sie
-                          würden den Block beenden, und alles darunter stünde danach außerhalb.
+                          {rich(
+                            'Jede Zeile geht unverändert in die Konfiguration. Geprüft wird sie von HAProxy selbst ({check}). Ist etwas daran falsch, wird nichts eingesetzt und der Fehler steht im Protokoll des Vorgangs. Kommentare und Zeilen wie {backend} gehen hier nicht: sie würden den Block beenden, und alles darunter stünde danach außerhalb.',
+                            { check: <code>haproxy -c</code>, backend: <code>backend …</code> }
+                          )}
                         </span>
                       </div>
                     </section>
@@ -518,11 +522,12 @@ export default function ReverseProxySettingsPage() {
                           <Lock size={17} />
                         </span>
                         <div>
-                          <div className="form-section-title">Admin-IPs</div>
+                          <div className="form-section-title">{t('Admin-IPs')}</div>
                           <div className="form-section-sub">
-                            Die Adressen, die einen gesperrten Eintrag noch erreichen. Sie stehen
-                            einmal in der Konfiguration (<code>acl admin_ips src …</code>) und
-                            gelten für jeden Eintrag, bei dem das Schloss zu ist.
+                            {rich(
+                              'Die Adressen, die einen gesperrten Eintrag noch erreichen. Sie stehen einmal in der Konfiguration ({acl}) und gelten für jeden Eintrag, bei dem das Schloss zu ist.',
+                              { acl: <code>acl admin_ips src …</code> }
+                            )}
                           </div>
                         </div>
                       </div>
@@ -540,13 +545,13 @@ export default function ReverseProxySettingsPage() {
                                   ),
                                 })
                               }
-                              placeholder="203.0.113.7 oder 10.0.0.0/8"
+                              placeholder={t('203.0.113.7 oder 10.0.0.0/8')}
                               autoComplete="off"
                             />
                             <button
                               type="button"
                               className="btn btn-ghost btn-icon"
-                              data-tooltip="Zeile entfernen"
+                              data-tooltip={t('Zeile entfernen')}
                               disabled={value.adminIps.length === 1}
                               onClick={() =>
                                 edit(row, {
@@ -567,7 +572,7 @@ export default function ReverseProxySettingsPage() {
                           onClick={() => edit(row, { adminIps: [...value.adminIps, ''] })}
                         >
                           <Plus size={14} />
-                          Adresse hinzufügen
+                          {t('Adresse hinzufügen')}
                         </button>
                       </div>
 
@@ -575,18 +580,17 @@ export default function ReverseProxySettingsPage() {
                         <div className="form-note">
                           <Lock size={14} />
                           <span>
-                            Gesperrt sind gerade: {row.settings.lockedServices.join(', ')}. Solange
-                            das so ist, lässt sich die Liste nicht leeren: eine Regel auf eine
-                            Adressliste, die es nicht mehr gibt, lässt HAProxy beim nächsten Start
-                            stehen.
+                            {t(
+                              'Gesperrt sind gerade: {services}. Solange das so ist, lässt sich die Liste nicht leeren: eine Regel auf eine Adressliste, die es nicht mehr gibt, lässt HAProxy beim nächsten Start stehen.',
+                              { services: row.settings.lockedServices.join(', ') }
+                            )}
                           </span>
                         </div>
                       ) : (
                         <div className="form-note">
                           <Info size={14} />
                           <span>
-                            Kein Eintrag ist gesperrt. Das Schloss dafür sitzt auf der Karte des
-                            jeweiligen Ziels.
+                            {t('Kein Eintrag ist gesperrt. Das Schloss dafür sitzt auf der Karte des jeweiligen Ziels.')}
                           </span>
                         </div>
                       )}
@@ -597,9 +601,10 @@ export default function ReverseProxySettingsPage() {
                       {row.settings && !row.settings.adminEditable && (
                         <div className="alert alert-warning">
                           <span>
-                            <code>acl admin_ips src …</code> steht mehr als einmal in der
-                            Konfiguration. HAProxy verodert die Zeilen; sie hier zu einer
-                            zusammenzuschreiben wäre eine Änderung, die niemand angefordert hat.
+                            {rich(
+                              '{acl} steht mehr als einmal in der Konfiguration. HAProxy verodert die Zeilen; sie hier zu einer zusammenzuschreiben wäre eine Änderung, die niemand angefordert hat.',
+                              { acl: <code>acl admin_ips src …</code> }
+                            )}
                           </span>
                         </div>
                       )}
@@ -620,12 +625,12 @@ export default function ReverseProxySettingsPage() {
                         <KeyRound size={17} />
                       </span>
                       <div>
-                        <div className="form-section-title">DNS-Zugangsdaten für Wildcards</div>
+                        <div className="form-section-title">{t('DNS-Zugangsdaten für Wildcards')}</div>
                         <div className="form-section-sub">
-                          Eine Wildcard lässt Let’s Encrypt nur über DNS-01 ausstellen. Der Token
-                          liegt in der Konfiguration von <code>acme.sh</code> und wird dort für
-                          jede Erneuerung wiederverwendet. Anzeigen lässt er sich danach nicht
-                          mehr.
+                          {rich(
+                            'Eine Wildcard lässt Let’s Encrypt nur über DNS-01 ausstellen. Der Token liegt in der Konfiguration von {acme} und wird dort für jede Erneuerung wiederverwendet. Anzeigen lässt er sich danach nicht mehr.',
+                            { acme: <code>acme.sh</code> }
+                          )}
                         </div>
                       </div>
                     </div>
@@ -637,14 +642,14 @@ export default function ReverseProxySettingsPage() {
                         darüber, was eingerichtet ist. */}
                     <div className="form-list">
                       {configuredProviders(row).length === 0 ? (
-                        <div className="form-list-empty">Kein Token hinterlegt.</div>
+                        <div className="form-list-empty">{t('Kein Token hinterlegt.')}</div>
                       ) : (
                         configuredProviders(row).map((provider) => (
                           <div className="form-list-row" key={provider.hook}>
                             <span style={{ flex: 1, minWidth: 0 }}>{provider.label}</span>
                             <span className="badge-status badge-success">
                               <span className="dot" />
-                              Token gesetzt
+                              {t('Token gesetzt')}
                             </span>
                             {/* Kein Bearbeiten: der Token lässt sich nicht
                                 anzeigen, ein Feld daneben hieße also „leer =
@@ -654,7 +659,7 @@ export default function ReverseProxySettingsPage() {
                             <button
                               type="button"
                               className="btn btn-ghost btn-icon"
-                              data-tooltip="Token entfernen"
+                              data-tooltip={t('Token entfernen')}
                               disabled={savingCred === `${row.$id}|${provider.hook}`}
                               onClick={() => removeCredentials(row, provider)}
                             >
@@ -672,7 +677,7 @@ export default function ReverseProxySettingsPage() {
                     {addingFor === row.$id ? (
                       <div className="form-subsection">
                         <div className="form-group">
-                          <label className="form-label">Anbieter</label>
+                          <label className="form-label">{t('Anbieter')}</label>
                           <Select
                             value={addHook}
                             onChange={setAddHook}
@@ -686,7 +691,7 @@ export default function ReverseProxySettingsPage() {
                         {findDnsProvider(addHook)?.fields.map((field) => (
                           <div className="form-group" key={field.name}>
                             <label className="form-label">
-                              {field.label}
+                              {t(field.label)}
                               {!field.required && ' (optional)'}
                             </label>
                             {/* `type="password"`, weil daneben jemand steht. */}
@@ -706,7 +711,7 @@ export default function ReverseProxySettingsPage() {
                             {field.hint && (
                               <div className="form-note">
                                 <Info size={14} />
-                                <span>{field.hint}</span>
+                                <span>{t(field.hint)}</span>
                               </div>
                             )}
                           </div>
@@ -719,7 +724,7 @@ export default function ReverseProxySettingsPage() {
                             onClick={cancelAdd}
                             disabled={savingCred !== null}
                           >
-                            Abbrechen
+                            {t('Abbrechen')}
                           </button>
                           <button
                             type="button"
@@ -738,7 +743,7 @@ export default function ReverseProxySettingsPage() {
                             ) : (
                               <Save size={14} />
                             )}
-                            Speichern
+                            {t('Speichern')}
                           </button>
                         </div>
 
@@ -747,14 +752,14 @@ export default function ReverseProxySettingsPage() {
                             <Info size={14} />
                             <span>
                               {findDnsProvider(addHook)!.note ? (
-                                <>{findDnsProvider(addHook)!.note} </>
+                                <>{t(findDnsProvider(addHook)!.note!)} </>
                               ) : null}
                               <a
                                 href={findDnsProvider(addHook)!.consoleUrl}
                                 target="_blank"
                                 rel="noreferrer"
                               >
-                                Token beim Anbieter anlegen
+                                {t('Token beim Anbieter anlegen')}
                               </a>
                             </span>
                           </div>
@@ -772,7 +777,7 @@ export default function ReverseProxySettingsPage() {
                             onClick={() => startAdd(row)}
                           >
                             <Plus size={14} />
-                            Hinzufügen
+                            {t('Hinzufügen')}
                           </button>
                         </div>
                       )

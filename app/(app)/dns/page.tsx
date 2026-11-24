@@ -1,8 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, type FormEvent } from 'react';
-import Link from 'next/link';
-import { Globe, Plus, Loader2, Trash2, KeyRound, ListTree, Info, ExternalLink } from 'lucide-react';
+import { Globe, Plus, Loader2, Trash2, KeyRound, Info, ExternalLink } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { usePolling } from '@/components/usePolling';
 import { useNow } from '@/components/useNow';
@@ -14,14 +13,19 @@ import { validateZoneName, normalizeDomain, type DnsProviderId } from '@/lib/dns
 import { DNS_PROVIDER_INFOS, dnsProviderInfo } from '@/lib/dns/provider-info';
 import { SkeletonCards } from '@/components/Skeleton';
 import { InfoHint } from '@/ui/primitives/InfoHint';
+import { formatRelative } from '@/lib/i18n';
+import { useT } from '@/lib/i18n/react';
 
 /**
- * Die verwalteten Domains.
+ * Die angebundenen Domains: der Zugang zum DNS-Anbieter, nicht ihre Einträge.
  *
- * Eine Karte je Zone, kein Tabellenblatt: es sind ein Dutzend Domains mit
- * Namen und zwei Attributen, und genau dafür gibt es `EntityCard`. Die Einträge
- * einer Zone sind die Detailseite — hier steht nur ihre Anzahl, und die kommt
- * live vom Anbieter der Zone.
+ * HAPM schreibt nur, was es selbst braucht (den CNAME eines Ziels, den
+ * Adress-Eintrag aus dem Assistenten). Alles andere verwaltet man beim
+ * Anbieter, deshalb gibt es hier keine Liste der Einträge.
+ *
+ * Eine Karte je Zone: ein Dutzend Domains mit wenigen Angaben, genau dafür
+ * gibt es `EntityCard`. Ob der Zugang funktioniert, prüft die Route bei jedem
+ * Aufruf beim Anbieter.
  */
 
 interface ZoneRow {
@@ -32,17 +36,8 @@ interface ZoneRow {
   status: 'ok' | 'error';
   lastCheckedAt: string | null;
   lastError: string | null;
-  /** `null` heißt unbekannt — die Zone war gerade nicht lesbar. Nicht null Einträge. */
-  records: number | null;
-}
-
-function relative(iso: string | null, now: number): string {
-  if (!iso) return 'nie';
-  const seconds = Math.max(0, Math.round((now - new Date(iso).getTime()) / 1000));
-  if (seconds < 60) return 'gerade eben';
-  if (seconds < 3600) return `vor ${Math.floor(seconds / 60)} min`;
-  if (seconds < 86_400) return `vor ${Math.floor(seconds / 3600)} h`;
-  return new Date(iso).toLocaleDateString('de-DE');
+  /** Ob die Nameserver auf den Anbieter zeigen. `null` heißt unbekannt. */
+  delegated: boolean | null;
 }
 
 export default function DnsZonesPage() {
@@ -50,6 +45,7 @@ export default function DnsZonesPage() {
   const confirm = useConfirm();
   const { notify } = useToast();
   const now = useNow(30_000);
+  const { t, rich, locale } = useT();
 
   const [zones, setZones] = useState<ZoneRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,12 +72,12 @@ export default function DnsZonesPage() {
         if (data.success) setZones(data.data as ZoneRow[]);
         setError('');
       } catch {
-        setError('Die Domains konnten nicht geladen werden.');
+        setError(t('Die Domains konnten nicht geladen werden.'));
       } finally {
         setLoading(false);
       }
     },
-    [apiFetch]
+    [apiFetch, t]
   );
 
   useEffect(() => {
@@ -108,7 +104,7 @@ export default function DnsZonesPage() {
     if (!chosen) return;
     const invalid = validateZoneName(name);
     if (invalid) {
-      setFormError(invalid);
+      setFormError(t(invalid));
       return;
     }
     setFormError('');
@@ -120,29 +116,30 @@ export default function DnsZonesPage() {
         body: JSON.stringify({ provider: chosen.id, name: normalizeDomain(name), apiToken }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Anlegen fehlgeschlagen');
+      if (!res.ok) throw new Error(data.error || t('Anbinden fehlgeschlagen'));
       const added = data.data as { name: string; created: boolean; delegated: boolean | null };
       setModalOpen(false);
       setApiToken('');
       notify({
         variant: 'success',
         message: added.created
-          ? `${added.name} ist eingerichtet.`
-          : `${added.name} war schon eingerichtet. Der Zugang wurde ersetzt.`,
+          ? t('{name} ist angebunden.', { name: added.name })
+          : t('{name} war schon angebunden. Der Zugang wurde ersetzt.', { name: added.name }),
       });
       // Nur bei einem klaren Nein: `null` heißt, der Anbieter hat es noch nicht geprüft.
       if (added.delegated === false) {
         notify({
           variant: 'warning',
-          title: 'Noch nicht delegiert',
-          message:
-            `Die Nameserver von ${added.name} zeigen nicht auf ${chosen.label}. ` +
-            'Einträge wirken erst, wenn die Domain dorthin delegiert ist.',
+          title: t('Noch nicht delegiert'),
+          message: t(
+            'Die Nameserver von {name} zeigen nicht auf {provider}. Einträge wirken erst, wenn die Domain dorthin delegiert ist.',
+            { name: added.name, provider: chosen.label }
+          ),
         });
       }
       await load(true);
     } catch (err: unknown) {
-      setFormError(err instanceof Error ? err.message : 'Anlegen fehlgeschlagen');
+      setFormError(err instanceof Error ? err.message : t('Anbinden fehlgeschlagen'));
     } finally {
       setSaving(false);
     }
@@ -160,13 +157,13 @@ export default function DnsZonesPage() {
         body: JSON.stringify({ apiToken: newToken }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Speichern fehlgeschlagen');
-      notify({ variant: 'success', message: `Der Token für ${rotating.name} ist ausgetauscht.` });
+      if (!res.ok) throw new Error(data.error || t('Speichern fehlgeschlagen'));
+      notify({ variant: 'success', message: t('Der Token für {name} ist ausgetauscht.', { name: rotating.name }) });
       setRotating(null);
       setNewToken('');
       await load(true);
     } catch (err: unknown) {
-      setFormError(err instanceof Error ? err.message : 'Speichern fehlgeschlagen');
+      setFormError(err instanceof Error ? err.message : t('Speichern fehlgeschlagen'));
     } finally {
       setSaving(false);
     }
@@ -174,23 +171,22 @@ export default function DnsZonesPage() {
 
   async function handleDelete(zone: ZoneRow) {
     await confirm({
-      title: 'Domain aus der Verwaltung nehmen',
-      message:
-        `Bei ${dnsProviderInfo(zone.provider).label} passiert dabei nichts: die Zone ${zone.name} bleibt bestehen, ihre ` +
-        `Einträge bleiben stehen, und alles, was darüber läuft, läuft weiter. Weg ist nur der ` +
-        `Zugang von hier, auch der Haken im Reverse-Proxy-Dialog, der Einträge unter dieser ` +
-        `Domain anlegt. Der API-Token wird dabei gelöscht.`,
-      confirmLabel: 'Entfernen',
+      title: t('Anbindung entfernen'),
+      message: t(
+        'Bei {provider} ändert sich nichts: die Zone {zone} und ihre Einträge bleiben. HAPM legt danach für Ziele unter dieser Domain keinen DNS-Eintrag mehr an. Der API-Token wird gelöscht.',
+        { provider: dnsProviderInfo(zone.provider).label, zone: zone.name }
+      ),
+      confirmLabel: t('Entfernen'),
       variant: 'danger',
       onConfirm: async () => {
         const res = await apiFetch(`/api/dns/zones/${zone.$id}`, { method: 'DELETE' });
         const data = await res.json();
         if (!res.ok) {
-          setError(data.error || 'Entfernen fehlgeschlagen');
+          setError(data.error || t('Entfernen fehlgeschlagen'));
           throw new Error(data.error);
         }
         setError('');
-        notify({ variant: 'success', message: `${zone.name} wird hier nicht mehr verwaltet.` });
+        notify({ variant: 'success', message: t('{name} ist nicht mehr angebunden.', { name: zone.name }) });
         await load(true);
       },
     });
@@ -200,17 +196,17 @@ export default function DnsZonesPage() {
     <>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Domains</h1>
+          <h1 className="page-title">{t('Domains')}</h1>
           <p className="page-subtitle">
-            Die Domains, deren DNS hier verwaltet wird, bei Hetzner oder Cloudflare. Die Einträge
-            stehen beim Anbieter und werden bei jedem Aufruf von dort gelesen. Es gibt hier keine
-            Kopie, die veralten könnte.
+            {t(
+              'Der Zugang zu Hetzner oder Cloudflare. Damit legt HAPM den DNS-Eintrag eines Ziels an, und der Einrichtungsassistent den Eintrag der Oberfläche. Die übrigen Einträge verwalten Sie beim Anbieter.'
+            )}
           </p>
         </div>
         <div className="page-actions">
           <button className="btn btn-primary" onClick={openModal}>
             <Plus size={16} />
-            Domain hinzufügen
+            {t('Domain anbinden')}
           </button>
         </div>
       </div>
@@ -222,10 +218,11 @@ export default function DnsZonesPage() {
       ) : zones.length === 0 ? (
         <div className="empty-state">
           <Globe size={40} />
-          <h3>Noch keine Domain</h3>
+          <h3>{t('Noch keine Domain angebunden')}</h3>
           <p>
-            Zum Einrichten braucht es die Domain und einen API-Token ihres Anbieters, Hetzner oder
-            Cloudflare, der die Einträge der Zone bearbeiten darf.
+            {t(
+              'Dafür braucht es die Domain und einen API-Token von Hetzner oder Cloudflare, der die Einträge der Zone bearbeiten darf.'
+            )}
           </p>
         </div>
       ) : (
@@ -239,21 +236,14 @@ export default function DnsZonesPage() {
                 <span
                   className={`badge-status ${zone.status === 'ok' ? 'badge-success' : 'badge-danger'}`}
                 >
-                  {zone.status === 'ok' ? 'Erreichbar' : 'Fehler'}
+                  {zone.status === 'ok' ? t('Verbunden') : t('Fehler')}
                 </span>
               }
               actions={
                 <>
-                  <Link
-                    className="btn btn-ghost btn-icon btn-sm"
-                    data-tooltip="Einträge verwalten"
-                    href={`/dns/${zone.$id}`}
-                  >
-                    <ListTree size={16} />
-                  </Link>
                   <button
                     className="btn btn-ghost btn-icon btn-sm"
-                    data-tooltip="API-Token austauschen"
+                    data-tooltip={t('API-Token austauschen')}
                     onClick={() => {
                       setRotating(zone);
                       setNewToken('');
@@ -264,7 +254,7 @@ export default function DnsZonesPage() {
                   </button>
                   <button
                     className="btn btn-ghost btn-icon btn-sm"
-                    data-tooltip="Aus der Verwaltung nehmen"
+                    data-tooltip={t('Anbindung entfernen')}
                     onClick={() => handleDelete(zone)}
                   >
                     <Trash2 size={16} />
@@ -272,19 +262,23 @@ export default function DnsZonesPage() {
                 </>
               }
             >
-              <EntityField label="Anbieter">
+              <EntityField label={t('Anbieter')}>
                 <ProviderName provider={zone.provider} />
               </EntityField>
-              <EntityField label="Einträge">
-                {/* „unbekannt" und nicht 0: eine Zone, deren Token abgelaufen
-                    ist, hat keine null Einträge — sie ist gerade nicht lesbar. */}
-                {zone.records === null ? 'unbekannt' : zone.records}
+              <EntityField label={t('Nameserver')}>
+                {zone.delegated === null
+                  ? t('Unbekannt')
+                  : zone.delegated
+                    ? t('Zeigen auf {provider}', { provider: dnsProviderInfo(zone.provider).label })
+                    : t('Zeigen nicht auf {provider}', { provider: dnsProviderInfo(zone.provider).label })}
               </EntityField>
-              <EntityField label="Zone-ID" mono>
+              <EntityField label={t('Zone-ID')} mono>
                 {zone.zoneId}
               </EntityField>
-              <EntityField label="Zuletzt geprüft">{relative(zone.lastCheckedAt, now)}</EntityField>
-              {zone.lastError && <EntityField label="Fehler">{zone.lastError}</EntityField>}
+              <EntityField label={t('Zuletzt geprüft')}>
+                {zone.lastCheckedAt ? formatRelative(locale, now, zone.lastCheckedAt) : t('nie')}
+              </EntityField>
+              {zone.lastError && <EntityField label={t('Fehler')}>{zone.lastError}</EntityField>}
             </EntityCard>
           ))}
         </EntityGrid>
@@ -297,14 +291,14 @@ export default function DnsZonesPage() {
         >
           <div className="modal">
             <div className="modal-header">
-              <h2 className="modal-title">Domain hinzufügen</h2>
+              <h2 className="modal-title">{t('Domain anbinden')}</h2>
             </div>
             <form onSubmit={handleSubmit}>
               <div className="modal-body">
                 {formError && <div className="alert alert-danger sys-block">{formError}</div>}
 
                 <div className="form-group">
-                  <span className="form-label">Anbieter</span>
+                  <span className="form-label">{t('Anbieter')}</span>
                   <div className="hapm-choices hapm-choices-row">
                     {DNS_PROVIDER_INFOS.map((option) => (
                       <button
@@ -330,7 +324,7 @@ export default function DnsZonesPage() {
                 {chosen && (
                   <>
                     <div className="form-group">
-                      <label className="form-label">Domain</label>
+                      <label className="form-label">{t('Domain')}</label>
                       <input
                         className="form-input"
                         value={name}
@@ -340,18 +334,20 @@ export default function DnsZonesPage() {
                         required
                       />
                       <span className="form-hint">
-                        Ohne <code>https://</code>. Eingerichtet wird die Zone, in der sie liegt.
+                        {rich('Ohne {scheme}. Angebunden wird die Zone, in der sie liegt.', {
+                          scheme: <code>https://</code>,
+                        })}
                       </span>
-                      {nameError && <div className="alert alert-warning">{nameError}</div>}
+                      {nameError && <div className="alert alert-warning">{t(nameError)}</div>}
                     </div>
 
                     <div className="form-group">
                       <label className="form-label">
-                        API-Token
+                        {t('API-Token')}
                         <InfoHint
                           text={
-                            (chosen.tokenHint ? `${chosen.tokenHint} ` : '') +
-                            'Er wird verschlüsselt gespeichert und verlässt den Server nicht.'
+                            (chosen.tokenHint ? `${t(chosen.tokenHint)} ` : '') +
+                            t('Er wird verschlüsselt gespeichert und verlässt den Server nicht.')
                           }
                         />
                       </label>
@@ -366,7 +362,7 @@ export default function DnsZonesPage() {
                       {chosen.consoleUrl && (
                         <span className="form-hint">
                           <a href={chosen.consoleUrl} target="_blank" rel="noreferrer">
-                            Token bei {chosen.label} anlegen <ExternalLink size={12} />
+                            {t('Token bei {provider} anlegen', { provider: chosen.label })} <ExternalLink size={12} />
                           </a>
                         </span>
                       )}
@@ -375,9 +371,10 @@ export default function DnsZonesPage() {
                     <div className="form-note">
                       <Info size={14} />
                       <span>
-                        Der Token wird sofort ausprobiert: die Kennung der Zone kommt aus der
-                        Antwort von {chosen.label}. Findet er die Domain nicht, sagt die Meldung,
-                        welche Zonen er stattdessen sieht.
+                        {t(
+                          'Der Token wird sofort ausprobiert: die Kennung der Zone kommt aus der Antwort von {provider}. Findet er die Domain nicht, sagt die Meldung, welche Zonen er stattdessen sieht.',
+                          { provider: chosen.label }
+                        )}
                       </span>
                     </div>
                   </>
@@ -390,7 +387,7 @@ export default function DnsZonesPage() {
                   onClick={() => setModalOpen(false)}
                   disabled={saving}
                 >
-                  Abbrechen
+                  {t('Abbrechen')}
                 </button>
                 <button
                   type="submit"
@@ -398,7 +395,7 @@ export default function DnsZonesPage() {
                   disabled={saving || !chosen || !!nameError || apiToken.trim() === ''}
                 >
                   {saving && <Loader2 size={16} className="spin" />}
-                  Hinzufügen
+                  {t('Anbinden')}
                 </button>
               </div>
             </form>
@@ -413,14 +410,14 @@ export default function DnsZonesPage() {
         >
           <div className="modal">
             <div className="modal-header">
-              <h2 className="modal-title">API-Token für „{rotating.name}“</h2>
+              <h2 className="modal-title">{t('API-Token für „{name}“', { name: rotating.name })}</h2>
             </div>
             <form onSubmit={handleRotate}>
               <div className="modal-body">
                 {formError && <div className="alert alert-danger sys-block">{formError}</div>}
                 <div className="form-group">
                   <label className="form-label">
-                    Neuer Token von {dnsProviderInfo(rotating.provider).label}
+                    {t('Neuer Token von {provider}', { provider: dnsProviderInfo(rotating.provider).label })}
                   </label>
                   <input
                     className="form-input"
@@ -431,8 +428,9 @@ export default function DnsZonesPage() {
                     required
                   />
                   <span className="form-hint">
-                    Der bisherige Token wird ersetzt. Der neue muss dieselbe Zone sehen, sonst
-                    wird er abgelehnt, und der alte bleibt stehen.
+                    {t(
+                      'Der bisherige Token wird ersetzt. Der neue muss dieselbe Zone sehen, sonst wird er abgelehnt, und der alte bleibt stehen.'
+                    )}
                   </span>
                 </div>
               </div>
@@ -443,7 +441,7 @@ export default function DnsZonesPage() {
                   onClick={() => setRotating(null)}
                   disabled={saving}
                 >
-                  Abbrechen
+                  {t('Abbrechen')}
                 </button>
                 <button
                   type="submit"
@@ -451,7 +449,7 @@ export default function DnsZonesPage() {
                   disabled={saving || newToken.trim() === ''}
                 >
                   {saving && <Loader2 size={16} className="spin" />}
-                  Speichern
+                  {t('Speichern')}
                 </button>
               </div>
             </form>

@@ -6,6 +6,7 @@
 
 import { getSingleton, updateDocument } from '../db';
 import { ApiError } from '../api';
+import { msg, type Message } from '../i18n';
 import type { DbDoc } from '../types';
 
 export const BACKUP_SETTINGS = 'backup_settings';
@@ -50,21 +51,25 @@ const FORBIDDEN_ROOTS = ['/', '/etc', '/bin', '/sbin', '/usr', '/lib', '/lib64',
  * Trenner (`pfad:ziel:optionen`), ein Pfad damit bände etwas anderes ein, als
  * dasteht.
  */
-export function checkHostPath(input: string): { path: string } | { error: string } {
+export function checkHostPath(input: string): { path: string } | { error: Message } {
   const value = input.trim();
-  if (!value) return { error: 'Der Ordner fehlt.' };
-  if (!value.startsWith('/')) return { error: 'Der Ordner muss mit / beginnen (ein Pfad auf dem Server).' };
-  if (value.length > 400) return { error: 'Der Pfad ist zu lang.' };
+  if (!value) return { error: msg('Der Ordner fehlt.') };
+  if (!value.startsWith('/')) return { error: msg('Der Ordner muss mit / beginnen (ein Pfad auf dem Server).') };
+  if (value.length > 400) return { error: msg('Der Pfad ist zu lang.') };
   if (!/^[A-Za-z0-9/_.\- ]+$/.test(value)) {
-    return { error: 'Der Pfad darf nur Buchstaben, Ziffern, Leerzeichen und / _ . - enthalten.' };
+    return { error: msg('Der Pfad darf nur Buchstaben, Ziffern, Leerzeichen und / _ . - enthalten.') };
   }
   const parts = value.split('/').filter(Boolean);
   if (parts.some((part) => part === '..' || part === '.')) {
-    return { error: 'Der Pfad darf kein . oder .. enthalten.' };
+    return { error: msg('Der Pfad darf kein . oder .. enthalten.') };
   }
   const path = `/${parts.join('/')}`;
   if (FORBIDDEN_ROOTS.includes(path) || ['/proc/', '/sys/', '/dev/'].some((root) => path.startsWith(root))) {
-    return { error: `In ${path} legt HAPM keine Sicherungen ab. Bitte einen eigenen Ordner angeben, etwa /srv/hapm-backup.` };
+    return {
+      error: msg('In {path} legt HAPM keine Sicherungen ab. Bitte einen eigenen Ordner angeben, etwa /srv/hapm-backup.', {
+        path,
+      }),
+    };
   }
   return { path };
 }
@@ -91,13 +96,15 @@ export async function updateBackupSettings(input: BackupSettingsInput): Promise<
     }
   }
   if (input.time !== undefined) {
-    if (!validTime(input.time)) throw new ApiError('Die Uhrzeit hat nicht die Form HH:MM.');
+    if (!validTime(input.time)) throw new ApiError(msg('Die Uhrzeit hat nicht die Form HH:MM.'));
     patch.time = input.time;
   }
   if (input.keep !== undefined) {
     const keep = Number(input.keep);
     if (!Number.isInteger(keep) || keep < BACKUP_KEEP_MIN || keep > BACKUP_KEEP_MAX) {
-      throw new ApiError(`Aufbewahrt werden zwischen ${BACKUP_KEEP_MIN} und ${BACKUP_KEEP_MAX} Sicherungen.`);
+      throw new ApiError(
+        msg('Aufbewahrt werden zwischen {min} und {max} Sicherungen.', { min: BACKUP_KEEP_MIN, max: BACKUP_KEEP_MAX })
+      );
     }
     patch.keep = keep;
   }
@@ -105,7 +112,7 @@ export async function updateBackupSettings(input: BackupSettingsInput): Promise<
 
   const next = { ...current, ...patch };
   if (next.enabled && !next.hostPath) {
-    throw new ApiError('Ohne Ordner lässt sich die tägliche Sicherung nicht einschalten.');
+    throw new ApiError(msg('Ohne Ordner lässt sich die tägliche Sicherung nicht einschalten.'));
   }
 
   await updateDocument<BackupSettings>(BACKUP_SETTINGS, SETTINGS_ID, patch);

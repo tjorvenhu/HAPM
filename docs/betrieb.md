@@ -249,8 +249,11 @@ lässt sich erneut starten.
 **Offen, abgeschlossen, übersprungen** (`setupStatus` in den Einstellungen).
 Solange die Einrichtung offen ist, steht oben in der Übersicht eine Fläche, die
 zurück in den Assistenten führt. Eine Installation, die es vor dem Assistenten
-gab, trägt keinen Wert und gilt als abgeschlossen. Unter „Allgemein" lässt sich
-die Art umstellen und die Einrichtung erneut öffnen.
+gab, trägt keinen Wert und gilt als abgeschlossen. **Abgeschlossen und
+übersprungen sind endgültig**: die Einrichtung lässt sich nicht erneut öffnen
+(`/api/setup/status` nimmt nur noch `skipped`, und nur solange sie offen ist).
+Was sie eingerichtet hat, ändert man danach an seiner Stelle: Art und Adresse
+unter „Allgemein", die Anbindung unter „DNS", das Ziel unter „Reverse-Proxy".
 
 ## Updates: `lib/updates/`
 
@@ -362,6 +365,7 @@ schreibt `hapm-backup-JJJJMMTT-HHMMSS.tar.gz` dorthin:
 
 | Im Archiv | Inhalt |
 |---|---|
+| `manifest.json` | Fassung von HAPM, Zeitpunkt, Art des Laufs, Fingerabdruck des Schlüssels (seit 0.5, `lib/backup/manifest.ts`) |
 | `database.sql` | die Datenbank, mit `pg_dump` im Postgres-Container geschrieben |
 | `data/secrets.json` | der Schlüssel zu den verschlüsselten Werten |
 | `haproxy/` | `/etc/haproxy`: Konfiguration, Zertifikate, Fehlerseiten |
@@ -392,9 +396,96 @@ Nicht im Archiv: das Zugriffsprotokoll und die Abbilder.
 
 ### Zurückspielen
 
-HAPM spielt eine Sicherung nicht selbst zurück: dafür muss der Stack stehen,
-in dem es läuft. Auf einem Server mit Docker, auf dem HAPM noch nicht läuft, in
-einem leeren Ordner mit `docker-compose.yml` (hier `/opt/hapm`):
+Unter „Sicherung", Karte „Sicherung zurückspielen" (`lib/backup/restore.ts`,
+das Skript des Helfers in `lib/backup/restore-script.ts`). Der Ablauf:
+
+1. **Bereitlegen.** Ein Archiv aus dem Ordner (die Liste stammt aus dem
+   letzten Lauf; ein kurzer Helfer kopiert es, denn HAPM sieht den Ordner
+   nicht) oder hochgeladen, etwa beim Umzug von einem anderen Server. Der
+   Upload geht gestreamt auf die Platte, höchstens 512 MB: eine Sicherung ist
+   ein paar MB plus die Datenbank, und die wächst vor allem mit Statistik und
+   Protokoll. Es liegt immer höchstens ein Archiv bereit, in
+   `/data/.restore/`, und es wird nach dem Lauf oder beim Verwerfen gelöscht.
+2. **Prüfen**, bevor irgendetwas angefasst wird (`lib/backup/archive.ts`):
+   `tar -t` liest das Archiv bis zum Ende, es muss `database.sql`,
+   `data/secrets.json`, `haproxy/haproxy.cfg` und `.acme.sh/` enthalten, die
+   Datenbank muss mit der Schlusszeile von `pg_dump` enden, Namen außerhalb
+   des Ordners, Verweise dorthin und Geräte werden abgelehnt. Die Namen tragen
+   teils `./` davor (der Zwischenordner wird mit `-C … .` gepackt), teils
+   nicht. Ein Archiv ohne `manifest.json` (vor 0.5) gilt mit unbekannter
+   Fassung, der Zeitpunkt kommt dann aus dem Dateinamen. Die Seite zeigt
+   Zeitpunkt, Fassung, Größe und Inhalt.
+3. **Bestätigen** mit dem Passwort des Kontos und einem abgetippten Wort. Die
+   Seite sagt vorher sichtbar, was ersetzt wird, dass alle Sitzungen enden und
+   dass man sich danach mit den Konten aus der Sicherung anmeldet.
+4. **Vorher sichern.** HAPM sichert den aktuellen Stand über den gewöhnlichen
+   Weg. Mit eingestelltem Ordner dorthin, als
+   `hapm-backup-…-vor-ruecksicherung.tar.gz`: die Aufbewahrung räumt nur Namen
+   ohne Zusatz weg, diese Archive bleiben also, bis jemand sie löscht. Ohne
+   Ordner nach `hapm-before-restore.tar.gz` im Daten-Ordner (`data/hapm/` auf
+   dem Server), eine frühere wird ersetzt. Scheitert diese Sicherung, wird
+   nicht zurückgespielt. Die herausgeschriebene Datenbank bleibt als
+   `before.sql` für ein Zurückrollen liegen.
+5. **Der Helfer.** HAPM startet `hapm-restore` (Name des eigenen Containers mit
+   `-restore` dahinter) aus dem eigenen Abbild, mit allen Volumes von HAPM
+   schreibend und darüber dem Docker-Socket, wie `hapm-updater` beim
+   Selbst-Update. Er packt das Archiv aus und legt den neuen Stand in jedem
+   Volume neben den alten (`.hapm-restore-new`), solange HAPM noch läuft und
+   nichts verändert ist. Dann der Reihe nach:
+   - **HAPM anhalten** (`hapm-ctl stop`), Postgres läuft weiter.
+   - **Datenbank einspielen** (`hapm-ctl restore-db`): die Datei geht über die
+     Engine nach `/tmp` im Postgres-Container, dort `psql
+     --single-transaction -v ON_ERROR_STOP=1` mit `DROP SCHEMA public
+     CASCADE`, `CREATE SCHEMA public`, der Datei und dem Löschen der
+     Sitzungen, alles in einer Transaktion. Geleert wird das Schema, weil eine
+     Sicherung aus einer älteren Fassung nicht jede Tabelle kennt; was fehlt,
+     legt HAPM beim Start an. Scheitert eine Zeile, ist nichts verändert.
+   - **Dateien tauschen**: in `/etc/haproxy` und `/root/.acme.sh` geht der
+     alte Stand nach `.hapm-restore-old`, der neue hinein, alles Umbenennungen
+     auf demselben Dateisystem. Dazu `secrets.json`.
+   - **Prüfen** (`hapm-ctl check`, `haproxy -c` im HAProxy-Container, steht er,
+     in einem einmaligen Container aus seinem Abbild), dann **neu laden**
+     (`hapm-ctl reload`). HAProxy lädt die Konfiguration aus der Sicherung nie
+     ungeprüft.
+   - **HAPM starten.**
+
+   Scheitert ein Schritt nach dem Anhalten, tauscht der Helfer die Dateien
+   zurück, spielt `before.sql` ein (ohne die Sitzungen zu löschen: wer
+   zurückspielen wollte, bleibt angemeldet), lädt HAProxy noch einmal, falls
+   es den neuen Stand schon geladen hatte, und startet HAPM. Scheitert das
+   Zurücktauschen selbst, bleibt `.hapm-restore-old` liegen, und ein neuer Lauf
+   beginnt erst, wenn es von Hand geprüft und entfernt ist.
+6. **Abschluss.** Der Helfer schreibt jeden Schritt nach
+   `/data/.restore/progress`, weil die Datenbank gerade ersetzt wird. Der neue
+   HAPM-Prozess liest die Datei beim Start (`reconcileRestore`), trägt den Lauf
+   in `restore_runs` und ins Protokoll der zurückgespielten Datenbank ein, dazu
+   den Lauf der Sicherung von vorher in `backup_runs`, und räumt
+   `/data/.restore/` auf. Scheitert der Helfer, bevor er HAPM anhält, schließt
+   der laufende Prozess den Lauf bei der nächsten Abfrage der Seite.
+
+**Der Schlüssel.** `encryptionKey` kommt mit `data/secrets.json` aus der
+Sicherung zurück. `ENCRYPTION_KEY` aus der Umgebung gewinnt aber auch danach.
+Das Manifest nennt den Fingerabdruck des Schlüssels, mit dem die Datenbank der
+Sicherung verschlüsselt ist; passt der, mit dem HAPM danach liefe, nicht dazu,
+wird nicht zurückgespielt (die Seite sagt, welche Variable zu setzen oder zu
+entfernen ist). Ohne Manifest bleibt es bei einer Warnung, falls
+`ENCRYPTION_KEY` gesetzt ist. Nach dem Neustart vergleicht HAPM den Schlüssel,
+mit dem es läuft, noch einmal und schreibt das Ergebnis als Schritt in den Lauf.
+
+Die Seite verliert die Verbindung, während HAPM neu startet. Sie fragt dann
+`/api/health` und lädt neu, sobald HAPM antwortet; ohne Sitzung führt das zur
+Anmeldung. Das Ergebnis steht danach in der Karte.
+
+Steht der Helfer mitten im Lauf still (Neustart von Docker), bleibt HAPM
+angehalten: `docker start hapm`, beim Start schließt HAPM den Lauf als
+abgebrochen ab, und die Schritte zeigen, wie weit er kam.
+
+#### Von Hand
+
+Der Rückfall, wenn HAPM selbst nicht mehr läuft oder der Server neu ist und
+die Oberfläche nicht starten soll. Auf einem Server mit Docker, auf dem HAPM
+noch nicht läuft, in einem leeren Ordner mit `docker-compose.yml` (hier
+`/opt/hapm`):
 
 ```bash
 cd /opt/hapm
@@ -426,9 +517,25 @@ Datenbank eingespielt ist, sonst legt es eine frische an.
 Geprüft im November 2026 gegen den ganzen Stack: mit `install.sh --uninstall`
 alles entfernt,
 zurückgespielt, danach Anmeldung, Ziele und das ausgestellte Zertifikat wieder
-da. Der Lauf, aus dem das Archiv stammt, steht nach dem Zurückspielen als
-abgebrochen in der Historie: der Stand der Datenbank wurde mitten in ihm
-herausgeschrieben.
+da. Der Lauf, aus dem das Archiv stammt, steht nach dem Zurückspielen von Hand
+als abgebrochen in der Historie: der Stand der Datenbank wurde mitten in ihm
+herausgeschrieben. Über die Oberfläche schließt HAPM ihn danach als gelungen
+ab (`settleArchiveRun`).
+
+Das Zurückspielen über die Oberfläche ist im November 2026 gegen einen eigenen
+Stack unter Docker Desktop geprüft (Kopie von `scripts/verify/compose.yml`):
+Konto A, Gruppe und TCP-Ziel angelegt, gesichert; dann Konto B statt A, Ziel
+geändert; aus dem Ordner zurückgespielt. Danach meldete sich A an, B nicht
+mehr, Ziel und `haproxy.cfg` waren die der Sicherung, HAProxy lief mit ihnen,
+die Sicherung `…-vor-ruecksicherung` lag im Ordner. Ebenso geprüft: ein
+beschädigtes und ein fremdes Archiv werden beim Hochladen abgelehnt und nichts
+ändert sich; ein Archiv mit ungültiger Konfiguration endet am Schritt „Prüfen",
+Dateien und Datenbank kommen zurück, die Sitzung bleibt; ein Archiv ohne
+Manifest und ohne zwei Tabellen spielt sich ein, die Tabellen legt HAPM beim
+Start an; ohne Ordner landet die Sicherung von vorher in
+`hapm-before-restore.tar.gz` im Daten-Ordner. Der Zähler der Anmeldeversuche
+liegt im Daten-Ordner und gehört nicht zur Sicherung: er bleibt beim
+Zurückspielen, wie er ist.
 
 ## Bauen
 

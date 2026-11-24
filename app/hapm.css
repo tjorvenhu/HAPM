@@ -129,7 +129,7 @@
 /* ── Einrichtung ──
  * Der Assistent steht in der Anmeldekarte, braucht aber mehr Breite als ein
  * Anmeldeformular: Auswahlkarten und die Schritte des Ausführens. */
-.hapm-setup .auth-card { max-width: 36rem; }
+.hapm-setup .auth-card { max-width: 46rem; }
 
 .hapm-setup-progress { display: flex; flex-direction: column; gap: 6px; margin-bottom: 1.5rem; }
 

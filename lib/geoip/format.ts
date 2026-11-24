@@ -13,7 +13,7 @@
  * Woher sie kommt und wie sie erneuert wird, steht in `./store.ts` — diese Datei
  * kann nur eines: aus Textzeilen eine kompakte Form machen und darin suchen.
  *
- * **Ohne einen einzigen Import**, aus demselben Grund wie bei
+ * **Ohne Importe außer `lib/i18n` (rein)**, aus demselben Grund wie bei
  * `lib/haproxy/config.ts`: die Übersetzung wird an zwei Stellen gebraucht (beim
  * Erzeugen der Repo-Datei und beim Hochladen einer neuen Fassung), und beide
  * müssen dieselbe Bedeutung haben. Rein heißt hier außerdem: prüfbar, ohne dass
@@ -51,6 +51,8 @@
  * 9,3 MB und 2,8 MB roh — und nach dem gzip in `./store.ts` zwischen 3,5 MB und
  * 790 KB im Repository.
  */
+
+import { interpolate, msg, type Message, type Params } from '../i18n/translate';
 
 /* ══════════════════════════════════════════════════════════════════════
  * Adressen
@@ -188,8 +190,26 @@ export interface GeoTable extends GeoTableMeta {
   codes6: Uint8Array;
 }
 
-/** Was beim Übersetzen schiefgehen kann, mit einem Satz für das Formular. */
-export class GeoTableError extends Error {}
+/**
+ * Was beim Übersetzen schiefgehen kann, mit einem Satz für das Formular.
+ *
+ * Ist selbst eine `Message` wie `HaproxyConfigError`: eine Route reicht ihn als
+ * `new ApiError(err)` weiter und übersetzt ihn dort. `message` bleibt der
+ * deutsche Text samt Werten.
+ */
+export class GeoTableError extends Error implements Message {
+  readonly text: string;
+  readonly params?: Params;
+
+  constructor(message: string | Message) {
+    const text = typeof message === 'string' ? message : message.text;
+    const params = typeof message === 'string' ? undefined : message.params;
+    super(interpolate(text, params));
+    this.name = 'GeoTableError';
+    this.text = text;
+    this.params = params;
+  }
+}
 
 /* ── Varint ── */
 
@@ -221,7 +241,7 @@ function readVarint(bytes: Uint8Array, cursor: Cursor): number {
   let out = 0;
   let scale = 1;
   for (;;) {
-    if (cursor.at >= bytes.length) throw new GeoTableError('Die Datei bricht mitten in einer Zahl ab.');
+    if (cursor.at >= bytes.length) throw new GeoTableError(msg('Die Datei bricht mitten in einer Zahl ab.'));
     const byte = bytes[cursor.at++];
     out += (byte & 0x7f) * scale;
     if ((byte & 0x80) === 0) return out;
@@ -233,7 +253,7 @@ function readVarintBig(bytes: Uint8Array, cursor: Cursor): bigint {
   let out = 0n;
   let shift = 0n;
   for (;;) {
-    if (cursor.at >= bytes.length) throw new GeoTableError('Die Datei bricht mitten in einer Zahl ab.');
+    if (cursor.at >= bytes.length) throw new GeoTableError(msg('Die Datei bricht mitten in einer Zahl ab.'));
     const byte = bytes[cursor.at++];
     out |= BigInt(byte & 0x7f) << shift;
     if ((byte & 0x80) === 0) return out;
@@ -292,7 +312,9 @@ export function compileGeoTable(
   const countries = [...new Set([...table4, ...table6].map((e) => e.code))].sort();
   if (countries.length > 256) {
     throw new GeoTableError(
-      `Die Datei nennt ${countries.length} Länder. Mehr als 256 kann diese Tabelle nicht führen.`
+      msg('Die Datei nennt {count} Länder. Mehr als 256 kann diese Tabelle nicht führen.', {
+        count: countries.length,
+      })
     );
   }
   const indexOf = new Map(countries.map((code, index) => [code, index]));
@@ -388,14 +410,14 @@ export function decodeGeoTable(bytes: Uint8Array): GeoTable {
   const firstBreak = text.indexOf('\n');
   const secondBreak = text.indexOf('\n', firstBreak + 1);
   if (firstBreak < 0 || secondBreak < 0 || text.slice(0, firstBreak) !== MAGIC) {
-    throw new GeoTableError('Das ist keine übersetzte Länder-Tabelle.');
+    throw new GeoTableError(msg('Das ist keine übersetzte Länder-Tabelle.'));
   }
 
   let meta: GeoTableMeta;
   try {
     meta = JSON.parse(text.slice(firstBreak + 1, secondBreak)) as GeoTableMeta;
   } catch {
-    throw new GeoTableError('Der Kopf der Länder-Tabelle ist unlesbar.');
+    throw new GeoTableError(msg('Der Kopf der Länder-Tabelle ist unlesbar.'));
   }
 
   // Der Kopf ist ASCII, also ist die Zeichenzahl auch die Byteanzahl.

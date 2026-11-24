@@ -118,7 +118,98 @@ describe('die Vorgabe', () => {
   });
 });
 
+/**
+ * Die Prüfsummen der englischen Vorgabe. Sie hängen an den Einträgen unter
+ * `lib/i18n/en/` (fast alle in `mail.ts`, „Passwort", „Zurück", „Erneut
+ * versuchen" und „Das Passwort stimmt nicht." stehen in `common.ts`, `auth.ts`,
+ * „Seite nicht gefunden" in `shell.ts`): wer dort einen Text der Seiten ändert, ändert diese
+ * Zahlen mit, und jede englische Installation sieht ihre Dateien danach als
+ * „Andere Seite“.
+ */
+const ENGLISH: Record<string, string> = {
+  'error-400': '558548d95f250fbcce01becfdf45597c844329d4d0381c12c24fea3eba2ba164',
+  'error-401': 'b932a0067bde46764e2d0ad594767b24a0a6f49d7da2afcc05a8ef380e6857ca',
+  'error-403': 'faa4166c0c575b76a11dc9308e003b6cb311346c05b4c73cb91c5a56204f0e5b',
+  'error-404': 'c58f8f51565cd9e5e7100b26ad3ac041205b33af37a4ee5987b9dbcafb34989d',
+  'error-405': 'a620b6a845dcea29bfb86b76a8093d68dc134637569d2abcc4115bc3980e5c95',
+  'error-408': 'dc815fb5a27e7ede6befc5d715a27280bbb5f32bbc9d0b2907f56841f108074a',
+  'error-410': 'cbc21d9cc76ef01aedd27ed0529845b7bb03b0ab7207c5bf5c9f263255bdf6f1',
+  'error-413': 'c146572106cff522a931db9bf3ba7d1e02b3050a7b6e88451914d2476c17bfbd',
+  'error-429': '829b3f07a7f14cca8f96c4fcbcd7ba3b7b3d123119b1d8f476ce0a0752d73e6c',
+  'error-500': '295adffa25c153b17f96ca5e346beeaa708a7a86a2b12b174889e3c45326c3cb',
+  'error-501': 'a8fa0e0b5afccb423b423cf10cc331ca8a4324c7fba9970c9f5bafe069e2c0b2',
+  'error-502': 'a6df7454aaa0f69d5b90009318f3013dc40e6e8ef5ef09f02d4959fefc1b65d7',
+  'error-503': '9d87a81aeedad5d3903ddb4609796470562f1158d9020e77e5d105629fcdb402',
+  'error-504': '7eb88c6d3abeda6d8d69f05f6d0169a94da4eef1ff31ded171e454caa8bd9d7e',
+  'lock.html': '4a24980cace2ed8ff934e8f34276cc0c615f070fa80cdb91389cea161315a785',
+  'lock-wrong.html': 'e53c2ee3c132b2d9358deca589d44071c660577ef7afefd9d2f9697d276a7af2',
+  'lock-throttled.html': '52f91b291a7053f75542bb07828c2154b9e20962417077d1fdeb2a40428ec880',
+};
+
+describe('die Sprache der Vorgabetexte', () => {
+  const english = design({ locale: 'en' });
+
+  it('ist ohne Wahl Deutsch, auch für eine Zeile von vor der Wahl', () => {
+    expect(defaultPageDesign().locale).toBe('de');
+    const { locale: _locale, ...before } = defaultPageDesign();
+    expect(parsed(before).locale).toBe('de');
+    expect(isDefaultDesign(parsed(before))).toBe(true);
+    expect(digests(parsed({ ...before, locale: 'de' }))).toEqual(BEFORE_DESIGN);
+  });
+
+  it('ergibt Byte für Byte die englischen Seiten', () => {
+    expect(digests(english)).toEqual(ENGLISH);
+  });
+
+  it('übersteht den Weg durch Prüfung und Datenbank', () => {
+    const read = parsed(JSON.parse(JSON.stringify(english)));
+    expect(read.locale).toBe('en');
+    expect(isDefaultDesign(read)).toBe(false);
+    expect(digests(read)).toEqual(ENGLISH);
+  });
+
+  it('lehnt eine andere Sprache ab', () => {
+    expect(parsePageDesign({ locale: 'fr' }).ok).toBe(false);
+  });
+
+  it('setzt <html lang> und die Texte von HAPM auf Englisch', () => {
+    const file = renderErrorFile(503, english);
+    expect(file).toContain('<html lang="en">');
+    expect(file).toContain('<h1>Temporarily unavailable</h1>');
+    expect(file).toContain('Try again');
+    expect(file).toContain('aria-label="Homepage"');
+    expect(file).not.toMatch(/Erneut|Zurück|Startseite|erreichbar/);
+    expect(renderErrorFile(404, english)).toContain('Nothing is set up at this address.');
+
+    const lock = renderLockPage('throttled', english);
+    expect(lock).toContain('<html lang="en">');
+    expect(lock).toContain('Too many attempts. Please try again in ten minutes.');
+    expect(renderLockPage('ask', english)).toContain('<label for="pw">Password</label>');
+  });
+
+  it('lässt eigene Texte, wie sie sind', () => {
+    const custom = parsed({ locale: 'en', errors: { 503: { title: 'Wartung' } }, lock: { submit: 'Weiter' } });
+    expect(renderErrorFile(503, custom)).toContain('<h1>Wartung</h1>');
+    expect(renderErrorFile(503, custom)).toContain('Please try again shortly.');
+    expect(renderLockPage('ask', custom)).toContain('Weiter');
+    expect(renderLockPage('ask', custom)).toContain('This page is protected by a password.');
+  });
+
+  it('bleibt unter der Grenze und lässt Platz für ein Logo', () => {
+    expect(designSizeError(english)).toBeNull();
+    expect(designPageSizes(english)[0].bytes).toBeLessThan(PAGE_MAX_BYTES);
+    expect(logoByteBudget(english)).toBeGreaterThan(5_000);
+  });
+});
+
 describe('parsePageDesign', () => {
+  it('nennt den Grund in der Sprache der Oberfläche', () => {
+    expect(parsePageDesign({ colors: { accent: 'rot' } }, 'en')).toEqual({
+      ok: false,
+      error: 'The accent color is not a color in the form #rrggbb.',
+    });
+  });
+
   it('nimmt Farben nur als #rrggbb und schreibt sie klein', () => {
     expect(parsed({ colors: { accent: '#A1B2C3' } }).colors.accent).toBe('#a1b2c3');
     for (const bad of ['#fff', 'red', '#12345g', '#000000;}body{x:y', 'rgb(0,0,0)', ' #000000', 7]) {

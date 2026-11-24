@@ -7,6 +7,8 @@ import { useApp } from '@/components/AppShell';
 import { usePolling } from '@/components/usePolling';
 import type { AcmeCertificate } from '@/lib/haproxy/certs';
 import { SkeletonRows } from '@/components/Skeleton';
+import { formatDate } from '@/lib/i18n';
+import { useT } from '@/lib/i18n/react';
 
 /**
  * Was an Zertifikaten auf dem Server liegt.
@@ -57,6 +59,7 @@ interface ProxyCertificates {
 
 export default function ReverseProxyCertificatesPage() {
   const { apiFetch } = useApp();
+  const { t, plural, rich, locale } = useT();
 
   const [rows, setRows] = useState<ProxyCertificates[]>([]);
   const [loading, setLoading] = useState(true);
@@ -72,12 +75,12 @@ export default function ReverseProxyCertificatesPage() {
         if (data.success) setRows(data.data);
         setError('');
       } catch {
-        setError('Die Zertifikate konnten nicht geladen werden.');
+        setError(t('Die Zertifikate konnten nicht geladen werden.'));
       } finally {
         setLoading(false);
       }
     },
-    [apiFetch]
+    [apiFetch, t]
   );
 
   useEffect(() => {
@@ -106,15 +109,15 @@ export default function ReverseProxyCertificatesPage() {
     <>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Zertifikate</h1>
+          <h1 className="page-title">{t('Zertifikate')}</h1>
           <p className="page-subtitle">
-            Was acme.sh an Zertifikaten führt. Gelesen bei jedem Aufruf, nicht aus einer Kopie.
+            {t('Was acme.sh an Zertifikaten führt. Gelesen bei jedem Aufruf, nicht aus einer Kopie.')}
           </p>
         </div>
         <div className="page-actions">
           <button className="btn btn-secondary" onClick={refresh} disabled={refreshing}>
             {refreshing ? <Loader2 size={16} className="spin" /> : <RefreshCw size={16} />}
-            Aktualisieren
+            {t('Aktualisieren')}
           </button>
         </div>
       </div>
@@ -126,10 +129,11 @@ export default function ReverseProxyCertificatesPage() {
       ) : rows.length === 0 ? (
         <div className="empty-state">
           <Network size={40} />
-          <h3>HAProxy antwortet nicht</h3>
+          <h3>{t('HAProxy antwortet nicht')}</h3>
           <p>
-            Ohne HAProxy gibt es hier nichts zu zeigen. Sein Zustand steht in der{' '}
-            <Link href="/dashboard">Übersicht</Link>.
+            {rich('Ohne HAProxy gibt es hier nichts zu zeigen. Sein Zustand steht in der {overview}.', {
+              overview: <Link href="/dashboard">{t('Übersicht')}</Link>,
+            })}
           </p>
         </div>
       ) : (
@@ -137,8 +141,9 @@ export default function ReverseProxyCertificatesPage() {
           <div className="form-note sys-block">
             <Info size={14} />
             <span>
-              Angelegt und entfernt werden Zertifikate über den zugehörigen Eintrag unter „Ziele“.
-              Ein Zertifikat hier einzeln zu löschen nähme einer laufenden Domain ihr PEM.
+              {t(
+                'Angelegt und entfernt werden Zertifikate über den zugehörigen Eintrag unter „Ziele“. Ein Zertifikat hier einzeln zu löschen nähme einer laufenden Domain ihr PEM.'
+              )}
             </span>
           </div>
 
@@ -146,16 +151,18 @@ export default function ReverseProxyCertificatesPage() {
             <div key={row.$id} className="sys-block">
               <div className="section-header">
                 <h2 className="section-title">
-                  Ausgestellt
+                  {t('Ausgestellt')}
                   <span className="section-count">
-                    {row.certificates.length}{' '}
-                    {row.certificates.length === 1 ? 'Zertifikat' : 'Zertifikate'}
+                    {plural(row.certificates.length, {
+                      one: '{count} Zertifikat',
+                      other: '{count} Zertifikate',
+                    })}
                   </span>
                 </h2>
                 <span className="section-hint">
                   {row.dnsHooks.length > 0
-                    ? `DNS-Hooks: ${row.dnsHooks.join(', ')}`
-                    : 'Kein DNS-Hook eingerichtet, keine Wildcard ausstellbar'}
+                    ? t('DNS-Hooks: {hooks}', { hooks: row.dnsHooks.join(', ') })
+                    : t('Kein DNS-Hook eingerichtet, keine Wildcard ausstellbar')}
                 </span>
               </div>
 
@@ -164,28 +171,28 @@ export default function ReverseProxyCertificatesPage() {
               ) : !row.acmeReady ? (
                 <div className="alert alert-warning">
                   <span>
-                    acme.sh oder das Zertifikatsverzeichnis fehlt. HAPM richtet beides beim Start
-                    selbst ein, der Zustand steht in der <Link href="/dashboard">Übersicht</Link>.
-                    Solange das so ist, lässt sich kein Zertifikat ausstellen, und diese Liste ist
-                    leer, weil nicht gefragt werden konnte, nicht weil es keine gibt.
+                    {rich(
+                      'acme.sh oder das Zertifikatsverzeichnis fehlt. HAPM richtet beides beim Start selbst ein, der Zustand steht in der {overview}. Solange das so ist, lässt sich kein Zertifikat ausstellen, und diese Liste ist leer, weil nicht gefragt werden konnte, nicht weil es keine gibt.',
+                      { overview: <Link href="/dashboard">{t('Übersicht')}</Link> }
+                    )}
                   </span>
                 </div>
               ) : row.certificates.length === 0 ? (
                 <div className="empty-state">
                   <ShieldCheck size={32} />
-                  <h3>Noch kein Zertifikat</h3>
-                  <p>acme.sh führt keins.</p>
+                  <h3>{t('Noch kein Zertifikat')}</h3>
+                  <p>{t('acme.sh führt keins.')}</p>
                 </div>
               ) : (
                 <div className="table-wrap">
                   <table className="table">
                     <thead>
                       <tr>
-                        <th>Hauptdomain</th>
-                        <th>Abgedeckte Domains</th>
-                        <th>Schlüssel</th>
-                        <th>Erneuerung</th>
-                        <th>Benutzt von</th>
+                        <th>{t('Hauptdomain')}</th>
+                        <th>{t('Abgedeckte Domains')}</th>
+                        <th>{t('Schlüssel')}</th>
+                        <th>{t('Erneuerung')}</th>
+                        <th>{t('Benutzt von')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -196,7 +203,7 @@ export default function ReverseProxyCertificatesPage() {
                           </td>
                           <td>{cert.domains.join(', ')}</td>
                           <td>{cert.keyLength ?? '—'}</td>
-                          <td>{formatRenew(cert.renewAt)}</td>
+                          <td>{cert.renewAt ? formatDate(locale, cert.renewAt) : '—'}</td>
                           <td>
                             {cert.usedBy.length > 0 ? (
                               /* Der Name ist der Weg dorthin: `?dienst=` öffnet
@@ -225,7 +232,7 @@ export default function ReverseProxyCertificatesPage() {
                                  übrig. Beides gehört gesehen und nicht
                                  automatisch aufgeräumt. */
                               <span style={{ color: 'var(--text-secondary)' }}>
-                                Von keinem Eintrag benutzt
+                                {t('Von keinem Eintrag benutzt')}
                               </span>
                             )}
                           </td>
@@ -241,12 +248,4 @@ export default function ReverseProxyCertificatesPage() {
       )}
     </>
   );
-}
-
-/** acme.sh schreibt den Zeitpunkt als ISO-Text. Was sich nicht lesen lässt,
- *  steht so da, wie es kam — geraten wird nichts. */
-function formatRenew(value: string | null): string {
-  if (!value) return '—';
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('de-DE');
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import { Plus, X, Globe } from 'lucide-react';
+import { useT } from '@/lib/i18n/react';
 
 /**
  * Die Adressliste eines Dienst-Tokens: eine Zeile je Adresse oder CIDR-Bereich.
@@ -24,8 +25,7 @@ export default function IpAllowList({
   onChange,
   disabled = false,
   heading = true,
-  emptyHint = 'Ohne Eintrag gilt das Token von jeder Adresse aus. Für ein Skript auf einem festen ' +
-    'Server ist eine Zeile hier der Unterschied zwischen „gestohlen und nutzbar“ und „gestohlen und wertlos“.',
+  emptyHint,
 }: {
   value: string[];
   onChange: (next: string[]) => void;
@@ -40,10 +40,12 @@ export default function IpAllowList({
    * sich beim Format irrt.
    */
   heading?: boolean;
-  /** Was dasteht, solange die Liste leer ist. Die Folge ist je Aufrufer eine
-   *  andere: ein Token gilt dann überall, ein Port ist dann überall offen. */
+  /** Was dasteht, solange die Liste leer ist, schon übersetzt. Die Folge ist je
+   *  Aufrufer eine andere: ein Token gilt dann überall, ein Port ist dann
+   *  überall offen. Ohne Angabe der Satz für ein Token. */
   emptyHint?: string;
 }) {
+  const { t } = useT();
   const rows = value.length > 0 ? value : [''];
   const empty = rows.every((entry) => entry.trim() === '');
 
@@ -55,10 +57,9 @@ export default function IpAllowList({
             <Globe size={17} />
           </span>
           <div>
-            <div className="form-section-title">Erlaubte Adressen</div>
+            <div className="form-section-title">{t('Erlaubte Adressen')}</div>
             <div className="form-section-sub">
-              Von welchen Adressen dieses Token gelten darf. Einzelne Adresse oder CIDR-Bereich,
-              IPv4 und IPv6. Leer heißt: von überall.
+              {t('Von welchen Adressen dieses Token gelten darf. Einzelne Adresse oder CIDR-Bereich, IPv4 und IPv6. Leer heißt: von überall.')}
             </div>
           </div>
         </div>
@@ -71,14 +72,14 @@ export default function IpAllowList({
               className="form-input"
               value={entry}
               onChange={(e) => onChange(rows.map((a, i) => (i === index ? e.target.value : a)))}
-              placeholder="203.0.113.7 oder 10.0.0.0/8"
+              placeholder={t('203.0.113.7 oder 10.0.0.0/8')}
               autoComplete="off"
               disabled={disabled}
             />
             <button
               type="button"
               className="btn btn-ghost btn-icon"
-              data-tooltip="Zeile entfernen"
+              data-tooltip={t('Zeile entfernen')}
               disabled={disabled || rows.length === 1}
               onClick={() => onChange(rows.filter((_, i) => i !== index))}
             >
@@ -96,11 +97,18 @@ export default function IpAllowList({
           onClick={() => onChange([...rows, ''])}
         >
           <Plus size={14} />
-          Adresse hinzufügen
+          {t('Adresse hinzufügen')}
         </button>
       </div>
 
-      {empty && <span className="form-hint">{emptyHint}</span>}
+      {empty && (
+        <span className="form-hint">
+          {emptyHint ??
+            t(
+              'Ohne Eintrag gilt das Token von jeder Adresse aus. Für ein Skript auf einem festen Server ist eine Zeile hier der Unterschied zwischen „gestohlen und nutzbar“ und „gestohlen und wertlos“.'
+            )}
+        </span>
+      )}
     </div>
   );
 }

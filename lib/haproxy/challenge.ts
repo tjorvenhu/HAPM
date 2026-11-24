@@ -15,6 +15,7 @@
  */
 
 import { isWildcardDomain } from './config';
+import { germanText, msg, type Message } from '../i18n/translate';
 import type { Exposure } from '../types';
 
 /** Was ein Aufrufer zum Vorgang mitgibt. */
@@ -27,7 +28,7 @@ export interface ChallengeChoice {
 export type ChallengePlan =
   | { method: 'http' }
   | { method: 'dns'; hook: string }
-  | { method: 'unavailable'; message: string };
+  | { method: 'unavailable'; message: Message };
 
 export function needsDnsChallenge(domains: string[], exposure: Exposure): boolean {
   return exposure === 'internal' || domains.some(isWildcardDomain);
@@ -50,13 +51,11 @@ export function planChallenge(
   if (dnsHooks.length === 0) {
     return {
       method: 'unavailable',
-      message: wildcard
-        ? "Eine Wildcard-Domain lässt Let's Encrypt nur über DNS-01 ausstellen, und dafür sind noch keine " +
-          'DNS-Zugangsdaten hinterlegt. Sie werden unter Reverse-Proxy, Einstellungen eingetragen. ' +
-          'Einmal hinterlegt, merkt acme.sh sie sich für jede Erneuerung.'
-        : "Diese Installation ist als intern eingerichtet: Let's Encrypt erreicht den Server nicht, " +
-          'jedes Zertifikat wird über DNS-01 ausgestellt. Dafür fehlen die DNS-Zugangsdaten. ' +
-          'Sie werden unter Reverse-Proxy, Einstellungen eingetragen.',
+      message: msg(
+        wildcard
+          ? "Eine Wildcard-Domain lässt Let's Encrypt nur über DNS-01 ausstellen, und dafür sind noch keine DNS-Zugangsdaten hinterlegt. Sie werden unter Reverse-Proxy, Einstellungen eingetragen. Einmal hinterlegt, merkt acme.sh sie sich für jede Erneuerung."
+          : "Diese Installation ist als intern eingerichtet: Let's Encrypt erreicht den Server nicht, jedes Zertifikat wird über DNS-01 ausgestellt. Dafür fehlen die DNS-Zugangsdaten. Sie werden unter Reverse-Proxy, Einstellungen eingetragen."
+      ),
     };
   }
 
@@ -64,9 +63,10 @@ export function planChallenge(
     if (dnsHooks.includes(choice.dnsHook)) return { method: 'dns', hook: choice.dnsHook };
     return {
       method: 'unavailable',
-      message:
-        `Der DNS-Hook "${choice.dnsHook}" ist nicht eingerichtet. ` +
-        `Zur Auswahl stehen: ${dnsHooks.join(', ')}.`,
+      message: msg('Der DNS-Hook "{hook}" ist nicht eingerichtet. Zur Auswahl stehen: {hooks}.', {
+        hook: choice.dnsHook,
+        hooks: dnsHooks.join(', '),
+      }),
     };
   }
 
@@ -74,11 +74,12 @@ export function planChallenge(
 
   return {
     method: 'unavailable',
-    message:
-      (wildcard
-        ? 'Für eine Wildcard-Domain muss der DNS-Hook gewählt werden, der die Challenge setzt. '
-        : 'Das Zertifikat wird über DNS-01 ausgestellt. Dafür muss der DNS-Hook gewählt werden, der die Challenge setzt. ') +
-      `Eingerichtet: ${dnsHooks.join(', ')}.`,
+    message: msg(
+      wildcard
+        ? 'Für eine Wildcard-Domain muss der DNS-Hook gewählt werden, der die Challenge setzt. Eingerichtet: {hooks}.'
+        : 'Das Zertifikat wird über DNS-01 ausgestellt. Dafür muss der DNS-Hook gewählt werden, der die Challenge setzt. Eingerichtet: {hooks}.',
+      { hooks: dnsHooks.join(', ') }
+    ),
   };
 }
 
@@ -87,5 +88,5 @@ export function challengeArgs(plan: ChallengePlan, httpPort: string): string[] {
   if (plan.method === 'http') return ['--standalone', '--httpport', httpPort];
   if (plan.method === 'dns') return ['--dns', plan.hook];
   // Kommt hier nur an, wenn die Vorabprüfung umgangen wurde.
-  throw new Error(plan.message);
+  throw new Error(germanText(plan.message));
 }

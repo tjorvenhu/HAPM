@@ -26,8 +26,13 @@
  *
  * Reines TypeScript ohne React und ohne Umgebung. Es baut Zeichenketten, damit die Seite
  * sich ohne Server testen und an jede Stelle schreiben lässt.
+ *
+ * Die Texte, die die Seite selbst mitbringt (Vorgaben je Status, Knöpfe, „Zurück"), gibt
+ * es deutsch und englisch (`locale`). Deutsch ist die Quelle: ohne Angabe entsteht Zeichen
+ * für Zeichen die deutsche Seite von vorher.
  */
 
+import { msgid, translate, type Locale } from "@/lib/i18n"
 import { STATIC_LOGO_SVG } from "./logo"
 
 export function escapeHtml(value: string): string {
@@ -230,8 +235,10 @@ function themeLogo(theme: StaticTheme, hidden: boolean): string {
 }
 
 export interface StaticPage {
-  /** Sprache des Dokuments. Vorgabe `de`. */
+  /** Sprache des Dokuments. Vorgabe ist `locale`. */
   lang?: string
+  /** Sprache der Seite. Vorgabe `de`. */
+  locale?: Locale
   /** Was im Tab steht. Vorgabe ist `title`. */
   documentTitle?: string
   /** Überschrift der Karte. */
@@ -260,7 +267,7 @@ export function renderStaticPage(page: StaticPage, theme: StaticTheme = {}): str
   const footnote = page.footnote ?? theme.footer
   return (
     "<!doctype html>" +
-    `<html lang="${escapeHtml(page.lang ?? "de")}">` +
+    `<html lang="${escapeHtml(page.lang ?? page.locale ?? "de")}">` +
     "<head>" +
     '<meta charset="utf-8">' +
     '<meta name="viewport" content="width=device-width, initial-scale=1">' +
@@ -435,73 +442,73 @@ export interface ErrorPageText {
  */
 export const ERROR_PAGE_TEXTS: Record<number, ErrorPageText> = {
   400: {
-    title: "Ungültige Anfrage",
-    text: "Der Server konnte diese Anfrage nicht verarbeiten.",
+    title: msgid("Ungültige Anfrage"),
+    text: msgid("Der Server konnte diese Anfrage nicht verarbeiten."),
     action: "home",
   },
   401: {
-    title: "Anmeldung erforderlich",
-    text: "Für diese Seite ist eine Anmeldung nötig.",
+    title: msgid("Anmeldung erforderlich"),
+    text: msgid("Für diese Seite ist eine Anmeldung nötig."),
     action: "none",
   },
   403: {
-    title: "Kein Zugriff",
-    text: "Diese Seite ist von Ihrem Anschluss aus nicht erreichbar.",
+    title: msgid("Kein Zugriff"),
+    text: msgid("Diese Seite ist von Ihrem Anschluss aus nicht erreichbar."),
     action: "none",
   },
   404: {
-    title: "Seite nicht gefunden",
-    text: "Diese Seite gibt es nicht oder sie wurde verschoben.",
+    title: msgid("Seite nicht gefunden"),
+    text: msgid("Diese Seite gibt es nicht oder sie wurde verschoben."),
     action: "home",
   },
   405: {
-    title: "Nicht erlaubt",
-    text: "Diese Art von Anfrage nimmt die Seite nicht an.",
+    title: msgid("Nicht erlaubt"),
+    text: msgid("Diese Art von Anfrage nimmt die Seite nicht an."),
     action: "home",
   },
   408: {
-    title: "Zeitüberschreitung",
-    text: "Die Anfrage hat zu lange gedauert. Bitte laden Sie die Seite neu.",
+    title: msgid("Zeitüberschreitung"),
+    text: msgid("Die Anfrage hat zu lange gedauert. Bitte laden Sie die Seite neu."),
     action: "retry",
   },
   410: {
-    title: "Nicht mehr vorhanden",
-    text: "Diese Seite gibt es nicht mehr.",
+    title: msgid("Nicht mehr vorhanden"),
+    text: msgid("Diese Seite gibt es nicht mehr."),
     action: "home",
   },
   413: {
-    title: "Zu groß",
-    text: "Die gesendeten Daten sind größer, als die Seite annimmt.",
+    title: msgid("Zu groß"),
+    text: msgid("Die gesendeten Daten sind größer, als die Seite annimmt."),
     action: "none",
   },
   429: {
-    title: "Zu viele Anfragen",
-    text: "Bitte warten Sie einen Moment und versuchen Sie es dann erneut.",
+    title: msgid("Zu viele Anfragen"),
+    text: msgid("Bitte warten Sie einen Moment und versuchen Sie es dann erneut."),
     action: "retry",
   },
   500: {
-    title: "Interner Fehler",
-    text: "Auf dem Server ist ein Fehler aufgetreten. Bitte versuchen Sie es später erneut.",
+    title: msgid("Interner Fehler"),
+    text: msgid("Auf dem Server ist ein Fehler aufgetreten. Bitte versuchen Sie es später erneut."),
     action: "retry",
   },
   501: {
-    title: "Nicht unterstützt",
-    text: "Diese Art von Anfrage unterstützt der Server nicht.",
+    title: msgid("Nicht unterstützt"),
+    text: msgid("Diese Art von Anfrage unterstützt der Server nicht."),
     action: "home",
   },
   502: {
-    title: "Fehlerhafte Antwort",
-    text: "Die Seite hat nicht richtig geantwortet. Bitte versuchen Sie es in Kürze erneut.",
+    title: msgid("Fehlerhafte Antwort"),
+    text: msgid("Die Seite hat nicht richtig geantwortet. Bitte versuchen Sie es in Kürze erneut."),
     action: "retry",
   },
   503: {
-    title: "Gerade nicht erreichbar",
-    text: "Die Seite ist im Moment nicht erreichbar. Bitte versuchen Sie es in Kürze erneut.",
+    title: msgid("Gerade nicht erreichbar"),
+    text: msgid("Die Seite ist im Moment nicht erreichbar. Bitte versuchen Sie es in Kürze erneut."),
     action: "retry",
   },
   504: {
-    title: "Zeitüberschreitung",
-    text: "Die Seite hat nicht rechtzeitig geantwortet. Bitte versuchen Sie es in Kürze erneut.",
+    title: msgid("Zeitüberschreitung"),
+    text: msgid("Die Seite hat nicht rechtzeitig geantwortet. Bitte versuchen Sie es in Kürze erneut."),
     action: "retry",
   },
 }
@@ -517,31 +524,36 @@ export const ERROR_PAGE_STATUSES: number[] = Object.keys(ERROR_PAGE_TEXTS)
  * Ein Code ohne eigenen Text bekommt einen allgemeinen: besser eine ehrliche Seite
  * „Fehler 507" als gar keine. `override` ersetzt einzelne Angaben, etwa den Text der 403
  * auf einer Maschine, auf der sie „nur aus dem Büro erreichbar" heißt.
+ *
+ * `locale` übersetzt, was die Seite selbst mitbringt. Was in `override` steht, bleibt,
+ * wie es kommt: ein eigener Text ist in der Sprache, in der jemand ihn geschrieben hat.
  */
 export function renderErrorPage(
   status: number,
-  override: Partial<ErrorPageText> & { logo?: boolean; lang?: string } = {},
+  override: Partial<ErrorPageText> & { logo?: boolean; lang?: string; locale?: Locale } = {},
   theme: StaticTheme = {},
 ): string {
+  const locale = override.locale ?? "de"
+  const t = (text: string) => translate(locale, text)
   const known = ERROR_PAGE_TEXTS[status]
   const base: ErrorPageText = known ?? {
-    title: "Fehler",
+    title: msgid("Fehler"),
     text:
       status >= 500
-        ? "Auf dem Server ist ein Fehler aufgetreten. Bitte versuchen Sie es später erneut."
-        : "Diese Anfrage ließ sich nicht verarbeiten.",
+        ? msgid("Auf dem Server ist ein Fehler aufgetreten. Bitte versuchen Sie es später erneut.")
+        : msgid("Diese Anfrage ließ sich nicht verarbeiten."),
     action: status >= 500 ? "retry" : "home",
   }
   const page: ErrorPageText = {
-    title: override.title ?? base.title,
-    text: override.text ?? base.text,
+    title: override.title ?? t(base.title),
+    text: override.text ?? t(base.text),
     action: override.action ?? base.action,
   }
   const button =
     page.action === "retry"
-      ? `<a class="btn" href="">Erneut versuchen${ARROW}</a>`
+      ? `<a class="btn" href="">${escapeHtml(t("Erneut versuchen"))}${ARROW}</a>`
       : page.action === "home"
-        ? `<a class="btn" href="/">Zur Startseite${ARROW}</a>`
+        ? `<a class="btn" href="/">${escapeHtml(t("Zur Startseite"))}${ARROW}</a>`
         : ""
   const logo =
     themeLogo(theme, override.logo === false) +
@@ -549,7 +561,7 @@ export function renderErrorPage(
 
   return (
     "<!doctype html>" +
-    `<html lang="${escapeHtml(override.lang ?? "de")}">` +
+    `<html lang="${escapeHtml(override.lang ?? locale)}">` +
     "<head>" +
     '<meta charset="utf-8">' +
     '<meta name="viewport" content="width=device-width, initial-scale=1">' +
@@ -559,10 +571,10 @@ export function renderErrorPage(
     "</head>" +
     "<body>" +
     '<header class="nav"><div class="nav-inner">' +
-    `<a class="nav-logo" href="/" aria-label="Startseite">${logo}</a>` +
+    `<a class="nav-logo" href="/" aria-label="${escapeHtml(t("Startseite"))}">${logo}</a>` +
     /* „Zurück" heißt zurück: mit JavaScript die vorige Seite, ohne die Startseite. Das
        ist die einzige Stelle mit Skript, und die Seite funktioniert ohne. */
-    `<a class="nav-back" href="/" onclick="history.back();return false">${CHEVRON}Zurück</a>` +
+    `<a class="nav-back" href="/" onclick="history.back();return false">${CHEVRON}${escapeHtml(t("Zurück"))}</a>` +
     "</div></header>" +
     '<main class="nf"><div class="nf-c">' +
     `<p class="code" aria-hidden="true">${escapeHtml(String(status))}</p>` +

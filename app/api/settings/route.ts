@@ -1,5 +1,6 @@
 import { requireCsrf, requireSession } from '@/lib/session';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
+import { msg } from '@/lib/i18n';
 import { logAudit, getClientIP } from '@/lib/audit';
 import { getSettings, settingsView as view, updateSettings, type SettingsInput } from '@/lib/settings';
 import { ensureAcme } from '@/lib/acme';
@@ -35,6 +36,7 @@ const FIELD_LABELS: Record<keyof SettingsInput, string> = {
   mailFrom: 'Absender',
   notifyRecipients: 'Empfänger',
   notifyEvents: 'Ereignisse',
+  mailLocale: 'Sprache der Mails',
   exposure: 'Art der Installation',
   setupStatus: 'Einrichtung',
 };
@@ -46,55 +48,57 @@ function readInput(body: Record<string, unknown>): SettingsInput {
   for (const field of TEXT_FIELDS) {
     if (!(field in body)) continue;
     const value = body[field];
-    if (value !== null && typeof value !== 'string') throw new ApiError(`${FIELD_LABELS[field]}: erwartet wird ein Text.`);
+    if (value !== null && typeof value !== 'string') throw new ApiError(msg('Das Feld {field} erwartet einen Text.', { field }));
     input[field] = value;
   }
   if ('autoUpdateHaproxy' in body) {
     if (typeof body.autoUpdateHaproxy !== 'boolean') {
-      throw new ApiError('Der Schalter für selbsttätige Updates kennt nur an und aus.');
+      throw new ApiError(msg('Der Schalter für selbsttätige Updates kennt nur an und aus.'));
     }
     input.autoUpdateHaproxy = body.autoUpdateHaproxy;
   }
   if ('autoUpdateTime' in body) {
-    if (typeof body.autoUpdateTime !== 'string') throw new ApiError('Die Uhrzeit hat nicht die Form HH:MM.');
+    if (typeof body.autoUpdateTime !== 'string') throw new ApiError(msg('Die Uhrzeit hat nicht die Form HH:MM.'));
     input.autoUpdateTime = body.autoUpdateTime;
   }
   if ('smtpPort' in body) {
-    if (typeof body.smtpPort !== 'number') throw new ApiError('Der SMTP-Port ist eine Zahl zwischen 1 und 65535.');
+    if (typeof body.smtpPort !== 'number') throw new ApiError(msg('Der SMTP-Port ist eine Zahl zwischen 1 und 65535.'));
     input.smtpPort = body.smtpPort;
   }
   if ('smtpSecurity' in body) {
-    if (typeof body.smtpSecurity !== 'string') throw new ApiError('Die Verschlüsselung ist STARTTLS, TLS oder keine.');
+    if (typeof body.smtpSecurity !== 'string') throw new ApiError(msg('Die Verschlüsselung ist STARTTLS, TLS oder keine.'));
     input.smtpSecurity = body.smtpSecurity as SmtpSecurity;
   }
   // Leer heißt unverändert, `null` heißt löschen.
   if ('smtpPass' in body && body.smtpPass !== '') {
     if (body.smtpPass !== null && typeof body.smtpPass !== 'string') {
-      throw new ApiError('Das SMTP-Passwort muss ein Text sein.');
+      throw new ApiError(msg('Das SMTP-Passwort muss ein Text sein.'));
     }
     input.smtpPass = body.smtpPass;
   }
   if ('notifyRecipients' in body) {
-    if (!Array.isArray(body.notifyRecipients)) throw new ApiError('Die Empfänger sind eine Liste von Adressen.');
+    if (!Array.isArray(body.notifyRecipients)) throw new ApiError(msg('Die Empfänger sind eine Liste von Adressen.'));
     input.notifyRecipients = body.notifyRecipients as string[];
   }
   if ('notifyEvents' in body) {
     const events = body.notifyEvents;
     if (typeof events !== 'object' || events === null || Array.isArray(events)) {
-      throw new ApiError('Die Ereignisse sind Schalter je Ereignis.');
+      throw new ApiError(msg('Die Ereignisse sind Schalter je Ereignis.'));
     }
     input.notifyEvents = events as Partial<Record<NotificationEventType, boolean>>;
   }
+  // Ob es eine Sprache ist, prüft `updateSettings`.
+  if ('mailLocale' in body) input.mailLocale = body.mailLocale as SettingsInput['mailLocale'];
 
   // `setupStatus` gehört dem Assistenten (`/api/setup/status`) und wird hier nicht angenommen.
   if ('exposure' in body) {
     if (typeof body.exposure !== 'string') {
-      throw new ApiError('Die Installation ist entweder intern oder aus dem Internet erreichbar.');
+      throw new ApiError(msg('Die Installation ist entweder intern oder aus dem Internet erreichbar.'));
     }
     input.exposure = body.exposure as Exposure;
   }
 
-  if (Object.keys(input).length === 0) throw new ApiError('Es wurde nichts zum Ändern übergeben.');
+  if (Object.keys(input).length === 0) throw new ApiError(msg('Es wurde nichts zum Ändern übergeben.'));
   return input;
 }
 

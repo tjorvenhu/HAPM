@@ -1,5 +1,6 @@
 import { requireServiceToken } from '@/lib/service-auth';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
+import { msg } from '@/lib/i18n';
 import { serviceActor } from '@/lib/audit';
 import { precheckDelete, precheckUpdate, probeProxy } from '@/lib/haproxy/provision';
 import { startHaproxyRun } from '@/lib/haproxy/runner';
@@ -39,12 +40,12 @@ export async function GET(request: Request, { params }: Params) {
     const server = await resolveProxy(wantedServer(request));
     const probe = await probeProxy(server);
     if (!probe.configReadable) {
-      throw new ApiError(`Die HAProxy-Konfiguration auf "${server.name}" ist nicht lesbar.`, 502);
+      throw new ApiError(msg('Die HAProxy-Konfiguration auf "{server}" ist nicht lesbar.', { server: server.name }), 502);
     }
 
     const service = probe.services.find((entry) => entry.id === id);
     if (!service) {
-      throw new ApiError(`Auf "${server.name}" gibt es kein Ziel mit der ID "${id}".`, 404);
+      throw new ApiError(msg('Auf "{server}" gibt es kein Ziel mit der ID "{id}".', { server: server.name, id }), 404);
     }
 
     const surface = surfaceTarget(probe.services, { publicUrl: (await getSettings()).publicUrl });
@@ -101,7 +102,7 @@ export async function PATCH(request: Request, { params }: Params) {
     try {
       current = await precheckUpdate(server, id, input, challenge, protection);
     } catch (err) {
-      if (err instanceof HaproxyConfigError) throw new ApiError(err.message, 409);
+      if (err instanceof HaproxyConfigError) throw new ApiError(err, 409);
       throw err;
     }
 
@@ -162,7 +163,7 @@ export async function DELETE(request: Request, { params }: Params) {
     try {
       current = await precheckDelete(server, id, protection);
     } catch (err) {
-      if (err instanceof HaproxyConfigError) throw new ApiError(err.message, 409);
+      if (err instanceof HaproxyConfigError) throw new ApiError(err, 409);
       throw err;
     }
 

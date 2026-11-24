@@ -10,21 +10,27 @@
  * Rein, wie `page-design.ts`.
  */
 
+import { createTranslator, DEFAULT_LOCALE, formatNumber, msgid, type Locale } from '@/lib/i18n';
 import { defaultErrorPageText, errorPageStatuses, renderErrorFile } from './error-pages';
 import { renderLockPage, type LockPageKind } from './lock-page';
 import { PAGE_MAX_BYTES, type PageDesign } from './page-design';
 
+/**
+ * Eine Seite für die Auswahl in Formular und Vorschau. `label` und `hint` sind
+ * Schlüssel (`msgid`) in der Sprache der Oberfläche: die Seite zeigt sie mit
+ * `t()`, eine Fehlerseite mit ihrem Status davor (`designPageLabel`).
+ */
 export type DesignPage =
   | { id: string; label: string; hint: string; kind: 'error'; status: number }
   | { id: string; label: string; hint: string; kind: 'lock'; lock: LockPageKind };
 
 /** Wann HAProxy eine Seite zeigt. Für die Auswahl in der Vorschau. */
 const ERROR_HINTS: Partial<Record<number, { label: string; hint: string }>> = {
-  404: { label: 'Unbekannte Domain', hint: 'Für diese Domain ist kein Ziel eingerichtet.' },
-  403: { label: 'Gesperrt', hint: 'Die Sperre auf Admin-IPs greift.' },
-  502: { label: 'Fehlerhafte Antwort', hint: 'Das Ziel antwortet, aber nicht verständlich.' },
-  503: { label: 'Ziel nicht erreichbar', hint: 'Kein Server des Ziels nimmt Verbindungen an.' },
-  504: { label: 'Zeitüberschreitung', hint: 'Das Ziel antwortet nicht rechtzeitig.' },
+  404: { label: msgid('Unbekannte Domain'), hint: msgid('Für diese Domain ist kein Ziel eingerichtet.') },
+  403: { label: msgid('Gesperrt'), hint: msgid('Die Sperre auf Admin-IPs greift.') },
+  502: { label: msgid('Fehlerhafte Antwort'), hint: msgid('Das Ziel antwortet, aber nicht verständlich.') },
+  503: { label: msgid('Ziel nicht erreichbar'), hint: msgid('Kein Server des Ziels nimmt Verbindungen an.') },
+  504: { label: msgid('Zeitüberschreitung'), hint: msgid('Das Ziel antwortet nicht rechtzeitig.') },
 };
 
 /** Die Fälle, die ein Besucher am ehesten sieht, stehen vorn. */
@@ -36,28 +42,40 @@ function errorPage(status: number): DesignPage {
     id: `error-${status}`,
     kind: 'error',
     status,
-    label: `${status} · ${known?.label ?? defaultErrorPageText(status).title}`,
-    hint: known?.hint ?? 'Seltener Fall, HAProxy meldet ihn selbst.',
+    // Die deutsche Überschrift der Seite ist selbst ein Schlüssel (`ui/static/page.ts`).
+    label: known?.label ?? defaultErrorPageText(status).title,
+    hint: known?.hint ?? msgid('Seltener Fall, HAProxy meldet ihn selbst.'),
   };
 }
 
 const LOCK_PAGES: DesignPage[] = [
-  { id: 'lock-ask', kind: 'lock', lock: 'ask', label: 'Passwortabfrage', hint: 'Vor einer Domain mit Passwortsperre.' },
+  {
+    id: 'lock-ask',
+    kind: 'lock',
+    lock: 'ask',
+    label: msgid('Passwortabfrage'),
+    hint: msgid('Vor einer Domain mit Passwortsperre.'),
+  },
   {
     id: 'lock-wrong',
     kind: 'lock',
     lock: 'wrong',
-    label: 'Passwortabfrage · falsches Passwort',
-    hint: 'Nach einer falschen Eingabe.',
+    label: msgid('Passwortabfrage · falsches Passwort'),
+    hint: msgid('Nach einer falschen Eingabe.'),
   },
   {
     id: 'lock-throttled',
     kind: 'lock',
     lock: 'throttled',
-    label: 'Passwortabfrage · zu viele Versuche',
-    hint: 'Nach zehn Eingaben in zehn Minuten.',
+    label: msgid('Passwortabfrage · zu viele Versuche'),
+    hint: msgid('Nach zehn Eingaben in zehn Minuten.'),
   },
 ];
+
+/** „503 · Ziel nicht erreichbar" bzw. „Passwortabfrage", übersetzt mit `t`. */
+export function designPageLabel(page: DesignPage, t: (text: string) => string): string {
+  return page.kind === 'error' ? `${page.status} · ${t(page.label)}` : t(page.label);
+}
 
 export const DESIGN_PAGES: DesignPage[] = [
   ...FIRST.map(errorPage),
@@ -114,22 +132,25 @@ export function logoByteBudget(design: PageDesign): number {
   return Math.max(0, Math.floor(free / 4) * 3);
 }
 
-const number = (value: number) => value.toLocaleString('de-DE');
-
-/** Der Grund, warum ein Design nicht ausgeliefert werden kann, oder `null`. */
-export function designSizeError(design: PageDesign): string | null {
+/**
+ * Der Grund, warum ein Design nicht ausgeliefert werden kann, oder `null`.
+ * `messages` ist die Sprache der Oberfläche, nicht die der Seiten.
+ */
+export function designSizeError(design: PageDesign, messages: Locale = DEFAULT_LOCALE): string | null {
   const largest = designPageSizes(design)[0];
   if (largest.bytes <= PAGE_MAX_BYTES) return null;
 
+  const { t } = createTranslator(messages);
+  const values = {
+    page: designPageLabel(largest.page, t),
+    bytes: formatNumber(messages, largest.bytes),
+    max: formatNumber(messages, PAGE_MAX_BYTES),
+  };
   if (design.logo.kind === 'custom') {
-    return (
-      `Das Logo passt nicht in die Seite. Mit ihm hätte „${largest.page.label}“ ${number(largest.bytes)} Bytes, ` +
-      `HAProxy lädt höchstens ${number(PAGE_MAX_BYTES)}. ` +
-      `Mit den jetzigen Texten darf die Logo-Datei höchstens ${number(logoByteBudget(design))} Bytes groß sein.`
+    return t(
+      'Das Logo passt nicht in die Seite. Mit ihm hätte „{page}“ {bytes} Bytes, HAProxy lädt höchstens {max}. Mit den jetzigen Texten darf die Logo-Datei höchstens {budget} Bytes groß sein.',
+      { ...values, budget: formatNumber(messages, logoByteBudget(design)) }
     );
   }
-  return (
-    `„${largest.page.label}“ hätte ${number(largest.bytes)} Bytes, HAProxy lädt höchstens ` +
-    `${number(PAGE_MAX_BYTES)}. Kürzen Sie die Texte.`
-  );
+  return t('„{page}“ hätte {bytes} Bytes, HAProxy lädt höchstens {max}. Kürzen Sie die Texte.', values);
 }

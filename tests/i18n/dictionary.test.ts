@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { collectKeys } from '@/scripts/i18n/scan';
 import { en, PARTS } from '@/lib/i18n/en';
-import { UI_LOCALE_FIXED } from '@/lib/i18n/locale';
 
 /**
  * Das englische Wörterbuch gegen den Quelltext.
@@ -34,8 +33,7 @@ describe('Wörterbuch Englisch', () => {
     expect(list(dynamic.map((d) => `${d.file}:${d.line}  ${d.text}`))).toBe('');
   });
 
-  // Solange die Oberfläche fest deutsch ist, ist das Wörterbuch noch im Aufbau.
-  it.skipIf(UI_LOCALE_FIXED)('übersetzt jeden Schlüssel aus dem Quelltext', () => {
+  it('übersetzt jeden Schlüssel aus dem Quelltext', () => {
     const missing = new Map<string, string>();
     for (const entry of keys) {
       if (!Object.hasOwn(en, entry.key) && !missing.has(entry.key)) missing.set(entry.key, `${entry.file}:${entry.line}`);

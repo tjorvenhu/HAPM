@@ -10,49 +10,85 @@
  * dort im Fuß. Aus `./core/mail` kommen deshalb die Bestandteile (Überschrift,
  * Absätze, Adresse). Der Hinweis für den Fall, dass es nicht der Empfänger
  * war, steht hier, und die Textfassung entsteht mit dem Rahmen.
+ *
+ * ── Welche Sprache ──
+ *
+ * Diese Mails gehen an genau ein Konto, und zwar an das, um das es geht. Hat
+ * dessen Inhaber unter „Konto" eine Sprache gewählt (`user_state.locale`),
+ * gilt sie. Sonst gilt die Einstellung „Sprache der Mails" wie für jede andere
+ * Mail. Die Einstellung ist global, weil eine Benachrichtigung an mehrere
+ * Empfänger geht; für eine Mail an eine Person gibt es diesen Grund nicht.
  */
 
 import { sendMail } from '../mail';
-import { escapeHtml, mailNote, mailSmall, mailText, renderHapmMail } from '../mail/layout';
+import { currentInstallation, escapeHtml, mailNote, mailSmall, mailText, renderHapmMail } from '../mail/layout';
+import { createTranslator, msgid, type Locale } from '../i18n';
 import { getSettings } from '../settings';
-import type { MailContent } from './core';
+import { mailInLocale, type MailContent } from './core/mail';
 
 /** Was auf dem Knopf steht, je Anlass. */
 const ACTION_LABELS: Record<MailContent['kind'], string> = {
-  'reset-password': 'Passwort festlegen',
-  'verify-email': 'E-Mail-Adresse bestätigen',
-  'change-email': 'Änderung bestätigen',
+  'reset-password': msgid('Passwort festlegen'),
+  'verify-email': msgid('E-Mail-Adresse bestätigen'),
+  'change-email': msgid('Änderung bestätigen'),
 };
 
-const IGNORE_HINT =
-  'Waren Sie das nicht, können Sie diese Nachricht ignorieren. Ihr bisheriges Passwort bleibt dann unverändert gültig.';
+/**
+ * Die Sprache einer Mail an `email`: die Wahl am Konto, sonst die Einstellung.
+ * Scheitert nie: im Zweifel Deutsch, die Mail soll trotzdem rausgehen.
+ *
+ * `./users` über einen dynamischen Import: es erreicht `./config`, und
+ * `./config` importiert diese Datei.
+ */
+export async function accountMailLocale(email: string): Promise<Locale> {
+  let fallback: Locale = 'de';
+  try {
+    fallback = (await getSettings()).mailLocale;
+    const { findUserByEmail, getUserLocale } = await import('./users');
+    const user = await findUserByEmail(email);
+    return (user ? await getUserLocale(user.$id) : null) ?? fallback;
+  } catch (err) {
+    console.error('[auth] Sprache für die Mail nicht ermittelt:', err instanceof Error ? err.message : err);
+    return fallback;
+  }
+}
 
-export function authMail(mail: MailContent): { subject: string; html: string; text: string } {
-  const rendered = renderHapmMail({
-    subject: mail.subject,
-    eyebrow: 'Konto',
-    heading: mail.headline,
-    body:
-      mailText(escapeHtml(`Hallo ${mail.userName},`)) +
-      mail.paragraphs.map((paragraph) => mailText(escapeHtml(paragraph))).join(''),
-    action: { label: ACTION_LABELS[mail.kind], url: mail.url },
-    /*
-     * Die Adresse steht lesbar da, nicht nur hinter dem Knopf, und als Text
-     * statt als zweiter Link: ein Link, dessen Ziel man nicht sieht, ist die
-     * Form, in der Betrugsmails auftreten.
-     */
-    afterAction:
-      mailSmall(
-        'Falls der Knopf nicht funktioniert oder Sie das Ziel prüfen möchten:<br>' +
-          `<span style="word-break:break-all">${escapeHtml(mail.url)}</span>`
-      ) + mailSmall(escapeHtml(IGNORE_HINT)),
-  });
-  return { subject: mail.subject, ...rendered };
+export function authMail(mail: MailContent, locale: Locale = mail.locale): { subject: string; html: string; text: string } {
+  const content = mailInLocale(mail, locale);
+  const { t } = createTranslator(locale);
+  const rendered = renderHapmMail(
+    {
+      subject: content.subject,
+      eyebrow: t('Konto'),
+      heading: content.headline,
+      body:
+        mailText(escapeHtml(t('Hallo {name},', { name: content.userName }))) +
+        content.paragraphs.map((paragraph) => mailText(escapeHtml(paragraph))).join(''),
+      action: { label: t(ACTION_LABELS[content.kind]), url: content.url },
+      /*
+       * Die Adresse steht lesbar da, nicht nur hinter dem Knopf, und als Text
+       * statt als zweiter Link: ein Link, dessen Ziel man nicht sieht, ist die
+       * Form, in der Betrugsmails auftreten.
+       */
+      afterAction:
+        mailSmall(
+          `${escapeHtml(t('Falls der Knopf nicht funktioniert oder Sie das Ziel prüfen möchten:'))}<br>` +
+            `<span style="word-break:break-all">${escapeHtml(content.url)}</span>`
+        ) +
+        mailSmall(
+          escapeHtml(
+            t('Waren Sie das nicht, können Sie diese Nachricht ignorieren. Ihr bisheriges Passwort bleibt dann unverändert gültig.')
+          )
+        ),
+    },
+    { ...currentInstallation(), locale }
+  );
+  return { subject: content.subject, ...rendered };
 }
 
 /** Der Haken `sendMail` des Anmeldedienstes. Wirft, wenn der Versand scheitert. */
 export async function sendAuthMail(mail: MailContent & { to: string }): Promise<void> {
-  await sendMail({ to: mail.to, ...authMail(mail) });
+  await sendMail({ to: mail.to, ...authMail(mail, await accountMailLocale(mail.to)) });
 }
 
 export interface PasskeyChange {
@@ -65,33 +101,39 @@ export interface PasskeyChange {
 
 export function passkeyChangeMail(
   mail: Omit<PasskeyChange, 'to'>,
-  publicUrl: string | null
+  publicUrl: string | null,
+  locale: Locale = 'de'
 ): { subject: string; html: string; text: string } {
+  const { t } = createTranslator(locale);
   const added = mail.change === 'added';
-  const subject = added ? 'Neuer Passkey an Ihrem Konto' : 'Passkey von Ihrem Konto entfernt';
-  const greeting = mail.userName ? `Hallo ${mail.userName},` : 'Hallo,';
-  const before = added
-    ? 'an Ihrem Konto bei HAPM wurde ein Passkey hinterlegt:'
-    : 'von Ihrem Konto bei HAPM wurde ein Passkey entfernt:';
-  const after = added
-    ? 'Damit ist die Anmeldung ohne Passwort und ohne Code möglich.'
-    : 'Mit ihm ist keine Anmeldung mehr möglich.';
-  const advice =
-    'Ändern Sie bitte sofort Ihr Passwort (auf der Anmeldeseite über „Passwort vergessen?“) ' +
-    'und entfernen Sie unbekannte Passkeys unter „Konto“.';
+  const subject = added ? t('Neuer Passkey an Ihrem Konto') : t('Passkey von Ihrem Konto entfernt');
+  const greeting = mail.userName ? t('Hallo {name},', { name: mail.userName }) : t('Hallo,');
+  const sentence = added
+    ? t('an Ihrem Konto bei HAPM wurde ein Passkey hinterlegt: {name}. Damit ist die Anmeldung ohne Passwort und ohne Code möglich.', {
+        name: `<strong>${escapeHtml(mail.passkeyName)}</strong>`,
+      })
+    : t('von Ihrem Konto bei HAPM wurde ein Passkey entfernt: {name}. Mit ihm ist keine Anmeldung mehr möglich.', {
+        name: `<strong>${escapeHtml(mail.passkeyName)}</strong>`,
+      });
+  const advice = t(
+    'Ändern Sie bitte sofort Ihr Passwort (auf der Anmeldeseite über „Passwort vergessen?“) und entfernen Sie unbekannte Passkeys unter „Konto“.'
+  );
 
-  const rendered = renderHapmMail({
-    subject,
-    eyebrow: 'Konto',
-    heading: subject,
-    body:
-      mailText(escapeHtml(greeting)) +
-      mailText(`${escapeHtml(before)} <strong>${escapeHtml(mail.passkeyName)}</strong>. ${escapeHtml(after)}`) +
-      mailNote(escapeHtml(advice), 'warning', 'Das waren nicht Sie?'),
-    // Nach `/konto` und nicht zum Zurücksetzen: dort stehen die Passkeys, und
-    // der unbekannte muss zuerst weg.
-    action: publicUrl ? { label: 'Konto öffnen', url: `${publicUrl}/konto` } : undefined,
-  });
+  const rendered = renderHapmMail(
+    {
+      subject,
+      eyebrow: t('Konto'),
+      heading: subject,
+      body:
+        mailText(escapeHtml(greeting)) +
+        mailText(sentence) +
+        mailNote(escapeHtml(advice), 'warning', t('Das waren nicht Sie?')),
+      // Nach `/konto` und nicht zum Zurücksetzen: dort stehen die Passkeys, und
+      // der unbekannte muss zuerst weg.
+      action: publicUrl ? { label: t('Konto öffnen'), url: `${publicUrl}/konto` } : undefined,
+    },
+    { ...currentInstallation(), locale }
+  );
   return { subject, ...rendered };
 }
 
@@ -108,7 +150,8 @@ export function passkeyChangeMail(
 export async function notifyPasskeyChange(change: PasskeyChange): Promise<void> {
   try {
     const { publicUrl } = await getSettings();
-    await sendMail({ to: change.to, ...passkeyChangeMail(change, publicUrl) });
+    const locale = await accountMailLocale(change.to);
+    await sendMail({ to: change.to, ...passkeyChangeMail(change, publicUrl, locale) });
   } catch (err) {
     console.error(
       `[auth] Mail über den ${change.change === 'added' ? 'neuen' : 'entfernten'} Passkey nicht verschickt:`,

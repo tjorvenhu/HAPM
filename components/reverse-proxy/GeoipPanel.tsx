@@ -10,6 +10,8 @@ import { useMountedLoad } from '@/components/useMountedLoad';
 import { usePolling } from '@/components/usePolling';
 import { SkeletonRows } from '@/components/Skeleton';
 import type { GeoipOverview } from '@/lib/geoip/fetch';
+import { formatDateTimeMedium, formatNumber, msgid, type Locale, type Translator } from '@/lib/i18n';
+import { useT } from '@/lib/i18n/react';
 
 /**
  * Die Länder-Tabelle der Statistik: ihr Stand, und dass HAPM sie selbst holt.
@@ -38,29 +40,31 @@ import type { GeoipOverview } from '@/lib/geoip/fetch';
  */
 
 const ORIGIN_LABELS: Record<GeoipOverview['origin'], string> = {
-  fetched: 'Von db-ip.com geholt',
-  uploaded: 'Von Hand hochgeladen',
-  bundled: 'Mit HAPM mitgeliefert',
-  none: 'Keine',
+  fetched: msgid('Von db-ip.com geholt'),
+  uploaded: msgid('Von Hand hochgeladen'),
+  bundled: msgid('Mit HAPM mitgeliefert'),
+  none: msgid('Keine'),
 };
 
-function formatTime(iso: string): string {
-  return new Date(iso).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' });
+/** Der eine Satz unter dem Titel: was gilt, und ob es sich von selbst erneuert. */
+function summary(status: GeoipOverview, t: Translator['t']): string {
+  const renewal = t(
+    status.autoRefresh ? 'Wird jeden Monat selbsttätig erneuert.' : 'Das selbsttätige Erneuern ist abgeschaltet.'
+  );
+  if (status.origin === 'none') return t('Keine Tabelle vorhanden. {renewal}', { renewal });
+  return t('Stand {version}. {renewal}', { version: status.version ?? t('unbekannt'), renewal });
 }
 
-/** Der eine Satz unter dem Titel: was gilt, und ob es sich von selbst erneuert. */
-function summary(status: GeoipOverview): string {
-  const renewal = status.autoRefresh
-    ? 'Wird jeden Monat selbsttätig erneuert.'
-    : 'Das selbsttätige Erneuern ist abgeschaltet.';
-  if (status.origin === 'none') return `Keine Tabelle vorhanden. ${renewal}`;
-  return `Stand ${status.version ?? 'unbekannt'}. ${renewal}`;
+function ranges(locale: Locale, t: Translator['t'], v4: number, v6: number): string {
+  return t('{v4} IPv4 · {v6} IPv6', { v4: formatNumber(locale, v4), v6: formatNumber(locale, v6) });
 }
 
 export default function GeoipPanel() {
   const { apiFetch } = useApp();
   const { notify } = useToast();
   const confirm = useConfirm();
+  const { t, plural, rich, locale } = useT();
+  const formatTime = (iso: string) => formatDateTimeMedium(locale, iso);
 
   const [status, setStatus] = useState<GeoipOverview | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -98,24 +102,28 @@ export default function GeoipPanel() {
         next.changed
           ? {
               variant: 'success',
-              title: `Länder-Tabelle auf Stand ${next.version ?? 'unbekannt'}`,
+              title: t('Länder-Tabelle auf Stand {version}', { version: next.version ?? t('unbekannt') }),
               message:
                 next.v4Count !== null && next.v6Count !== null
-                  ? `${next.v4Count.toLocaleString('de-DE')} IPv4- und ` +
-                    `${next.v6Count.toLocaleString('de-DE')} IPv6-Bereiche von db-ip.com geholt.`
-                  : 'Von db-ip.com geholt.',
+                  ? t('{v4} IPv4- und {v6} IPv6-Bereiche von db-ip.com geholt.', {
+                      v4: formatNumber(locale, next.v4Count),
+                      v6: formatNumber(locale, next.v6Count),
+                    })
+                  : t('Von db-ip.com geholt.'),
             }
           : {
               variant: 'info',
-              title: 'Länder-Tabelle ist aktuell',
-              message: `Stand ${next.version ?? 'unbekannt'}. Eine neuere Datei gibt es bei DB-IP noch nicht.`,
+              title: t('Länder-Tabelle ist aktuell'),
+              message: t('Stand {version}. Eine neuere Datei gibt es bei DB-IP noch nicht.', {
+                version: next.version ?? t('unbekannt'),
+              }),
             }
       );
     } catch (err) {
       notify({
         variant: 'error',
-        title: 'Erneuern fehlgeschlagen',
-        message: err instanceof Error && err.message ? err.message : 'Unbekannter Fehler.',
+        title: t('Erneuern fehlgeschlagen'),
+        message: err instanceof Error && err.message ? err.message : t('Unbekannter Fehler.'),
       });
       // Der gescheiterte Versuch steht jetzt am Zustand, und der soll dastehen.
       await load();
@@ -137,15 +145,15 @@ export default function GeoipPanel() {
       setStatus(data.data as GeoipOverview);
       notify({
         variant: 'success',
-        message: enabled
-          ? 'HAPM erneuert die Länder-Tabelle wieder selbst.'
-          : 'HAPM lädt die Länder-Tabelle nicht mehr selbst.',
+        message: t(
+          enabled ? 'HAPM erneuert die Länder-Tabelle wieder selbst.' : 'HAPM lädt die Länder-Tabelle nicht mehr selbst.'
+        ),
       });
     } catch (err) {
       notify({
         variant: 'error',
-        title: 'Umschalten fehlgeschlagen',
-        message: err instanceof Error && err.message ? err.message : 'Unbekannter Fehler.',
+        title: t('Umschalten fehlgeschlagen'),
+        message: err instanceof Error && err.message ? err.message : t('Unbekannter Fehler.'),
       });
     } finally {
       setBusy(null);
@@ -160,8 +168,10 @@ export default function GeoipPanel() {
       // schicken, um dann am Dateinamen zu scheitern, ist eine Wartezeit für
       // nichts.
       setFormError(
-        `„${file.name}" nennt keinen Stand. Erwartet wird der Monat im Dateinamen, ` +
-          'so wie DB-IP ihn ausliefert: dbip-country-lite-2026-08.csv.gz'
+        t(
+          '„{file}" nennt keinen Stand. Erwartet wird der Monat im Dateinamen, so wie DB-IP ihn ausliefert: dbip-country-lite-2026-08.csv.gz',
+          { file: file.name }
+        )
       );
       return;
     }
@@ -180,13 +190,14 @@ export default function GeoipPanel() {
       setStatus(next);
       notify({
         variant: 'success',
-        title: `Länder-Tabelle auf Stand ${version}`,
-        message:
-          `${(next.v4Count ?? 0).toLocaleString('de-DE')} IPv4- und ` +
-          `${(next.v6Count ?? 0).toLocaleString('de-DE')} IPv6-Bereiche übernommen.`,
+        title: t('Länder-Tabelle auf Stand {version}', { version }),
+        message: t('{v4} IPv4- und {v6} IPv6-Bereiche übernommen.', {
+          v4: formatNumber(locale, next.v4Count ?? 0),
+          v6: formatNumber(locale, next.v6Count ?? 0),
+        }),
       });
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Die Datei konnte nicht gelesen werden.');
+      setFormError(err instanceof Error ? err.message : t('Die Datei konnte nicht gelesen werden.'));
     } finally {
       setBusy(null);
       if (fileInput.current) fileInput.current.value = '';
@@ -195,13 +206,13 @@ export default function GeoipPanel() {
 
   async function reset() {
     const ok = await confirm({
-      title: 'Auf die mitgelieferte Tabelle zurück?',
-      message: status?.autoRefresh
-        ? 'Danach gilt die mitgelieferte Fassung. Sie ist in der Regel älter. Beim nächsten ' +
-          'selbsttätigen Abruf holt HAPM wieder die aktuelle.'
-        : 'Danach gilt wieder die mitgelieferte Fassung. Sie ist in der Regel älter, die Länder ' +
-          'in der Statistik werden dadurch ungenauer. Sonst ändert sich nichts.',
-      confirmLabel: 'Zurücksetzen',
+      title: t('Auf die mitgelieferte Tabelle zurück?'),
+      message: t(
+        status?.autoRefresh
+          ? 'Danach gilt die mitgelieferte Fassung. Sie ist in der Regel älter. Beim nächsten selbsttätigen Abruf holt HAPM wieder die aktuelle.'
+          : 'Danach gilt wieder die mitgelieferte Fassung. Sie ist in der Regel älter, die Länder in der Statistik werden dadurch ungenauer. Sonst ändert sich nichts.'
+      ),
+      confirmLabel: t('Zurücksetzen'),
     });
     if (!ok) return;
 
@@ -211,9 +222,9 @@ export default function GeoipPanel() {
       const data = await res.json();
       if (!data.success) throw new Error(data.error);
       setStatus(data.data as GeoipOverview);
-      notify({ variant: 'success', message: 'Es gilt wieder die mitgelieferte Tabelle.' });
+      notify({ variant: 'success', message: t('Es gilt wieder die mitgelieferte Tabelle.') });
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Das hat nicht geklappt.');
+      setFormError(err instanceof Error ? err.message : t('Das hat nicht geklappt.'));
     } finally {
       setBusy(null);
     }
@@ -227,15 +238,19 @@ export default function GeoipPanel() {
         <div>
           <h2 className="card-title">
             <Globe size={16} style={{ marginRight: 6, verticalAlign: '-2px' }} />
-            Länder-Tabelle
-            <InfoHint text="Aus ihr macht die Statistik aus einer Adresse ein Land. Nachgeschlagen wird in HAPM selbst: keine Besucheradresse geht an einen fremden Dienst." />
+            {t('Länder-Tabelle')}
+            <InfoHint
+              text={t(
+                'Aus ihr macht die Statistik aus einer Adresse ein Land. Nachgeschlagen wird in HAPM selbst: keine Besucheradresse geht an einen fremden Dienst.'
+              )}
+            />
           </h2>
-          {status && <p className="card-subtitle">{summary(status)}</p>}
+          {status && <p className="card-subtitle">{summary(status, t)}</p>}
         </div>
         {status && (
           <button className="btn btn-primary btn-sm" onClick={refresh} disabled={busy !== null}>
             {busy === 'refresh' ? <Loader2 size={15} className="spin" /> : <RefreshCw size={15} />}
-            Jetzt erneuern
+            {t('Jetzt erneuern')}
           </button>
         )}
       </div>
@@ -243,7 +258,7 @@ export default function GeoipPanel() {
       {!status ? (
         loadFailed ? (
           <div className="alert alert-danger">
-            Der Zustand der Länder-Tabelle konnte nicht geladen werden.
+            {t('Der Zustand der Länder-Tabelle konnte nicht geladen werden.')}
           </div>
         ) : (
           <SkeletonRows count={2} />
@@ -254,12 +269,12 @@ export default function GeoipPanel() {
             <div className="alert alert-danger sys-block">
               <span>
                 <strong>
-                  Der letzte Abruf
-                  {status.lastAttemptAt ? ` am ${formatTime(status.lastAttemptAt)}` : ''} ist
-                  gescheitert.
+                  {status.lastAttemptAt
+                    ? t('Der letzte Abruf am {time} ist gescheitert.', { time: formatTime(status.lastAttemptAt) })
+                    : t('Der letzte Abruf ist gescheitert.')}
                 </strong>{' '}
-                {status.lastAttemptError}
-                {status.autoRefresh ? ' HAPM versucht es einmal am Tag wieder.' : ''}
+                {t(status.lastAttemptError)}
+                {status.autoRefresh ? ` ${t('HAPM versucht es einmal am Tag wieder.')}` : ''}
               </span>
             </div>
           ) : (
@@ -267,8 +282,8 @@ export default function GeoipPanel() {
             status.origin !== 'none' && (
               <div className="alert alert-warning sys-block">
                 <span>
-                  <strong>Die Tabelle ist veraltet.</strong> Adressbereiche werden laufend neu
-                  vergeben, die Länder in der Statistik stimmen mit der Zeit seltener.
+                  <strong>{t('Die Tabelle ist veraltet.')}</strong>{' '}
+                  {t('Adressbereiche werden laufend neu vergeben, die Länder in der Statistik stimmen mit der Zeit seltener.')}
                 </span>
               </div>
             )
@@ -276,20 +291,22 @@ export default function GeoipPanel() {
 
           <dl className="detail-grid">
             <div>
-              <dt>Stand</dt>
-              <dd>{status.version ?? 'Unbekannt'}</dd>
+              <dt>{t('Stand')}</dt>
+              <dd>{status.version ?? t('Unbekannt')}</dd>
             </div>
             <div>
-              <dt>Herkunft</dt>
-              <dd>{ORIGIN_LABELS[status.origin]}</dd>
+              <dt>{t('Herkunft')}</dt>
+              <dd>{t(ORIGIN_LABELS[status.origin])}</dd>
             </div>
             <div>
-              <dt>Alter</dt>
+              <dt>{t('Alter')}</dt>
               <dd>
                 {status.ageDays === null ? (
-                  'Unbekannt'
+                  t('Unbekannt')
                 ) : status.stale ? (
-                  <span style={{ color: 'var(--warning)' }}>{status.ageDays} Tage, veraltet</span>
+                  <span style={{ color: 'var(--warning)' }}>
+                    {plural(status.ageDays, { one: '{count} Tag, veraltet', other: '{count} Tage, veraltet' })}
+                  </span>
                 ) : (
                   <span
                     style={{
@@ -299,37 +316,38 @@ export default function GeoipPanel() {
                       gap: 4,
                     }}
                   >
-                    <Check size={13} /> {status.ageDays} Tage
+                    <Check size={13} /> {plural(status.ageDays, { one: '{count} Tag', other: '{count} Tage' })}
                   </span>
                 )}
               </dd>
             </div>
             <div>
-              <dt>Bereiche</dt>
+              <dt>{t('Bereiche')}</dt>
               <dd>
                 {status.v4Count === null || status.v6Count === null
-                  ? 'Unbekannt'
-                  : `${status.v4Count.toLocaleString('de-DE')} IPv4 · ${status.v6Count.toLocaleString('de-DE')} IPv6`}
+                  ? t('Unbekannt')
+                  : ranges(locale, t, status.v4Count, status.v6Count)}
               </dd>
             </div>
             <div>
-              <dt>Letzter Versuch</dt>
+              <dt>{t('Letzter Versuch')}</dt>
               <dd>
                 {status.lastAttemptAt === null
-                  ? 'Noch keiner'
-                  : `${formatTime(status.lastAttemptAt)}, ${status.lastAttemptError ? 'gescheitert' : 'ohne Fehler'}`}
+                  ? t('Noch keiner')
+                  : status.lastAttemptError
+                    ? t('{time}, gescheitert', { time: formatTime(status.lastAttemptAt) })
+                    : t('{time}, ohne Fehler', { time: formatTime(status.lastAttemptAt) })}
               </dd>
             </div>
             {overridden && status.uploadedAt && (
               <div>
-                <dt>{status.origin === 'fetched' ? 'Geholt' : 'Hochgeladen'}</dt>
+                <dt>{t(status.origin === 'fetched' ? 'Geholt' : 'Hochgeladen')}</dt>
                 <dd>
-                  {formatTime(status.uploadedAt)}
                   {status.uploadedBy
-                    ? ` von ${status.uploadedBy}`
+                    ? t('{time} von {user}', { time: formatTime(status.uploadedAt), user: status.uploadedBy })
                     : status.origin === 'fetched'
-                      ? ', selbsttätig'
-                      : ''}
+                      ? t('{time}, selbsttätig', { time: formatTime(status.uploadedAt) })
+                      : formatTime(status.uploadedAt)}
                 </dd>
               </div>
             )}
@@ -340,12 +358,15 @@ export default function GeoipPanel() {
               <div className="form-subsection-head">
                 <div>
                   <div className="form-section-title">
-                    Selbsttätig erneuern
-                    <InfoHint text="Solange die Tabelle nicht vom laufenden Monat ist, fragt HAPM einmal am Tag bei db-ip.com nach der neuen Datei. DB-IP stellt sie am Monatsanfang ein. Abgeschaltet bleibt die Tabelle auf ihrem Stand, bis sie von Hand erneuert wird." />
+                    {t('Selbsttätig erneuern')}
+                    <InfoHint
+                      text={t(
+                        'Solange die Tabelle nicht vom laufenden Monat ist, fragt HAPM einmal am Tag bei db-ip.com nach der neuen Datei. DB-IP stellt sie am Monatsanfang ein. Abgeschaltet bleibt die Tabelle auf ihrem Stand, bis sie von Hand erneuert wird.'
+                      )}
+                    />
                   </div>
                   <div className="form-section-sub">
-                    HAPM lädt einmal im Monat eine Datei von db-ip.com. Besucheradressen verlassen
-                    den Server dabei nicht.
+                    {t('HAPM lädt einmal im Monat eine Datei von db-ip.com. Besucheradressen verlassen den Server dabei nicht.')}
                   </div>
                 </div>
                 <span className="toggle-switch">
@@ -364,10 +385,14 @@ export default function GeoipPanel() {
           <div className="detail-block">
             <div className="form-group">
               <label className="form-label">
-                Von Hand hochladen
-                <InfoHint text="Der Datensatz „IP to Country Lite“ von DB-IP, monatlich und kostenlos. Die Datei wird genommen, wie sie kommt: gepackt (.csv.gz) oder ausgepackt. Der Monat muss im Dateinamen stehen, nur dort ist der Stand des Datensatzes vermerkt." />
+                {t('Von Hand hochladen')}
+                <InfoHint
+                  text={t(
+                    'Der Datensatz „IP to Country Lite“ von DB-IP, monatlich und kostenlos. Die Datei wird genommen, wie sie kommt: gepackt (.csv.gz) oder ausgepackt. Der Monat muss im Dateinamen stehen, nur dort ist der Stand des Datensatzes vermerkt.'
+                  )}
+                />
               </label>
-              <span className="form-hint">Für Server ohne Zugang nach außen.</span>
+              <span className="form-hint">{t('Für Server ohne Zugang nach außen.')}</span>
 
               {formError && <div className="alert alert-danger">{formError}</div>}
 
@@ -388,7 +413,7 @@ export default function GeoipPanel() {
                   disabled={busy !== null}
                 >
                   {busy === 'upload' ? <Loader2 size={15} className="spin" /> : <Upload size={15} />}
-                  Datei wählen
+                  {t('Datei wählen')}
                 </button>
                 <a
                   className="btn btn-ghost btn-sm"
@@ -396,13 +421,13 @@ export default function GeoipPanel() {
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  Datensatz bei DB-IP
+                  {t('Datensatz bei DB-IP')}
                   <ExternalLink size={15} />
                 </a>
                 {overridden && (
                   <button className="btn btn-ghost btn-sm" onClick={reset} disabled={busy !== null}>
                     {busy === 'reset' ? <Loader2 size={15} className="spin" /> : <RotateCcw size={15} />}
-                    Auf mitgelieferte zurück
+                    {t('Auf mitgelieferte zurück')}
                   </button>
                 )}
               </div>
@@ -410,11 +435,14 @@ export default function GeoipPanel() {
           </div>
 
           <p className="form-hint" style={{ marginTop: 16 }}>
-            Länderdaten:{' '}
-            <a href="https://db-ip.com" target="_blank" rel="noopener noreferrer">
-              IP Geolocation by DB-IP
-            </a>
-            , Lizenz CC BY 4.0.
+            {rich('Länderdaten: {link}, Lizenz CC BY 4.0.', {
+              link: (
+                // Der Wortlaut der Namensnennung ist durch die Lizenz vorgegeben.
+                <a href="https://db-ip.com" target="_blank" rel="noopener noreferrer">
+                  {'IP Geolocation by DB-IP'}
+                </a>
+              ),
+            })}
           </p>
         </>
       )}

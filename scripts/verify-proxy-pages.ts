@@ -60,7 +60,7 @@ import {
   PAGE_MAX_BYTES,
   type PageDesign,
 } from '../lib/haproxy/page-design';
-import { designPageSizes, logoByteBudget } from '../lib/haproxy/design-pages';
+import { designPageLabel, designPageSizes, logoByteBudget } from '../lib/haproxy/design-pages';
 
 const VERSIONS = process.argv.slice(2).length > 0 ? process.argv.slice(2) : ['2.4', '2.8', '3.0'];
 const PORT = 18480;
@@ -348,7 +348,9 @@ function largestDesign(largest: 'lock' | 'error'): PageDesign {
 async function verifyLargest(version: string, kind: 'lock' | 'error'): Promise<void> {
   const design = largestDesign(kind);
   const [largest] = designPageSizes(design);
-  console.log(`\nHAProxy ${version}, größtes Design („${largest.page.label}“: ${largest.bytes} von ${PAGE_MAX_BYTES} Bytes)`);
+  console.log(
+    `\nHAProxy ${version}, größtes Design („${designPageLabel(largest.page, (text) => text)}“: ${largest.bytes} von ${PAGE_MAX_BYTES} Bytes)`
+  );
 
   const { dir, mounts } = stage(createPasswordLock(PASSWORD), createPasswordLock('zweites'), design);
   const name = `hapm-lock-verify-gross-${version.replace(/\W/g, '-')}`;
@@ -400,6 +402,56 @@ async function verifyLargest(version: string, kind: 'lock' | 'error'): Promise<v
   }
 }
 
+/** Die englische Vorgabe: dieselben Wege, andere Texte, jede Seite Byte für Byte. */
+async function verifyEnglish(version: string): Promise<void> {
+  const design: PageDesign = { ...defaultPageDesign(), locale: 'en' };
+  console.log(`\nHAProxy ${version}, englische Vorgabetexte`);
+
+  const { dir, mounts } = stage(createPasswordLock(PASSWORD), createPasswordLock('zweites'), design);
+  const name = `hapm-lock-verify-en-${version.replace(/\W/g, '-')}`;
+  try {
+    docker(['rm', '-f', name]);
+  } catch {
+    // Es gab keinen.
+  }
+
+  try {
+    const checked = spawnSync(
+      'docker',
+      ['run', '--rm', ...mounts, `haproxy:${version}`, 'haproxy', '-c', '-f', '/usr/local/etc/haproxy/haproxy.cfg'],
+      { encoding: 'utf8' }
+    );
+    check('haproxy -c nimmt die Konfiguration an', checked.status === 0, `${checked.stdout}${checked.stderr}`.trim().slice(-400));
+    if (checked.status !== 0) return;
+
+    docker(['run', '-d', '--name', name, '-p', `127.0.0.1:${PORT}:8080`, ...mounts, `haproxy:${version}`]);
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+
+    const ask = await call({ host: 'ganz.test' });
+    const askPage = lockPages(design).find((entry) => entry.file === 'lock.html')!.html;
+    check('die Abfrage kommt englisch, Byte für Byte', ask.status === 401 && ask.body === askPage, `Status ${ask.status}`);
+    const wrong = await call({ host: 'ganz.test', form: { [LOCK_FIELD]: 'falsch' } });
+    check('der Hinweis nach falschem Passwort ist englisch', wrong.status === 401 && wrong.body.includes('The password is wrong.'));
+
+    for (const [host, status] of [['aus.test', 503], ['unbekannt.test', 404], ['gesperrt.test', 403]] as const) {
+      const file = renderErrorFile(status, design);
+      const page = await call({ host });
+      check(
+        `die ${status}-Seite kommt englisch, Byte für Byte`,
+        page.status === status && page.body === file.slice(file.indexOf('\r\n\r\n') + 4) && page.body.includes('lang="en"'),
+        `Status ${page.status}`
+      );
+    }
+  } finally {
+    try {
+      docker(['rm', '-f', name]);
+    } catch {
+      // Schon weg.
+    }
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 async function main(): Promise<void> {
   try {
     docker(['version', '--format', '{{.Server.Version}}']);
@@ -411,6 +463,7 @@ async function main(): Promise<void> {
     await verify(version);
     await verifyLargest(version, 'lock');
     await verifyLargest(version, 'error');
+    await verifyEnglish(version);
   }
   console.log(failures === 0 ? '\nAlles in Ordnung.' : `\n${failures} Prüfung(en) fehlgeschlagen.`);
   process.exit(failures === 0 ? 0 : 1);

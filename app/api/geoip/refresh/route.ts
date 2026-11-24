@@ -1,5 +1,6 @@
 import { requireSession, requireCsrf } from '@/lib/session';
 import { ok, handleError, ApiError } from '@/lib/api';
+import { msg } from '@/lib/i18n';
 import { logAudit, getClientIP } from '@/lib/audit';
 import { geoipOverview, refreshGeoip } from '@/lib/geoip/fetch';
 
@@ -17,7 +18,7 @@ export async function POST(request: Request) {
 
     const result = await refreshGeoip({ actor: session.email });
     // 502: HAPM selbst ist in Ordnung, die Gegenseite hat nicht geliefert.
-    if (!result.ok) throw new ApiError(result.error ?? 'Der Abruf ist gescheitert.', 502);
+    if (!result.ok) throw new ApiError(result.error ?? msg('Der Abruf ist gescheitert.'), 502);
 
     const overview = await geoipOverview();
     if (result.changed) {

@@ -2,6 +2,7 @@ import { requireCsrf, requireSession } from '@/lib/session';
 import { getUser, deleteUser } from '@/lib/auth/users';
 import { logAudit, getClientIP } from '@/lib/audit';
 import { ok, handleError, ApiError } from '@/lib/api';
+import { msg } from '@/lib/i18n';
 
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -10,7 +11,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     const { id } = await params;
 
     const user = await getUser(id);
-    if (!user) throw new ApiError('Dieses Konto gibt es nicht.', 404);
+    if (!user) throw new ApiError(msg('Dieses Konto gibt es nicht.'), 404);
 
     // Nimmt Sitzungen, Passkeys und den zweiten Faktor des Kontos mit.
     await deleteUser(id, session.userId);

@@ -1,5 +1,6 @@
 import { requireSession, requireCsrf } from '@/lib/session';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
+import { msg } from '@/lib/i18n';
 import { logAudit, getClientIP } from '@/lib/audit';
 import { GeoTableError } from '@/lib/geoip/format';
 import { geoipOverview, setGeoipAutoRefresh } from '@/lib/geoip/fetch';
@@ -57,7 +58,7 @@ export async function POST(request: Request) {
       });
     } catch (err) {
       // Eine unbrauchbare Datei ist eine Auskunft an den Benutzer und kein 500er.
-      if (err instanceof GeoTableError) throw new ApiError(err.message);
+      if (err instanceof GeoTableError) throw new ApiError(err);
       throw err;
     }
 
@@ -87,7 +88,7 @@ export async function PATCH(request: Request) {
     const body = await jsonBody(request);
 
     if (typeof body.autoRefresh !== 'boolean') {
-      throw new ApiError('Der Schalter für das selbsttätige Erneuern kennt nur an und aus.');
+      throw new ApiError(msg('Der Schalter für das selbsttätige Erneuern kennt nur an und aus.'));
     }
 
     const before = await readGeoipRefresh();

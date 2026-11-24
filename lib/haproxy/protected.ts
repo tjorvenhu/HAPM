@@ -18,7 +18,8 @@
  * ── Der Ausweg ──
  *
  * Die Adresse unter „Allgemein" ändern oder leeren, danach greift der Schutz
- * nicht mehr. Die Einrichtung ändert die Domain selbst und setzt die Adresse
+ * nicht mehr. Die Einrichtung lässt sich nicht erneut öffnen, sie ist kein
+ * Ausweg. Die Einrichtung ändert die Domain selbst und setzt die Adresse
  * erst am Ende neu, sie arbeitet deshalb ausdrücklich ohne Schutz
  * (`WITHOUT_SURFACE_PROTECTION`).
  *
@@ -29,6 +30,7 @@
  */
 
 import { ownsDomain } from './config';
+import { msg, type Message } from '../i18n/translate';
 
 /** Was ein Aufrufer zum Vorgang mitgibt. */
 export interface SurfaceProtection {
@@ -77,15 +79,18 @@ export function surfaceTarget(
   return { serviceId: service.id, scope: service.scope, host, url: protection.publicUrl.trim() };
 }
 
-const WAY_OUT =
-  'Wer die Adresse ändern will, ändert oder leert sie zuerst unter Allgemein oder öffnet dort die Einrichtung erneut.';
+/*
+ * Jede Meldung nennt am Ende den Ausweg: die Adresse unter Allgemein ändern.
+ * Er steht in jedem Schlüssel ganz, weil ein Schlüssel nicht zusammengesetzt
+ * wird (docs/i18n.md).
+ */
 
 /** Die Meldung, wenn dieses Ziel nicht entfernt werden darf, sonst `null`. */
-export function refuseSurfaceDelete(surface: SurfaceTarget | null, id: string): string | null {
+export function refuseSurfaceDelete(surface: SurfaceTarget | null, id: string): Message | null {
   if (!surface || surface.serviceId !== id) return null;
-  return (
-    `Über dieses Ziel ist die Oberfläche von HAPM erreichbar (${surface.url}). ` +
-    `Es lässt sich nicht entfernen. ${WAY_OUT}`
+  return msg(
+    'Über dieses Ziel ist die Oberfläche von HAPM erreichbar ({url}). Es lässt sich nicht entfernen. Wer die Adresse ändern will, ändert sie unter Allgemein. Danach lässt sich dieses Ziel entfernen.',
+    { url: surface.url }
   );
 }
 
@@ -97,21 +102,21 @@ export function refuseSurfaceUpdate(
   surface: SurfaceTarget | null,
   id: string,
   nextDomains: string[]
-): string | null {
+): Message | null {
   if (!surface || surface.serviceId !== id) return null;
   if (ownsDomain(nextDomains, surface.host)) return null;
-  return (
-    `Über dieses Ziel ist die Oberfläche von HAPM erreichbar (${surface.url}). ` +
-    `Die Domain ${surface.host} muss deshalb bei diesem Ziel bleiben. ${WAY_OUT}`
+  return msg(
+    'Über dieses Ziel ist die Oberfläche von HAPM erreichbar ({url}). Die Domain {host} muss deshalb bei diesem Ziel bleiben. Wer die Adresse ändern will, ändert sie unter Allgemein. Danach lässt sich die Domain ändern.',
+    { url: surface.url, host: surface.host }
   );
 }
 
 /** Die Meldung, wenn in dieser Gruppe das Ziel der Oberfläche liegt, sonst `null`. */
-export function refuseSurfaceScopeRemoval(surface: SurfaceTarget | null, scope: string): string | null {
+export function refuseSurfaceScopeRemoval(surface: SurfaceTarget | null, scope: string): Message | null {
   if (!surface || surface.scope === null) return null;
   if (surface.scope.toUpperCase() !== scope.trim().toUpperCase()) return null;
-  return (
-    `In dieser Gruppe liegt das Ziel, über das die Oberfläche von HAPM erreichbar ist (${surface.url}). ` +
-    `Sie lässt sich nicht entfernen. ${WAY_OUT}`
+  return msg(
+    'In dieser Gruppe liegt das Ziel, über das die Oberfläche von HAPM erreichbar ist ({url}). Sie lässt sich nicht entfernen. Wer die Adresse ändern will, ändert sie unter Allgemein. Danach lässt sich die Gruppe entfernen.',
+    { url: surface.url }
   );
 }

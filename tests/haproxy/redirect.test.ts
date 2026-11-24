@@ -11,6 +11,10 @@ import {
   matchesSearch,
   type CreateServiceInput,
 } from '@/lib/haproxy/config';
+import { germanText, type Message } from '@/lib/i18n/translate';
+
+/** Die Meldung einer Prüfung auf Deutsch, wie sie ohne Sprache herauskommt. */
+const de = (message: Message | null) => (message ? germanText(message) : message);
 
 /**
  * Eine Domain, die nicht bedient, sondern weiterschickt.
@@ -146,19 +150,19 @@ backend mix
 
   it('wird von der Prüfung abgelehnt', () => {
     expect(
-      validateCreateInput({ ...INPUT, servers: [{ name: 'web', target: '10.0.0.5:80', weight: null }] })
+      de(validateCreateInput({ ...INPUT, servers: [{ name: 'web', target: '10.0.0.5:80', weight: null }] }))
     ).toMatch(/kein Backend-Ziel/);
     expect(
-      validateCreateInput({
+      de(validateCreateInput({
         ...INPUT,
         routes: [{ name: 'api', paths: ['/api'], servers: [], check: true }],
-      })
+      }))
     ).toMatch(/Pfad-Regeln/);
     // Die Weiterleitung beantwortet HAProxy selbst: Header und Timeout hätten
     // kein Backend, in dem sie wirken.
-    expect(validateCreateInput({ ...INPUT, tunnel: true })).toMatch(/Weiterleitung hat keine/);
+    expect(de(validateCreateInput({ ...INPUT, tunnel: true }))).toMatch(/Weiterleitung hat keine/);
     expect(
-      validateCreateInput({ ...INPUT, responseHeaders: [{ name: 'X-Frame-Options', value: 'DENY' }] })
+      de(validateCreateInput({ ...INPUT, responseHeaders: [{ name: 'X-Frame-Options', value: 'DENY' }] }))
     ).toMatch(/Weiterleitung hat keine/);
   });
 });

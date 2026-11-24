@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Globe } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
+import { useT } from '@/lib/i18n/react';
+import { formatDate } from '@/lib/i18n/format';
 import type { GeoipOverview } from '@/lib/geoip/fetch';
 
 /**
@@ -37,11 +39,8 @@ import type { GeoipOverview } from '@/lib/geoip/fetch';
  * wäre er ein Hinweis, den man einmal wegdrückt und danach nie wieder sieht.
  */
 
-function formatDay(iso: string): string {
-  return new Date(iso).toLocaleDateString('de-DE', { dateStyle: 'medium' });
-}
-
 export default function GeoipReminder() {
+  const { t, plural, rich, locale } = useT();
   const { apiFetch } = useApp();
   const [status, setStatus] = useState<GeoipOverview | null>(null);
 
@@ -63,32 +62,43 @@ export default function GeoipReminder() {
   if (!status?.stale) return null;
   if (status.autoRefresh && !status.lastAttemptError) return null;
 
+  const failedAt = status.lastAttemptAt ? formatDate(locale, status.lastAttemptAt) : null;
+
   return (
     <div className="alert alert-warning sys-block">
       <Globe size={16} style={{ flexShrink: 0 }} />
       <span>
         {status.origin === 'none' ? (
           <>
-            <strong>Keine Länder-Tabelle vorhanden.</strong> Die Statistik zeigt deshalb keine
-            Länder.
+            <strong>{t('Keine Länder-Tabelle vorhanden.')}</strong> {t('Die Statistik zeigt deshalb keine Länder.')}
           </>
         ) : (
           <>
-            <strong>Die Länder-Tabelle ist veraltet.</strong>{' '}
-            {status.version ? `Stand ${status.version}, ` : ''}
-            {status.ageDays === null ? 'ihr Alter ist unbekannt' : `${status.ageDays} Tage alt`}.
+            <strong>{t('Die Länder-Tabelle ist veraltet.')}</strong>{' '}
+            {status.ageDays === null
+              ? status.version
+                ? t('Stand {version}, ihr Alter ist unbekannt.', { version: status.version })
+                : t('Ihr Alter ist unbekannt.')
+              : status.version
+                ? t('Stand {version}, {age}.', {
+                    version: status.version,
+                    age: plural(status.ageDays, { one: '{count} Tag alt', other: '{count} Tage alt' }),
+                  })
+                : plural(status.ageDays, { one: '{count} Tag alt.', other: '{count} Tage alt.' })}
           </>
         )}{' '}
         {status.lastAttemptError && (
           <>
-            Der letzte Abruf von db-ip.com
-            {status.lastAttemptAt ? ` am ${formatDay(status.lastAttemptAt)}` : ''} ist gescheitert:{' '}
-            {status.lastAttemptError}{' '}
+            {failedAt
+              ? t('Der letzte Abruf von db-ip.com am {date} ist gescheitert:', { date: failedAt })
+              : t('Der letzte Abruf von db-ip.com ist gescheitert:')}{' '}
+            {t(status.lastAttemptError)}{' '}
           </>
         )}
-        {!status.autoRefresh && <>Das selbsttätige Erneuern ist abgeschaltet. </>}
-        Unter <Link href="/reverse-proxy/einstellungen">Einstellungen</Link> lässt sich die Tabelle
-        holen oder hochladen.
+        {!status.autoRefresh && <>{t('Das selbsttätige Erneuern ist abgeschaltet.')} </>}
+        {rich('Unter {link} lässt sich die Tabelle holen oder hochladen.', {
+          link: <Link href="/reverse-proxy/einstellungen">{t('Einstellungen')}</Link>,
+        })}
       </span>
     </div>
   );

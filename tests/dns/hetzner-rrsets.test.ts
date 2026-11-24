@@ -11,12 +11,18 @@ import {
   rrsetName,
   rrsetToRecords,
   rrsetsToRecords,
-  writeConflict,
+  writeConflict as conflictOf,
   writeValue,
   type HetznerRRSet,
   type ValueTarget,
 } from '@/lib/dns/hetzner-rrsets';
-import { isEditableRecord } from '@/lib/dns/records';
+import { germanText } from '@/lib/i18n';
+
+/** Die Meldung als deutscher Text: die Prüfung liefert sie als `msg()`. */
+const writeConflict = (...args: Parameters<typeof conflictOf>) => {
+  const message = conflictOf(...args);
+  return message && germanText(message);
+};
 
 /**
  * Hetzner führt je Name und Art einen Satz von Werten, die Oberfläche zeigt
@@ -83,11 +89,11 @@ describe('rrsetToRecords', () => {
     )[0];
     const guarded = rrsetToRecords(rrset({ protection: { change: true } }), ZONE)[0];
 
-    expect(isEditableRecord(soa)).toBe(false);
-    expect(isEditableRecord(apexNs)).toBe(false);
-    expect(isEditableRecord(guarded)).toBe(false);
+    expect(soa.locked).toBe(true);
+    expect(apexNs.locked).toBe(true);
+    expect(guarded.locked).toBe(true);
     // Eine Delegation unterhalb der Zone gehört dem Betreiber.
-    expect(isEditableRecord(delegation)).toBe(true);
+    expect(delegation.locked).toBe(false);
   });
 
   it('ordnet die Einträge einer Zone nach Art und Name', () => {

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { Instrument_Sans } from 'next/font/google';
 import { I18nProvider } from '@/lib/i18n/react';
+import { TooltipLayer } from '@/ui/tool/TooltipLayer';
 import { getRequestLocale } from '@/lib/i18n/server';
 import { translate } from '@/lib/i18n';
 import './globals.css';
@@ -47,7 +48,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
       </head>
       <body>
-        <I18nProvider initialLocale={locale}>{children}</I18nProvider>
+        <I18nProvider initialLocale={locale}>
+          {children}
+          <TooltipLayer />
+        </I18nProvider>
       </body>
     </html>
   );

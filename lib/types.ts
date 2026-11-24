@@ -220,6 +220,11 @@ export interface Settings extends DbDoc {
   /** Je Ereignis ein Schalter. Ein Ereignis, das hier fehlt, gilt als eingeschaltet. */
   notifyEvents: Record<NotificationEventType, boolean>;
   /**
+   * Die Sprache aller Mails von HAPM. Eine für alle: eine Benachrichtigung geht
+   * an mehrere Empfänger. Fehlt sie (Zeile von vor der Einstellung), Deutsch.
+   */
+  mailLocale: 'de' | 'en';
+  /**
    * Ob Let's Encrypt diesen Server erreicht. `internal`: nein, jedes Zertifikat
    * geht über DNS-01. `public`: HTTP-01, DNS-01 nur für Wildcards.
    */
@@ -385,5 +390,6 @@ export const COLLECTIONS = {
   NOTIFICATION_STATE: 'notification_state',
   BACKUP_SETTINGS: 'backup_settings',
   BACKUP_RUNS: 'backup_runs',
+  RESTORE_RUNS: 'restore_runs',
   SETUP_STATE: 'setup_state',
 } as const;

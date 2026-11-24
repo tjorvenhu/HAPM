@@ -14,6 +14,8 @@ import {
   type HaproxyService,
   type ServiceHealth,
 } from '@/lib/haproxy/config';
+import { msgid } from '@/lib/i18n';
+import { useT } from '@/lib/i18n/react';
 import type { ProxyRow } from './types';
 
 /**
@@ -85,6 +87,7 @@ export function PendingCard({
   subtitle: string;
   phase: string | null;
 }) {
+  const { t } = useT();
   return (
     <div className="rp-card">
       <div className="rp-card-head">
@@ -99,13 +102,12 @@ export function PendingCard({
       <div className="rp-tags">
         <span className="rp-tag is-pending">
           <Loader2 size={14} className="spin" />
-          {phase ?? 'Wird eingerichtet'}
+          {phase ? t(phase) : t('Wird eingerichtet')}
         </span>
       </div>
       <div className="rp-section">
         <div className="rp-empty-line">
-          Zertifikat, Prüfung und Reload laufen. Der Eintrag erscheint vollständig, sobald HAProxy
-          die neue Konfiguration übernommen hat.
+          {t('Zertifikat, Prüfung und Reload laufen. Der Eintrag erscheint vollständig, sobald HAProxy die neue Konfiguration übernommen hat.')}
         </div>
       </div>
     </div>
@@ -138,23 +140,24 @@ const MAX_TAGS = 2;
 const HEALTH_TAG: Record<ServiceHealth, { className: string; tooltip: string }> = {
   up: {
     className: 'is-online',
-    tooltip: 'HAProxy erreicht alle Ziele dieses Eintrags',
+    tooltip: msgid('HAProxy erreicht alle Ziele dieses Eintrags'),
   },
   partial: {
     className: 'is-degraded',
-    tooltip: 'HAProxy erreicht einen Teil der Ziele nicht',
+    tooltip: msgid('HAProxy erreicht einen Teil der Ziele nicht'),
   },
   down: {
     className: 'is-offline',
-    tooltip: 'HAProxy erreicht kein Ziel dieses Eintrags',
+    tooltip: msgid('HAProxy erreicht kein Ziel dieses Eintrags'),
   },
   // Nicht grün: „nicht geprüft" ist nicht „in Ordnung". Der Tooltip sagt, woran
   // es liegt, statt die Marke wegzulassen — dass geprüft WERDEN soll, steht ja
   // in der Konfiguration.
   unknown: {
     className: '',
-    tooltip:
-      'HAProxy prüft die Ziele. Ihr Zustand ist hier nicht bekannt: kein stats socket in der Konfiguration, kein socat oder kein check auf der server-Zeile.',
+    tooltip: msgid(
+      'HAProxy prüft die Ziele. Ihr Zustand ist hier nicht bekannt: kein stats socket in der Konfiguration, kein socat oder kein check auf der server-Zeile.'
+    ),
   },
 };
 
@@ -169,6 +172,7 @@ export default function ServiceCard({
   onEdit,
   onDelete,
 }: Props) {
+  const { t } = useT();
   const [routesOpen, setRoutesOpen] = useState(false);
   /**
    * Ab dem Klick, nicht erst ab der Antwort.
@@ -180,12 +184,12 @@ export default function ServiceCard({
    */
   const pending = busy || (pendingPhase !== undefined && pendingPhase !== null);
   const removing = pending && pendingKind === 'delete';
-  const phaseLabel = pendingPhase ?? 'Wird gestartet';
+  const phaseLabel = pendingPhase ? t(pendingPhase) : t('Wird gestartet');
 
   const readOnlyReason =
     service.extras.length > 0
-      ? `Nicht abgebildet: ${service.extras.join(' · ')}`
-      : 'ACL, Weiche oder Backend folgen nicht dem erwarteten Schema';
+      ? t('Nicht abgebildet: {extras}', { extras: service.extras.join(' · ') })
+      : t('ACL, Weiche oder Backend folgen nicht dem erwarteten Schema');
 
   /* Drei Zustände, zwei Handlungen: offen, teilweise gesperrt, ganz gesperrt —
    * der Knopf sperrt alles oder öffnet alles. Wer einzelne Domains meint,
@@ -201,24 +205,29 @@ export default function ServiceCard({
 
   /** Die Zusätze in Worten, für die Marke: feste Header und das lange Timeout. */
   const addons = [
-    ...service.responseHeaders.map((rule) => `Antwort: ${rule.name}`),
-    ...service.requestHeaders.map((rule) => `Anfrage: ${rule.name}`),
-    ...(service.tunnel ? ['Lange Verbindungen'] : []),
+    ...service.responseHeaders.map((rule) => t('Antwort: {name}', { name: rule.name })),
+    ...service.requestHeaders.map((rule) => t('Anfrage: {name}', { name: rule.name })),
+    ...(service.tunnel ? [t('Lange Verbindungen')] : []),
   ];
 
   const lockedCount = service.lockedDomains.length;
   const fullyLocked = lockedCount > 0 && lockedCount === service.domains.length;
   const partlyLocked = lockedCount > 0 && !fullyLocked;
   const byPassword = service.passwordLock !== null;
-  const lockedHow = byPassword ? 'mit Passwort' : `auf ${proxy.adminIps.join(', ')}`;
+  const addresses = proxy.adminIps.join(', ');
+  const lockedDomains = service.lockedDomains.join(', ');
 
   const lockTooltip = !service.editable
-    ? `Nicht änderbar. ${readOnlyReason}.`
+    ? t('Nicht änderbar. {reason}.', { reason: readOnlyReason })
     : partlyLocked
-      ? `Gesperrt ${lockedHow}: ${service.lockedDomains.join(', ')}. Hier alle Domains öffnen.`
+      ? byPassword
+        ? t('Gesperrt mit Passwort: {domains}. Hier alle Domains öffnen.', { domains: lockedDomains })
+        : t('Gesperrt auf {addresses}: {domains}. Hier alle Domains öffnen.', { addresses, domains: lockedDomains })
       : fullyLocked
-        ? `Gesperrt ${lockedHow}. Hier lösen.`
-        : 'Offen für alle. Hier sperren: auf Admin-IPs oder mit Passwort.';
+        ? byPassword
+          ? t('Gesperrt mit Passwort. Hier lösen.')
+          : t('Gesperrt auf {addresses}. Hier lösen.', { addresses })
+        : t('Offen für alle. Hier sperren: auf Admin-IPs oder mit Passwort.');
 
   /* Nach Wichtigkeit, denn abgeschnitten wird von hinten: eine Sperre und ein
    * „nur lesbar" ändern, was man mit dem Eintrag tun kann; eine Alias-Domain
@@ -231,8 +240,8 @@ export default function ServiceCard({
       ? [{
           key: 'surface',
           icon: <ShieldCheck size={14} />,
-          label: 'Oberfläche von HAPM',
-          tooltip: `HAPM ist über dieses Ziel erreichbar (${surface.url}). Es lässt sich nicht entfernen.`,
+          label: t('Oberfläche von HAPM'),
+          tooltip: t('HAPM ist über dieses Ziel erreichbar ({url}). Es lässt sich nicht entfernen.', { url: surface.url }),
           className: 'is-muted',
         }]
       : []),
@@ -241,17 +250,15 @@ export default function ServiceCard({
           key: 'locked',
           icon: byPassword ? <KeyRound size={14} /> : <Lock size={14} />,
           label: fullyLocked
-            ? byPassword
-              ? 'Passwort'
-              : 'Nur Admin-IPs'
-            : `${lockedCount} von ${service.domains.length} gesperrt`,
+            ? t(byPassword ? 'Passwort' : 'Nur Admin-IPs')
+            : t('{locked} von {total} gesperrt', { locked: lockedCount, total: service.domains.length }),
           tooltip: byPassword
             ? fullyLocked
-              ? 'Besucher sehen eine Passwortabfrage'
-              : `Passwortabfrage für: ${service.lockedDomains.join(', ')}`
+              ? t('Besucher sehen eine Passwortabfrage')
+              : t('Passwortabfrage für: {domains}', { domains: lockedDomains })
             : fullyLocked
-              ? `Nur erreichbar von ${proxy.adminIps.join(', ')}`
-              : `Nur von ${proxy.adminIps.join(', ')} erreichbar: ${service.lockedDomains.join(', ')}`,
+              ? t('Nur erreichbar von {addresses}', { addresses })
+              : t('Nur von {addresses} erreichbar: {domains}', { addresses, domains: lockedDomains }),
           className: fullyLocked ? 'is-locked' : 'is-partly-locked',
         }]
       : []),
@@ -264,10 +271,11 @@ export default function ServiceCard({
       ? [{
           key: 'shadowed',
           icon: <EyeOff size={14} />,
-          label: 'Verdeckt',
-          tooltip:
-            `Die Weiche von „${service.shadowedBy}" steht weiter oben und passt auch für diese ` +
-            'Domains. HAProxy nimmt die erste, dieser Eintrag wird nie erreicht.',
+          label: t('Verdeckt'),
+          tooltip: t(
+            'Die Weiche von „{other}" steht weiter oben und passt auch für diese Domains. HAProxy nimmt die erste, dieser Eintrag wird nie erreicht.',
+            { other: service.shadowedBy }
+          ),
           className: 'is-offline',
         }]
       : []),
@@ -276,7 +284,7 @@ export default function ServiceCard({
       : [{
           key: 'readonly',
           icon: <EyeOff size={14} />,
-          label: 'Nur lesbar',
+          label: t('Nur lesbar'),
           tooltip: readOnlyReason,
           className: 'is-muted',
         }]),
@@ -292,7 +300,7 @@ export default function ServiceCard({
           key: 'healthcheck',
           icon: <Activity size={14} />,
           label: 'Healthcheck',
-          tooltip: HEALTH_TAG[health].tooltip,
+          tooltip: t(HEALTH_TAG[health].tooltip),
           className: HEALTH_TAG[health].className,
         }]
       : []),
@@ -306,18 +314,18 @@ export default function ServiceCard({
       ? [{
           key: 'balance',
           icon: <Scale size={14} />,
-          label: BALANCE_LABELS[service.balance],
-          tooltip: BALANCE_HINTS[service.balance],
+          label: t(BALANCE_LABELS[service.balance]),
+          tooltip: t(BALANCE_HINTS[service.balance]),
         }]
       : []),
     ...(service.sticky
       ? [{
           key: 'sticky',
           icon: <Cookie size={14} />,
-          label: 'Sitzungsbindung',
-          tooltip:
-            'Ein Besucher bleibt über einen Cookie bei dem Ziel, auf dem er gelandet ist. ' +
-            'HAProxy setzt ihn selbst und nimmt ihn aus der Anfrage, bevor sie hinten ankommt.',
+          label: t('Sitzungsbindung'),
+          tooltip: t(
+            'Ein Besucher bleibt über einen Cookie bei dem Ziel, auf dem er gelandet ist. HAProxy setzt ihn selbst und nimmt ihn aus der Anfrage, bevor sie hinten ankommt.'
+          ),
         }]
       : []),
     /* Hinter dem Healthcheck: die Zusätze sind eine Eigenschaft, die sich nicht
@@ -327,7 +335,7 @@ export default function ServiceCard({
       ? [{
           key: 'addons',
           icon: <SlidersHorizontal size={14} />,
-          label: addons.length === 1 && service.tunnel ? 'Lange Verbindungen' : 'Header',
+          label: t(addons.length === 1 && service.tunnel ? 'Lange Verbindungen' : 'Header'),
           tooltip: addons.join(' · '),
           className: 'is-muted',
         }]
@@ -338,7 +346,7 @@ export default function ServiceCard({
       key: `domain-${domain}`,
       icon: <Globe size={14} />,
       label: domain,
-      tooltip: `Weitere Domain: ${domain}`,
+      tooltip: t('Weitere Domain: {domain}', { domain }),
       className: 'is-muted',
     })),
   ];
@@ -361,7 +369,7 @@ export default function ServiceCard({
             seinen eigenen Tooltip weg. */}
         <div
           className="rp-card-heading"
-          data-tooltip={`${service.domains.join(', ') || service.id} · Dienst-ID ${service.id}`}
+          data-tooltip={t('{domains} · Dienst-ID {id}', { domains: service.domains.join(', ') || service.id, id: service.id })}
         >
           <span className="rp-card-title">{service.domains[0] ?? service.id}</span>
           <span className="rp-card-subtitle">{service.id}</span>
@@ -372,10 +380,12 @@ export default function ServiceCard({
         <div className="rp-tags">
           <span
             className="rp-tag is-pending"
-            data-tooltip="Der Vorgang läuft. Der Fortschritt steht unten rechts."
+            data-tooltip={t('Der Vorgang läuft. Der Fortschritt steht unten rechts.')}
           >
             <Loader2 size={14} className="spin" />
-            <span className="rp-tag-label">{removing ? `Wird entfernt · ${phaseLabel}` : phaseLabel}</span>
+            <span className="rp-tag-label">
+              {removing ? t('Wird entfernt · {phase}', { phase: phaseLabel }) : phaseLabel}
+            </span>
           </span>
         </div>
       )}
@@ -410,10 +420,10 @@ export default function ServiceCard({
         <div className="rp-section">
           <div
             className="rp-section-title"
-            data-tooltip="Die Domains werden nicht bedient, sondern weitergeschickt"
+            data-tooltip={t('Die Domains werden nicht bedient, sondern weitergeschickt')}
           >
             <CornerUpRight size={16} />
-            Weiterleitung
+            {t('Weiterleitung')}
             <span className="rp-section-count">
               {service.redirect.permanent ? '301' : '302'}
             </span>
@@ -422,8 +432,8 @@ export default function ServiceCard({
             className="rp-row"
             data-tooltip={
               service.redirect.keepPath
-                ? `Pfad geht mit: /pfad → ${service.redirect.to}/pfad`
-                : `Alles geht auf ${service.redirect.to}`
+                ? t('Pfad geht mit: /pfad → {to}/pfad', { to: service.redirect.to })
+                : t('Alles geht auf {to}', { to: service.redirect.to })
             }
           >
             <span className="rp-row-icon">
@@ -431,7 +441,7 @@ export default function ServiceCard({
             </span>
             <span className="rp-row-name">{service.redirect.to}</span>
             <span className="rp-chip">
-              {service.redirect.keepPath ? 'mit Pfad' : 'ohne Pfad'}
+              {t(service.redirect.keepPath ? 'mit Pfad' : 'ohne Pfad')}
             </span>
           </div>
         </div>
@@ -439,13 +449,13 @@ export default function ServiceCard({
       <div className="rp-section">
         <div
           className="rp-section-title"
-          data-tooltip="Wohin alles geht, was auf keine Pfad-Regel passt"
+          data-tooltip={t('Wohin alles geht, was auf keine Pfad-Regel passt')}
         >
           <Server size={16} />
-          Backend
+          {t('Backend')}
         </div>
         {service.servers.length === 0 ? (
-          <div className="rp-empty-line">kein Backend-Server eingetragen</div>
+          <div className="rp-empty-line">{t('kein Backend-Server eingetragen')}</div>
         ) : (
           service.servers.map((server) => (
             <div
@@ -476,15 +486,15 @@ export default function ServiceCard({
             aria-expanded={routesOpen}
             data-tooltip={
               routesOpen
-                ? 'Pfad-Regeln zuklappen'
-                : `Pfade, die auf einen anderen Port gehen: ${service.routes
-                    .map((r) => r.paths.join(' '))
-                    .join(', ')}`
+                ? t('Pfad-Regeln zuklappen')
+                : t('Pfade, die auf einen anderen Port gehen: {paths}', {
+                    paths: service.routes.map((r) => r.paths.join(' ')).join(', '),
+                  })
             }
           >
             {routesOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
             <GitBranch size={16} />
-            Routen
+            {t('Routen')}
             <span className="rp-section-count">{service.routes.length}</span>
           </button>
           {routesOpen &&
@@ -523,7 +533,7 @@ export default function ServiceCard({
           data-tooltip={lockTooltip}
           disabled={!service.editable || busy || pending}
           onClick={onToggleLock}
-          aria-label={lockedCount > 0 ? 'Alle Domains öffnen' : 'Sperren'}
+          aria-label={t(lockedCount > 0 ? 'Alle Domains öffnen' : 'Sperren')}
         >
           {busy ? (
             <Loader2 size={16} className="spin" />
@@ -536,10 +546,10 @@ export default function ServiceCard({
         <button
           type="button"
           className="rp-action"
-          data-tooltip={service.editable ? 'Bearbeiten' : `Nicht änderbar. ${readOnlyReason}.`}
+          data-tooltip={service.editable ? t('Bearbeiten') : t('Nicht änderbar. {reason}.', { reason: readOnlyReason })}
           disabled={!service.editable || pending}
           onClick={onEdit}
-          aria-label="Bearbeiten"
+          aria-label={t('Bearbeiten')}
         >
           <Pencil size={16} />
         </button>
@@ -557,8 +567,8 @@ export default function ServiceCard({
         <Link
           href={`/reverse-proxy/statistiken?dienst=${encodeURIComponent(service.id)}`}
           className="rp-action"
-          data-tooltip="Statistik dieses Dienstes"
-          aria-label="Statistik"
+          data-tooltip={t('Statistik dieses Dienstes')}
+          aria-label={t('Statistik')}
         >
           <BarChart3 size={16} />
         </Link>
@@ -567,14 +577,14 @@ export default function ServiceCard({
           className="rp-action is-danger"
           data-tooltip={
             surface
-              ? 'Nicht entfernbar: Oberfläche von HAPM. Die Adresse steht unter Allgemein.'
+              ? t('Nicht entfernbar: Oberfläche von HAPM. Die Adresse steht unter Allgemein.')
               : service.removable
-                ? 'Löschen'
-                : 'Nicht über HAPM angelegt: ACL, Weiche oder Backend folgen nicht dem erwarteten Schema'
+                ? t('Löschen')
+                : t('Nicht über HAPM angelegt: ACL, Weiche oder Backend folgen nicht dem erwarteten Schema')
           }
           disabled={!service.removable || surface !== null || pending}
           onClick={onDelete}
-          aria-label="Löschen"
+          aria-label={t('Löschen')}
         >
           <Trash2 size={16} />
         </button>

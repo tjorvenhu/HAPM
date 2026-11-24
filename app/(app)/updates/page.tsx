@@ -34,6 +34,8 @@ import {
   versionStep,
 } from '@/components/system/format';
 import { HANDOVER_STEP, remainingSteps } from '@/lib/updates/plan';
+import { msgid, type Translator } from '@/lib/i18n';
+import { useT } from '@/lib/i18n/react';
 import type { HaproxyStep, UpdateComponent, UpdateRun, UpdateState } from '@/lib/types';
 
 type RunView = Omit<UpdateRun, 'steps'> & { steps: HaproxyStep[] };
@@ -60,10 +62,15 @@ const COMPONENT_ICONS: Record<UpdateComponent, ReactNode> = {
 
 /** Was der Dialog vor dem Klick sagt: die Folge, nicht der Vorgang. */
 const CONSEQUENCES: Record<UpdateComponent, string> = {
-  haproxy:
-    'Vor dem Tausch prüft das neue Abbild die vorhandene Konfiguration. Lehnt es sie ab, bleibt alles unverändert. Beim Tausch ist HAProxy für wenige Sekunden nicht erreichbar. Startet der neue Container nicht, kommt der bisherige zurück.',
-  hapm: 'HAPM ersetzt den eigenen Container durch das neue Abbild. Die Oberfläche ist dabei kurz nicht erreichbar und lädt danach neu. HAProxy läuft währenddessen weiter. Startet der neue Container nicht, kommt der bisherige zurück.',
-  acme: 'acme.sh aktualisiert sich selbst auf die neueste Fassung. HAProxy und die vorhandenen Zertifikate bleiben unberührt.',
+  haproxy: msgid(
+    'Vor dem Tausch prüft das neue Abbild die vorhandene Konfiguration. Lehnt es sie ab, bleibt alles unverändert. Beim Tausch ist HAProxy für wenige Sekunden nicht erreichbar. Startet der neue Container nicht, kommt der bisherige zurück.'
+  ),
+  hapm: msgid(
+    'HAPM ersetzt den eigenen Container durch das neue Abbild. Die Oberfläche ist dabei kurz nicht erreichbar und lädt danach neu. HAProxy läuft währenddessen weiter. Startet der neue Container nicht, kommt der bisherige zurück.'
+  ),
+  acme: msgid(
+    'acme.sh aktualisiert sich selbst auf die neueste Fassung. HAProxy und die vorhandenen Zertifikate bleiben unberührt.'
+  ),
 };
 
 const POLL_IDLE_MS = 30_000;
@@ -87,9 +94,9 @@ function Digest({ digest }: { digest: string | null }) {
   );
 }
 
-function triggeredByLabel(value: string | null): string {
+function triggeredByLabel(value: string | null, t: Translator['t']): string {
   if (!value) return '';
-  return value === 'scheduler' ? 'Zeitplan' : value;
+  return value === 'scheduler' ? t('Zeitplan') : value;
 }
 
 /**
@@ -97,9 +104,10 @@ function triggeredByLabel(value: string | null): string {
  * noch kommen: der erste davon ist der, an dem gerade gearbeitet wird.
  */
 function RunSteps({ run }: { run: RunView }) {
+  const { t } = useT();
   const pending = run.status === 'running' ? remainingSteps(run.component, run.steps) : [];
   if (run.steps.length === 0 && pending.length === 0) {
-    return <p className="form-hint">Zu diesem Lauf sind keine Schritte festgehalten.</p>;
+    return <p className="form-hint">{t('Zu diesem Lauf sind keine Schritte festgehalten.')}</p>;
   }
   return (
     <ul className="hapm-steps">
@@ -107,8 +115,8 @@ function RunSteps({ run }: { run: RunView }) {
         <li key={`${index}-${step.label}`} className={`hapm-step ${step.ok ? 'is-ok' : 'is-failed'}`}>
           {step.ok ? <Check size={14} strokeWidth={1.5} /> : <X size={14} strokeWidth={1.5} />}
           <span className="hapm-step-text">
-            <span className="hapm-step-label">{step.label}</span>
-            {step.detail && <span className="hapm-step-detail">{step.detail}</span>}
+            <span className="hapm-step-label">{t(step.label)}</span>
+            {step.detail && <span className="hapm-step-detail">{t(step.detail)}</span>}
           </span>
         </li>
       ))}
@@ -120,7 +128,7 @@ function RunSteps({ run }: { run: RunView }) {
             <Circle size={14} strokeWidth={1.5} />
           )}
           <span className="hapm-step-text">
-            <span className="hapm-step-label">{label}</span>
+            <span className="hapm-step-label">{t(label)}</span>
           </span>
         </li>
       ))}
@@ -135,17 +143,18 @@ function runDuration(run: RunView, now: number): string {
   return formatClock(end - start);
 }
 
-function runVersions(run: RunView): string {
+function runVersions(run: RunView, t: Translator['t']): string {
   if (run.fromVersion && run.toVersion && run.fromVersion !== run.toVersion) {
     return `${run.fromVersion} → ${run.toVersion}`;
   }
-  return run.toVersion ?? run.fromVersion ?? 'Unbekannt';
+  return run.toVersion ?? run.fromVersion ?? t('Unbekannt');
 }
 
 export default function UpdatesPage() {
   const { apiFetch } = useApp();
   const { notify } = useToast();
   const confirm = useConfirm();
+  const { t, plural, locale } = useT();
   const now = useNow(1000);
 
   const [data, setData] = useState<UpdatesData | null>(null);
@@ -169,14 +178,14 @@ export default function UpdatesPage() {
         setError('');
         setOffline(false);
       } else {
-        setError(body.error || 'Die Updates konnten nicht geladen werden.');
+        setError(body.error || t('Die Updates konnten nicht geladen werden.'));
         setOffline(false);
       }
     } catch {
       sawDown.current = true;
       setOffline(true);
     }
-  }, [apiFetch]);
+  }, [apiFetch, t]);
 
   useEffect(() => {
     void load();
@@ -227,8 +236,8 @@ export default function UpdatesPage() {
         if (finished.status === 'error') {
           notify({
             variant: 'error',
-            title: `${label}: Update fehlgeschlagen`,
-            message: finished.error ?? 'Die Schritte stehen in der Historie.',
+            title: t('{component}: Update fehlgeschlagen', { component: label }),
+            message: finished.error ? t(finished.error) : t('Die Schritte stehen in der Historie.'),
           });
         } else if (finished.steps.some((step) => step.label === HANDOVER_STEP)) {
           // Die Seite stammt noch aus dem alten Abbild.
@@ -238,19 +247,21 @@ export default function UpdatesPage() {
           notify({
             variant: 'info',
             title: label,
-            message: 'Das laufende Abbild ist schon das neueste. Es wurde nichts getauscht.',
+            message: t('Das laufende Abbild ist schon das neueste. Es wurde nichts getauscht.'),
           });
         } else {
           notify({
             variant: 'success',
-            title: `${label} aktualisiert`,
-            message: finished.toVersion ? `Es läuft jetzt ${finished.toVersion}.` : 'Das neue Abbild läuft.',
+            title: t('{component} aktualisiert', { component: label }),
+            message: finished.toVersion
+              ? t('Es läuft jetzt {version}.', { version: finished.toVersion })
+              : t('Das neue Abbild läuft.'),
           });
         }
       }
     }
     watchedRun.current = active?.$id ?? null;
-  }, [data, notify]);
+  }, [data, notify, t]);
 
   /*
    * Die Übergabe von HAPM: der Container wird ersetzt, Anfragen scheitern. Die
@@ -281,7 +292,7 @@ export default function UpdatesPage() {
       const res = await apiFetch('/api/updates', { method: 'POST' });
       const body = await res.json();
       if (!body.success) {
-        notify({ variant: 'error', message: body.error || 'Die Prüfung ist fehlgeschlagen.' });
+        notify({ variant: 'error', message: body.error || t('Die Prüfung ist fehlgeschlagen.') });
         return;
       }
       const next = body.data as UpdatesData;
@@ -291,23 +302,23 @@ export default function UpdatesPage() {
       if (available > 0) {
         notify({
           variant: 'info',
-          title: 'Geprüft',
-          message: available === 1 ? 'Ein Update ist verfügbar.' : `${available} Updates sind verfügbar.`,
+          title: t('Geprüft'),
+          message: plural(available, { one: 'Ein Update ist verfügbar.', other: '{count} Updates sind verfügbar.' }),
         });
       } else if (unknown > 0) {
         notify({
           variant: 'warning',
-          title: 'Geprüft',
-          message:
-            unknown === 1
-              ? 'Bei einem Bestandteil ist das Ergebnis unbekannt. Der Grund steht auf seiner Karte.'
-              : `Bei ${unknown} Bestandteilen ist das Ergebnis unbekannt. Der Grund steht auf der jeweiligen Karte.`,
+          title: t('Geprüft'),
+          message: plural(unknown, {
+            one: 'Bei einem Bestandteil ist das Ergebnis unbekannt. Der Grund steht auf seiner Karte.',
+            other: 'Bei {count} Bestandteilen ist das Ergebnis unbekannt. Der Grund steht auf der jeweiligen Karte.',
+          }),
         });
       } else {
-        notify({ variant: 'success', title: 'Geprüft', message: 'Alle Bestandteile sind aktuell.' });
+        notify({ variant: 'success', title: t('Geprüft'), message: t('Alle Bestandteile sind aktuell.') });
       }
     } catch {
-      notify({ variant: 'error', message: 'Die Prüfung ist fehlgeschlagen.' });
+      notify({ variant: 'error', message: t('Die Prüfung ist fehlgeschlagen.') });
     } finally {
       setChecking(false);
     }
@@ -317,9 +328,9 @@ export default function UpdatesPage() {
     const label = COMPONENT_LABELS[component];
     const step = versionStep(state);
     const confirmed = await confirm({
-      title: `${label} aktualisieren?`,
-      message: `${step ? `${label} ${step}. ` : ''}${CONSEQUENCES[component]}`,
-      confirmLabel: 'Jetzt aktualisieren',
+      title: t('{component} aktualisieren?', { component: label }),
+      message: `${step ? `${label} ${step}. ` : ''}${t(CONSEQUENCES[component])}`,
+      confirmLabel: t('Jetzt aktualisieren'),
       variant: 'default',
     });
     if (!confirmed) return;
@@ -329,11 +340,11 @@ export default function UpdatesPage() {
       const res = await apiFetch(`/api/updates/${component}`, { method: 'POST' });
       const body = await res.json();
       if (!body.success) {
-        notify({ variant: 'error', title: label, message: body.error || 'Das Update ließ sich nicht starten.' });
+        notify({ variant: 'error', title: label, message: body.error || t('Das Update ließ sich nicht starten.') });
       }
       await load();
     } catch {
-      notify({ variant: 'error', title: label, message: 'Das Update ließ sich nicht starten.' });
+      notify({ variant: 'error', title: label, message: t('Das Update ließ sich nicht starten.') });
     } finally {
       setStarting(null);
     }
@@ -349,7 +360,7 @@ export default function UpdatesPage() {
       });
       const body = await res.json();
       if (!body.success) {
-        notify({ variant: 'error', message: body.error || 'Die Einstellung ließ sich nicht speichern.' });
+        notify({ variant: 'error', message: body.error || t('Die Einstellung ließ sich nicht speichern.') });
         return;
       }
       const saved = body.data.settings as UpdateSettings;
@@ -365,11 +376,11 @@ export default function UpdatesPage() {
       notify({
         variant: 'success',
         message: saved.autoUpdateHaproxy
-          ? `HAProxy wird täglich um ${saved.autoUpdateTime} Uhr selbsttätig aktualisiert.`
-          : 'HAProxy wird nicht selbsttätig aktualisiert.',
+          ? t('HAProxy wird täglich um {time} Uhr selbsttätig aktualisiert.', { time: saved.autoUpdateTime })
+          : t('HAProxy wird nicht selbsttätig aktualisiert.'),
       });
     } catch {
-      notify({ variant: 'error', message: 'Die Einstellung ließ sich nicht speichern.' });
+      notify({ variant: 'error', message: t('Die Einstellung ließ sich nicht speichern.') });
     } finally {
       setSavingSettings(false);
     }
@@ -387,8 +398,8 @@ export default function UpdatesPage() {
   const header = (
     <div className="page-header">
       <div>
-        <h1 className="page-title">Updates</h1>
-        <p className="page-subtitle">Neue Abbilder für HAProxy und HAPM, neue Fassungen von acme.sh.</p>
+        <h1 className="page-title">{t('Updates')}</h1>
+        <p className="page-subtitle">{t('Neue Abbilder für HAProxy und HAPM, neue Fassungen von acme.sh.')}</p>
       </div>
       <div className="page-actions">
         <button type="button" className="btn btn-secondary" onClick={check} disabled={!data || checking || locked}>
@@ -397,7 +408,7 @@ export default function UpdatesPage() {
           ) : (
             <RefreshCw size={16} strokeWidth={1.5} />
           )}
-          Jetzt prüfen
+          {t('Jetzt prüfen')}
         </button>
       </div>
     </div>
@@ -412,7 +423,7 @@ export default function UpdatesPage() {
         ) : offline ? (
           <div className="alert alert-warning sys-block">
             <AlertTriangle size={16} strokeWidth={1.5} />
-            <span>HAPM antwortet gerade nicht. Die Seite versucht es weiter.</span>
+            <span>{t('HAPM antwortet gerade nicht. Die Seite versucht es weiter.')}</span>
           </div>
         ) : (
           <>
@@ -437,14 +448,15 @@ export default function UpdatesPage() {
         <div className="alert alert-info sys-block hapm-flag">
           <Loader2 size={16} strokeWidth={1.5} className="spin" />
           <div className="hapm-flag-body">
-            <strong>HAPM wird ersetzt</strong>
+            <strong>{t('HAPM wird ersetzt')}</strong>
             <span>
-              Ein Helfer aus dem neuen Abbild tauscht gerade den Container. Die Oberfläche ist kurz nicht erreichbar.
-              Diese Seite lädt neu, sobald HAPM wieder antwortet.
+              {t(
+                'Ein Helfer aus dem neuen Abbild tauscht gerade den Container. Die Oberfläche ist kurz nicht erreichbar. Diese Seite lädt neu, sobald HAPM wieder antwortet.'
+              )}
             </span>
             {handoverElapsed > HANDOVER_SLOW_MS && (
               <span>
-                Das dauert länger als üblich. Die Ausgabe des Containers auf dem Server zeigt, woran es hängt.
+                {t('Das dauert länger als üblich. Die Ausgabe des Containers auf dem Server zeigt, woran es hängt.')}
               </span>
             )}
           </div>
@@ -454,9 +466,9 @@ export default function UpdatesPage() {
           <div className="alert alert-warning sys-block">
             <AlertTriangle size={16} strokeWidth={1.5} />
             <span>
-              HAPM antwortet gerade nicht. Die Seite versucht es weiter.
+              {t('HAPM antwortet gerade nicht. Die Seite versucht es weiter.')}
               {activeRun?.component === 'haproxy' &&
-                ' Läuft die Oberfläche über HAProxy, ist das beim Tausch zu erwarten.'}
+                ` ${t('Läuft die Oberfläche über HAProxy, ist das beim Tausch zu erwarten.')}`}
             </span>
           </div>
         )
@@ -470,11 +482,9 @@ export default function UpdatesPage() {
             <div>
               <h2 className="card-title">
                 <Loader2 size={16} strokeWidth={1.5} className="spin" />
-                {COMPONENT_LABELS[activeRun.component]} wird aktualisiert
+                {t('{component} wird aktualisiert', { component: COMPONENT_LABELS[activeRun.component] })}
               </h2>
-              <p className="card-subtitle">
-                Der Lauf geht weiter, auch wenn diese Seite geschlossen wird.
-              </p>
+              <p className="card-subtitle">{t('Der Lauf geht weiter, auch wenn diese Seite geschlossen wird.')}</p>
             </div>
             <span className="run-timer">{runDuration(activeRun, now)}</span>
           </div>
@@ -495,42 +505,42 @@ export default function UpdatesPage() {
               badge = (
                 <span className="badge-status badge-neutral">
                   <Loader2 size={12} strokeWidth={1.5} className="spin" />
-                  Wird aktualisiert
+                  {t('Wird aktualisiert')}
                 </span>
               );
             } else if (!state) {
               badge = (
                 <span className="badge-status badge-neutral">
                   <span className="dot" />
-                  Noch nicht geprüft
+                  {t('Noch nicht geprüft')}
                 </span>
               );
             } else if (stale) {
               badge = (
                 <span className="badge-status badge-neutral">
                   <span className="dot" />
-                  Prüfung steht aus
+                  {t('Prüfung steht aus')}
                 </span>
               );
             } else if (state.updateAvailable === true) {
               badge = (
                 <span className="badge-status badge-warning">
                   <span className="dot" />
-                  Update verfügbar
+                  {t('Update verfügbar')}
                 </span>
               );
             } else if (state.updateAvailable === false) {
               badge = (
                 <span className="badge-status badge-success">
                   <span className="dot" />
-                  Aktuell
+                  {t('Aktuell')}
                 </span>
               );
             } else {
               badge = (
                 <span className="badge-status badge-neutral">
                   <span className="dot" />
-                  Unbekannt
+                  {t('Unbekannt')}
                 </span>
               );
             }
@@ -541,7 +551,7 @@ export default function UpdatesPage() {
                 icon={COMPONENT_ICONS[component]}
                 name={COMPONENT_LABELS[component]}
                 subtitle={
-                  component === 'acme' ? 'Stellt die Zertifikate aus' : (state?.reference ?? 'Abbild unbekannt')
+                  component === 'acme' ? t('Stellt die Zertifikate aus') : (state?.reference ?? t('Abbild unbekannt'))
                 }
                 badge={badge}
                 actions={
@@ -553,40 +563,42 @@ export default function UpdatesPage() {
                       disabled={locked || checking}
                     >
                       <Download size={14} strokeWidth={1.5} />
-                      Jetzt aktualisieren
+                      {t('Jetzt aktualisieren')}
                     </button>
                   ) : undefined
                 }
               >
-                <EntityField label="Läuft">
+                <EntityField label={t('Läuft')}>
                   <span className="hapm-version">
-                    {state?.currentVersion ?? 'Version unbekannt'}
+                    {state?.currentVersion ?? t('Version unbekannt')}
                     <Digest digest={state?.currentDigest ?? null} />
                   </span>
                 </EntityField>
-                <EntityField label="Verfügbar">
+                <EntityField label={t('Verfügbar')}>
                   {!state ? (
-                    <span className="hapm-muted">Noch nicht geprüft</span>
+                    <span className="hapm-muted">{t('Noch nicht geprüft')}</span>
                   ) : stale ? (
-                    <span className="hapm-muted">Seit dem letzten Lauf nicht geprüft</span>
+                    <span className="hapm-muted">{t('Seit dem letzten Lauf nicht geprüft')}</span>
                   ) : state.updateAvailable === true ? (
                     <span className="hapm-version">
                       {state.latestVersion && state.latestVersion !== state.currentVersion
                         ? state.latestVersion
-                        : 'Neues Abbild derselben Fassung'}
+                        : t('Neues Abbild derselben Fassung')}
                       <Digest digest={state.latestDigest} />
                     </span>
                   ) : state.updateAvailable === false ? (
-                    <span className="hapm-muted">Keine neuere Fassung</span>
+                    <span className="hapm-muted">{t('Keine neuere Fassung')}</span>
                   ) : (
-                    <span className="hapm-muted">Unbekannt</span>
+                    <span className="hapm-muted">{t('Unbekannt')}</span>
                   )}
                 </EntityField>
-                <EntityField label="Zuletzt geprüft">
+                <EntityField label={t('Zuletzt geprüft')}>
                   {state?.checkedAt ? (
-                    <span data-tooltip={formatDateTime(state.checkedAt)}>{formatAgo(now, state.checkedAt)}</span>
+                    <span data-tooltip={formatDateTime(state.checkedAt, locale)}>
+                      {formatAgo(now, state.checkedAt, locale)}
+                    </span>
                   ) : (
-                    <span className="hapm-muted">Noch nie. Die erste Prüfung läuft kurz nach dem Start.</span>
+                    <span className="hapm-muted">{t('Noch nie. Die erste Prüfung läuft kurz nach dem Start.')}</span>
                   )}
                 </EntityField>
                 {state?.error && !stale && (
@@ -594,8 +606,8 @@ export default function UpdatesPage() {
                     <Info size={14} strokeWidth={1.5} />
                     <span>
                       {state.updateAvailable !== null &&
-                        'Die letzte Prüfung ist gescheitert. Die Angabe stammt aus der Prüfung davor. '}
-                      {state.error}
+                        `${t('Die letzte Prüfung ist gescheitert. Die Angabe stammt aus der Prüfung davor.')} `}
+                      {t(state.error)}
                     </span>
                   </div>
                 )}
@@ -607,17 +619,23 @@ export default function UpdatesPage() {
 
       <div className="card sys-block">
         <div className="card-header">
-          <h2 className="card-title">Selbsttätig aktualisieren</h2>
+          <h2 className="card-title">{t('Selbsttätig aktualisieren')}</h2>
         </div>
         <div className="hapm-auto">
           <label className="form-subsection hapm-auto-switch">
             <div className="form-subsection-head">
               <div>
                 <div className="form-section-title">
-                  HAProxy selbsttätig aktualisieren
-                  <InfoHint text="Zur eingestellten Uhrzeit prüft HAPM, ob es ein neues Abbild gibt, und spielt es ein. Vorher prüft das neue Abbild die Konfiguration. Startet der neue Container nicht, kommt der bisherige zurück. HAPM selbst und acme.sh werden nur auf Klick aktualisiert." />
+                  {t('HAProxy selbsttätig aktualisieren')}
+                  <InfoHint
+                    text={t(
+                      'Zur eingestellten Uhrzeit prüft HAPM, ob es ein neues Abbild gibt, und spielt es ein. Vorher prüft das neue Abbild die Konfiguration. Startet der neue Container nicht, kommt der bisherige zurück. HAPM selbst und acme.sh werden nur auf Klick aktualisiert.'
+                    )}
+                  />
                 </div>
-                <div className="form-section-sub">Beim Tausch ist HAProxy für wenige Sekunden nicht erreichbar.</div>
+                <div className="form-section-sub">
+                  {t('Beim Tausch ist HAProxy für wenige Sekunden nicht erreichbar.')}
+                </div>
               </div>
               <span className="toggle-switch">
                 <input
@@ -632,8 +650,12 @@ export default function UpdatesPage() {
           </label>
           <div className="form-group hapm-auto-time">
             <label className="form-label" htmlFor="auto-update-time">
-              Uhrzeit
-              <InfoHint text="Es gilt die Zeitzone des Containers, gesetzt über die Variable TZ. Geprüft wird einmal am Tag zu dieser Minute." />
+              {t('Uhrzeit')}
+              <InfoHint
+                text={t(
+                  'Es gilt die Zeitzone des Containers, gesetzt über die Variable TZ. Geprüft wird einmal am Tag zu dieser Minute.'
+                )}
+              />
             </label>
             <input
               id="auto-update-time"
@@ -656,30 +678,30 @@ export default function UpdatesPage() {
 
       <div className="section-header">
         <h2 className="section-title">
-          Historie
+          {t('Historie')}
           <span className="section-count">{data.runs.length}</span>
         </h2>
-        <span className="section-hint">Die letzten Läufe, der neueste zuerst.</span>
+        <span className="section-hint">{t('Die letzten Läufe, der neueste zuerst.')}</span>
       </div>
 
       {data.runs.length === 0 ? (
         <div className="empty-state">
           <Download size={32} strokeWidth={1.5} />
-          <h3>Noch kein Update eingespielt</h3>
-          <p>Hier steht jeder Lauf mit seinen Schritten, auch die selbsttätigen.</p>
+          <h3>{t('Noch kein Update eingespielt')}</h3>
+          <p>{t('Hier steht jeder Lauf mit seinen Schritten, auch die selbsttätigen.')}</p>
         </div>
       ) : (
         <div className="table-wrap">
           <table className="table">
             <thead>
               <tr>
-                <th>Zeitpunkt</th>
-                <th>Bestandteil</th>
-                <th>Fassung</th>
-                <th>Status</th>
-                <th>Dauer</th>
-                <th>Ausgelöst von</th>
-                <th aria-label="Schritte" />
+                <th>{t('Zeitpunkt')}</th>
+                <th>{t('Bestandteil')}</th>
+                <th>{t('Fassung')}</th>
+                <th>{t('Status')}</th>
+                <th>{t('Dauer')}</th>
+                <th>{t('Ausgelöst von')}</th>
+                <th aria-label={t('Schritte')} />
               </tr>
             </thead>
             <tbody>
@@ -688,30 +710,30 @@ export default function UpdatesPage() {
                 return (
                   <Fragment key={run.$id}>
                     <tr>
-                      <td data-label="Zeitpunkt">{formatDateTime(run.startedAt)}</td>
+                      <td data-label={t('Zeitpunkt')}>{formatDateTime(run.startedAt, locale)}</td>
                       <td data-label="primary">
                         <strong>{COMPONENT_LABELS[run.component] ?? run.component}</strong>
                       </td>
-                      <td data-label="Fassung">{runVersions(run)}</td>
-                      <td data-label="Status">
+                      <td data-label={t('Fassung')}>{runVersions(run, t)}</td>
+                      <td data-label={t('Status')}>
                         <span className={`badge-status ${RUN_STATUS_CLASS[run.status] ?? 'badge-neutral'}`}>
                           {run.status === 'running' && <Loader2 size={12} strokeWidth={1.5} className="spin" />}
-                          {RUN_STATUS_LABELS[run.status] ?? run.status}
+                          {RUN_STATUS_LABELS[run.status] ? t(RUN_STATUS_LABELS[run.status]) : run.status}
                         </span>
-                        {run.error && <div className="detail-error">{run.error}</div>}
+                        {run.error && <div className="detail-error">{t(run.error)}</div>}
                       </td>
-                      <td data-label="Dauer">
+                      <td data-label={t('Dauer')}>
                         <span className="sys-num">{runDuration(run, now)}</span>
                       </td>
-                      <td data-label="Ausgelöst von">{triggeredByLabel(run.triggeredBy)}</td>
+                      <td data-label={t('Ausgelöst von')}>{triggeredByLabel(run.triggeredBy, t)}</td>
                       <td data-label="actions">
                         <div className="actions hapm-actions-end">
                           <button
                             type="button"
                             className="btn btn-ghost btn-icon btn-sm"
-                            data-tooltip={open ? 'Schritte ausblenden' : 'Schritte anzeigen'}
+                            data-tooltip={open ? t('Schritte ausblenden') : t('Schritte anzeigen')}
                             data-tooltip-pos="left"
-                            aria-label={open ? 'Schritte ausblenden' : 'Schritte anzeigen'}
+                            aria-label={open ? t('Schritte ausblenden') : t('Schritte anzeigen')}
                             aria-expanded={open}
                             onClick={() => toggleRun(run.$id)}
                           >

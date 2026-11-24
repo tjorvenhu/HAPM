@@ -10,10 +10,16 @@
  *  - Bevor HAProxy ersetzt wird, prüft das NEUE Abbild die vorhandene
  *    Konfiguration. Lehnt es sie ab, bleibt alles, wie es ist.
  *  - Steht der neue Container nicht, kommt der alte zurück (`replace.mjs`).
+ *
+ * Schritte und Fehler stehen als deutscher Text im Lauf. Was keine Werte
+ * einsetzt, ist ein Schlüssel (`msgid`), den die Seite übersetzt. Texte mit
+ * Werten bleiben deutsch, bis die Schritte `{ text, params }` speichern
+ * (docs/i18n.md).
  */
 
 import { createDocument, listDocuments, updateDocument, Query } from '../db';
 import { ApiError } from '../api';
+import { msg, msgid } from '../i18n';
 import { logAudit } from '../audit';
 import { COLLECTIONS, type HaproxyStep, type UpdateComponent, type UpdateRun } from '../types';
 import { containerInfo, engine, haproxyContainerName, ownContainer } from '../docker';
@@ -68,10 +74,10 @@ async function pull(log: StepLog, reference: string, currentImageId: string): Pr
   await engine.pullImage(reference, (line: string) => (last = line));
   const image: any = await engine.inspectImage(reference);
   if (image.Id === currentImageId) {
-    await log.add('Abbild holen', true, `${reference} ist schon das laufende Abbild.`);
+    await log.add(msgid('Abbild holen'), true, `${reference} ist schon das laufende Abbild.`);
     return false;
   }
-  await log.add('Abbild holen', true, last || `${reference} geholt.`);
+  await log.add(msgid('Abbild holen'), true, last || `${reference} geholt.`);
   return true;
 }
 
@@ -113,13 +119,13 @@ async function updateHaproxy(log: StepLog): Promise<string | null> {
 
   const check = await checkConfigWith(reference, current);
   await log.add(
-    'Konfiguration mit der neuen Fassung prüfen',
+    msgid('Konfiguration mit der neuen Fassung prüfen'),
     check.ok,
-    check.ok ? 'Die neue Fassung nimmt die Konfiguration an.' : check.output
+    check.ok ? msgid('Die neue Fassung nimmt die Konfiguration an.') : check.output
   );
   if (!check.ok) {
     throw new UpdateFailure(
-      'Die neue Fassung von HAProxy lehnt die vorhandene Konfiguration ab. Es wurde nichts geändert.'
+      msgid('Die neue Fassung von HAProxy lehnt die vorhandene Konfiguration ab. Es wurde nichts geändert.')
     );
   }
 
@@ -129,12 +135,12 @@ async function updateHaproxy(log: StepLog): Promise<string | null> {
     oldImage: oldImage ?? undefined,
   });
   await log.add(
-    'Container ersetzen',
+    msgid('Container ersetzen'),
     replaced.ok,
     replaced.ok ? lines.join('. ') : `${replaced.error ?? ''}${replaced.tail ? `\n${replaced.tail}` : ''}`
   );
   if (!replaced.ok) {
-    throw new UpdateFailure('Der neue Container ist nicht gestartet. Der bisherige läuft wieder.');
+    throw new UpdateFailure(msgid('Der neue Container ist nicht gestartet. Der bisherige läuft wieder.'));
   }
 
   // Das alte Abbild belegt sonst für immer Platz. Hängt noch etwas daran, lehnt Docker ab.
@@ -142,7 +148,11 @@ async function updateHaproxy(log: StepLog): Promise<string | null> {
     () => true,
     () => false
   );
-  await log.add('Altes Abbild entfernen', true, removed ? undefined : 'Bleibt liegen, es wird noch benutzt.');
+  await log.add(
+    msgid('Altes Abbild entfernen'),
+    true,
+    removed ? undefined : msgid('Bleibt liegen, es wird noch benutzt.')
+  );
 
   return (await containerInfo(name))?.version ?? null;
 }
@@ -158,7 +168,7 @@ async function updateHaproxy(log: StepLog): Promise<string | null> {
  */
 async function updateSelf(log: StepLog): Promise<'handover' | null> {
   const own = ownContainer();
-  if (!own) throw new UpdateFailure('HAPM läuft nicht in einem Container.');
+  if (!own) throw new UpdateFailure(msgid('HAPM läuft nicht in einem Container.'));
   const current: any = await engine.inspectContainer(own);
   const reference: string = current.Config.Image;
   const oldImage = await engine.inspectImage(current.Image).catch(() => null);
@@ -190,15 +200,19 @@ async function updateSelf(log: StepLog): Promise<'handover' | null> {
       AutoRemove: true,
     },
   });
-  await log.add('Übergabe', true, 'Ein Helfer aus dem neuen Abbild ersetzt jetzt den Container. HAPM ist gleich wieder da.');
+  await log.add(
+    msgid('Übergabe'),
+    true,
+    msgid('Ein Helfer aus dem neuen Abbild ersetzt jetzt den Container. HAPM ist gleich wieder da.')
+  );
   await engine.start(helper);
   return 'handover';
 }
 
 async function updateAcme(log: StepLog): Promise<string | null> {
   const result = await upgradeAcme();
-  await log.add('acme.sh aktualisieren', result.ok, result.output.trim().split('\n').slice(-3).join('\n'));
-  if (!result.ok) throw new UpdateFailure('acme.sh ließ sich nicht aktualisieren.');
+  await log.add(msgid('acme.sh aktualisieren'), result.ok, result.output.trim().split('\n').slice(-3).join('\n'));
+  if (!result.ok) throw new UpdateFailure(msgid('acme.sh ließ sich nicht aktualisieren.'));
   return (await acmeStatus()).version;
 }
 
@@ -258,7 +272,11 @@ async function finish(
     resourceId: run.component,
     details: `${LABELS[run.component]}: ${patch.error ?? `${run.fromVersion ?? '?'} → ${patch.toVersion ?? '?'}`}`,
   });
-  announce(run, status === 'error' ? (patch.error ?? 'Der Lauf nennt keinen Grund.') : null, patch.toVersion ?? null);
+  announce(
+    run,
+    status === 'error' ? (patch.error ?? msgid('Der Lauf nennt keinen Grund.')) : null,
+    patch.toVersion ?? null
+  );
 }
 
 async function execute(run: UpdateRun, actor: UpdateActor): Promise<void> {
@@ -274,7 +292,7 @@ async function execute(run: UpdateRun, actor: UpdateActor): Promise<void> {
       await finish(run, 'success', { toVersion: version ?? run.fromVersion }, actor);
     }
   } catch (err) {
-    if (!(err instanceof UpdateFailure)) await log.add('Abbruch', false, message(err));
+    if (!(err instanceof UpdateFailure)) await log.add(msgid('Abbruch'), false, message(err));
     await finish(run, 'error', { error: message(err) }, actor);
   } finally {
     globalLock.__hapmUpdateRunning = false;
@@ -291,7 +309,7 @@ export async function startUpdate(component: UpdateComponent, actor: UpdateActor
   // Die Zeile zählt mit, nicht nur die Sperre im Prozess: während HAPM sich
   // selbst ersetzt, ist die Sperre schon frei und der Lauf noch offen.
   if (globalLock.__hapmUpdateRunning || open.length > 0) {
-    throw new ApiError('Es läuft schon ein Update. Bitte warten, bis es fertig ist.', 409);
+    throw new ApiError(msg('Es läuft schon ein Update. Bitte warten, bis es fertig ist.'), 409);
   }
   globalLock.__hapmUpdateRunning = true;
 
@@ -340,17 +358,21 @@ export async function expireStaleUpdateRuns(): Promise<void> {
     if (Date.now() - Date.parse(run.startedAt) < HANDOVER_TIMEOUT_MS) continue;
     const steps = JSON.parse(run.steps ?? '[]') as HaproxyStep[];
     steps.push({
-      label: 'Neuer Container',
+      label: msgid('Neuer Container'),
       ok: false,
-      detail: 'Der Helfer hat den Container nicht ersetzt. HAPM läuft weiter in der bisherigen Fassung.',
+      detail: msgid('Der Helfer hat den Container nicht ersetzt. HAPM läuft weiter in der bisherigen Fassung.'),
     });
     await updateDocument<UpdateRun>(COLLECTIONS.UPDATE_RUNS, run.$id, {
       status: 'error',
       completedAt: new Date().toISOString(),
       steps: JSON.stringify(steps),
-      error: 'Die Übergabe an den Helfer ist nicht zustande gekommen.',
+      error: msgid('Die Übergabe an den Helfer ist nicht zustande gekommen.'),
     });
-    announce(run, 'Die Übergabe an den Helfer ist nicht zustande gekommen. HAPM läuft weiter in der bisherigen Fassung.', null);
+    announce(
+      run,
+      msgid('Die Übergabe an den Helfer ist nicht zustande gekommen. HAPM läuft weiter in der bisherigen Fassung.'),
+      null
+    );
   }
 }
 
@@ -379,24 +401,30 @@ export async function reconcileUpdateRuns(): Promise<void> {
       const changed = image !== null && image !== run.fromImage;
       steps.push(
         changed
-          ? { label: 'Neuer Container', ok: true, detail: `HAPM ${version ?? ''} läuft.`.replace('  ', ' ') }
-          : { label: 'Neuer Container', ok: false, detail: 'HAPM läuft weiter in der bisherigen Fassung.' }
+          ? { label: msgid('Neuer Container'), ok: true, detail: `HAPM ${version ?? ''} läuft.`.replace('  ', ' ') }
+          : {
+              label: msgid('Neuer Container'),
+              ok: false,
+              detail: msgid('HAPM läuft weiter in der bisherigen Fassung.'),
+            }
       );
+      const failed = msgid('Der neue Container ist nicht gestartet, der bisherige läuft wieder.');
       await updateDocument<UpdateRun>(COLLECTIONS.UPDATE_RUNS, run.$id, {
         status: changed ? 'success' : 'error',
         toVersion: version,
         completedAt,
         steps: JSON.stringify(steps),
-        error: changed ? null : 'Der neue Container ist nicht gestartet, der bisherige läuft wieder.',
+        error: changed ? null : failed,
       });
-      announce(run, changed ? null : 'Der neue Container ist nicht gestartet, der bisherige läuft wieder.', version);
+      announce(run, changed ? null : failed, version);
     } else {
+      const restarted = msgid('HAPM wurde während des Updates neu gestartet. Der Zustand steht unter „Updates“.');
       await updateDocument<UpdateRun>(COLLECTIONS.UPDATE_RUNS, run.$id, {
         status: 'error',
         completedAt,
-        error: 'HAPM wurde während des Updates neu gestartet. Der Zustand steht unter „Updates".',
+        error: restarted,
       });
-      announce(run, 'HAPM wurde während des Updates neu gestartet. Der Zustand steht unter „Updates“.', null);
+      announce(run, restarted, null);
     }
   }
 }

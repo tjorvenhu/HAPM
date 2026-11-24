@@ -128,6 +128,19 @@ describe('renderHapmMail', () => {
     expect(mail.text).toContain('Einstellbar unter „Benachrichtigungen“.');
   });
 
+  it('schreibt den Rahmen in der Sprache der Installation', () => {
+    const mail = renderHapmMail(
+      { ...content, action: { label: 'Open', url: 'https://hapm.example.org/dashboard' } },
+      { ...installation, locale: 'en' }
+    );
+    expect(mail.html).toContain('<html lang="en"');
+    expect(mail.html).toContain('Or open this link in your browser:');
+    expect(mail.text).toContain('This email comes from the HAPM installation on the server proxy01.');
+    expect(mail.text.endsWith('Interface: https://hapm.example.org')).toBe(true);
+    expect(mail.html).not.toMatch(/Diese Mail|Oberfl|Oder diesen Link/);
+    expect(html).toContain('<html lang="de"');
+  });
+
   it('geht mit der Zusage aus drei Feldern und ohne zweite Angabe', () => {
     const mail = renderHapmMail({ subject: 'Betreff', heading: 'Überschrift', body: mailText('Inhalt.') });
     expect(mail.html).toContain('Überschrift');

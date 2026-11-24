@@ -4,6 +4,7 @@ import { COLLECTIONS } from '@/lib/types';
 import { validateName } from '@/lib/validation';
 import { logAudit, getClientIP } from '@/lib/audit';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
+import { msg } from '@/lib/i18n';
 import {
   generateServiceToken,
   hashServiceToken,
@@ -55,7 +56,7 @@ export async function POST(request: Request) {
       allowedIps?: string[];
     }>(request);
 
-    if (!name || !validateName(name)) throw new ApiError('Ungültiger Name.');
+    if (!name || !validateName(name)) throw new ApiError(msg('Ungültiger Name.'));
 
     // Wirft bei einem ungültigen Eintrag, statt ihn wegzulassen: eine
     // gespeicherte Liste ohne die Zeile, die jemand getippt hat, sähe enger aus
@@ -64,7 +65,7 @@ export async function POST(request: Request) {
     try {
       cleanIps = normaliseAllowedIps(allowedIps);
     } catch (err) {
-      throw new ApiError(err instanceof Error ? err.message : 'Ungültige Adressliste.');
+      throw new ApiError(err instanceof Error ? err.message : msg('Ungültige Adressliste.'));
     }
 
     const active = await listAll<ServiceToken>(COLLECTIONS.SERVICE_TOKENS, [
@@ -73,8 +74,10 @@ export async function POST(request: Request) {
     ]);
     if (active.length > 0) {
       throw new ApiError(
-        `Es gibt bereits ein aktives Token namens "${name}". Zwei gleichnamige wären ` +
-          `im Audit-Log nicht auseinanderzuhalten.`
+        msg(
+          'Es gibt bereits ein aktives Token namens "{name}". Zwei gleichnamige wären im Audit-Log nicht auseinanderzuhalten.',
+          { name }
+        )
       );
     }
 

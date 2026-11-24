@@ -8,18 +8,16 @@ import { useConfirm } from '@/components/ConfirmDialog';
 import { useToast } from '@/components/Toast';
 import { usePolling } from '@/components/usePolling';
 import { SkeletonRows } from '@/components/Skeleton';
+import { formatDate, formatDateTimeMedium } from '@/lib/i18n';
+import { useT } from '@/lib/i18n/react';
 // Nur der Typ: die Datei dahinter erreicht den Anmeldedienst und damit `lib/db`.
 import type { PublicUser } from '@/lib/auth/users';
-
-const formatDate = (iso: string) => new Date(iso).toLocaleDateString('de-DE');
-
-const formatDateTime = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' }) : 'noch nie';
 
 export default function UsersPage() {
   const { apiFetch, session } = useApp();
   const confirm = useConfirm();
   const { notify } = useToast();
+  const { t, locale } = useT();
 
   const [users, setUsers] = useState<PublicUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -40,11 +38,11 @@ export default function UsersPage() {
       setUsers(data.data);
       setError('');
     } catch {
-      setError('Die Benutzer konnten nicht geladen werden.');
+      setError(t('Die Benutzer konnten nicht geladen werden.'));
     } finally {
       setLoading(false);
     }
-  }, [apiFetch]);
+  }, [apiFetch, t]);
 
   useEffect(() => {
     load();
@@ -72,13 +70,13 @@ export default function UsersPage() {
         body: JSON.stringify({ name, email, password }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Das Konto ließ sich nicht anlegen.');
+      if (!res.ok) throw new Error(data.error || t('Das Konto ließ sich nicht anlegen.'));
 
       await load();
       setModalOpen(false);
-      notify({ variant: 'success', message: `Das Konto für ${data.data.email} ist angelegt.` });
+      notify({ variant: 'success', message: t('Das Konto für {email} ist angelegt.', { email: data.data.email }) });
     } catch (err: unknown) {
-      setFormError(err instanceof Error ? err.message : 'Das Konto ließ sich nicht anlegen.');
+      setFormError(err instanceof Error ? err.message : t('Das Konto ließ sich nicht anlegen.'));
     } finally {
       setSaving(false);
     }
@@ -86,19 +84,22 @@ export default function UsersPage() {
 
   async function handleDelete(user: PublicUser) {
     await confirm({
-      title: 'Benutzer löschen',
-      message: `Soll das Konto von ${user.name} (${user.email}) gelöscht werden? Die Person ist danach sofort abgemeldet.`,
-      confirmLabel: 'Löschen',
+      title: t('Benutzer löschen'),
+      message: t('Soll das Konto von {name} ({email}) gelöscht werden? Die Person ist danach sofort abgemeldet.', {
+        name: user.name,
+        email: user.email,
+      }),
+      confirmLabel: t('Löschen'),
       variant: 'danger',
       onConfirm: async () => {
         const res = await apiFetch(`/api/users/${user.$id}`, { method: 'DELETE' });
         const data = await res.json();
         if (!res.ok) {
-          notify({ variant: 'error', message: data.error || 'Das Konto ließ sich nicht löschen.' });
+          notify({ variant: 'error', message: data.error || t('Das Konto ließ sich nicht löschen.') });
           throw new Error(data.error);
         }
         await load();
-        notify({ variant: 'success', message: `Das Konto von ${user.name} ist gelöscht.` });
+        notify({ variant: 'success', message: t('Das Konto von {name} ist gelöscht.', { name: user.name }) });
       },
     });
   }
@@ -107,13 +108,13 @@ export default function UsersPage() {
     <>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Benutzer</h1>
-          <p className="page-subtitle">Jedes Konto darf alles. Es gibt keine Rollen.</p>
+          <h1 className="page-title">{t('Benutzer')}</h1>
+          <p className="page-subtitle">{t('Jedes Konto darf alles. Es gibt keine Rollen.')}</p>
         </div>
         <div className="page-actions">
           <button className="btn btn-primary" onClick={openCreate}>
             <Plus size={16} />
-            Benutzer anlegen
+            {t('Benutzer anlegen')}
           </button>
         </div>
       </div>
@@ -127,12 +128,12 @@ export default function UsersPage() {
           <table className="table">
             <thead>
               <tr>
-                <th>E-Mail</th>
-                <th>Name</th>
-                <th>Zweiter Faktor</th>
-                <th>Passkeys</th>
-                <th>Letzte Anmeldung</th>
-                <th>Angelegt</th>
+                <th>{t('E-Mail')}</th>
+                <th>{t('Name')}</th>
+                <th>{t('Zweiter Faktor')}</th>
+                <th>{t('Passkeys')}</th>
+                <th>{t('Letzte Anmeldung')}</th>
+                <th>{t('Angelegt')}</th>
                 <th />
               </tr>
             </thead>
@@ -145,7 +146,7 @@ export default function UsersPage() {
                       {user.email}
                       {own && (
                         <span className="badge-status badge-neutral" style={{ marginLeft: 8 }}>
-                          Sie
+                          {t('Sie')}
                         </span>
                       )}
                     </td>
@@ -153,19 +154,19 @@ export default function UsersPage() {
                     <td>
                       <span className={`badge-status ${user.totpEnabled ? 'badge-success' : 'badge-neutral'}`}>
                         <span className="dot" />
-                        {user.totpEnabled ? 'Ja' : 'Nein'}
+                        {user.totpEnabled ? t('Ja') : t('Nein')}
                       </span>
                     </td>
                     <td>{user.passkeyCount}</td>
-                    <td>{formatDateTime(user.lastLoginAt)}</td>
-                    <td>{formatDate(user.$createdAt)}</td>
+                    <td>{user.lastLoginAt ? formatDateTimeMedium(locale, user.lastLoginAt) : t('noch nie')}</td>
+                    <td>{formatDate(locale, user.$createdAt)}</td>
                     <td>
                       <div className="actions" style={{ justifyContent: 'flex-end' }}>
                         <button
                           className="btn btn-ghost btn-icon btn-sm"
-                          data-tooltip={own ? 'Das eigene Konto lässt sich nicht löschen' : 'Löschen'}
+                          data-tooltip={own ? t('Das eigene Konto lässt sich nicht löschen') : t('Löschen')}
                           data-tooltip-pos="left"
-                          aria-label={`${user.name} löschen`}
+                          aria-label={t('{name} löschen', { name: user.name })}
                           disabled={own}
                           onClick={() => handleDelete(user)}
                         >
@@ -188,13 +189,13 @@ export default function UsersPage() {
         >
           <div className="modal">
             <div className="modal-header">
-              <h2 className="modal-title">Benutzer anlegen</h2>
+              <h2 className="modal-title">{t('Benutzer anlegen')}</h2>
               <button
                 type="button"
                 className="modal-close"
                 onClick={() => setModalOpen(false)}
                 disabled={saving}
-                aria-label="Dialog schließen"
+                aria-label={t('Dialog schließen')}
               >
                 <X size={18} />
               </button>
@@ -204,7 +205,7 @@ export default function UsersPage() {
                 {formError && <div className="alert alert-danger">{formError}</div>}
 
                 <div className="form-group">
-                  <label className="form-label" htmlFor="userName">Name</label>
+                  <label className="form-label" htmlFor="userName">{t('Name')}</label>
                   <input
                     id="userName"
                     className="form-input"
@@ -212,14 +213,14 @@ export default function UsersPage() {
                     maxLength={100}
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    placeholder="Max Mustermann"
+                    placeholder={t('Max Mustermann')}
                     autoComplete="off"
                     autoFocus
                   />
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label" htmlFor="userEmail">E-Mail-Adresse</label>
+                  <label className="form-label" htmlFor="userEmail">{t('E-Mail-Adresse')}</label>
                   <input
                     id="userEmail"
                     className="form-input"
@@ -227,15 +228,15 @@ export default function UsersPage() {
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="max@example.com"
+                    placeholder={t('max@example.com')}
                     autoComplete="off"
                   />
                 </div>
 
                 <div className="form-group">
                   <div className="form-label-row">
-                    <label className="form-label" htmlFor="userPassword">Passwort</label>
-                    <InfoHint text="Das Passwort geben Sie selbst an die Person weiter. HAPM verschickt es nicht." />
+                    <label className="form-label" htmlFor="userPassword">{t('Passwort')}</label>
+                    <InfoHint text={t('Das Passwort geben Sie selbst an die Person weiter. HAPM verschickt es nicht.')} />
                   </div>
                   <input
                     id="userPassword"
@@ -247,7 +248,7 @@ export default function UsersPage() {
                     onChange={(e) => setPassword(e.target.value)}
                     autoComplete="new-password"
                   />
-                  <p className="form-hint">Mindestens 10 Zeichen mit Groß- und Kleinbuchstaben und einer Zahl.</p>
+                  <p className="form-hint">{t('Mindestens 10 Zeichen mit Groß- und Kleinbuchstaben und einer Zahl.')}</p>
                 </div>
               </div>
 
@@ -258,11 +259,11 @@ export default function UsersPage() {
                   onClick={() => setModalOpen(false)}
                   disabled={saving}
                 >
-                  Abbrechen
+                  {t('Abbrechen')}
                 </button>
                 <button className="btn btn-primary" type="submit" disabled={saving}>
                   {saving ? <Loader2 size={16} className="spin" /> : <Plus size={16} />}
-                  Anlegen
+                  {t('Anlegen')}
                 </button>
               </div>
             </form>

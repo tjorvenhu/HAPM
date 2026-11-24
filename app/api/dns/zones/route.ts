@@ -1,45 +1,58 @@
 import { requireSession, requireCsrf } from '@/lib/session';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
+import { msg } from '@/lib/i18n';
+import { getLocale } from '@/lib/i18n/server';
 import { logAudit, getClientIP } from '@/lib/audit';
 import { connectZone } from '@/lib/dns/connect';
 import { providerFor } from '@/lib/dns/provider';
 import { dnsProviderLabel } from '@/lib/dns/provider-info';
-import { forClient, listZoneRows, withZone } from '@/lib/dns/store';
+import { forClient, listZoneRows, withZone, zoneErrorText } from '@/lib/dns/store';
 import { isDnsProviderId, normalizeDomain, validateZoneName } from '@/lib/dns/zones';
 
 /**
- * Die verwalteten Domains.
+ * Die angebundenen Domains, und ob ihr Zugang gerade funktioniert.
  *
- * Die Zeilen kommen aus der Datenbank, die ZAHL der Einträge vom Anbieter —
- * eine Abfrage je Zone und Aufruf (bei Hetzner eine je 50 Namen). Das ist derselbe Handel wie bei den
- * Reverse-Proxy-Zielen: die Wahrheit liegt beim Anbieter, und eine gespiegelte
- * Zahl wäre genau dann falsch, wenn jemand im Dashboard etwas angelegt hat.
+ * Die Zeilen kommen aus der Datenbank, die Prüfung vom Anbieter: je Zone und
+ * Aufruf fragt HAPM mit dem Token, welche Zonen er sieht. Steht die Zone
+ * darunter, funktioniert der Zugang, und der Anbieter sagt dabei, ob die
+ * Nameserver auf ihn zeigen (`delegated`, `null` heißt unbekannt). Ein
+ * gespeicherter Zustand wäre genau dann falsch, wenn der Token beim Anbieter
+ * zurückgezogen wurde.
  *
- * Scheitert eine Zone, fällt nicht die Liste aus: sie steht mit `records: null`
- * und ihrem Fehler daneben. `null` heißt unbekannt und nicht null Einträge —
- * eine beruhigende 0 an einer Zone, deren Token abgelaufen ist, wäre die
- * schlechtere Auskunft.
+ * Scheitert eine Zone, fällt nicht die Liste aus: sie steht mit ihrem Fehler
+ * daneben.
  */
 export async function GET() {
   try {
     await requireSession();
     const zones = await listZoneRows();
+    const locale = await getLocale();
 
     const rows = await Promise.all(
       zones.map(async (zone) => {
+        const lastCheckedAt = new Date().toISOString();
         try {
-          const records = await withZone(zone, (token, ref) =>
-            providerFor(zone).listRecords(token, ref)
-          );
+          const found = await withZone(zone, async (token) => {
+            const visible = await providerFor(zone).listZones(token);
+            const match = visible.find((seen) => normalizeDomain(seen.name) === normalizeDomain(zone.name));
+            if (!match) throw new ApiError(msg('Der Token sieht diese Zone nicht mehr.'), 404);
+            return match;
+          });
           return {
             ...forClient(zone),
             status: 'ok' as const,
+            lastCheckedAt,
             lastError: null,
-            records: records.length,
+            delegated: found.delegated,
           };
         } catch (err) {
-          const error = err instanceof Error ? err.message : 'Unbekannter Fehler';
-          return { ...forClient(zone), status: 'error' as const, lastError: error, records: null };
+          return {
+            ...forClient(zone),
+            status: 'error' as const,
+            lastCheckedAt,
+            lastError: zoneErrorText(err, locale),
+            delegated: null,
+          };
         }
       })
     );
@@ -75,7 +88,7 @@ export async function POST(request: Request) {
     const invalid = validateZoneName(name);
     if (invalid) throw new ApiError(invalid);
 
-    if (!isDnsProviderId(body.provider)) throw new ApiError('Bitte den Anbieter wählen.');
+    if (!isDnsProviderId(body.provider)) throw new ApiError(msg('Bitte den Anbieter wählen.'));
     const provider = body.provider;
 
     const { zone, created, delegated } = await connectZone({

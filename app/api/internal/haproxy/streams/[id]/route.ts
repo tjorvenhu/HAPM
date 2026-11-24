@@ -1,5 +1,6 @@
 import { requireServiceToken } from '@/lib/service-auth';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
+import { msg } from '@/lib/i18n';
 import { serviceActor } from '@/lib/audit';
 import {
   precheckStreamUpdate,
@@ -36,13 +37,13 @@ export async function GET(request: Request, { params }: Params) {
     const server = await resolveProxy(wantedServer(request));
     const probe = await probeProxy(server);
     if (!probe.configReadable) {
-      throw new ApiError(`Die HAProxy-Konfiguration auf "${server.name}" ist nicht lesbar.`, 502);
+      throw new ApiError(msg('Die HAProxy-Konfiguration auf "{server}" ist nicht lesbar.', { server: server.name }), 502);
     }
 
     const stream = probe.streams.find((entry) => entry.id === id);
     if (!stream) {
       throw new ApiError(
-        `Auf "${server.name}" gibt es keine TCP-Weiterleitung mit der Kennung "${id}".`,
+        msg('Auf "{server}" gibt es keine TCP-Weiterleitung mit der Kennung "{id}".', { server: server.name, id }),
         404
       );
     }
@@ -92,7 +93,7 @@ export async function PATCH(request: Request, { params }: Params) {
     try {
       await precheckStreamUpdate(server, id, input);
     } catch (err) {
-      if (err instanceof HaproxyConfigError) throw new ApiError(err.message, 409);
+      if (err instanceof HaproxyConfigError) throw new ApiError(err, 409);
       throw err;
     }
 
@@ -134,7 +135,7 @@ export async function DELETE(request: Request, { params }: Params) {
     try {
       stream = await precheckStreamDelete(server, id);
     } catch (err) {
-      if (err instanceof HaproxyConfigError) throw new ApiError(err.message, 409);
+      if (err instanceof HaproxyConfigError) throw new ApiError(err, 409);
       throw err;
     }
 

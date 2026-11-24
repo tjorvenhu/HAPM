@@ -1,5 +1,6 @@
 import { requireCsrf, requireSession } from '@/lib/session';
 import { ok, handleError, ApiError } from '@/lib/api';
+import { msg } from '@/lib/i18n';
 import { getClientIP } from '@/lib/audit';
 import { startUpdate } from '@/lib/updates/apply';
 import type { UpdateComponent } from '@/lib/types';
@@ -16,7 +17,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ com
     const session = await requireSession();
     const { component } = await params;
     if (!COMPONENTS.includes(component as UpdateComponent)) {
-      throw new ApiError('Diesen Bestandteil gibt es nicht.', 404);
+      throw new ApiError(msg('Diesen Bestandteil gibt es nicht.'), 404);
     }
 
     const run = await startUpdate(component as UpdateComponent, {

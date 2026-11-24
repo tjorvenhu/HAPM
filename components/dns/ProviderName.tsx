@@ -15,7 +15,7 @@ export function ProviderLogo({ provider, size }: { provider: DnsProviderId; size
   );
 }
 
-/** Zeichen und Name nebeneinander, für die Liste der Zonen und den Kopf einer Zone. */
+/** Zeichen und Name nebeneinander, für die Liste der Zonen. */
 export default function ProviderName({
   provider,
   size = 16,

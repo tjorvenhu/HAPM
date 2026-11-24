@@ -1,5 +1,6 @@
 import { requireServiceToken } from '@/lib/service-auth';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
+import { getT } from '@/lib/i18n/server';
 import { serviceActor } from '@/lib/audit';
 import { precheckCreate, probeProxy } from '@/lib/haproxy/provision';
 import { startHaproxyRun } from '@/lib/haproxy/runner';
@@ -48,6 +49,7 @@ interface ListResponse {
 export async function GET(request: Request) {
   try {
     await requireServiceToken(request);
+    const { t } = await getT();
 
     const url = new URL(request.url);
     const wantedServer = url.searchParams.get('serverId');
@@ -73,7 +75,7 @@ export async function GET(request: Request) {
             response.unreachable.push({
               serverId: server.$id,
               serverName: server.name,
-              error: 'Die HAProxy-Konfiguration ist nicht lesbar.',
+              error: t('Die HAProxy-Konfiguration ist nicht lesbar.'),
             });
             return;
           }
@@ -82,7 +84,7 @@ export async function GET(request: Request) {
           response.unreachable.push({
             serverId: server.$id,
             serverName: server.name,
-            error: err instanceof Error ? err.message : 'HAProxy ist nicht erreichbar.',
+            error: err instanceof Error ? err.message : t('HAProxy ist nicht erreichbar.'),
           });
         }
       })
@@ -155,7 +157,7 @@ export async function POST(request: Request) {
     try {
       input = await precheckCreate(server, draft, challenge);
     } catch (err) {
-      if (err instanceof HaproxyConfigError) throw new ApiError(err.message, 409);
+      if (err instanceof HaproxyConfigError) throw new ApiError(err, 409);
       throw err;
     }
 

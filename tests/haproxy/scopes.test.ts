@@ -12,6 +12,10 @@ import {
   HaproxyConfigError,
   type CreateServiceInput,
 } from '@/lib/haproxy/config';
+import { germanText, type Message } from '@/lib/i18n/translate';
+
+/** Die Meldung einer Prüfung auf Deutsch, wie sie ohne Sprache herauskommt. */
+const de = (message: Message | null) => (message ? germanText(message) : message);
 
 /**
  * Die Gruppen: Marker-Paare in der Datei, sonst nichts.
@@ -190,18 +194,18 @@ describe('addScope', () => {
   });
 
   it('lehnt einen unbrauchbaren Namen ab, bevor irgendetwas geschrieben wird', () => {
-    expect(validateScopeName('a')).toMatch(/zwei Zeichen/);
-    expect(validateScopeName('mit leerzeichen')).toMatch(/nur a-z/);
-    expect(validateScopeName('9anfang')).toMatch(/nur a-z/);
-    expect(validateScopeName('testkunden')).toBeNull();
+    expect(de(validateScopeName('a'))).toMatch(/zwei Zeichen/);
+    expect(de(validateScopeName('mit leerzeichen'))).toMatch(/nur a-z/);
+    expect(de(validateScopeName('9anfang'))).toMatch(/nur a-z/);
+    expect(de(validateScopeName('testkunden'))).toBeNull();
   });
 
   it('lehnt den Namen einer festen Seite ab, auch groß geschrieben', () => {
     // Die Gruppe stünde unter /reverse-proxy/<slug> und wäre hinter der Seite verborgen.
     for (const name of ['fehlerseiten', 'ZERTIFIKATE', 'Einstellungen', 'import']) {
-      expect(validateScopeName(name)).toMatch(/Name einer Seite/);
+      expect(de(validateScopeName(name))).toMatch(/Name einer Seite/);
     }
-    expect(validateScopeName('zertifikate-alt')).toBeNull();
+    expect(de(validateScopeName('zertifikate-alt'))).toBeNull();
   });
 });
 

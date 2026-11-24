@@ -28,6 +28,7 @@ import { createDocument, updateDocument } from '../db';
 import { COLLECTIONS, type DnsZone } from '../types';
 import { encrypt } from '../crypto';
 import { ApiError } from '../api';
+import { msg, msgid, type Message } from '../i18n';
 import { providerFor, type ProviderZone, type RecordWrite } from './provider';
 import { dnsProviderLabel } from './provider-info';
 import { PROVIDER_RULES, sameAddress, type DnsRecord } from './records';
@@ -47,11 +48,21 @@ export type { DnsProviderId };
 /** Wie viele Zonen die Meldung nennt, wenn keine passt. */
 const HINT_ZONES = 8;
 
-function visibleHint(zones: ProviderZone[]): string {
-  if (zones.length === 0) return ' Der Token sieht überhaupt keine Zone.';
+/**
+ * Die Meldung, wenn der Token die Zone nicht sieht, samt der Zonen, die er
+ * sieht. Je Fall ein ganzer Satz: ein angehängter Halbsatz ließe sich nicht
+ * übersetzen.
+ */
+function notVisible(
+  texts: { none: string; some: string; more: string },
+  params: Record<string, string>,
+  zones: ProviderZone[]
+): Message {
+  if (zones.length === 0) return msg(texts.none, params);
   const names = zones.slice(0, HINT_ZONES).map((zone) => zone.name);
   const more = zones.length - names.length;
-  return ` Der Token sieht: ${names.join(', ')}${more > 0 ? ` und ${more} weitere` : ''}.`;
+  const seen = { ...params, zones: names.join(', ') };
+  return more > 0 ? msg(texts.more, { ...seen, more }) : msg(texts.some, seen);
 }
 
 function access(provider: DnsProviderId, found: ProviderZone, token: string): Partial<DnsZone> {
@@ -89,10 +100,10 @@ export async function connectZone(input: {
   token: string;
 }): Promise<ConnectedZone> {
   const domain = normalizeDomain(input.domain);
-  if (domain === '') throw new ApiError('Bitte eine Domain angeben.');
+  if (domain === '') throw new ApiError(msg('Bitte eine Domain angeben.'));
   const token = input.token.trim();
   const label = dnsProviderLabel(input.provider);
-  if (!token) throw new ApiError(`Bitte den API-Token von ${label} angeben.`);
+  if (!token) throw new ApiError(msg('Bitte den API-Token von {provider} angeben.', { provider: label }));
 
   const visible = await providerFor(input.provider).listZones(token);
   const found = matchZone(domain, visible);
@@ -101,7 +112,15 @@ export async function connectZone(input: {
     // anderes Projekt erzeugt wurde. „Nicht gefunden" schickt einen dabei in
     // die falsche Richtung, die Liste nicht.
     throw new ApiError(
-      `${label} kennt unter diesem Token keine Zone für "${domain}".${visibleHint(visible)}`,
+      notVisible(
+        {
+          none: msgid('{provider} kennt unter diesem Token keine Zone für "{domain}". Der Token sieht überhaupt keine Zone.'),
+          some: msgid('{provider} kennt unter diesem Token keine Zone für "{domain}". Der Token sieht: {zones}.'),
+          more: msgid('{provider} kennt unter diesem Token keine Zone für "{domain}". Der Token sieht: {zones} und {more} weitere.'),
+        },
+        { provider: label, domain },
+        visible
+      ),
       404
     );
   }
@@ -134,13 +153,23 @@ export async function replaceZoneToken(zoneDocumentId: string, token: string): P
   const zone = await getZoneRow(zoneDocumentId);
   const provider = providerOf(zone);
   const secret = token.trim();
-  if (!secret) throw new ApiError(`Bitte den API-Token von ${dnsProviderLabel(provider)} angeben.`);
+  if (!secret) {
+    throw new ApiError(msg('Bitte den API-Token von {provider} angeben.', { provider: dnsProviderLabel(provider) }));
+  }
 
   const visible = await providerFor(provider).listZones(secret);
   const found = visible.find((seen) => normalizeDomain(seen.name) === normalizeDomain(zone.name));
   if (!found) {
     throw new ApiError(
-      `Dieser Token sieht die Zone "${zone.name}" nicht.${visibleHint(visible)}`,
+      notVisible(
+        {
+          none: msgid('Dieser Token sieht die Zone "{zone}" nicht. Der Token sieht überhaupt keine Zone.'),
+          some: msgid('Dieser Token sieht die Zone "{zone}" nicht. Der Token sieht: {zones}.'),
+          more: msgid('Dieser Token sieht die Zone "{zone}" nicht. Der Token sieht: {zones} und {more} weitere.'),
+        },
+        { zone: zone.name },
+        visible
+      ),
       404
     );
   }
@@ -174,12 +203,16 @@ export async function ensureAddressRecord(
 
   const address = input.address.trim();
   const family = isIP(address);
-  if (family === 0) throw new ApiError('Die Adresse muss eine IPv4- oder IPv6-Adresse sein.');
+  if (family === 0) throw new ApiError(msg('Die Adresse muss eine IPv4- oder IPv6-Adresse sein.'));
   const type = family === 4 ? 'A' : 'AAAA';
 
   const fqdn = input.name.trim() === '@' ? normalizeDomain(zone.name) : normalizeDomain(input.name);
   if (!zoneCovers(zone.name, fqdn)) {
-    throw new ApiError(`${fqdn || 'Dieser Name'} liegt nicht in der Zone ${zone.name}.`);
+    throw new ApiError(
+      fqdn
+        ? msg('{name} liegt nicht in der Zone {zone}.', { name: fqdn, zone: zone.name })
+        : msg('Dieser Name liegt nicht in der Zone {zone}.', { zone: zone.name })
+    );
   }
 
   const provider = providerFor(zone);
@@ -199,8 +232,10 @@ export async function ensureAddressRecord(
   const alias = here.find((record) => record.type === 'CNAME');
   if (alias) {
     throw new ApiError(
-      `Unter ${fqdn} steht ein CNAME-Eintrag auf ${alias.content}. Er wurde nicht angefasst. ` +
-        `Ein ${type}-Eintrag daneben ist nicht möglich: bitte den CNAME zuerst entfernen.`,
+      msg(
+        'Unter {name} steht ein CNAME-Eintrag auf {target}. Er wurde nicht angefasst. Ein {type}-Eintrag daneben ist nicht möglich: bitte den CNAME zuerst entfernen.',
+        { name: fqdn, target: alias.content, type }
+      ),
       409
     );
   }
@@ -208,7 +243,11 @@ export async function ensureAddressRecord(
   const fixed = same.find((record) => record.locked);
   if (fixed) {
     throw new ApiError(
-      `Unter ${fqdn} steht ein ${type}-Eintrag auf ${fixed.content}, der sich nicht ändern lässt. Er wurde nicht angefasst.`,
+      msg('Unter {name} steht ein {type}-Eintrag auf {target}, der sich nicht ändern lässt. Er wurde nicht angefasst.', {
+        name: fqdn,
+        type,
+        target: fixed.content,
+      }),
       409
     );
   }

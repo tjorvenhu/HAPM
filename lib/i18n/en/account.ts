@@ -12,8 +12,6 @@ export const account: Dictionary = {
 
   // Passwort
   'Passwort ändern': 'Change password',
-  'Mindestens 10 Zeichen mit Groß- und Kleinbuchstaben und einer Zahl.':
-    'At least 10 characters with uppercase and lowercase letters and a digit.',
   'Aktuelles Passwort': 'Current password',
   'Neues Passwort': 'New password',
   'Neues Passwort wiederholen': 'Repeat new password',
@@ -102,7 +100,7 @@ export const account: Dictionary = {
   'Auf Ihren Geräten abgeglichen': 'Synced across your devices',
   'Abgleich möglich, noch nicht gesichert': 'Can sync, not backed up yet',
   'Nur auf einem Gerät': 'On one device only',
-  'Das Anlegen wurde abgebrochen.': 'Creating the passkey was cancelled.',
+  'Das Anlegen wurde abgebrochen.': 'Creating the passkey was canceled.',
   'Dieses Gerät hat für Ihr Konto schon einen Passkey.': 'This device already has a passkey for your account.',
   'Dieses Gerät kann keinen Passkey anlegen, der Sie per Fingerabdruck, Gesicht oder PIN bestätigt.':
     'This device cannot create a passkey that verifies you by fingerprint, face or PIN.',

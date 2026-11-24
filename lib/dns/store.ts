@@ -13,6 +13,7 @@ import { listAll, getDocument, updateDocument, Query } from '../db';
 import { COLLECTIONS, type DnsZone } from '../types';
 import { decrypt } from '../crypto';
 import { ApiError } from '../api';
+import { msg, msgid, translate, type Locale } from '../i18n';
 import { matchZone, normalizeDomain, providerOf, type DnsProviderId } from './zones';
 import type { ZoneRef } from './provider';
 
@@ -55,7 +56,7 @@ export async function listZoneRows(): Promise<DnsZone[]> {
 
 export async function getZoneRow(id: string): Promise<DnsZone> {
   const zone = await getDocument<DnsZone>(COLLECTIONS.DNS_ZONES, id).catch(() => null);
-  if (!zone) throw new ApiError('Diese Domain ist hier nicht eingerichtet.', 404);
+  if (!zone) throw new ApiError(msg('Diese Domain ist hier nicht eingerichtet.'), 404);
   return zone;
 }
 
@@ -85,7 +86,7 @@ export function tokenOf(zone: DnsZone): string {
     // Das passiert genau dann, wenn ENCRYPTION_KEY gewechselt hat — und dann
     // hilft kein Wiederholen, sondern nur ein neuer Token.
     throw new ApiError(
-      `Der API-Token von ${zone.name} lässt sich nicht entschlüsseln. Bitte neu hinterlegen.`,
+      msg('Der API-Token von {zone} lässt sich nicht entschlüsseln. Bitte neu hinterlegen.', { zone: zone.name }),
       409
     );
   }
@@ -127,7 +128,17 @@ export async function withZone<T>(
     await markZone(zone, null);
     return result;
   } catch (err) {
-    await markZone(zone, err instanceof Error ? err.message : 'Unbekannter Fehler');
+    await markZone(zone, err instanceof Error ? err.message : msgid('Unbekannter Fehler'));
     throw err;
   }
+}
+
+/**
+ * Der Fehler eines Aufrufs beim Anbieter als Text in einer Sprache, für Routen,
+ * die ihn neben der Zone ausliefern statt zu werfen. An der Zeile steht er
+ * deutsch (`markZone`): das ist eine Aufzeichnung.
+ */
+export function zoneErrorText(err: unknown, locale: Locale): string {
+  if (err instanceof ApiError) return err.localized(locale);
+  return translate(locale, err instanceof Error ? err.message : 'Unbekannter Fehler');
 }

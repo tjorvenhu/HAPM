@@ -5,6 +5,8 @@ import {
 } from 'lucide-react';
 import type { ServiceHealth } from '@/lib/haproxy/config';
 import { STREAM_BALANCE_LABELS, type HaproxyStream } from '@/lib/haproxy/streams';
+import { msgid } from '@/lib/i18n';
+import { useT } from '@/lib/i18n/react';
 
 /**
  * Eine TCP-Weiterleitung als Karte.
@@ -40,13 +42,14 @@ interface Props {
 /** Wie in `ServiceCard`: die Klassennamen stehen ausgeschrieben, weil
  *  `tests/ui/css-classes.test.ts` sie aus dem Quelltext liest. */
 const HEALTH_TAG: Record<ServiceHealth, { className: string; tooltip: string }> = {
-  up: { className: 'is-online', tooltip: 'HAProxy erreicht alle Ziele dieser Weiterleitung' },
-  partial: { className: 'is-degraded', tooltip: 'HAProxy erreicht einen Teil der Ziele nicht' },
-  down: { className: 'is-offline', tooltip: 'HAProxy erreicht kein Ziel dieser Weiterleitung' },
+  up: { className: 'is-online', tooltip: msgid('HAProxy erreicht alle Ziele dieser Weiterleitung') },
+  partial: { className: 'is-degraded', tooltip: msgid('HAProxy erreicht einen Teil der Ziele nicht') },
+  down: { className: 'is-offline', tooltip: msgid('HAProxy erreicht kein Ziel dieser Weiterleitung') },
   unknown: {
     className: '',
-    tooltip:
-      'Der Zustand ist hier nicht bekannt: kein stats socket in der Konfiguration, kein socat oder kein check auf der server-Zeile.',
+    tooltip: msgid(
+      'Der Zustand ist hier nicht bekannt: kein stats socket in der Konfiguration, kein socat oder kein check auf der server-Zeile.'
+    ),
   },
 };
 
@@ -60,14 +63,15 @@ export default function StreamCard({
   onEdit,
   onDelete,
 }: Props) {
+  const { t } = useT();
   const pending = pendingPhase !== undefined && pendingPhase !== null;
   const removing = pending && pendingKind === 'delete';
-  const phaseLabel = pendingPhase ?? 'Wird gestartet';
+  const phaseLabel = pendingPhase ? t(pendingPhase) : t('Wird gestartet');
 
   const readOnlyReason =
     stream.extras.length > 0
-      ? `Nicht abgebildet: ${stream.extras.join(' · ')}`
-      : 'Der Abschnitt folgt nicht dem erwarteten Schema';
+      ? t('Nicht abgebildet: {extras}', { extras: stream.extras.join(' · ') })
+      : t('Der Abschnitt folgt nicht dem erwarteten Schema');
 
   const open = stream.allowedSources.length === 0;
 
@@ -79,10 +83,10 @@ export default function StreamCard({
       ? {
           key: 'open',
           icon: <ShieldOff size={14} />,
-          label: 'Von überall',
-          tooltip:
-            'Keine Absenderliste: der Port nimmt Verbindungen von jeder Adresse an. Was dahinter ' +
-            'liegt, ist die einzige Prüfung, die noch stattfindet.',
+          label: t('Von überall'),
+          tooltip: t(
+            'Keine Absenderliste: der Port nimmt Verbindungen von jeder Adresse an. Was dahinter liegt, ist die einzige Prüfung, die noch stattfindet.'
+          ),
           className: 'is-offline',
         }
       : {
@@ -91,8 +95,10 @@ export default function StreamCard({
           label:
             stream.allowedSources.length === 1
               ? stream.allowedSources[0]
-              : `${stream.allowedSources.length} Absender`,
-          tooltip: `Nur erreichbar von ${stream.allowedSources.join(', ')}. Alles andere wird abgewiesen, bevor ein Byte gelesen wird.`,
+              : t('{count} Absender', { count: stream.allowedSources.length }),
+          tooltip: t('Nur erreichbar von {addresses}. Alles andere wird abgewiesen, bevor ein Byte gelesen wird.', {
+            addresses: stream.allowedSources.join(', '),
+          }),
           className: 'is-locked',
         },
     ...(stream.editable
@@ -100,7 +106,7 @@ export default function StreamCard({
       : [{
           key: 'readonly',
           icon: <EyeOff size={14} />,
-          label: 'Nur lesbar',
+          label: t('Nur lesbar'),
           tooltip: readOnlyReason,
           className: 'is-muted',
         }]),
@@ -108,8 +114,8 @@ export default function StreamCard({
       ? [{
           key: 'check',
           icon: <Activity size={14} />,
-          label: 'Verbindungsprüfung',
-          tooltip: HEALTH_TAG[health].tooltip,
+          label: t('Verbindungsprüfung'),
+          tooltip: t(HEALTH_TAG[health].tooltip),
           className: HEALTH_TAG[health].className,
         }]
       : []),
@@ -117,8 +123,8 @@ export default function StreamCard({
       ? [{
           key: 'balance',
           icon: <Scale size={14} />,
-          label: STREAM_BALANCE_LABELS[stream.balance],
-          tooltip: 'Wie die Verbindungen auf die Ziele verteilt werden',
+          label: t(STREAM_BALANCE_LABELS[stream.balance]),
+          tooltip: t('Wie die Verbindungen auf die Ziele verteilt werden'),
         }]
       : []),
   ];
@@ -136,16 +142,16 @@ export default function StreamCard({
           /* Der Firewall-Satz steht auch hier und nicht nur im Formular: nach
              dem Anlegen ist die Karte das Einzige, was man noch sieht, und
              „HAProxy lauscht" ist nicht dasselbe wie „von außen erreichbar". */
-          data-tooltip={
-            `TCP-Weiterleitung ${stream.id} · Port ${stream.port ?? 'unbekannt'} · ` +
-            'Erreichbar von außen nur, wenn der Port auch in der Firewall freigegeben ist'
-          }
+          data-tooltip={t(
+            'TCP-Weiterleitung {id} · Port {port} · Erreichbar von außen nur, wenn der Port auch in der Firewall freigegeben ist',
+            { id: stream.id, port: stream.port ?? t('unbekannt') }
+          )}
         >
           {/* Der Port steht oben und die Kennung darunter, wie bei einem Dienst
               die Domain über der Dienst-ID: oben steht, worüber man den Eintrag
               erreicht, darunter, wie er heißt. */}
           <span className="rp-card-title">
-            {stream.port === null ? 'Port unbekannt' : `Port ${stream.port}`}
+            {stream.port === null ? t('Port unbekannt') : t('Port {port}', { port: stream.port })}
           </span>
           <span className="rp-card-subtitle">{stream.id}</span>
         </div>
@@ -155,11 +161,11 @@ export default function StreamCard({
         <div className="rp-tags">
           <span
             className="rp-tag is-pending"
-            data-tooltip="Der Vorgang läuft. Fortschritt unten rechts."
+            data-tooltip={t('Der Vorgang läuft. Fortschritt unten rechts.')}
           >
             <Loader2 size={14} className="spin" />
             <span className="rp-tag-label">
-              {removing ? `Wird entfernt · ${phaseLabel}` : phaseLabel}
+              {removing ? t('Wird entfernt · {phase}', { phase: phaseLabel }) : phaseLabel}
             </span>
           </span>
         </div>
@@ -189,12 +195,12 @@ export default function StreamCard({
       )}
 
       <div className="rp-section">
-        <div className="rp-section-title" data-tooltip="Wohin die Verbindungen gehen">
+        <div className="rp-section-title" data-tooltip={t('Wohin die Verbindungen gehen')}>
           <Server size={16} />
-          Ziele
+          {t('Ziele')}
         </div>
         {stream.servers.length === 0 ? (
-          <div className="rp-empty-line">kein Ziel eingetragen</div>
+          <div className="rp-empty-line">{t('kein Ziel eingetragen')}</div>
         ) : (
           stream.servers.map((server) => (
             <div className="rp-row" key={server.name} data-tooltip={`${server.name} → ${server.target}`}>
@@ -215,10 +221,10 @@ export default function StreamCard({
         <button
           type="button"
           className="rp-action"
-          data-tooltip={stream.editable ? 'Bearbeiten' : `Nicht änderbar. ${readOnlyReason}.`}
+          data-tooltip={stream.editable ? t('Bearbeiten') : t('Nicht änderbar. {reason}.', { reason: readOnlyReason })}
           disabled={!stream.editable || pending}
           onClick={onEdit}
-          aria-label="Bearbeiten"
+          aria-label={t('Bearbeiten')}
         >
           <Pencil size={16} />
         </button>
@@ -227,12 +233,12 @@ export default function StreamCard({
           className="rp-action is-danger"
           data-tooltip={
             stream.removable
-              ? 'Löschen'
-              : 'Steht außerhalb der Marker-Blöcke. Wo der Abschnitt anfängt, wäre geraten.'
+              ? t('Löschen')
+              : t('Steht außerhalb der Marker-Blöcke. Wo der Abschnitt anfängt, wäre geraten.')
           }
           disabled={!stream.removable || pending}
           onClick={onDelete}
-          aria-label="Löschen"
+          aria-label={t('Löschen')}
         >
           <Trash2 size={16} />
         </button>

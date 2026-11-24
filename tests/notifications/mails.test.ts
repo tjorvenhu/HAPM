@@ -238,6 +238,46 @@ describe('notificationMail', () => {
   });
 });
 
+describe('auf Englisch', () => {
+  const en: NotificationMailContext = { ...ctx, locale: 'en' };
+
+  it.each(SAMPLES)('$event.type: Betreff, Text und Rahmen sind englisch', ({ event }) => {
+    const mail = notificationMail(event, en);
+    expect(mail.html).toContain('<html lang="en"');
+    expect(mail.text).toContain('This email comes from the HAPM installation on the server proxy01.');
+    expect(mail.text).toContain('under “Notifications”');
+    const visible = `${mail.subject}\n${mail.text}`;
+    expect(visible).not.toMatch(/[–—]/);
+    // Was die Mail selbst schreibt, ist englisch. Deutsch steht nur in dem, was
+    // von außen kommt (Fehlermeldung eines Laufs, Ausgabe), und bleibt, wie es ist.
+    const external = JSON.stringify(event);
+    const own = visible.split('\n').filter((line) => !external.includes(line.trim()));
+    expect(own.join('\n')).not.toMatch(/\b(nicht|Zertifikat|gescheitert|Was zu tun ist|Oberfläche|Uhr)\b/);
+  });
+
+  it('schreibt Datum und Anzahl in der Form der Sprache', () => {
+    const mail = notificationMail(
+      {
+        type: 'certificate_expiring',
+        certificates: [{ mainDomain: 'shop.example.org', expiresAt: '2026-11-29T12:00:00.000Z', daysLeft: 5 }],
+      },
+      en
+    );
+    expect(mail.subject).toBe('Certificate for shop.example.org expires in 5 days');
+    expect(mail.text).toContain('expires on 11/29/2026, in 5 days');
+    const recovered = notificationMail(SAMPLES[3].event, en);
+    expect(recovered.text).toContain('Time since the report: 2 hours 5 minutes');
+    expect(recovered.text).toContain('2 of 2');
+  });
+
+  it('gilt auch für die Testmail', () => {
+    const mail = testMail({ nodeName: 'proxy01', publicUrl: 'https://hapm.example.org', locale: 'en' });
+    expect(mail.subject).toBe('Test email from HAPM');
+    expect(mail.text).toContain('Open notifications: https://hapm.example.org/notifications');
+    expect(mail.text).toContain('Interface: https://hapm.example.org');
+  });
+});
+
 describe('testMail', () => {
   it('sagt, was sie beweist, und verspricht nicht mehr', () => {
     const mail = testMail({ nodeName: 'proxy01', publicUrl: 'https://hapm.example.org' });

@@ -20,6 +20,7 @@ import {
 import { takeScopeRun, type ScopeRunHandover } from '@/components/reverse-proxy/scopeHandover';
 import { shortVersion, validateScopeName, scopeLabel } from '@/lib/haproxy/config';
 import { SkeletonCards } from '@/components/Skeleton';
+import { useT } from '@/lib/i18n/react';
 
 /**
  * Die Übersicht des Reverse-Proxys: in welche Gruppen die Einträge zerfallen
@@ -40,6 +41,7 @@ import { SkeletonCards } from '@/components/Skeleton';
 export default function ReverseProxyPage() {
   const { apiFetch } = useApp();
   const { notify } = useToast();
+  const { t, plural, rich } = useT();
 
   const [proxies, setProxies] = useState<ProxyRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -74,12 +76,12 @@ export default function ReverseProxyPage() {
         if (data.success) setProxies(data.data);
         setError('');
       } catch {
-        setError('Die Reverse-Proxy-Ziele konnten nicht geladen werden.');
+        setError(t('Die Reverse-Proxy-Ziele konnten nicht geladen werden.'));
       } finally {
         setLoading(false);
       }
     },
-    [apiFetch]
+    [apiFetch, t]
   );
 
   useEffect(() => {
@@ -123,16 +125,17 @@ export default function ReverseProxyPage() {
 
       setPendingScope(null);
       const failed = states.filter((s) => s?.success && s.data.status !== 'success').length;
-      const done = pendingScope.action === 'add' ? 'angelegt' : 'entfernt';
       await load(true);
       if (cancelled) return;
       notify({
         variant: failed === 0 ? 'success' : 'error',
-        title: `Gruppe „${scopeLabel(pendingScope.name)}"`,
+        title: t('Gruppe „{name}"', { name: scopeLabel(pendingScope.name) }),
         message:
-          failed === 0
-            ? `Die Gruppe ist ${done}.`
-            : 'Der Vorgang ist fehlgeschlagen. Die Schritte stehen in den Logs.',
+          failed !== 0
+            ? t('Der Vorgang ist fehlgeschlagen. Die Schritte stehen in den Logs.')
+            : pendingScope.action === 'add'
+              ? t('Die Gruppe ist angelegt.')
+              : t('Die Gruppe ist entfernt.'),
       });
     };
 
@@ -141,7 +144,7 @@ export default function ReverseProxyPage() {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [pendingScope, apiFetch, load, notify]);
+  }, [pendingScope, apiFetch, load, notify, t]);
 
   /** Eigener Zustand statt `loading`: die Liste soll stehen bleiben, der Knopf
    *  trotzdem antworten. Die Mindestdauer verhindert ein Spinner-Flackern. */
@@ -165,7 +168,7 @@ export default function ReverseProxyPage() {
     const name = (newScope ?? '').trim();
     const invalid = validateScopeName(name);
     if (invalid) {
-      setFormError(invalid);
+      setFormError(t(invalid));
       return;
     }
     setCreating(true);
@@ -177,18 +180,18 @@ export default function ReverseProxyPage() {
         body: JSON.stringify({ name }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Die Gruppe konnte nicht angelegt werden.');
+      if (!res.ok) throw new Error(data.error || t('Die Gruppe konnte nicht angelegt werden.'));
 
       const runIds: string[] = data.data.runs.map((r: { runId: string }) => r.runId);
       setNewScope(null);
       setPendingScope({ name, runIds, action: 'add' });
       notify({
         variant: 'info',
-        title: `Gruppe „${scopeLabel(name)}" wird angelegt`,
-        message: 'Prüfen, Backup, einsetzen, neu laden. Der Fortschritt steht unten rechts.',
+        title: t('Gruppe „{name}" wird angelegt', { name: scopeLabel(name) }),
+        message: t('Prüfen, Backup, einsetzen, neu laden. Der Fortschritt steht unten rechts.'),
       });
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Unbekannter Fehler.');
+      setFormError(err instanceof Error ? err.message : t('Unbekannter Fehler.'));
     } finally {
       setCreating(false);
     }
@@ -212,32 +215,31 @@ export default function ReverseProxyPage() {
     <>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Reverse-Proxy</h1>
+          <h1 className="page-title">{t('Reverse-Proxy')}</h1>
           <p className="page-subtitle">
-            Welche Domain auf welches Ziel zeigt. Gelesen wird direkt aus der HAProxy-Konfiguration,
-            nicht aus einer Kopie.
+            {t('Welche Domain auf welches Ziel zeigt. Gelesen wird direkt aus der HAProxy-Konfiguration, nicht aus einer Kopie.')}
           </p>
         </div>
         <div className="page-actions">
           {proxies.length > 0 && (
             <button className="btn btn-secondary" onClick={() => setNewScope('')}>
               <FolderPlus size={16} />
-              Gruppe anlegen
+              {t('Gruppe anlegen')}
             </button>
           )}
           {proxies.length > 0 && (
             <Link className="btn btn-secondary" href="/reverse-proxy/import">
               <FileInput size={16} />
-              Konfiguration importieren
+              {t('Konfiguration importieren')}
             </Link>
           )}
           <Link className="btn btn-secondary" href="/reverse-proxy/logs">
             <ScrollText size={16} />
-            Logs
+            {t('Logs')}
           </Link>
           <button className="btn btn-secondary" onClick={refresh} disabled={refreshing}>
             {refreshing ? <Loader2 size={16} className="spin" /> : <RefreshCw size={16} />}
-            Aktualisieren
+            {t('Aktualisieren')}
           </button>
         </div>
       </div>
@@ -249,10 +251,12 @@ export default function ReverseProxyPage() {
       ) : proxies.length === 0 ? (
         <div className="empty-state">
           <Network size={40} />
-          <h3>HAProxy nicht gefunden</h3>
+          <h3>{t('HAProxy nicht gefunden')}</h3>
           <p>
-            Diese Seite liest die Konfiguration unter <code>/etc/haproxy/haproxy.cfg</code>. Ob
-            HAProxy läuft, steht in der <Link href="/dashboard">Übersicht</Link>.
+            {rich('Diese Seite liest die Konfiguration unter {path}. Ob HAProxy läuft, steht in der {overview}.', {
+              path: <code>/etc/haproxy/haproxy.cfg</code>,
+              overview: <Link href="/dashboard">{t('Übersicht')}</Link>,
+            })}
           </p>
         </div>
       ) : (
@@ -261,24 +265,25 @@ export default function ReverseProxyPage() {
             {noGroups ? (
               <div className="empty-state">
                 <FolderPlus size={40} />
-                <h3>Noch keine Gruppe</h3>
+                <h3>{t('Noch keine Gruppe')}</h3>
                 <p>
-                  Eine Gruppe fasst Ziele zusammen, etwa „Websites“ oder „Intern“. Jedes Ziel gehört
-                  in eine Gruppe. Legen Sie deshalb zuerst eine Gruppe an.
+                  {t('Eine Gruppe fasst Ziele zusammen, etwa „Websites“ oder „Intern“. Jedes Ziel gehört in eine Gruppe. Legen Sie deshalb zuerst eine Gruppe an.')}
                 </p>
                 <button className="btn btn-primary" onClick={() => setNewScope('')}>
                   <FolderPlus size={16} />
-                  Gruppe anlegen
+                  {t('Gruppe anlegen')}
                 </button>
               </div>
             ) : (
               <>
                 <div className="section-header">
                   <h2 className="section-title">
-                    Gruppen
-                    <span className="section-count">{total} Ziele</span>
+                    {t('Gruppen')}
+                    <span className="section-count">
+                      {plural(total, { one: '{count} Ziel', other: '{count} Ziele' })}
+                    </span>
                   </h2>
-                  <span className="section-hint">Die Marker-Blöcke der Konfiguration</span>
+                  <span className="section-hint">{t('Die Marker-Blöcke der Konfiguration')}</span>
                 </div>
                 <EntityGrid>
                   {/* Die Gruppe, an der gerade gearbeitet wird: dieselbe Stelle, an
@@ -289,11 +294,11 @@ export default function ReverseProxyPage() {
                     <EntityCard
                       icon={<Loader2 size={17} className="spin" />}
                       name={pendingPage?.title ?? scopeLabel(pendingScope.name)}
-                      subtitle="Gruppe"
+                      subtitle={t('Gruppe')}
                       tone={pendingScope.action === 'remove' ? 'danger' : undefined}
                     >
-                      <EntityField label="Status">
-                        {pendingScope.action === 'add' ? 'Wird angelegt…' : 'Wird entfernt…'}
+                      <EntityField label={t('Status')}>
+                        {pendingScope.action === 'add' ? t('Wird angelegt…') : t('Wird entfernt…')}
                       </EntityField>
                     </EntityCard>
                   )}
@@ -314,16 +319,17 @@ export default function ReverseProxyPage() {
                         <EntityCard
                           icon={<Globe size={17} />}
                           name={page.title}
-                          subtitle="Gruppe"
+                          subtitle={t('Gruppe')}
                           badge={<ChevronRight size={16} className="entity-card-chevron" />}
                         >
-                          <EntityField label="Einträge">
+                          <EntityField label={t('Einträge')}>
                             {count === 0
-                              ? 'noch keiner'
+                              ? t('noch keiner')
                               : [
-                                  services > 0 && (services === 1 ? '1 Dienst' : `${services} Dienste`),
+                                  services > 0 &&
+                                    plural(services, { one: '{count} Dienst', other: '{count} Dienste' }),
                                   streams > 0 &&
-                                    (streams === 1 ? '1 TCP-Port' : `${streams} TCP-Ports`),
+                                    plural(streams, { one: '{count} TCP-Port', other: '{count} TCP-Ports' }),
                                 ]
                                   .filter(Boolean)
                                   .join(', ')}
@@ -332,9 +338,12 @@ export default function ReverseProxyPage() {
                             <EntityTags>
                               <EntityTag
                                 icon={<ShieldCheck size={13} />}
-                                tooltip={`HAPM ist über ein Ziel dieser Gruppe erreichbar (${page.surface.url}). Sie lässt sich nicht entfernen.`}
+                                tooltip={t(
+                                  'HAPM ist über ein Ziel dieser Gruppe erreichbar ({url}). Sie lässt sich nicht entfernen.',
+                                  { url: page.surface.url }
+                                )}
                               >
-                                <span>Oberfläche von HAPM</span>
+                                <span>{t('Oberfläche von HAPM')}</span>
                               </EntityTag>
                             </EntityTags>
                           )}
@@ -350,11 +359,10 @@ export default function ReverseProxyPage() {
               <div className="form-note" style={{ marginTop: 12 }}>
                 <Info size={14} />
                 <span>
-                  {unmanaged === 1
-                    ? 'Ein Eintrag steht außerhalb der verwalteten Blöcke'
-                    : `${unmanaged} Einträge stehen außerhalb der verwalteten Blöcke`}{' '}
-                  und gehört damit zu keiner Gruppe. Sie werden hier nicht angezeigt und nicht
-                  angefasst. Wichtig ist nur, dass es sie gibt: ihre Domains sind vergeben.
+                  {plural(unmanaged, {
+                    one: 'Ein Eintrag steht außerhalb der verwalteten Blöcke und gehört damit zu keiner Gruppe. Er wird hier nicht angezeigt und nicht angefasst. Wichtig ist nur, dass es ihn gibt: seine Domains sind vergeben.',
+                    other: '{count} Einträge stehen außerhalb der verwalteten Blöcke und gehören damit zu keiner Gruppe. Sie werden hier nicht angezeigt und nicht angefasst. Wichtig ist nur, dass es sie gibt: ihre Domains sind vergeben.',
+                  })}
                 </span>
               </div>
             )}
@@ -363,7 +371,7 @@ export default function ReverseProxyPage() {
           <div className="sys-block">
             <div className="section-header">
               <h2 className="section-title">HAProxy</h2>
-              <span className="section-hint">Was die laufende Instanz über sich sagt</span>
+              <span className="section-hint">{t('Was die laufende Instanz über sich sagt')}</span>
             </div>
             <EntityGrid>
               {proxies.map((proxy) => (
@@ -371,14 +379,14 @@ export default function ReverseProxyPage() {
                   key={proxy.$id}
                   icon={<Network size={17} />}
                   name={proxy.name}
-                  subtitle="Dieser Server"
+                  subtitle={t('Dieser Server')}
                   badge={
                     <span
                       className={`badge-status ${proxy.error ? 'badge-danger' : 'badge-success'}`}
                       data-tooltip={proxy.version ? `HAProxy ${proxy.version}` : undefined}
                     >
                       {proxy.error
-                        ? 'Fehler'
+                        ? t('Fehler')
                         : proxy.version
                           ? `HAProxy ${shortVersion(proxy.version)}`
                           : 'HAProxy'}
@@ -386,29 +394,35 @@ export default function ReverseProxyPage() {
                   }
                 >
                   <EntityTags>
-                    <EntityTag tooltip="Weichen in der HAProxy-Konfiguration">
-                      <span>{proxy.services.length} Ziele</span>
+                    <EntityTag tooltip={t('Weichen in der HAProxy-Konfiguration')}>
+                      <span>{plural(proxy.services.length, { one: '{count} Ziel', other: '{count} Ziele' })}</span>
                     </EntityTag>
                     {/* Nur, wenn es welche gibt: „0 TCP-Ports" auf jeder Karte
                         wäre eine Zeile, die nichts beantwortet. */}
                     {proxy.streams.length > 0 && (
-                      <EntityTag tooltip="Durchgereichte Ports dieses Servers">
-                        <span>{proxy.streams.length} TCP-Ports</span>
+                      <EntityTag tooltip={t('Durchgereichte Ports dieses Servers')}>
+                        <span>
+                          {plural(proxy.streams.length, { one: '{count} TCP-Port', other: '{count} TCP-Ports' })}
+                        </span>
                       </EntityTag>
                     )}
                     {!proxy.error && !proxy.acmeReady && (
                       <EntityTag
-                        tooltip="Ohne acme.sh und Zertifikatsverzeichnis lässt sich kein Ziel mit Domain anlegen. HAPM richtet beides beim Start selbst ein."
+                        tooltip={t(
+                          'Ohne acme.sh und Zertifikatsverzeichnis lässt sich kein Ziel mit Domain anlegen. HAPM richtet beides beim Start selbst ein.'
+                        )}
                         danger
                       >
-                        <span>acme.sh fehlt</span>
+                        <span>{t('acme.sh fehlt')}</span>
                       </EntityTag>
                     )}
                   </EntityTags>
                   {proxy.error && (
-                    <EntityField label="Fehler">
-                      {proxy.error} Der Zustand von HAProxy steht in der{' '}
-                      <Link href="/dashboard">Übersicht</Link>.
+                    <EntityField label={t('Fehler')}>
+                      {proxy.error}{' '}
+                      {rich('Der Zustand von HAProxy steht in der {overview}.', {
+                        overview: <Link href="/dashboard">{t('Übersicht')}</Link>,
+                      })}
                     </EntityField>
                   )}
                 </EntityCard>
@@ -425,13 +439,13 @@ export default function ReverseProxyPage() {
         >
           <div className="modal">
             <div className="modal-header">
-              <h2 className="modal-title">Gruppe anlegen</h2>
+              <h2 className="modal-title">{t('Gruppe anlegen')}</h2>
               <button
                 type="button"
                 className="modal-close"
                 onClick={() => setNewScope(null)}
                 disabled={creating}
-                aria-label="Dialog schließen"
+                aria-label={t('Dialog schließen')}
               >
                 <X size={18} />
               </button>
@@ -446,7 +460,7 @@ export default function ReverseProxyPage() {
                 {formError && <div className="alert alert-danger">{formError}</div>}
 
                 <div className="form-group">
-                  <label className="form-label">Name</label>
+                  <label className="form-label">{t('Name')}</label>
                   <input
                     className="form-input"
                     value={newScope}
@@ -457,18 +471,20 @@ export default function ReverseProxyPage() {
                     required
                   />
                   <span className="form-hint">
-                    Nur a-z, 0-9, _ und -. Der Name steht danach im Marker und lässt sich nicht
-                    umbenennen: dafür gibt es Anlegen und Entfernen.
+                    {t('Nur a-z, 0-9, _ und -. Der Name steht danach im Marker und lässt sich nicht umbenennen: dafür gibt es Anlegen und Entfernen.')}
                   </span>
                 </div>
 
                 <div className="form-note">
                   <Info size={14} />
                   <span>
-                    Angelegt werden zwei Marker-Paare in der Konfiguration (
-                    <code>{`# BEGIN AUTO ${(newScope || 'name').toUpperCase()} SERVICES`}</code> und
-                    dasselbe für <code>BACKENDS</code>). Bestehende Einträge werden dabei nicht
-                    angefasst.
+                    {rich(
+                      'Angelegt werden zwei Marker-Paare in der Konfiguration ({services} und dasselbe für {backends}). Bestehende Einträge werden dabei nicht angefasst.',
+                      {
+                        services: <code>{`# BEGIN AUTO ${(newScope || 'name').toUpperCase()} SERVICES`}</code>,
+                        backends: <code>BACKENDS</code>,
+                      }
+                    )}
                   </span>
                 </div>
               </div>
@@ -479,11 +495,11 @@ export default function ReverseProxyPage() {
                   onClick={() => setNewScope(null)}
                   disabled={creating}
                 >
-                  Abbrechen
+                  {t('Abbrechen')}
                 </button>
                 <button type="submit" className="btn btn-primary" disabled={creating}>
                   {creating ? <Loader2 size={16} className="spin" /> : <FolderPlus size={16} />}
-                  Anlegen
+                  {t('Anlegen')}
                 </button>
               </div>
             </form>

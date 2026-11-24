@@ -22,6 +22,8 @@
  * lesbar daneben stehen.
  */
 
+import { interpolate, msg, msgid, type Message, type Params } from '../i18n/translate';
+
 export const HAPROXY_CFG = '/etc/haproxy/haproxy.cfg';
 export const HAPROXY_CERT_DIR = '/etc/haproxy/certs';
 
@@ -241,38 +243,48 @@ const TRANSPORT_HEADERS = new Set([
   'trailer',
 ]);
 
+/** Deutsche Schlüssel (`msgid`), der Dialog übersetzt sie beim Zeigen. */
 export const HEADER_DIRECTION_LABELS: Record<HeaderDirection, string> = {
-  request: 'Anfrage',
-  response: 'Antwort',
+  request: msgid('Anfrage'),
+  response: msgid('Antwort'),
 };
 
-export function validateHeaderRule(rule: HeaderRule): string | null {
-  if (!HEADER_NAME.test(rule.name)) {
-    return `Ungültiger Header-Name: „${rule.name}". Erlaubt sind Buchstaben, Ziffern und der Bindestrich.`;
+export function validateHeaderRule(rule: HeaderRule): Message | null {
+  const name = rule.name;
+  if (!HEADER_NAME.test(name)) {
+    return msg('Ungültiger Header-Name: „{name}". Erlaubt sind Buchstaben, Ziffern und der Bindestrich.', { name });
   }
-  if (rule.name.length > HEADER_NAME_MAX) {
-    return `Der Header-Name ${rule.name} ist länger als ${HEADER_NAME_MAX} Zeichen.`;
+  if (name.length > HEADER_NAME_MAX) {
+    return msg('Der Header-Name {name} ist länger als {max} Zeichen.', { name, max: HEADER_NAME_MAX });
   }
-  if (TRANSPORT_HEADERS.has(rule.name.toLowerCase())) {
-    return `Der Header ${rule.name} gehört zur Übertragung selbst und lässt sich nicht fest setzen.`;
+  if (TRANSPORT_HEADERS.has(name.toLowerCase())) {
+    return msg('Der Header {name} gehört zur Übertragung selbst und lässt sich nicht fest setzen.', { name });
   }
-  if (rule.value === '') return `Der Header ${rule.name} braucht einen Wert.`;
+  if (rule.value === '') return msg('Der Header {name} braucht einen Wert.', { name });
   if (rule.value.length > HEADER_VALUE_MAX) {
-    return `Der Wert von ${rule.name} ist länger als ${HEADER_VALUE_MAX} Zeichen.`;
+    return msg('Der Wert von {name} ist länger als {max} Zeichen.', { name, max: HEADER_VALUE_MAX });
   }
   if (!HEADER_VALUE.test(rule.value)) {
-    return `Der Wert von ${rule.name} enthält ein Zeichen, das hier nicht geht. Erlaubt sind druckbare ASCII-Zeichen, keine Umlaute und keine Zeilenumbrüche.`;
+    return msg(
+      'Der Wert von {name} enthält ein Zeichen, das hier nicht geht. Erlaubt sind druckbare ASCII-Zeichen, keine Umlaute und keine Zeilenumbrüche.',
+      { name }
+    );
   }
   if (rule.value !== rule.value.trim()) {
-    return `Der Wert von ${rule.name} beginnt oder endet mit einem Leerzeichen.`;
+    return msg('Der Wert von {name} beginnt oder endet mit einem Leerzeichen.', { name });
   }
   return null;
 }
 
-function validateHeaders(rules: readonly HeaderRule[], direction: HeaderDirection): string | null {
-  const where = `den Headern der ${HEADER_DIRECTION_LABELS[direction]}`;
+function validateHeaders(rules: readonly HeaderRule[], direction: HeaderDirection): Message | null {
+  const request = direction === 'request';
   if (rules.length > HEADERS_MAX) {
-    return `In ${where} stehen mehr als ${HEADERS_MAX} Einträge.`;
+    return msg(
+      request
+        ? 'In den Headern der Anfrage stehen mehr als {max} Einträge.'
+        : 'In den Headern der Antwort stehen mehr als {max} Einträge.',
+      { max: HEADERS_MAX }
+    );
   }
   const seen = new Set<string>();
   for (const rule of rules) {
@@ -280,7 +292,14 @@ function validateHeaders(rules: readonly HeaderRule[], direction: HeaderDirectio
     if (invalid) return invalid;
     // `set-header` ersetzt: der zweite Eintrag überschriebe den ersten.
     const key = rule.name.toLowerCase();
-    if (seen.has(key)) return `Der Header ${rule.name} steht doppelt in ${where}.`;
+    if (seen.has(key)) {
+      return msg(
+        request
+          ? 'Der Header {name} steht doppelt in den Headern der Anfrage.'
+          : 'Der Header {name} steht doppelt in den Headern der Antwort.',
+        { name: rule.name }
+      );
+    }
     seen.add(key);
   }
   return null;
@@ -388,17 +407,17 @@ const NEXTCLOUD_HEADERS: HeaderRule[] = [
 export const HEADER_SUGGESTIONS: { label: string; hint: string; headers: HeaderRule[] }[] = [
   {
     label: 'Nextcloud',
-    hint: 'Die beiden Header, die Nextcloud in seiner Sicherheitsprüfung erwartet.',
+    hint: msgid('Die beiden Header, die Nextcloud in seiner Sicherheitsprüfung erwartet.'),
     headers: NEXTCLOUD_HEADERS,
   },
   {
     label: 'X-Frame-Options',
-    hint: 'Die Seite lässt sich nicht in fremde Seiten einbetten.',
+    hint: msgid('Die Seite lässt sich nicht in fremde Seiten einbetten.'),
     headers: [{ name: 'X-Frame-Options', value: 'SAMEORIGIN' }],
   },
   {
     label: 'X-Robots-Tag: noindex',
-    hint: 'Suchmaschinen nehmen die Seite nicht in ihren Index auf.',
+    hint: msgid('Suchmaschinen nehmen die Seite nicht in ihren Index auf.'),
     headers: [{ name: 'X-Robots-Tag', value: 'noindex' }],
   },
 ];
@@ -413,11 +432,11 @@ export const LEGACY_PRESETS = ['default', 'nextcloud', 'coolify'] as const;
 /** Die Meldung zu einem `preset`, das es nie gab. `null`: keins geschickt oder
  *  ein bekanntes. Nicht auf „keins" gebogen: das wäre eine Entscheidung, die
  *  der Aufrufer nicht getroffen hat. */
-export function legacyPresetError(body: unknown): string | null {
+export function legacyPresetError(body: unknown): Message | null {
   const preset = String((body as Record<string, unknown> | null)?.preset ?? '').trim();
   return preset === '' || (LEGACY_PRESETS as readonly string[]).includes(preset)
     ? null
-    : 'Unbekanntes Preset.';
+    : msg('Unbekanntes Preset.');
 }
 
 /* ── Lastverteilung ──
@@ -448,8 +467,8 @@ export type HaproxyBalance = (typeof HAPROXY_BALANCE)[number];
  * dieselbe Überlegung wie bei den Fehlermeldungen, die den HAProxy-Text
  * durchreichen statt ihn zu verdeutschen.
  *
- * Die Erklärung dazu steht auf Deutsch in `BALANCE_HINTS`, hinter dem „i" am
- * Feld. Der Name muss googelbar sein, der Satz daneben nicht.
+ * Die Erklärung dazu steht in `BALANCE_HINTS`, hinter dem „i" am Feld, und
+ * wird übersetzt. Der Name muss googelbar sein, der Satz daneben nicht.
  */
 export const BALANCE_LABELS: Record<HaproxyBalance, string> = {
   roundrobin: 'Round Robin',
@@ -462,15 +481,21 @@ export const BALANCE_LABELS: Record<HaproxyBalance, string> = {
 /** Der Satz hinter dem „i". Er nennt die Zeile mit, die geschrieben wird —
  *  danach lässt sich in der HAProxy-Dokumentation suchen. */
 export const BALANCE_HINTS: Record<HaproxyBalance, string> = {
-  roundrobin:
-    'balance roundrobin: jede Anfrage an das nächste Ziel, der Reihe nach. Der Normalfall für Webserver, die untereinander nichts teilen müssen.',
-  leastconn:
-    'balance leastconn: immer an das Ziel mit den wenigsten offenen Verbindungen. Passt, wenn Anfragen unterschiedlich lange dauern — etwa bei Downloads oder langen Abfragen.',
-  source:
-    'balance source: aus der Quell-IP wird ein Hash, und der bestimmt das Ziel. Dieselbe Adresse landet damit immer beim selben Server, ohne Cookie. Die Bindung bricht allerdings, sobald ein Ziel ausfällt oder dazukommt — dann rechnet der Hash für alle neu.',
-  uri: 'balance uri: aus dem angefragten Pfad wird ein Hash. Derselbe Pfad landet immer beim selben Ziel; gedacht für Caches vor statischen Inhalten.',
-  random:
-    'balance random: ein zufällig gewähltes Ziel. Verteilt auch dann gleichmäßig, wenn mehrere Proxys davorstehen und Round Robin bei jedem für sich läuft.',
+  roundrobin: msgid(
+    'balance roundrobin: jede Anfrage an das nächste Ziel, der Reihe nach. Der Normalfall für Webserver, die untereinander nichts teilen müssen.'
+  ),
+  leastconn: msgid(
+    'balance leastconn: immer an das Ziel mit den wenigsten offenen Verbindungen. Passt, wenn Anfragen unterschiedlich lange dauern — etwa bei Downloads oder langen Abfragen.'
+  ),
+  source: msgid(
+    'balance source: aus der Quell-IP wird ein Hash, und der bestimmt das Ziel. Dieselbe Adresse landet damit immer beim selben Server, ohne Cookie. Die Bindung bricht allerdings, sobald ein Ziel ausfällt oder dazukommt — dann rechnet der Hash für alle neu.'
+  ),
+  uri: msgid(
+    'balance uri: aus dem angefragten Pfad wird ein Hash. Derselbe Pfad landet immer beim selben Ziel; gedacht für Caches vor statischen Inhalten.'
+  ),
+  random: msgid(
+    'balance random: ein zufällig gewähltes Ziel. Verteilt auch dann gleichmäßig, wenn mehrere Proxys davorstehen und Round Robin bei jedem für sich läuft.'
+  ),
 };
 
 /**
@@ -1073,13 +1098,14 @@ export interface CreateServiceInput {
  * Die Eingabe prüfen. Gibt die Meldung zurück, die der Benutzer lesen soll,
  * oder `null`.
  *
- * Ein String statt eines geworfenen Fehlers, weil dieselbe Funktion im Browser
- * läuft: `ApiError` hängt über `lib/api.ts` an `next/server` und hätte in einer
- * Client-Komponente nichts zu suchen. Formular und Route prüfen damit dieselbe
- * Eingabe mit derselben Funktion — zwei Regelwerke wären ein Dialog, der etwas
- * durchlässt, was die Route danach ablehnt.
+ * Eine `Message` statt eines geworfenen Fehlers, weil dieselbe Funktion im
+ * Browser läuft: `ApiError` hängt über `lib/api.ts` an `next/server` und hätte
+ * in einer Client-Komponente nichts zu suchen. Formular und Route prüfen damit
+ * dieselbe Eingabe mit derselben Funktion — zwei Regelwerke wären ein Dialog,
+ * der etwas durchlässt, was die Route danach ablehnt. Der Dialog zeigt sie mit
+ * `t()`, die Route wirft sie als `ApiError`.
  */
-export function validateCreateInput(input: CreateServiceInput): string | null {
+export function validateCreateInput(input: CreateServiceInput): Message | null {
   return validateService(input, true);
 }
 
@@ -1088,16 +1114,18 @@ export function validateCreateInput(input: CreateServiceInput): string | null {
  * „wird beim Anlegen vergeben" (`assignServiceId`). Eine mitgegebene wird
  * geprüft wie immer.
  */
-export function validateNewService(input: CreateServiceInput): string | null {
+export function validateNewService(input: CreateServiceInput): Message | null {
   return validateService(input, input.id !== '');
 }
 
-function validateService(input: CreateServiceInput, idGiven: boolean): string | null {
+function validateService(input: CreateServiceInput, idGiven: boolean): Message | null {
   // Nur die Form. OB es den Bereich gibt, weiß erst `addService` — dort liegt
   // die Konfiguration vor, und sie ist die einzige Wahrheit darüber.
-  if (!SCOPE_NAME.test(input.scope)) return 'Es wurde keine Gruppe ausgewählt.';
+  if (!SCOPE_NAME.test(input.scope)) return msg('Es wurde keine Gruppe ausgewählt.');
   if (idGiven && !isValidServiceId(input.id)) {
-    return 'Die Dienst-ID darf nur a-z, 0-9 und _ enthalten und muss mit einem Buchstaben oder einer Ziffer beginnen.';
+    return msg(
+      'Die Dienst-ID darf nur a-z, 0-9 und _ enthalten und muss mit einem Buchstaben oder einer Ziffer beginnen.'
+    );
   }
   const headersInvalid =
     validateHeaders(input.requestHeaders, 'request') ??
@@ -1106,23 +1134,23 @@ function validateService(input: CreateServiceInput, idGiven: boolean): string | 
   // Der Wert geht als Wort in eine Zeile der Konfiguration. Eine Allow-Liste
   // und kein Freitextfeld, aus demselben Grund wie bei den DNS-Anbietern.
   if (input.balance !== null && !HAPROXY_BALANCE.includes(input.balance)) {
-    return 'Unbekanntes Verteilverfahren.';
+    return msg('Unbekanntes Verteilverfahren.');
   }
 
-  if (input.domains.length === 0) return 'Mindestens eine Domain wird benötigt.';
+  if (input.domains.length === 0) return msg('Mindestens eine Domain wird benötigt.');
   for (const domain of input.domains) {
     // Ein Stern, der nicht ganz vorn und nicht vor einem Punkt steht, ist keine
     // Wildcard, sondern ein Tippfehler. Die eigene Meldung steht daneben, damit
     // sie den Grund nennt statt nur „ungültig".
     if (domain.includes('*') && !isWildcardDomain(domain)) {
-      return `Eine Wildcard wird als *.beispiel.example geschrieben: ${domain}`;
+      return msg('Eine Wildcard wird als *.beispiel.example geschrieben: {domain}', { domain });
     }
-    if (!isValidDomain(domain)) return `Ungültiger Domainname: ${domain}`;
+    if (!isValidDomain(domain)) return msg('Ungültiger Domainname: {domain}', { domain });
   }
   const seenDomains = new Set<string>();
   for (const domain of input.domains) {
     const key = domain.toLowerCase();
-    if (seenDomains.has(key)) return `Die Domain ${domain} steht doppelt in der Liste.`;
+    if (seenDomains.has(key)) return msg('Die Domain {domain} steht doppelt in der Liste.', { domain });
     seenDomains.add(key);
   }
 
@@ -1131,33 +1159,40 @@ function validateService(input: CreateServiceInput, idGiven: boolean): string | 
    * Backend, dessen `server`-Zeilen nie zum Zug kommen — die Datei sähe richtig
    * aus, und niemand fände den Grund, warum das Ziel nicht angesprochen wird. */
   if (input.redirect) {
-    if (input.redirect.to === '') return 'Die Weiterleitung braucht ein Ziel.';
+    if (input.redirect.to === '') return msg('Die Weiterleitung braucht ein Ziel.');
     if (!isValidRedirectUrl(input.redirect.to)) {
-      return `Ungültiges Weiterleitungsziel: ${input.redirect.to}. Erwartet wird eine vollständige Adresse wie https://beispiel.example.`;
+      return msg(
+        'Ungültiges Weiterleitungsziel: {target}. Erwartet wird eine vollständige Adresse wie https://beispiel.example.',
+        { target: input.redirect.to }
+      );
     }
     if (input.servers.length > 0) {
-      return 'Eine Weiterleitung hat kein Backend-Ziel. Entweder die Domains gehen an einen Server, oder sie werden weitergeleitet.';
+      return msg(
+        'Eine Weiterleitung hat kein Backend-Ziel. Entweder die Domains gehen an einen Server, oder sie werden weitergeleitet.'
+      );
     }
     if (input.routes.length > 0) {
-      return 'Eine Weiterleitung und Pfad-Regeln schließen sich aus: es gibt kein Backend, auf das eine Regel zeigen könnte.';
+      return msg(
+        'Eine Weiterleitung und Pfad-Regeln schließen sich aus: es gibt kein Backend, auf das eine Regel zeigen könnte.'
+      );
     }
     // Die Weiterleitung beantwortet HAProxy selbst, und auf eigene Antworten
     // wirken `http-response`-Regeln nicht (geprüft gegen 2.4 und 3.0). Die
     // Zeilen stünden wirkungslos da, also ablehnen, statt sie still wegzulassen.
     if (addonLines(input).length > 0) {
-      return 'Header und lange Verbindungen gehören zu einem Backend mit Zielen. Eine Weiterleitung hat keine.';
+      return msg('Header und lange Verbindungen gehören zu einem Backend mit Zielen. Eine Weiterleitung hat keine.');
     }
     // Beide beschreiben, wie Anfragen auf Ziele verteilt werden. Eine
     // Weiterleitung hat keine — die Zeilen stünden wirkungslos da und kämen
     // beim Zurücklesen als „von Hand geändert" wieder.
     if (input.balance !== null) {
-      return 'Ein Verteilverfahren gehört zu einem Backend mit Zielen. Eine Weiterleitung hat keine.';
+      return msg('Ein Verteilverfahren gehört zu einem Backend mit Zielen. Eine Weiterleitung hat keine.');
     }
     if (input.sticky) {
-      return 'Eine Sitzungsbindung gehört zu einem Backend mit Zielen. Eine Weiterleitung hat keine.';
+      return msg('Eine Sitzungsbindung gehört zu einem Backend mit Zielen. Eine Weiterleitung hat keine.');
     }
   } else {
-    const serversInvalid = validateServers(input.servers, 'Backend-Ziel');
+    const serversInvalid = validateServers(input.servers, null);
     if (serversInvalid) return serversInvalid;
   }
 
@@ -1170,10 +1205,10 @@ function validateService(input: CreateServiceInput, idGiven: boolean): string | 
     // ein Dienst auf `*.kunde.example` bedient `intern.kunde.example`, und genau die
     // einzeln zu sperren ist der Fall, für den es Wildcards gibt.
     if (!ownsDomain(input.domains, domain)) {
-      return `Die Domain ${domain} gehört nicht zu diesem Eintrag und lässt sich hier nicht sperren.`;
+      return msg('Die Domain {domain} gehört nicht zu diesem Eintrag und lässt sich hier nicht sperren.', { domain });
     }
     if (seenLocked.has(domain.toLowerCase())) {
-      return `Die Domain ${domain} steht doppelt in der Sperrliste.`;
+      return msg('Die Domain {domain} steht doppelt in der Sperrliste.', { domain });
     }
     seenLocked.add(domain.toLowerCase());
   }
@@ -1182,7 +1217,7 @@ function validateService(input: CreateServiceInput, idGiven: boolean): string | 
     // Das Passwort gehört zur Sperre und nicht daneben: ohne gesperrte Domain
     // stünde ein Hash in der Datei, den keine Regel benutzt.
     if (input.lockedDomains.length === 0) {
-      return 'Eine Passwortsperre braucht mindestens eine gesperrte Domain.';
+      return msg('Eine Passwortsperre braucht mindestens eine gesperrte Domain.');
     }
     // Salz, Hash und Cookie-Wert gehen als Wörter in Zeilen der Konfiguration.
     // Geprüft wird die Form, aus demselben Grund wie bei `balance`.
@@ -1191,35 +1226,39 @@ function validateService(input: CreateServiceInput, idGiven: boolean): string | 
       input.passwordLock !== INHERIT_LOCK &&
       !isValidPasswordLock(input.passwordLock)
     ) {
-      return 'Die Angaben der Passwortsperre haben nicht die erwartete Form.';
+      return msg('Die Angaben der Passwortsperre haben nicht die erwartete Form.');
     }
   }
 
   const seenRouteNames = new Set<string>();
   const seenPaths = new Set<string>();
   for (const route of input.routes) {
-    if (!isValidRouteName(route.name)) {
-      return `Ungültiger Name der Pfad-Regel: „${route.name}". Erlaubt sind a-z, 0-9 und _.`;
+    const name = route.name;
+    if (!isValidRouteName(name)) {
+      return msg('Ungültiger Name der Pfad-Regel: „{name}". Erlaubt sind a-z, 0-9 und _.', { name });
     }
-    if (seenRouteNames.has(route.name)) {
-      return `Die Pfad-Regel „${route.name}" steht doppelt. Aus zwei gleichen Namen würde ein Backend-Name.`;
+    if (seenRouteNames.has(name)) {
+      return msg('Die Pfad-Regel „{name}" steht doppelt. Aus zwei gleichen Namen würde ein Backend-Name.', { name });
     }
-    seenRouteNames.add(route.name);
+    seenRouteNames.add(name);
 
     if (route.paths.length === 0) {
-      return `Die Pfad-Regel „${route.name}" hat keinen Pfad. Ohne Pfad greift sie nie.`;
+      return msg('Die Pfad-Regel „{name}" hat keinen Pfad. Ohne Pfad greift sie nie.', { name });
     }
     for (const path of route.paths) {
       if (!isValidRoutePath(path)) {
-        return `Ungültiger Pfad in „${route.name}": ${path}. Er muss mit / beginnen und darf kein Leerzeichen enthalten.`;
+        return msg(
+          'Ungültiger Pfad in „{name}": {path}. Er muss mit / beginnen und darf kein Leerzeichen enthalten.',
+          { name, path }
+        );
       }
       // Zwei Regeln mit demselben Pfad heißen: die zweite greift nie, weil
       // HAProxy die erste passende Weiche nimmt.
-      if (seenPaths.has(path)) return `Der Pfad ${path} steht in zwei Regeln.`;
+      if (seenPaths.has(path)) return msg('Der Pfad {path} steht in zwei Regeln.', { path });
       seenPaths.add(path);
     }
 
-    const routeServers = validateServers(route.servers, `Ziel der Pfad-Regel „${route.name}"`);
+    const routeServers = validateServers(route.servers, name);
     if (routeServers) return routeServers;
   }
 
@@ -1227,26 +1266,43 @@ function validateService(input: CreateServiceInput, idGiven: boolean): string | 
 }
 
 /** Nimmt beide Sorten Ziel: das des Backends (mit Gewichtung) und das einer
- *  Pfad-Regel (ohne). Geprüft wird sie nur, wo es sie gibt. */
+ *  Pfad-Regel (ohne). Geprüft wird sie nur, wo es sie gibt. `route` ist der
+ *  Name der Pfad-Regel, `null` beim Backend. Je Sorte ein eigener Satz und
+ *  keine eingesetzte Beschriftung: ein Schlüssel wird nicht zusammengesetzt. */
 function validateServers(
   servers: readonly { name: string; target: string; weight?: number | null }[],
-  label: string
-): string | null {
-  if (servers.length === 0) return `Mindestens ein ${label} wird benötigt.`;
+  route: string | null
+): Message | null {
+  if (servers.length === 0) {
+    return route === null
+      ? msg('Mindestens ein Backend-Ziel wird benötigt.')
+      : msg('Mindestens ein Ziel der Pfad-Regel „{route}" wird benötigt.', { route });
+  }
   const seenNames = new Set<string>();
   for (const server of servers) {
     if (server.name) {
-      if (!isValidBackendName(server.name)) return `Ungültiger Servername: ${server.name}`;
+      if (!isValidBackendName(server.name)) return msg('Ungültiger Servername: {name}', { name: server.name });
       if (seenNames.has(server.name)) {
-        return `Der Servername ${server.name} steht doppelt. HAProxy lehnt zwei gleich benannte Server in einem Backend ab.`;
+        return msg(
+          'Der Servername {name} steht doppelt. HAProxy lehnt zwei gleich benannte Server in einem Backend ab.',
+          { name: server.name }
+        );
       }
       seenNames.add(server.name);
     }
     if (!isValidBackendTarget(server.target)) {
-      return `Ungültiges ${label}: ${server.target}. Erwartet wird host:port.`;
+      return route === null
+        ? msg('Ungültiges Backend-Ziel: {target}. Erwartet wird host:port.', { target: server.target })
+        : msg('Ungültiges Ziel der Pfad-Regel „{route}": {target}. Erwartet wird host:port.', {
+            route,
+            target: server.target,
+          });
     }
     if (server.weight !== null && server.weight !== undefined && !isValidWeight(server.weight)) {
-      return `Ungültige Gewichtung für ${server.target}: ${server.weight}. HAProxy nimmt eine ganze Zahl von ${WEIGHT_MIN} bis ${WEIGHT_MAX}.`;
+      return msg(
+        'Ungültige Gewichtung für {target}: {weight}. HAProxy nimmt eine ganze Zahl von {min} bis {max}.',
+        { target: server.target, weight: server.weight, min: WEIGHT_MIN, max: WEIGHT_MAX }
+      );
     }
   }
   return null;
@@ -2468,19 +2524,19 @@ export const LOCK_PASSWORD_MAX = 128;
  * lesen soll, oder `null`. Hier und nicht bei der Hash-Bildung, weil Dialog und
  * Route dieselbe Funktion aufrufen.
  */
-export function validateLockPassword(password: string): string | null {
+export function validateLockPassword(password: string): Message | null {
   const length = [...password].length;
   if (length < LOCK_PASSWORD_MIN) {
-    return `Das Passwort der Sperre braucht mindestens ${LOCK_PASSWORD_MIN} Zeichen.`;
+    return msg('Das Passwort der Sperre braucht mindestens {min} Zeichen.', { min: LOCK_PASSWORD_MIN });
   }
   if (length > LOCK_PASSWORD_MAX) {
-    return `Das Passwort der Sperre darf höchstens ${LOCK_PASSWORD_MAX} Zeichen lang sein.`;
+    return msg('Das Passwort der Sperre darf höchstens {max} Zeichen lang sein.', { max: LOCK_PASSWORD_MAX });
   }
   // Ein Zeilenumbruch oder Tabulator lässt sich in ein Passwortfeld nicht
   // eintippen. Stünde er im Hash, käme nie jemand durch.
   const isControl = (ch: string) => ch.charCodeAt(0) < 0x20 || ch.charCodeAt(0) === 0x7f;
   if ([...password].some(isControl)) {
-    return 'Das Passwort der Sperre darf keine Steuerzeichen enthalten.';
+    return msg('Das Passwort der Sperre darf keine Steuerzeichen enthalten.');
   }
   return null;
 }
@@ -2574,7 +2630,7 @@ function passwordLockOf(input: CreateServiceInput): PasswordLock | null {
   if (input.passwordLock === INHERIT_LOCK) return null;
   if (input.passwordLock === KEEP_PASSWORD) {
     throw new HaproxyConfigError(
-      `Für die Passwortsperre von "${input.id}" ist kein Passwort gesetzt.`
+      msg('Für die Passwortsperre von "{id}" ist kein Passwort gesetzt.', { id: input.id })
     );
   }
   return input.lockedDomains.length > 0 ? input.passwordLock : null;
@@ -2786,18 +2842,24 @@ export function settingsEditable(settings: GlobalSettings): boolean {
  * Datei und wäre beim nächsten Lesen nicht mehr Teil des Blocks — alles
  * darunter ebenfalls nicht.
  */
-function badSettingsLine(line: string): string | null {
-  if (line.includes('\n')) return 'Eine Zeile darf keinen Zeilenumbruch enthalten.';
+function badSettingsLine(line: string): Message | null {
+  if (line.includes('\n')) return msg('Eine Zeile darf keinen Zeilenumbruch enthalten.');
   if (line.startsWith('#')) {
-    return `Kommentarzeilen gehen hier nicht: "${line}". Der Block endet am ersten Kommentar, alles darunter stünde danach außerhalb.`;
+    return msg(
+      'Kommentarzeilen gehen hier nicht: "{line}". Der Block endet am ersten Kommentar, alles darunter stünde danach außerhalb.',
+      { line }
+    );
   }
   if (SECTION_KEYWORDS.test(line)) {
-    return `"${line}" beginnt einen neuen Konfigurationsabschnitt und beendet damit den Block. Diese Zeile gehört an eine andere Stelle der Datei.`;
+    return msg(
+      '"{line}" beginnt einen neuen Konfigurationsabschnitt und beendet damit den Block. Diese Zeile gehört an eine andere Stelle der Datei.',
+      { line }
+    );
   }
   return null;
 }
 
-export function validateGlobalSettings(input: GlobalSettingsInput): string | null {
+export function validateGlobalSettings(input: GlobalSettingsInput): Message | null {
   for (const line of input.httpsLines) {
     const bad = badSettingsLine(line);
     if (bad) return bad;
@@ -2805,9 +2867,9 @@ export function validateGlobalSettings(input: GlobalSettingsInput): string | nul
   const seen = new Set<string>();
   for (const address of input.adminIps) {
     if (!isValidSourceAddress(address)) {
-      return `Keine gültige Adresse: ${address}. Erwartet wird eine IP oder ein Netz wie 10.0.0.0/8.`;
+      return msg('Keine gültige Adresse: {address}. Erwartet wird eine IP oder ein Netz wie 10.0.0.0/8.', { address });
     }
-    if (seen.has(address)) return `Die Adresse ${address} steht doppelt in der Liste.`;
+    if (seen.has(address)) return msg('Die Adresse {address} steht doppelt in der Liste.', { address });
     seen.add(address);
   }
   return null;
@@ -2827,14 +2889,19 @@ export function applyGlobalSettings(text: string, input: GlobalSettingsInput): s
   const current = parseGlobalSettings(text);
   if (current.httpsLines === null) {
     throw new HaproxyConfigError(
-      `In ${HAPROXY_CFG} fehlt die Zeile "${HTTPS_MARKER}". Ohne sie ist nicht bestimmbar, wo die globalen Einstellungen stehen.`
+      msg(
+        'In {file} fehlt die Zeile "{marker}". Ohne sie ist nicht bestimmbar, wo die globalen Einstellungen stehen.',
+        { file: HAPROXY_CFG, marker: HTTPS_MARKER }
+      )
     );
   }
 
   if (!current.adminEditable) {
     throw new HaproxyConfigError(
-      `"acl ${ADMIN_ACL} src …" steht mehr als einmal in ${HAPROXY_CFG}. HAProxy verodert die ` +
-        'Zeilen; sie zu einer zusammenzuschreiben wäre eine Änderung, die niemand angefordert hat.'
+      msg(
+        '"acl {acl} src …" steht mehr als einmal in {file}. HAProxy verodert die Zeilen; sie zu einer zusammenzuschreiben wäre eine Änderung, die niemand angefordert hat.',
+        { acl: ADMIN_ACL, file: HAPROXY_CFG }
+      )
     );
   }
   // Die Liste zu leeren, während ein Eintrag auf sie zeigt, macht die Datei
@@ -2842,8 +2909,10 @@ export function applyGlobalSettings(text: string, input: GlobalSettingsInput): s
   // gelaufen ist, und die Meldung nennt nur „unknown acl".
   if (input.adminIps.length === 0 && current.lockedServices.length > 0) {
     throw new HaproxyConfigError(
-      `Die Admin-IPs lassen sich nicht leeren, solange ${current.lockedServices.length} Eintrag/Einträge ` +
-        `darauf gesperrt sind: ${current.lockedServices.join(', ')}. Erst dort die Sperre lösen.`
+      msg(
+        'Die Admin-IPs lassen sich nicht leeren, solange {count} Eintrag/Einträge darauf gesperrt sind: {names}. Erst dort die Sperre lösen.',
+        { count: current.lockedServices.length, names: current.lockedServices.join(', ') }
+      )
     );
   }
 
@@ -2871,8 +2940,10 @@ export function applyGlobalSettings(text: string, input: GlobalSettingsInput): s
     const anchor = adminAnchor(lines);
     if (anchor === null) {
       throw new HaproxyConfigError(
-        `In ${HAPROXY_CFG} war keine Stelle zu finden, an die "acl ${ADMIN_ACL}" gehört: ` +
-          'gesucht wird die letzte bind-Zeile des Frontends, in dem die Dienste stehen.'
+        msg(
+          'In {file} war keine Stelle zu finden, an die "acl {acl}" gehört: gesucht wird die letzte bind-Zeile des Frontends, in dem die Dienste stehen.',
+          { file: HAPROXY_CFG, acl: ADMIN_ACL }
+        )
       );
     }
     const indent = /^\s*/.exec(lines[anchor])?.[0] ?? '    ';
@@ -2889,11 +2960,25 @@ export function applyGlobalSettings(text: string, input: GlobalSettingsInput): s
   return lines.join('\n');
 }
 
-/** Der Fehler, den eine Textänderung werfen kann. Trägt eine Meldung für den Benutzer. */
-export class HaproxyConfigError extends Error {
-  constructor(message: string) {
-    super(message);
+/**
+ * Der Fehler, den eine Textänderung werfen kann. Trägt eine Meldung für den Benutzer.
+ *
+ * Ist selbst eine `Message` (`text`, `params`): die Route reicht ihn als
+ * `new ApiError(err, 409)` weiter und übersetzt ihn dort. `message` bleibt der
+ * deutsche Text samt Werten. Nicht von `ApiError` abgeleitet, weil diese Datei
+ * auch im Browser läuft und `lib/api.ts` an `next/server` hängt.
+ */
+export class HaproxyConfigError extends Error implements Message {
+  readonly text: string;
+  readonly params?: Params;
+
+  constructor(message: string | Message) {
+    const text = typeof message === 'string' ? message : message.text;
+    const params = typeof message === 'string' ? undefined : message.params;
+    super(interpolate(text, params));
     this.name = 'HaproxyConfigError';
+    this.text = text;
+    this.params = params;
   }
 }
 
@@ -2911,8 +2996,10 @@ export function insertBeforeScopeMarker(
   );
   if (!marker) {
     throw new HaproxyConfigError(
-      `In ${HAPROXY_CFG} fehlt der Marker "${scopeMarkerLine(scope, 'END', kind)}". ` +
-        'Ohne ihn ist nicht bestimmbar, wo der Eintrag hingehört.'
+      msg('In {file} fehlt der Marker "{marker}". Ohne ihn ist nicht bestimmbar, wo der Eintrag hingehört.', {
+        file: HAPROXY_CFG,
+        marker: scopeMarkerLine(scope, 'END', kind),
+      })
     );
   }
   return [...lines.slice(0, marker.index), ...block, ...lines.slice(marker.index)];
@@ -2975,8 +3062,10 @@ function insertServiceBlock(
   );
   if (!marker) {
     throw new HaproxyConfigError(
-      `In ${HAPROXY_CFG} fehlt der Marker "${scopeMarkerLine(scope, 'END', 'services')}". ` +
-        'Ohne ihn ist nicht bestimmbar, wo der Eintrag hingehört.'
+      msg('In {file} fehlt der Marker "{marker}". Ohne ihn ist nicht bestimmbar, wo der Eintrag hingehört.', {
+        file: HAPROXY_CFG,
+        marker: scopeMarkerLine(scope, 'END', 'services'),
+      })
     );
   }
 
@@ -3021,17 +3110,19 @@ function insertServiceBlock(
 const SCOPE_NAME = /^[A-Za-z][A-Za-z0-9_-]*$/;
 const SCOPE_NAME_MAX = 24;
 
-export function validateScopeName(name: string): string | null {
+export function validateScopeName(name: string): Message | null {
   const value = name.trim();
-  if (value.length < 2) return 'Der Name der Gruppe braucht mindestens zwei Zeichen.';
+  if (value.length < 2) return msg('Der Name der Gruppe braucht mindestens zwei Zeichen.');
   if (value.length > SCOPE_NAME_MAX) {
-    return `Der Name der Gruppe ist auf ${SCOPE_NAME_MAX} Zeichen begrenzt.`;
+    return msg('Der Name der Gruppe ist auf {max} Zeichen begrenzt.', { max: SCOPE_NAME_MAX });
   }
   if (!SCOPE_NAME.test(value)) {
-    return 'Der Name darf nur a-z, 0-9, _ und - enthalten und muss mit einem Buchstaben beginnen.';
+    return msg('Der Name darf nur a-z, 0-9, _ und - enthalten und muss mit einem Buchstaben beginnen.');
   }
   if (RESERVED_SCOPE_SLUGS.includes(scopeSlug(value))) {
-    return `„${value}“ ist der Name einer Seite unter Reverse-Proxy. Bitte einen anderen Namen wählen.`;
+    return msg('„{name}“ ist der Name einer Seite unter Reverse-Proxy. Bitte einen anderen Namen wählen.', {
+      name: value,
+    });
   }
   return null;
 }
@@ -3107,9 +3198,10 @@ function appendScopeBlock(lines: string[], name: string, kind: ScopeKind): strin
     const at = firstScopeAnchor(lines, kind);
     if (at === null) {
       throw new HaproxyConfigError(
-        `In ${HAPROXY_CFG} steht kein einziger Marker "# END AUTO … ` +
-          `${kind === 'services' ? 'SERVICES' : 'BACKENDS'}" und auch nicht die Zeile "${HTTPS_MARKER}". ` +
-          'Ohne eines von beiden ist nicht bestimmbar, an welche Stelle der Datei eine neue Gruppe gehört.'
+        msg(
+          'In {file} steht kein einziger Marker "# END AUTO … {kind}" und auch nicht die Zeile "{marker}". Ohne eines von beiden ist nicht bestimmbar, an welche Stelle der Datei eine neue Gruppe gehört.',
+          { file: HAPROXY_CFG, kind: kind === 'services' ? 'SERVICES' : 'BACKENDS', marker: HTTPS_MARKER }
+        )
       );
     }
     // Der SERVICES-Teil steht im Frontend und ist eingerückt wie dessen Zeilen.
@@ -3141,7 +3233,9 @@ export function addScope(text: string, name: string): string {
 
   const scopes = parseScopes(text);
   if (findScope(scopes, name)) {
-    throw new HaproxyConfigError(`Es gibt in ${HAPROXY_CFG} bereits eine Gruppe "${name}".`);
+    throw new HaproxyConfigError(
+      msg('Es gibt in {file} bereits eine Gruppe "{name}".', { file: HAPROXY_CFG, name })
+    );
   }
 
   let lines = text.split('\n');
@@ -3163,7 +3257,9 @@ export function addScope(text: string, name: string): string {
 export function removeScope(text: string, name: string, alsoOccupiedBy: string[] = []): string {
   const scopes = parseScopes(text);
   const scope = findScope(scopes, name);
-  if (!scope) throw new HaproxyConfigError(`Die Gruppe "${name}" steht nicht in ${HAPROXY_CFG}.`);
+  if (!scope) {
+    throw new HaproxyConfigError(msg('Die Gruppe "{name}" steht nicht in {file}.', { name, file: HAPROXY_CFG }));
+  }
 
   const occupants = [
     ...parseHaproxyConfig(text)
@@ -3173,15 +3269,19 @@ export function removeScope(text: string, name: string, alsoOccupiedBy: string[]
   ];
   if (occupants.length > 0) {
     throw new HaproxyConfigError(
-      `In der Gruppe "${scope.label}" stehen noch ${occupants.length} Einträge: ` +
-        `${occupants.join(', ')}. Erst dort aufräumen.`
+      msg('In der Gruppe "{name}" stehen noch {count} Einträge: {entries}. Erst dort aufräumen.', {
+        name: scope.label,
+        count: occupants.length,
+        entries: occupants.join(', '),
+      })
     );
   }
   if (!scope.removable) {
     throw new HaproxyConfigError(
-      `Die Gruppe "${scope.label}" lässt sich hier nicht entfernen. Dafür müssen BEGIN- und ` +
-        'END-Marker beider Teile dastehen und nichts als Leerzeilen dazwischen — sonst ist nicht ' +
-        'bestimmbar, was zu ihr gehört und was zum Block darüber.'
+      msg(
+        'Die Gruppe "{name}" lässt sich hier nicht entfernen. Dafür müssen BEGIN- und END-Marker beider Teile dastehen und nichts als Leerzeilen dazwischen — sonst ist nicht bestimmbar, was zu ihr gehört und was zum Block darüber.',
+        { name: scope.label }
+      )
     );
   }
 
@@ -3211,12 +3311,12 @@ function serviceNameConflict(
   lines: string[],
   id: string,
   routes: readonly { name: string }[]
-): string | null {
+): Message | null {
   const hasAcl = (name: string) =>
     lines.some((line) => new RegExp(`^\\s*acl\\s+${escapeRegExp(name)}\\s`).test(line));
 
   for (const acl of [aclNameFor(id), lockAclFor(id), passAclFor(id)]) {
-    if (hasAcl(acl)) return `Die ACL "${acl}" gibt es bereits. Die Dienst-ID ist vergeben.`;
+    if (hasAcl(acl)) return msg('Die ACL "{acl}" gibt es bereits. Die Dienst-ID ist vergeben.', { acl });
   }
   /* Ein Abschnittsname gilt in HAProxy über `frontend`, `backend` und `listen`
    * hinweg. Nur gegen `backend` zu prüfen ließ einen Dienst entstehen, der so
@@ -3226,7 +3326,10 @@ function serviceNameConflict(
     new RegExp(`^\\s*(frontend|backend|listen)\\s+${escapeRegExp(id)}\\s*$`).test(clean(line))
   );
   if (section) {
-    return `Der Name "${id}" ist in der Konfiguration bereits vergeben (${clean(section)}). Die Dienst-ID ist belegt.`;
+    return msg('Der Name "{id}" ist in der Konfiguration bereits vergeben ({line}). Die Dienst-ID ist belegt.', {
+      id,
+      line: clean(section),
+    });
   }
 
   // Dieselbe Prüfung für jede Pfad-Regel. Ihre Namen sind abgeleitet, aber
@@ -3237,10 +3340,16 @@ function serviceNameConflict(
     const routeAcl = routeAclFor(id, route.name);
     const routeBackend = routeBackendFor(id, route.name);
     if (hasAcl(routeAcl)) {
-      return `Die ACL "${routeAcl}" gibt es bereits. Der Name der Pfad-Regel „${route.name}" ist vergeben.`;
+      return msg('Die ACL "{acl}" gibt es bereits. Der Name der Pfad-Regel „{route}" ist vergeben.', {
+        acl: routeAcl,
+        route: route.name,
+      });
     }
     if (lines.some((line) => new RegExp(`^\\s*backend\\s+${escapeRegExp(routeBackend)}\\s*$`).test(line))) {
-      return `Das Backend "${routeBackend}" gibt es bereits. Der Name der Pfad-Regel „${route.name}" ist vergeben.`;
+      return msg('Das Backend "{backend}" gibt es bereits. Der Name der Pfad-Regel „{route}" ist vergeben.', {
+        backend: routeBackend,
+        route: route.name,
+      });
     }
   }
   return null;
@@ -3290,7 +3399,10 @@ export function addService(text: string, input: CreateServiceInput): string {
   const conflict = findDomainConflict(services, input.domains);
   if (conflict) {
     throw new HaproxyConfigError(
-      `Die Domain ${conflict.domain} wird bereits von "${conflict.service.id}" bedient.`
+      msg('Die Domain {domain} wird bereits von "{id}" bedient.', {
+        domain: conflict.domain,
+        id: conflict.service.id,
+      })
     );
   }
 
@@ -3306,8 +3418,9 @@ export function addService(text: string, input: CreateServiceInput): string {
     parseGlobalSettings(text).adminIps.length === 0
   ) {
     throw new HaproxyConfigError(
-      'Es sind keine Admin-IPs gesetzt. Ohne mindestens eine Adresse lässt sich kein Eintrag sperren — ' +
-        'die Liste steht unter Reverse-Proxy → Einstellungen.'
+      msg(
+        'Es sind keine Admin-IPs gesetzt. Ohne mindestens eine Adresse lässt sich kein Eintrag sperren — die Liste steht unter Reverse-Proxy → Einstellungen.'
+      )
     );
   }
 
@@ -3317,9 +3430,15 @@ export function addService(text: string, input: CreateServiceInput): string {
   const scope = findScope(parseScopes(text), input.scope);
   if (!scope || !scope.complete) {
     throw new HaproxyConfigError(
-      `In ${HAPROXY_CFG} gibt es keine vollständige Gruppe "${input.scope}". Erwartet werden ` +
-        `"${scopeMarkerLine(input.scope, 'END', 'services')}" und ` +
-        `"${scopeMarkerLine(input.scope, 'END', 'backends')}", jeweils genau einmal.`
+      msg(
+        'In {file} gibt es keine vollständige Gruppe "{name}". Erwartet werden "{services}" und "{backends}", jeweils genau einmal.',
+        {
+          file: HAPROXY_CFG,
+          name: input.scope,
+          services: scopeMarkerLine(input.scope, 'END', 'services'),
+          backends: scopeMarkerLine(input.scope, 'END', 'backends'),
+        }
+      )
     );
   }
 
@@ -3453,7 +3572,7 @@ export function removeService(text: string, id: string): string {
   }
 
   if (!touched) {
-    throw new HaproxyConfigError(`Der Dienst "${id}" steht nicht in ${HAPROXY_CFG}.`);
+    throw new HaproxyConfigError(msg('Der Dienst "{id}" steht nicht in {file}.', { id, file: HAPROXY_CFG }));
   }
 
   return out.join('\n');
@@ -3489,7 +3608,7 @@ export function replaceService(
     const current = found !== null && typeof found === 'object' ? found : null;
     if (current === null && input.passwordLock === KEEP_PASSWORD) {
       throw new HaproxyConfigError(
-        `Für "${oldId}" ist noch kein Passwort gesetzt. Eine Passwortsperre braucht eins.`
+        msg('Für "{id}" ist noch kein Passwort gesetzt. Eine Passwortsperre braucht eins.', { id: oldId })
       );
     }
     next = { ...input, passwordLock: current };
@@ -3507,7 +3626,10 @@ export function replaceService(
 export function toCreateInput(service: HaproxyService): CreateServiceInput {
   if (!service.editable || !service.scope) {
     throw new HaproxyConfigError(
-      `"${service.id}" lässt sich nicht bearbeiten: der Eintrag enthält Einstellungen, die dieses Formular nicht abbildet.`
+      msg(
+        '"{id}" lässt sich nicht bearbeiten: der Eintrag enthält Einstellungen, die dieses Formular nicht abbildet.',
+        { id: service.id }
+      )
     );
   }
   return {
@@ -3763,13 +3885,13 @@ export function readGlobalSettingsInput(body: unknown): GlobalSettingsInput {
  *
  * Beides zusammen wird abgelehnt statt aufgelöst: „setze die Liste auf A und
  * nimm B dazu" hat zwei vertretbare Ergebnisse, und welches gemeint war, weiß
- * nur der Aufrufer. Rein und ohne Importe wie der Rest der Datei, damit
+ * nur der Aufrufer. Rein wie der Rest der Datei, damit
  * `tests/haproxy/settings.test.ts` es nachrechnen kann.
  */
 export function readGlobalSettingsPatch(
   body: unknown,
   current: GlobalSettings
-): GlobalSettingsInput | { error: string } {
+): GlobalSettingsInput | { error: Message } {
   const raw = (body ?? {}) as Record<string, unknown>;
   const list = (value: unknown): string[] | null =>
     Array.isArray(value) ? value.map((entry) => String(entry).trim()).filter(Boolean) : null;
@@ -3780,9 +3902,9 @@ export function readGlobalSettingsPatch(
 
   if (replace && (added || removed)) {
     return {
-      error:
-        'adminIps setzt die ganze Liste, addAdminIps/removeAdminIps ändern sie. ' +
-        'Beides in einem Aufruf lässt offen, was gemeint ist.',
+      error: msg(
+        'adminIps setzt die ganze Liste, addAdminIps/removeAdminIps ändern sie. Beides in einem Aufruf lässt offen, was gemeint ist.'
+      ),
     };
   }
 

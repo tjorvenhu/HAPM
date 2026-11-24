@@ -14,6 +14,10 @@ import {
   HaproxyConfigError,
   type CreateServiceInput,
 } from '@/lib/haproxy/config';
+import { germanText, type Message } from '@/lib/i18n/translate';
+
+/** Die Meldung einer Prüfung auf Deutsch, wie sie ohne Sprache herauskommt. */
+const de = (message: Message | null) => (message ? germanText(message) : message);
 
 /**
  * Pfad-Regeln: dieselbe Domain, ein anderer Port.
@@ -314,12 +318,12 @@ describe('anlegen weist ab', () => {
 
 describe('validateCreateInput', () => {
   it('nimmt den Coolify-Fall an', () => {
-    expect(validateCreateInput(COOLIFY)).toBeNull();
+    expect(de(validateCreateInput(COOLIFY))).toBeNull();
   });
 
   it('lehnt zwei Regeln mit demselben Namen ab', () => {
     const doppelt = { ...COOLIFY, routes: [COOLIFY.routes[0], COOLIFY.routes[0]] };
-    expect(validateCreateInput(doppelt)).toMatch(/steht doppelt/);
+    expect(de(validateCreateInput(doppelt))).toMatch(/steht doppelt/);
   });
 
   it('lehnt denselben Pfad in zwei Regeln ab', () => {
@@ -328,23 +332,23 @@ describe('validateCreateInput', () => {
       ...COOLIFY,
       routes: [COOLIFY.routes[0], { ...COOLIFY.routes[1], paths: ['/terminal/ws'] }],
     };
-    expect(validateCreateInput(doppelt)).toMatch(/steht in zwei Regeln/);
+    expect(de(validateCreateInput(doppelt))).toMatch(/steht in zwei Regeln/);
   });
 
   it('lehnt eine Regel ohne Pfad und mit ungültigem Pfad ab', () => {
-    expect(validateCreateInput({ ...COOLIFY, routes: [{ ...COOLIFY.routes[0], paths: [] }] }))
+    expect(de(validateCreateInput({ ...COOLIFY, routes: [{ ...COOLIFY.routes[0], paths: [] }] })))
       .toMatch(/keinen Pfad/);
-    expect(validateCreateInput({ ...COOLIFY, routes: [{ ...COOLIFY.routes[0], paths: ['app'] }] }))
+    expect(de(validateCreateInput({ ...COOLIFY, routes: [{ ...COOLIFY.routes[0], paths: ['app'] }] })))
       .toMatch(/muss mit \/ beginnen/);
   });
 
   it('lehnt einen Regelnamen ab, der kein Backend-Name werden kann', () => {
-    expect(validateCreateInput({ ...COOLIFY, routes: [{ ...COOLIFY.routes[0], name: 'Term-1' }] }))
+    expect(de(validateCreateInput({ ...COOLIFY, routes: [{ ...COOLIFY.routes[0], name: 'Term-1' }] })))
       .toMatch(/Ungültiger Name der Pfad-Regel/);
   });
 
   it('lehnt eine Regel ohne Ziel ab', () => {
-    expect(validateCreateInput({ ...COOLIFY, routes: [{ ...COOLIFY.routes[0], servers: [] }] }))
+    expect(de(validateCreateInput({ ...COOLIFY, routes: [{ ...COOLIFY.routes[0], servers: [] }] })))
       .toMatch(/Pfad-Regel/);
   });
 });

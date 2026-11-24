@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { BellRing, Loader2, Mail, Plus, Save, Send, Trash2, Users, X } from 'lucide-react';
+import { BellRing, Languages, Loader2, Mail, Plus, Save, Send, Trash2, Users, X } from 'lucide-react';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
@@ -11,6 +11,8 @@ import { useNow } from '@/components/useNow';
 import Select, { type SelectOption } from '@/components/Select';
 import { SkeletonDetail, SkeletonRows } from '@/components/Skeleton';
 import { formatAgo, formatDateTime } from '@/components/system/format';
+import { useT } from '@/lib/i18n/react';
+import { msgid, LOCALES, LOCALE_NAMES, type Locale } from '@/lib/i18n';
 // Rein: nur Namen und Sätze der Ereignisse.
 import { NOTIFICATION_EVENT_GROUPS, NOTIFICATION_EVENT_LABELS } from '@/lib/notifications/events';
 // Nur Typen: die Dateien dahinter erreichen `lib/db` und `nodemailer`.
@@ -30,10 +32,11 @@ interface SmtpForm {
 /** Der übliche Port je Verschlüsselung. Wechselt die eine, zieht der andere mit, solange er der übliche war. */
 const DEFAULT_PORTS: Record<SmtpSecurity, string> = { starttls: '587', tls: '465', none: '25' };
 
+/** Beschriftung und Hinweis sind Schlüssel (`msgid`), übersetzt beim Zeigen. */
 const SECURITY_OPTIONS: SelectOption<SmtpSecurity>[] = [
-  { value: 'starttls', label: 'STARTTLS', hint: 'Üblich auf Port 587' },
-  { value: 'tls', label: 'TLS', hint: 'Üblich auf Port 465' },
-  { value: 'none', label: 'Keine', hint: 'Unverschlüsselt, nur im eigenen Netz' },
+  { value: 'starttls', label: 'STARTTLS', hint: msgid('Üblich auf Port 587') },
+  { value: 'tls', label: 'TLS', hint: msgid('Üblich auf Port 465') },
+  { value: 'none', label: msgid('Keine'), hint: msgid('Unverschlüsselt, nur im eigenen Netz') },
 ];
 
 const POLL_MS = 30_000;
@@ -53,6 +56,7 @@ export default function NotificationsPage() {
   const { apiFetch, session } = useApp();
   const { notify } = useToast();
   const confirm = useConfirm();
+  const { t, locale } = useT();
   const now = useNow(30_000);
 
   const [settings, setSettings] = useState<SettingsView | null>(null);
@@ -72,6 +76,7 @@ export default function NotificationsPage() {
   const [recipientError, setRecipientError] = useState('');
   const [savingRecipients, setSavingRecipients] = useState(false);
   const [savingEvent, setSavingEvent] = useState<NotificationEventType | null>(null);
+  const [savingLocale, setSavingLocale] = useState(false);
 
   const loadStatus = useCallback(async () => {
     try {
@@ -91,10 +96,10 @@ export default function NotificationsPage() {
       setSettings(body.data as SettingsView);
       setError('');
     } catch {
-      setError('Die Einstellungen konnten nicht geladen werden.');
+      setError(t('Die Einstellungen konnten nicht geladen werden.'));
     }
     await loadStatus();
-  }, [apiFetch, loadStatus]);
+  }, [apiFetch, loadStatus, t]);
 
   useEffect(() => {
     void load();
@@ -109,7 +114,7 @@ export default function NotificationsPage() {
       body: JSON.stringify(payload),
     });
     const body = await res.json();
-    if (!body.success) throw new Error(body.error || 'Die Einstellung ließ sich nicht speichern.');
+    if (!body.success) throw new Error(body.error || t('Die Einstellung ließ sich nicht speichern.'));
     const next = body.data.settings as SettingsView;
     setSettings(next);
     void loadStatus();
@@ -123,7 +128,7 @@ export default function NotificationsPage() {
 
     const port = Number(draft.smtpPort);
     if (!Number.isInteger(port) || port < 1 || port > 65535) {
-      setFormError('Der Port ist eine Zahl zwischen 1 und 65535.');
+      setFormError(t('Der Port ist eine Zahl zwischen 1 und 65535.'));
       return;
     }
 
@@ -144,11 +149,11 @@ export default function NotificationsPage() {
         variant: 'success',
         message:
           next.smtpHost && next.mailFrom
-            ? 'Das SMTP-Konto ist gespeichert. Eine Testmail zeigt, ob der Server es annimmt.'
-            : 'Gespeichert. Ohne Server und Absender wird nichts verschickt.',
+            ? t('Das SMTP-Konto ist gespeichert. Eine Testmail zeigt, ob der Server es annimmt.')
+            : t('Gespeichert. Ohne Server und Absender wird nichts verschickt.'),
       });
     } catch (err: unknown) {
-      setFormError(err instanceof Error ? err.message : 'Das SMTP-Konto ließ sich nicht speichern.');
+      setFormError(err instanceof Error ? err.message : t('Das SMTP-Konto ließ sich nicht speichern.'));
     } finally {
       setSaving(false);
     }
@@ -156,18 +161,18 @@ export default function NotificationsPage() {
 
   async function clearPassword() {
     const confirmed = await confirm({
-      title: 'SMTP-Passwort löschen?',
-      message: 'HAPM meldet sich danach ohne Passwort am Mailserver an. Verlangt der Server eines, scheitert der Versand.',
-      confirmLabel: 'Passwort löschen',
+      title: t('SMTP-Passwort löschen?'),
+      message: t('HAPM meldet sich danach ohne Passwort am Mailserver an. Verlangt der Server eines, scheitert der Versand.'),
+      confirmLabel: t('Passwort löschen'),
       variant: 'danger',
     });
     if (!confirmed) return;
     try {
       await patch({ smtpPass: null });
       if (draft) setDraft({ ...draft, smtpPass: '' });
-      notify({ variant: 'success', message: 'Das SMTP-Passwort ist gelöscht.' });
+      notify({ variant: 'success', message: t('Das SMTP-Passwort ist gelöscht.') });
     } catch (err: unknown) {
-      notify({ variant: 'error', message: err instanceof Error ? err.message : 'Das Passwort ließ sich nicht löschen.' });
+      notify({ variant: 'error', message: err instanceof Error ? err.message : t('Das Passwort ließ sich nicht löschen.') });
     }
   }
 
@@ -183,15 +188,22 @@ export default function NotificationsPage() {
       });
       const body = await res.json();
       if (!body.success) {
-        notify({ variant: 'error', message: body.error || 'Die Testmail ließ sich nicht verschicken.' });
+        notify({ variant: 'error', message: body.error || t('Die Testmail ließ sich nicht verschicken.') });
         return;
       }
       const result = body.data as TestMailResult;
       setTestResult(result);
-      if (result.sent) notify({ variant: 'success', message: `Der Mailserver hat die Testmail an ${result.to} angenommen.` });
-      else notify({ variant: 'error', title: 'Testmail nicht verschickt', message: 'Die Meldung des Mailservers steht beim Formular.' });
+      if (result.sent) {
+        notify({ variant: 'success', message: t('Der Mailserver hat die Testmail an {to} angenommen.', { to: result.to }) });
+      } else {
+        notify({
+          variant: 'error',
+          title: t('Testmail nicht verschickt'),
+          message: t('Die Meldung des Mailservers steht beim Formular.'),
+        });
+      }
     } catch {
-      notify({ variant: 'error', message: 'Die Testmail ließ sich nicht verschicken.' });
+      notify({ variant: 'error', message: t('Die Testmail ließ sich nicht verschicken.') });
     } finally {
       setTesting(false);
       void loadStatus();
@@ -206,7 +218,7 @@ export default function NotificationsPage() {
       setRecipient('');
       notify({ variant: 'success', message });
     } catch (err: unknown) {
-      setRecipientError(err instanceof Error ? err.message : 'Die Empfänger ließen sich nicht speichern.');
+      setRecipientError(err instanceof Error ? err.message : t('Die Empfänger ließen sich nicht speichern.'));
     } finally {
       setSavingRecipients(false);
     }
@@ -218,32 +230,48 @@ export default function NotificationsPage() {
     const address = recipient.trim();
     if (!address) return;
     if (settings.notifyRecipients.some((entry) => entry.toLowerCase() === address.toLowerCase())) {
-      setRecipientError('Diese Adresse steht schon in der Liste.');
+      setRecipientError(t('Diese Adresse steht schon in der Liste.'));
       return;
     }
-    void saveRecipients([...settings.notifyRecipients, address], `${address} bekommt die Benachrichtigungen.`);
+    void saveRecipients(
+      [...settings.notifyRecipients, address],
+      t('{address} bekommt die Benachrichtigungen.', { address })
+    );
   }
 
   async function toggleEvent(type: NotificationEventType, enabled: boolean) {
     setSavingEvent(type);
     try {
       await patch({ notifyEvents: { [type]: enabled } });
+      const label = t(NOTIFICATION_EVENT_LABELS[type]);
       notify({
         variant: 'success',
-        message: `„${NOTIFICATION_EVENT_LABELS[type]}“ ist ${enabled ? 'eingeschaltet' : 'ausgeschaltet'}.`,
+        message: enabled ? t('„{label}“ ist eingeschaltet.', { label }) : t('„{label}“ ist ausgeschaltet.', { label }),
       });
     } catch (err: unknown) {
-      notify({ variant: 'error', message: err instanceof Error ? err.message : 'Der Schalter ließ sich nicht speichern.' });
+      notify({ variant: 'error', message: err instanceof Error ? err.message : t('Der Schalter ließ sich nicht speichern.') });
     } finally {
       setSavingEvent(null);
+    }
+  }
+
+  async function saveMailLocale(next: Locale) {
+    setSavingLocale(true);
+    try {
+      await patch({ mailLocale: next });
+      notify({ variant: 'success', message: t('Mails von HAPM gehen ab jetzt auf {language} hinaus.', { language: LOCALE_NAMES[next] }) });
+    } catch (err: unknown) {
+      notify({ variant: 'error', message: err instanceof Error ? err.message : t('Die Sprache ließ sich nicht speichern.') });
+    } finally {
+      setSavingLocale(false);
     }
   }
 
   const header = (
     <div className="page-header">
       <div>
-        <h1 className="page-title">Benachrichtigungen</h1>
-        <p className="page-subtitle">Mails zu Ausfällen, Zertifikaten, Updates und Sicherung.</p>
+        <h1 className="page-title">{t('Benachrichtigungen')}</h1>
+        <p className="page-subtitle">{t('Mails zu Ausfällen, Zertifikaten, Updates und Sicherung.')}</p>
       </div>
     </div>
   );
@@ -270,7 +298,14 @@ export default function NotificationsPage() {
   const edit = (change: Partial<SmtpForm>) => setDraft({ ...form, ...change });
   const configured = Boolean(settings.smtpHost && settings.mailFrom);
   const last = status?.lastDelivery ?? null;
-  const lastKind = last ? (last.kind === 'test' ? 'Testmail' : NOTIFICATION_EVENT_LABELS[last.kind]) : null;
+  const lastKind = last ? (last.kind === 'test' ? t('Testmail') : t(NOTIFICATION_EVENT_LABELS[last.kind])) : null;
+  const lastOutcome = last
+    ? last.ok
+      ? t('verschickt')
+      : last.delivered > 0
+        ? t('nicht an alle verschickt')
+        : t('gescheitert')
+    : '';
 
   return (
     <>
@@ -280,7 +315,7 @@ export default function NotificationsPage() {
 
       <div className="card sys-block">
         <div className="card-header">
-          <h2 className="card-title">Zustand</h2>
+          <h2 className="card-title">{t('Zustand')}</h2>
           <span
             className={`badge-status ${
               configured && settings.notifyRecipients.length > 0 ? 'badge-success' : 'badge-neutral'
@@ -288,36 +323,38 @@ export default function NotificationsPage() {
           >
             <span className="dot" />
             {!configured
-              ? 'Nicht eingerichtet'
+              ? t('Nicht eingerichtet')
               : settings.notifyRecipients.length === 0
-                ? 'Kein Empfänger'
-                : 'Eingerichtet'}
+                ? t('Kein Empfänger')
+                : t('Eingerichtet')}
           </span>
         </div>
         <div className="dash-kv">
           <div className="dash-kv-row">
-            <span className="dash-kv-label">SMTP-Konto</span>
+            <span className="dash-kv-label">{t('SMTP-Konto')}</span>
             <span className={`dash-kv-value ${configured ? '' : 'muted'}`}>
-              {configured ? `${settings.smtpHost}:${settings.smtpPort}` : 'Server oder Absender fehlt. Es wird nichts verschickt.'}
+              {configured
+                ? `${settings.smtpHost}:${settings.smtpPort}`
+                : t('Server oder Absender fehlt. Es wird nichts verschickt.')}
             </span>
           </div>
           <div className="dash-kv-row">
-            <span className="dash-kv-label">Empfänger</span>
+            <span className="dash-kv-label">{t('Empfänger')}</span>
             <span className={`dash-kv-value ${settings.notifyRecipients.length > 0 ? '' : 'muted'}`}>
               {settings.notifyRecipients.length > 0
                 ? settings.notifyRecipients.length
-                : 'Keiner. Es werden keine Benachrichtigungen verschickt.'}
+                : t('Keiner. Es werden keine Benachrichtigungen verschickt.')}
             </span>
           </div>
           <div className="dash-kv-row">
-            <span className="dash-kv-label">Letzter Versand</span>
+            <span className="dash-kv-label">{t('Letzter Versand')}</span>
             {status === null ? (
-              <span className="dash-kv-value muted">Unbekannt</span>
+              <span className="dash-kv-value muted">{t('Unbekannt')}</span>
             ) : last === null ? (
-              <span className="dash-kv-value muted">Noch keiner</span>
+              <span className="dash-kv-value muted">{t('Noch keiner')}</span>
             ) : (
-              <span className={`dash-kv-value ${last.ok ? '' : 'is-danger'}`} data-tooltip={formatDateTime(last.at)}>
-                {lastKind}, {formatAgo(now, last.at)}, {last.ok ? 'verschickt' : last.delivered > 0 ? 'nicht an alle verschickt' : 'gescheitert'}
+              <span className={`dash-kv-value ${last.ok ? '' : 'is-danger'}`} data-tooltip={formatDateTime(last.at, locale)}>
+                {t('{kind}, {ago}, {outcome}', { kind: lastKind ?? '', ago: formatAgo(now, last.at, locale), outcome: lastOutcome })}
               </span>
             )}
           </div>
@@ -330,9 +367,9 @@ export default function NotificationsPage() {
           <div>
             <h2 className="card-title">
               <Mail size={17} strokeWidth={1.5} />
-              SMTP-Konto
+              {t('SMTP-Konto')}
             </h2>
-            <p className="card-subtitle">Über dieses Konto verschickt HAPM alle Mails.</p>
+            <p className="card-subtitle">{t('Über dieses Konto verschickt HAPM alle Mails.')}</p>
           </div>
         </div>
 
@@ -342,7 +379,7 @@ export default function NotificationsPage() {
 
           <div className="form-row">
             <div className="form-group">
-              <label className="form-label" htmlFor="smtp-host">Server</label>
+              <label className="form-label" htmlFor="smtp-host">{t('Server')}</label>
               <input
                 id="smtp-host"
                 className="form-input"
@@ -356,7 +393,7 @@ export default function NotificationsPage() {
               />
             </div>
             <div className="form-group">
-              <label className="form-label" htmlFor="smtp-port">Port</label>
+              <label className="form-label" htmlFor="smtp-port">{t('Port')}</label>
               <input
                 id="smtp-port"
                 className="form-input"
@@ -372,11 +409,15 @@ export default function NotificationsPage() {
 
           <div className="form-row">
             <div className="form-group">
-              <label className="form-label" htmlFor="smtp-security">Verschlüsselung</label>
+              <label className="form-label" htmlFor="smtp-security">{t('Verschlüsselung')}</label>
               <Select
                 id="smtp-security"
                 value={form.smtpSecurity}
-                options={SECURITY_OPTIONS}
+                options={SECURITY_OPTIONS.map((option) => ({
+                  ...option,
+                  label: t(option.label),
+                  hint: option.hint ? t(option.hint) : undefined,
+                }))}
                 disabled={saving}
                 onChange={(value) =>
                   edit({
@@ -388,8 +429,8 @@ export default function NotificationsPage() {
             </div>
             <div className="form-group">
               <label className="form-label" htmlFor="mail-from">
-                Absender
-                <InfoHint text="Eine Adresse, die das SMTP-Konto verschicken darf. Wahlweise mit Namen davor: HAPM <hapm@example.org>. Ohne Namen steht im Postfach „HAPM“." />
+                {t('Absender')}
+                <InfoHint text={t('Eine Adresse, die das SMTP-Konto verschicken darf. Wahlweise mit Namen davor: HAPM <hapm@example.org>. Ohne Namen steht im Postfach „HAPM“.')} />
               </label>
               <input
                 id="mail-from"
@@ -407,7 +448,7 @@ export default function NotificationsPage() {
 
           <div className="form-row">
             <div className="form-group">
-              <label className="form-label" htmlFor="smtp-user">Benutzer</label>
+              <label className="form-label" htmlFor="smtp-user">{t('Benutzername')}</label>
               <input
                 id="smtp-user"
                 className="form-input"
@@ -418,22 +459,22 @@ export default function NotificationsPage() {
                 autoComplete="off"
                 spellCheck={false}
               />
-              <p className="form-hint">Leer, wenn der Server keine Anmeldung verlangt.</p>
+              <p className="form-hint">{t('Leer, wenn der Server keine Anmeldung verlangt.')}</p>
             </div>
             <div className="form-group">
               <div className="form-label-row">
-                <label className="form-label" htmlFor="smtp-pass">Passwort</label>
+                <label className="form-label" htmlFor="smtp-pass">{t('Passwort')}</label>
                 <span className={`badge-status ${settings.smtpPassSet ? 'badge-success' : 'badge-neutral'}`}>
                   <span className="dot" />
-                  {settings.smtpPassSet ? 'Gesetzt' : 'Nicht gesetzt'}
+                  {settings.smtpPassSet ? t('Gesetzt') : t('Nicht gesetzt')}
                 </span>
-                <InfoHint text="Das Passwort liegt verschlüsselt in der Datenbank und wird nach dem Speichern nicht mehr angezeigt." />
+                <InfoHint text={t('Das Passwort liegt verschlüsselt in der Datenbank und wird nach dem Speichern nicht mehr angezeigt.')} />
               </div>
               <input
                 id="smtp-pass"
                 className="form-input"
                 type="password"
-                placeholder={settings.smtpPassSet ? 'Leer lassen, um es zu behalten' : ''}
+                placeholder={settings.smtpPassSet ? t('Leer lassen, um es zu behalten') : ''}
                 value={form.smtpPass}
                 disabled={saving}
                 onChange={(event) => edit({ smtpPass: event.target.value })}
@@ -445,12 +486,12 @@ export default function NotificationsPage() {
           <div className="hapm-form-actions">
             <button className="btn btn-primary" type="submit" disabled={saving || !draft}>
               {saving ? <Loader2 size={16} strokeWidth={1.5} className="spin" /> : <Save size={16} strokeWidth={1.5} />}
-              Speichern
+              {t('Speichern')}
             </button>
             {settings.smtpPassSet && (
               <button className="btn btn-ghost" type="button" onClick={() => void clearPassword()} disabled={saving}>
                 <Trash2 size={16} strokeWidth={1.5} />
-                Passwort löschen
+                {t('Passwort löschen')}
               </button>
             )}
           </div>
@@ -459,8 +500,8 @@ export default function NotificationsPage() {
         <form className="card-body" onSubmit={sendTest}>
           <div className="form-group">
             <label className="form-label" htmlFor="test-to">
-              Testmail an
-              <InfoHint text="Verschickt wird mit dem gespeicherten Konto, nicht mit dem, was gerade im Formular steht. Die Antwort des Mailservers steht danach hier." />
+              {t('Testmail an')}
+              <InfoHint text={t('Verschickt wird mit dem gespeicherten Konto, nicht mit dem, was gerade im Formular steht. Die Antwort des Mailservers steht danach hier.')} />
             </label>
             <div className="form-list-row">
               <input
@@ -479,22 +520,28 @@ export default function NotificationsPage() {
                 type="submit"
                 disabled={testing || !configured || draft !== null}
                 data-tooltip={
-                  !configured ? 'Erst Server und Absender speichern.' : draft !== null ? 'Erst die Änderungen speichern.' : undefined
+                  !configured
+                    ? t('Erst Server und Absender speichern.')
+                    : draft !== null
+                      ? t('Erst die Änderungen speichern.')
+                      : undefined
                 }
                 data-tooltip-pos="left"
               >
                 {testing ? <Loader2 size={16} strokeWidth={1.5} className="spin" /> : <Send size={16} strokeWidth={1.5} />}
-                Testmail senden
+                {t('Testmail senden')}
               </button>
             </div>
           </div>
           {testResult &&
             (testResult.sent ? (
               <div className="alert alert-success">
-                Der Mailserver hat die Testmail an {testResult.to} angenommen. Ob sie im Postfach ankommt, zeigt nur das Postfach.
+                {t('Der Mailserver hat die Testmail an {to} angenommen. Ob sie im Postfach ankommt, zeigt nur das Postfach.', {
+                  to: testResult.to,
+                })}
               </div>
             ) : (
-              <div className="alert alert-danger">{testResult.error ?? 'Die Testmail wurde nicht verschickt.'}</div>
+              <div className="alert alert-danger">{testResult.error ?? t('Die Testmail wurde nicht verschickt.')}</div>
             ))}
         </form>
         </div>
@@ -504,10 +551,34 @@ export default function NotificationsPage() {
         <div className="card-header">
           <div>
             <h2 className="card-title">
-              <Users size={17} strokeWidth={1.5} />
-              Empfänger
+              <Languages size={17} strokeWidth={1.5} />
+              {t('Sprache der Mails')}
+              <InfoHint text={t('Gilt für jede Mail von HAPM: Benachrichtigungen, Testmail und die Mails zum Konto. Eine Mail zum Konto (neues Passwort, Passkey) geht in der Sprache, die der Inhaber unter „Konto“ gewählt hat, wenn er eine gewählt hat.')} />
             </h2>
-            <p className="card-subtitle">Jede Adresse bekommt jede Benachrichtigung als eigene Mail.</p>
+            <p className="card-subtitle">{t('Eine Sprache für alle Empfänger.')}</p>
+          </div>
+        </div>
+        <div className="card-body">
+          <div className="form-group">
+            <Select
+              id="mail-locale"
+              value={settings.mailLocale}
+              disabled={savingLocale}
+              onChange={(value) => void saveMailLocale(value)}
+              options={LOCALES.map((entry) => ({ value: entry, label: LOCALE_NAMES[entry] }))}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="card sys-block">
+        <div className="card-header">
+          <div>
+            <h2 className="card-title">
+              <Users size={17} strokeWidth={1.5} />
+              {t('Empfänger')}
+            </h2>
+            <p className="card-subtitle">{t('Jede Adresse bekommt jede Benachrichtigung als eigene Mail.')}</p>
           </div>
         </div>
 
@@ -515,7 +586,7 @@ export default function NotificationsPage() {
           {recipientError && <div className="alert alert-danger">{recipientError}</div>}
 
           {settings.notifyRecipients.length === 0 ? (
-            <p className="form-list-empty">Noch kein Empfänger. Ohne Empfänger wird keine Benachrichtigung verschickt.</p>
+            <p className="form-list-empty">{t('Noch kein Empfänger. Ohne Empfänger wird keine Benachrichtigung verschickt.')}</p>
           ) : (
             <div className="pill-list">
               {settings.notifyRecipients.map((address) => (
@@ -524,12 +595,12 @@ export default function NotificationsPage() {
                   <button
                     type="button"
                     className="pill-remove"
-                    aria-label={`${address} entfernen`}
+                    aria-label={t('{address} entfernen', { address })}
                     disabled={savingRecipients}
                     onClick={() =>
                       void saveRecipients(
                         settings.notifyRecipients.filter((entry) => entry !== address),
-                        `${address} bekommt keine Benachrichtigungen mehr.`
+                        t('{address} bekommt keine Benachrichtigungen mehr.', { address })
                       )
                     }
                   >
@@ -544,7 +615,7 @@ export default function NotificationsPage() {
             <input
               className="form-input"
               type="email"
-              aria-label="Neue Empfängeradresse"
+              aria-label={t('Neue Empfängeradresse')}
               placeholder="name@example.org"
               value={recipient}
               disabled={savingRecipients}
@@ -554,7 +625,7 @@ export default function NotificationsPage() {
             />
             <button className="btn btn-secondary" type="submit" disabled={savingRecipients || !recipient.trim()}>
               {savingRecipients ? <Loader2 size={16} strokeWidth={1.5} className="spin" /> : <Plus size={16} strokeWidth={1.5} />}
-              Hinzufügen
+              {t('Hinzufügen')}
             </button>
           </form>
         </div>
@@ -565,23 +636,23 @@ export default function NotificationsPage() {
           <div>
             <h2 className="card-title">
               <BellRing size={17} strokeWidth={1.5} />
-              Ereignisse
-              <InfoHint text="Dasselbe Ereignis für dieselbe Sache kommt höchstens einmal am Tag. Fällt ein Eintrag zehnmal aus, ist das eine Mail. Hält der Zustand an, kommt am nächsten Tag eine Erinnerung." />
+              {t('Ereignisse')}
+              <InfoHint text={t('Dasselbe Ereignis für dieselbe Sache kommt höchstens einmal am Tag. Fällt ein Eintrag zehnmal aus, ist das eine Mail. Hält der Zustand an, kommt am nächsten Tag eine Erinnerung.')} />
             </h2>
-            <p className="card-subtitle">Zu welchen Ereignissen eine Mail rausgeht.</p>
+            <p className="card-subtitle">{t('Zu welchen Ereignissen eine Mail rausgeht.')}</p>
           </div>
         </div>
 
         <div className="card-body">
           {NOTIFICATION_EVENT_GROUPS.map((group) => (
             <div key={group.title}>
-              <div className="form-section-title">{group.title}</div>
+              <div className="form-section-title">{t(group.title)}</div>
               <div className="hapm-switch-list">
                 {group.events.map((event) => (
                   <label className="hapm-switch-row" key={event.type}>
                     <span className="hapm-switch-text">
-                      <span className="form-label">{event.label}</span>
-                      <span className="form-hint">{event.description}</span>
+                      <span className="form-label">{t(event.label)}</span>
+                      <span className="form-hint">{t(event.description)}</span>
                     </span>
                     <span className="toggle-switch">
                       <input

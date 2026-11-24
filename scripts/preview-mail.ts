@@ -1,11 +1,13 @@
 /**
  * Alle Benachrichtigungen als HTML-Datei rendern, ohne etwas zu verschicken.
  *
- *   node node_modules/tsx/dist/cli.mjs scripts/preview-mail.ts
+ *   node node_modules/tsx/dist/cli.mjs scripts/preview-mail.ts          (beide Sprachen)
+ *   node node_modules/tsx/dist/cli.mjs scripts/preview-mail.ts en       (nur Englisch)
  *
- * Ruft dieselbe Funktion auf wie der Versand (`notificationMail`). Je Mail
- * entstehen unter `.data/mail-preview/` zwei Dateien: `name.html` und
- * `name.txt` (die Textfassung). `index.html` listet alles auf.
+ * Ruft dieselben Funktionen auf wie der Versand (`notificationMail`,
+ * `testMail`, `authMail`, `passkeyChangeMail`). Je Mail und Sprache entstehen
+ * unter `.data/mail-preview/` zwei Dateien: `name.de.html` und `name.de.txt`
+ * (die Textfassung). `index.html` listet alles auf.
  *
  * Ein Unterschied zur versendeten Fassung, nur für den Browser: das Logo hängt
  * in der echten Mail als Anhang (`cid:`) und wird hier als data-URI eingesetzt.
@@ -15,6 +17,9 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { MAIL_LOGO_CID, MAIL_LOGO_DARK_CID } from '../lib/mail/layout';
+import { authMail, passkeyChangeMail } from '../lib/auth/mail';
+import { resetPasswordMail } from '../lib/auth/core/mail';
+import { LOCALES, isLocale, type Locale } from '../lib/i18n';
 import { notificationMail, testMail, type NotificationMail, type NotificationMailContext } from '../lib/notifications/mails';
 import type { NotificationEvent } from '../lib/notifications/events';
 
@@ -98,10 +103,30 @@ function forBrowser(html: string): string {
 
 mkdirSync(OUT, { recursive: true });
 
-const mails: [string, NotificationMail][] = [
-  ...EVENTS.map((event): [string, NotificationMail] => [event.type, notificationMail(event, ctx)]),
-  ['test', testMail({ nodeName: ctx.nodeName, publicUrl: ctx.publicUrl })],
-];
+const wanted = process.argv[2];
+const locales: readonly Locale[] = isLocale(wanted) ? [wanted] : LOCALES;
+
+function mailsIn(locale: Locale): [string, NotificationMail][] {
+  const reset = resetPasswordMail({
+    appName: 'HAPM',
+    userName: 'Erika Mustermann',
+    url: `${ctx.publicUrl}/reset-password?token=beispiel`,
+    expiresInSeconds: 3600,
+  });
+  return [
+    ...EVENTS.map((event): [string, NotificationMail] => [event.type, notificationMail(event, { ...ctx, locale })]),
+    ['test', testMail({ nodeName: ctx.nodeName, publicUrl: ctx.publicUrl, locale })],
+    ['reset-password', authMail(reset, locale)],
+    [
+      'passkey-added',
+      passkeyChangeMail({ userName: 'Erika Mustermann', passkeyName: 'MacBook', change: 'added' }, ctx.publicUrl, locale),
+    ],
+  ];
+}
+
+const mails: [string, NotificationMail][] = locales.flatMap((locale) =>
+  mailsIn(locale).map(([name, mail]): [string, NotificationMail] => [`${name}.${locale}`, mail])
+);
 
 for (const [name, mail] of mails) {
   writeFileSync(resolve(OUT, `${name}.html`), forBrowser(mail.html));

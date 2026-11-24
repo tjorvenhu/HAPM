@@ -37,6 +37,27 @@ describe('Mail zum Zurücksetzen des Passworts', () => {
   });
 });
 
+describe('auf Englisch', () => {
+  it('baut die Mail zum Zurücksetzen in der Sprache neu, die der Versand nennt', () => {
+    const mail = authMail(resetPasswordMail({ appName: 'HAPM', userName: 'Anna', url: URL, expiresInSeconds: 3600 }), 'en');
+    expect(mail.subject).toBe('HAPM: set a new password');
+    expect(mail.html).toContain('<html lang="en"');
+    for (const body of [mail.html, mail.text]) {
+      expect(body).toContain('one hour');
+      expect(body).toContain('If this was not you');
+      expect(body).not.toMatch(/Passwort|Hallo|Konto/);
+    }
+    expect(mail.text).toContain(`Set password: ${URL}`);
+  });
+
+  it('übersetzt auch die Mail über einen Passkey', () => {
+    const mail = passkeyChangeMail({ userName: 'Anna', passkeyName: 'iPhone', change: 'removed' }, 'https://hapm.example.org', 'en');
+    expect(mail.subject).toBe('Passkey removed from your account');
+    expect(mail.text).toContain('Open account: https://hapm.example.org/konto');
+    expect(mail.text).not.toMatch(/Konto öffnen|Hallo/);
+  });
+});
+
 describe('Mail über einen Passkey', () => {
   it('sagt, was geschah, welcher Passkey es war und was zu tun ist', () => {
     const added = passkeyChangeMail(

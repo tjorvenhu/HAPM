@@ -7,6 +7,7 @@ import {
 import { useApp } from '@/components/AppShell';
 import { useNow } from '@/components/useNow';
 import { HAPROXY_PHASES, HAPROXY_PHASE_LABELS } from '@/components/runPhases';
+import { useT } from '@/lib/i18n/react';
 import type { RunStatus } from '@/lib/types';
 
 interface RunView {
@@ -28,10 +29,10 @@ interface Props {
   onFinished?: () => void;
   /** Poll endpoint base. The run's id is appended. */
   endpoint?: string;
-  /** Ordered phase keys and their labels for the stepper and the status line. */
+  /** Ordered phase keys and their labels (German keys, shown via `t()`) for the stepper and the status line. */
   phases?: string[];
   phaseLabels?: Record<string, string>;
-  /** Noun used in the modal title ("Reverse-Proxy läuft"). */
+  /** Noun used in the modal title ("Reverse-Proxy läuft"). A German key, shown via `t()`. */
   noun?: string;
 }
 
@@ -50,6 +51,7 @@ export default function UpdateRunOverlay({
   noun = 'Reverse-Proxy',
 }: Props) {
   const { apiFetch } = useApp();
+  const { t } = useT();
   const [run, setRun] = useState<RunView | null>(null);
   // Gemeinsamer Uhren-Hook statt eines eigenen Intervalls je Komponente.
   const now = useNow();
@@ -117,10 +119,10 @@ export default function UpdateRunOverlay({
         <div className="modal-header">
           <h2 className="modal-title">
             {running
-              ? `${noun} läuft`
+              ? t('{noun} läuft', { noun: t(noun) })
               : run?.status === 'error'
-                ? `${noun} fehlgeschlagen`
-                : `${noun} abgeschlossen`}
+                ? t('{noun} fehlgeschlagen', { noun: t(noun) })
+                : t('{noun} abgeschlossen', { noun: t(noun) })}
             {run?.serverName ? `: ${run.serverName}` : ''}
           </h2>
         </div>
@@ -149,7 +151,7 @@ export default function UpdateRunOverlay({
                           <span className="run-step-dot" />
                         )}
                       </span>
-                      <span className="run-step-label">{phaseLabels[phase]}</span>
+                      <span className="run-step-label">{t(phaseLabels[phase] ?? phase)}</span>
                     </div>
                   );
                 })}
@@ -158,7 +160,7 @@ export default function UpdateRunOverlay({
               <div className="run-status-line">
                 <span className="run-timer">{formatDuration(elapsedSec)}</span>
                 <span className="run-phase-name">
-                  {run?.phase ? phaseLabels[run.phase] : 'Wird gestartet'}
+                  {run?.phase ? t(phaseLabels[run.phase] ?? run.phase) : t('Wird gestartet')}
                 </span>
               </div>
             </>
@@ -168,10 +170,10 @@ export default function UpdateRunOverlay({
               <div>
                 <strong>
                   {run?.status === 'success'
-                    ? 'Erfolgreich'
+                    ? t('Erfolgreich')
                     : run?.status === 'warning'
-                      ? 'Mit Hinweisen abgeschlossen'
-                      : 'Fehlgeschlagen'}
+                      ? t('Mit Hinweisen abgeschlossen')
+                      : t('Fehlgeschlagen')}
                 </strong>
                 <span className="run-result-meta">{formatDuration(elapsedSec)}</span>
               </div>
@@ -182,12 +184,12 @@ export default function UpdateRunOverlay({
             <div
               className={`alert ${run.status === 'error' ? 'alert-danger' : 'alert-warning'}`}
             >
-              {run.error}
+              {t(run.error)}
             </div>
           )}
 
           <pre className="run-log" ref={logRef}>
-            {run?.output || 'Warte auf Ausgabe...'}
+            {run?.output || t('Warte auf Ausgabe...')}
           </pre>
         </div>
 
@@ -196,7 +198,7 @@ export default function UpdateRunOverlay({
               genuinely safe. */}
           <button className="btn btn-secondary" onClick={onClose}>
             <Minimize2 size={16} />
-            {running ? 'Im Hintergrund weiterlaufen lassen' : 'Schließen'}
+            {running ? t('Im Hintergrund weiterlaufen lassen') : t('Schließen')}
           </button>
         </div>
       </div>

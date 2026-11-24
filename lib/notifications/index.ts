@@ -57,6 +57,7 @@ function mailContext(settings: Settings, now: Date): NotificationMailContext {
   return {
     nodeName: localServer().name,
     publicUrl: publicOrigin(settings),
+    locale: settings.mailLocale,
     now,
     recoveryEnabled: settings.notifyEvents.backend_recovered,
     autoUpdateHaproxy: settings.autoUpdateHaproxy,
@@ -179,7 +180,7 @@ export interface TestMailResult {
 /** Die Testmail. Wirft nicht: das Ergebnis samt Fehlermeldung ist die Antwort. */
 export async function sendTestMail(to: string): Promise<TestMailResult> {
   const settings = await getSettings();
-  const mail = testMail({ nodeName: localServer().name, publicUrl: publicOrigin(settings) });
+  const mail = testMail({ nodeName: localServer().name, publicUrl: publicOrigin(settings), locale: settings.mailLocale });
   let error: string | null = null;
   try {
     await sendMail({ to, subject: mail.subject, html: mail.html, text: mail.text });

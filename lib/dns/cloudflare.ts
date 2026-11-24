@@ -22,6 +22,7 @@
  */
 
 import { ApiError } from '../api';
+import { msg, type Message } from '../i18n';
 import { TTL_AUTO, type DnsRecord } from './records';
 import type { DnsProvider, ProviderZone, RecordWrite } from './provider';
 
@@ -56,20 +57,20 @@ interface RawZone {
   status: string;
 }
 
-function message(body: CloudflareEnvelope<unknown> | null, fallback: string): string {
+function message(body: CloudflareEnvelope<unknown> | null, fallback: Message): Message {
   const first = body?.errors?.[0];
   if (!first) return fallback;
   switch (first.code) {
     case 6003:
     case 9103:
     case 10000:
-      return 'Cloudflare hat den API-Token abgelehnt. Ist er abgelaufen oder wurde er zurückgezogen?';
+      return msg('Cloudflare hat den API-Token abgelehnt. Ist er abgelaufen oder wurde er zurückgezogen?');
     case 81057:
-      return 'Ein Eintrag mit diesem Namen und dieser Art steht dort bereits.';
+      return msg('Ein Eintrag mit diesem Namen und dieser Art steht dort bereits.');
     case 81044:
-      return 'Cloudflare kennt keinen Eintrag mit dieser ID mehr. Vermutlich wurde er im Dashboard gelöscht.';
+      return msg('Cloudflare kennt keinen Eintrag mit dieser ID mehr. Vermutlich wurde er im Dashboard gelöscht.');
     default:
-      return `Cloudflare: ${first.message}`;
+      return msg('Cloudflare: {message}', { message: first.message });
   }
 }
 
@@ -97,8 +98,8 @@ async function call<T>(
     // Ein Timeout ist hier kein 500er: die Zone ist erreichbar oder eben nicht,
     // und das ist eine Auskunft an den Benutzer.
     const reason = err instanceof Error && err.name === 'TimeoutError'
-      ? 'Cloudflare hat nicht rechtzeitig geantwortet.'
-      : 'Cloudflare ist nicht erreichbar.';
+      ? msg('Cloudflare hat nicht rechtzeitig geantwortet.')
+      : msg('Cloudflare ist nicht erreichbar.');
     throw new ApiError(reason, 502);
   }
 
@@ -114,8 +115,8 @@ async function call<T>(
     // aber nicht. Das ist eine andere Handlung als „Token erneuern".
     const fallback =
       response.status === 403
-        ? 'Der API-Token darf diese Zone nicht bearbeiten. Er braucht die Berechtigung „Zone → DNS → Bearbeiten".'
-        : `Cloudflare hat mit ${response.status} geantwortet.`;
+        ? msg('Der API-Token darf diese Zone nicht bearbeiten. Er braucht die Berechtigung „Zone → DNS → Bearbeiten".')
+        : msg('Cloudflare hat mit {status} geantwortet.', { status: response.status });
     throw new ApiError(message(body, fallback), response.status === 403 ? 403 : 502);
   }
 
@@ -131,7 +132,7 @@ function toRecord(raw: RawRecord): DnsRecord {
     ttl: raw.ttl,
     proxied: raw.proxied ?? false,
     // `null` und nicht `0`: eine Priorität hat nur, wer eine hat. Eine erfundene
-    // 0 sähe in der Tabelle aus wie „höchste Priorität".
+    // 0 läse sich wie „höchste Priorität".
     priority: typeof raw.priority === 'number' ? raw.priority : null,
     comment: raw.comment ?? null,
     locked: raw.locked ?? false,

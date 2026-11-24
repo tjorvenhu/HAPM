@@ -37,6 +37,7 @@
  */
 
 import { logAudit, systemActor } from '../audit';
+import { msgid } from '../i18n/translate';
 import { GeoTableError } from './format';
 import { importGeoipFile } from './import';
 import {
@@ -88,7 +89,13 @@ export interface GeoipOverview extends GeoipStatus, GeoipRefreshRecord {
   staleAfterDays: number;
 }
 
-/** Ein Fehler beim Abruf, mit einem Satz, der so angezeigt werden kann. */
+/**
+ * Ein Fehler beim Abruf, mit einem Satz, der so angezeigt werden kann.
+ *
+ * Sein Text landet als `lastAttemptError` in der Datenbank und bleibt deshalb
+ * deutsch, solange er Werte trägt (docs/i18n.md). Ein Satz ohne Werte ist mit
+ * `msgid` markiert, die Seite übersetzt ihn beim Zeigen.
+ */
 class GeoipFetchError extends Error {}
 
 interface RefreshMemory {
@@ -229,7 +236,7 @@ async function download(month: Month, signal: AbortSignal): Promise<Uint8Array |
     return readLimited(response);
   }
 
-  throw new GeoipFetchError('db-ip.com leitet zu oft weiter. Die Datei wurde nicht geladen.');
+  throw new GeoipFetchError(msgid('db-ip.com leitet zu oft weiter. Die Datei wurde nicht geladen.'));
 }
 
 /** Aus dem, was geworfen wurde, ein Satz für die Oberfläche. */

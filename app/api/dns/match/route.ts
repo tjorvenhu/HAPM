@@ -1,7 +1,8 @@
 import { requireSession } from '@/lib/session';
 import { ok, handleError } from '@/lib/api';
 import { providerFor } from '@/lib/dns/provider';
-import { listZoneRows, withZone } from '@/lib/dns/store';
+import { listZoneRows, withZone, zoneErrorText } from '@/lib/dns/store';
+import { getT } from '@/lib/i18n/server';
 import {
   isProxyRecord,
   matchZone,
@@ -42,6 +43,7 @@ export async function GET(request: Request) {
       .slice(0, 20);
 
     if (domains.length === 0) return ok([] as DomainMatch[]);
+    const { t, locale } = await getT();
 
     const zones = await listZoneRows();
     // Ein Lesevorgang je Zone, nicht je Domain: drei Subdomains derselben Zone
@@ -71,7 +73,10 @@ export async function GET(request: Request) {
           return {
             ...head,
             plan: null,
-            blocked: `${domain} ist die Zone selbst. Dort gehört ein A-Eintrag auf diesen Server hin, und der wird von Hand gepflegt.`,
+            blocked: t(
+              '{domain} ist die Zone selbst. Dort gehört ein A-Eintrag auf diesen Server hin, und der wird von Hand gepflegt.',
+              { domain }
+            ),
             existing: null,
             error: null,
           };
@@ -102,7 +107,7 @@ export async function GET(request: Request) {
             plan: { fqdn: plan.fqdn, type: plan.type, content: plan.content },
             blocked: null,
             existing: null,
-            error: err instanceof Error ? err.message : 'Unbekannter Fehler',
+            error: zoneErrorText(err, locale),
           };
         }
       })

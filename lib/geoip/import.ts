@@ -10,6 +10,7 @@
  * wirft `GeoTableError` mit einem Satz, der so angezeigt werden kann.
  */
 
+import { msg } from '../i18n/translate';
 import { compileGeoTable, GeoTableError } from './format';
 import { GEOIP_MAX_UPLOAD_BYTES, GEOIP_SOURCE_NAME, unpackUpload } from './pack';
 import { storeGeoipTable } from './store';
@@ -38,15 +39,16 @@ export async function importGeoipFile(input: {
   const version = input.version.trim();
   if (!/^\d{4}-\d{2}$/.test(version)) {
     throw new GeoTableError(
-      'Der Stand der Datei fehlt oder ist unlesbar. Erwartet wird ein Monat wie 2026-08. ' +
-        'DB-IP schreibt ihn in den Dateinamen.'
+      msg(
+        'Der Stand der Datei fehlt oder ist unlesbar. Erwartet wird ein Monat wie 2026-08. DB-IP schreibt ihn in den Dateinamen.'
+      )
     );
   }
 
-  if (input.bytes.length === 0) throw new GeoTableError('Es wurde keine Datei übertragen.');
+  if (input.bytes.length === 0) throw new GeoTableError(msg('Es wurde keine Datei übertragen.'));
   if (input.bytes.length > GEOIP_MAX_UPLOAD_BYTES) {
     throw new GeoTableError(
-      `Die Datei ist größer als ${Math.round(GEOIP_MAX_UPLOAD_BYTES / 1024 / 1024)} MB.`
+      msg('Die Datei ist größer als {mb} MB.', { mb: Math.round(GEOIP_MAX_UPLOAD_BYTES / 1024 / 1024) })
     );
   }
 
@@ -63,8 +65,10 @@ export async function importGeoipFile(input: {
   // vorhandene Tabelle durch nichts.
   if (built.v4Count < 1000 || built.v6Count < 1000) {
     throw new GeoTableError(
-      `Aus der Datei wurden nur ${built.v4Count} IPv4- und ${built.v6Count} IPv6-Bereiche. ` +
-        'Erwartet wird der Datensatz „IP to Country Lite" mit den Spalten Anfang, Ende, Ländercode.'
+      msg(
+        'Aus der Datei wurden nur {v4} IPv4- und {v6} IPv6-Bereiche. Erwartet wird der Datensatz „IP to Country Lite" mit den Spalten Anfang, Ende, Ländercode.',
+        { v4: built.v4Count, v6: built.v6Count }
+      )
     );
   }
 

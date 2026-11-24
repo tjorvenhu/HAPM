@@ -1,5 +1,6 @@
 import { requireServiceToken } from '@/lib/service-auth';
 import { ok, handleError } from '@/lib/api';
+import { getT } from '@/lib/i18n/server';
 import { proxyServers, proxyView, type ProxyView } from '@/lib/haproxy/internal';
 
 /**
@@ -30,8 +31,9 @@ export async function GET(request: Request) {
 
     const servers = await proxyServers();
     const rows: ProxyView[] = await Promise.all(servers.map(proxyView));
+    const { t } = await getT();
 
-    return ok(rows);
+    return ok(rows.map((row) => ({ ...row, error: row.error === null ? null : t(row.error) })));
   } catch (err) {
     return handleError(err);
   }

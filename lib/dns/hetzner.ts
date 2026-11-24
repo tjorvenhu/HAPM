@@ -25,6 +25,7 @@
  */
 
 import { ApiError } from '../api';
+import { msg, translate, type Locale, type Message } from '../i18n';
 import {
   decodeRecordId,
   hasValue,
@@ -88,11 +89,30 @@ interface Pagination {
 /** Trägt den Code von Hetzner mit, damit `call` und seine Aufrufer danach entscheiden können. */
 class HetznerError extends ApiError {
   constructor(
-    message: string,
+    message: Message,
     status: number,
     readonly code: string | null
   ) {
     super(message, status);
+  }
+}
+
+/**
+ * Ein Schritt nach dem ersten ist gescheitert. Der Grund ist die Meldung des
+ * Schritts, in derselben Sprache wie der Satz dahinter.
+ */
+class PartialChangeError extends ApiError {
+  constructor(readonly reason: ApiError) {
+    super(
+      msg('{reason} Ein Teil der Änderung ist bereits ausgeführt, bitte den Stand in der Liste prüfen.', {
+        reason: reason.message,
+      }),
+      reason.status
+    );
+  }
+
+  override localized(locale: Locale): string {
+    return translate(locale, this.text, { reason: this.reason.localized(locale) });
   }
 }
 
@@ -105,47 +125,51 @@ class HetznerError extends ApiError {
  */
 function failure(status: number, error: RawError | null): HetznerError {
   const code = error?.code ?? null;
-  const told = (message: string, as = 502) => new HetznerError(message, as, code);
+  const told = (message: Message, as = 502) => new HetznerError(message, as, code);
 
   if (status === 401 || code === 'unauthorized') {
     return told(
-      'Hetzner hat den API-Token abgelehnt. Ist er vollständig kopiert, und stammt er aus dem Projekt der Zone?'
+      msg('Hetzner hat den API-Token abgelehnt. Ist er vollständig kopiert, und stammt er aus dem Projekt der Zone?')
     );
   }
   if (code === 'protected') {
-    return told('Der Eintrag ist bei Hetzner gegen Änderungen geschützt.', 409);
+    return told(msg('Der Eintrag ist bei Hetzner gegen Änderungen geschützt.'), 409);
   }
   if (code === 'locked' || code === 'conflict') {
     return told(
-      'Bei Hetzner läuft gerade eine andere Änderung an dieser Zone. Bitte gleich noch einmal versuchen.',
+      msg('Bei Hetzner läuft gerade eine andere Änderung an dieser Zone. Bitte gleich noch einmal versuchen.'),
       409
     );
   }
   if (status === 403) {
     return told(
-      'Der API-Token darf das nicht. Er braucht Lese- und Schreibrecht im Projekt der Zone.',
+      msg('Der API-Token darf das nicht. Er braucht Lese- und Schreibrecht im Projekt der Zone.'),
       403
     );
   }
   if (code === 'incorrect_zone_mode') {
     return told(
-      'Hetzner führt diese Zone als Sekundärzone. Ihre Einträge kommen von einem anderen Nameserver und lassen sich hier nicht bearbeiten.',
+      msg(
+        'Hetzner führt diese Zone als Sekundärzone. Ihre Einträge kommen von einem anderen Nameserver und lassen sich hier nicht bearbeiten.'
+      ),
       409
     );
   }
   if (status === 404) {
     return told(
-      'Hetzner kennt diese Zone oder diesen Eintrag nicht (mehr). Vermutlich wurde er in der Konsole gelöscht.',
+      msg('Hetzner kennt diese Zone oder diesen Eintrag nicht (mehr). Vermutlich wurde er in der Konsole gelöscht.'),
       404
     );
   }
   if (status === 429) {
     return told(
-      'Hetzner nimmt von diesem Projekt gerade keine weiteren Anfragen an. Bitte in einer Minute noch einmal versuchen.'
+      msg('Hetzner nimmt von diesem Projekt gerade keine weiteren Anfragen an. Bitte in einer Minute noch einmal versuchen.')
     );
   }
   return told(
-    error?.message ? `Hetzner: ${error.message}` : `Hetzner hat mit ${status} geantwortet.`
+    error?.message
+      ? msg('Hetzner: {message}', { message: error.message })
+      : msg('Hetzner hat mit {status} geantwortet.', { status })
   );
 }
 
@@ -168,8 +192,8 @@ async function call<T>(token: string, path: string, init: RequestInit = {}): Pro
   } catch (err) {
     const reason =
       err instanceof Error && err.name === 'TimeoutError'
-        ? 'Hetzner hat nicht rechtzeitig geantwortet.'
-        : 'Hetzner ist nicht erreichbar.';
+        ? msg('Hetzner hat nicht rechtzeitig geantwortet.')
+        : msg('Hetzner ist nicht erreichbar.');
     throw new ApiError(reason, 502);
   }
 
@@ -205,12 +229,14 @@ async function settle(token: string, started: RawAction | undefined): Promise<vo
   if (!action || action.status === 'success') return;
   if (action.status === 'error') {
     throw new ApiError(
-      `Hetzner hat die Änderung nicht ausgeführt: ${action.error?.message ?? 'ohne Angabe eines Grundes'}.`,
+      action.error?.message
+        ? msg('Hetzner hat die Änderung nicht ausgeführt: {reason}.', { reason: action.error.message })
+        : msg('Hetzner hat die Änderung nicht ausgeführt: ohne Angabe eines Grundes.'),
       502
     );
   }
   throw new ApiError(
-    'Hetzner hat die Änderung angenommen, aber noch nicht ausgeführt. Ob der Eintrag steht, zeigt die Liste in ein paar Sekunden.',
+    msg('Hetzner hat die Änderung angenommen, aber noch nicht ausgeführt. Ob der Eintrag steht, zeigt die Liste in ein paar Sekunden.'),
     502
   );
 }
@@ -258,10 +284,7 @@ async function run(token: string, zone: ZoneRef, steps: RRSetStep[]): Promise<vo
       await act(token, zone, step);
     } catch (err) {
       if (index === 0 || !(err instanceof ApiError)) throw err;
-      throw new ApiError(
-        `${err.message} Ein Teil der Änderung ist bereits ausgeführt, bitte den Stand in der Liste prüfen.`,
-        err.status
-      );
+      throw new PartialChangeError(err);
     }
   }
 }
@@ -302,7 +325,7 @@ function asRecord(next: ValueTarget, ttl: number | null, zone: ZoneRef): DnsReco
 
 function keyOf(current: DnsRecord): RecordKey {
   const key = decodeRecordId(current.id);
-  if (!key) throw new ApiError('Diesen Eintrag gibt es in der Zone nicht (mehr).', 404);
+  if (!key) throw new ApiError(msg('Diesen Eintrag gibt es in der Zone nicht (mehr).'), 404);
   return key;
 }
 
@@ -350,7 +373,10 @@ async function listRecords(token: string, zone: ZoneRef): Promise<DnsRecord[]> {
   for (let page = 1; ; page += 1) {
     if (page > MAX_PAGES) {
       throw new ApiError(
-        `Die Zone ${zone.name} hat mehr Einträge, als HAPM liest (${MAX_PAGES * PER_PAGE} Namen).`,
+        msg('Die Zone {zone} hat mehr Einträge, als HAPM liest ({count} Namen).', {
+          zone: zone.name,
+          count: MAX_PAGES * PER_PAGE,
+        }),
         502
       );
     }
@@ -391,7 +417,7 @@ async function updateRecord(
   // vor einer Minute gelesen hat: an ihm hängen die TTL, die mitgeschickt
   // werden muss, und die Frage, ob der Wert überhaupt noch dasteht.
   if (!moved && !hasValue(existing, key.value)) {
-    throw new ApiError('Diesen Eintrag gibt es in der Zone nicht (mehr).', 404);
+    throw new ApiError(msg('Diesen Eintrag gibt es in der Zone nicht (mehr).'), 404);
   }
   const conflict = writeConflict(next, existing, key);
   if (conflict) throw new ApiError(conflict, 409);

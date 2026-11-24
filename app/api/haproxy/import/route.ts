@@ -1,5 +1,7 @@
 import { requireSession, requireCsrf } from '@/lib/session';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
+import { msg } from '@/lib/i18n';
+import { getT } from '@/lib/i18n/server';
 import { getClientIP, logAudit } from '@/lib/audit';
 import { getProxyServer, probeProxy } from '@/lib/haproxy/provision';
 import { startHaproxyRun } from '@/lib/haproxy/runner';
@@ -29,6 +31,9 @@ import { LOCAL_SERVER_ID } from '@/lib/helpers';
  * Eine Lage, die sich seit der Vorschau geändert hat, gehört auf die Seite
  * zurück und nicht in die Historie. Der Rest läuft als EIN abgekoppelter Lauf
  * (`lib/haproxy/import-run.ts`).
+ *
+ * Die Prüfung rechnet zweimal: in der Sprache der Anfrage für eine Meldung,
+ * auf Deutsch für das, was der Lauf speichert (Titel der Einträge).
  */
 export async function POST(request: Request) {
   try {
@@ -36,8 +41,9 @@ export async function POST(request: Request) {
     const session = await requireSession();
 
     if (Number(request.headers.get('content-length') ?? 0) > IMPORT_MAX_BYTES * 3) {
-      throw new ApiError('Die Konfiguration ist größer als 1 MB.', 413);
+      throw new ApiError(msg('Die Konfiguration ist größer als {size} MB.', { size: IMPORT_MAX_BYTES / 1_000_000 }), 413);
     }
+    const { t } = await getT();
     const body = await jsonBody<{
       text?: unknown;
       keys?: unknown;
@@ -48,10 +54,10 @@ export async function POST(request: Request) {
 
     const text = typeof body.text === 'string' ? body.text : '';
     const invalid = importTextError(text);
-    if (invalid) throw new ApiError(invalid, invalid.includes('MB') ? 413 : 400);
+    if (invalid) throw new ApiError(invalid, invalid.text.includes('MB') ? 413 : 400);
 
     const keys = Array.isArray(body.keys) ? [...new Set(body.keys.map((k) => String(k)))] : [];
-    if (keys.length === 0) throw new ApiError('Es wurde kein Eintrag ausgewählt.');
+    if (keys.length === 0) throw new ApiError(msg('Es wurde kein Eintrag ausgewählt.'));
 
     const scopeName = String(body.scope ?? '').trim();
     const createScope = body.newScope === true;
@@ -60,7 +66,7 @@ export async function POST(request: Request) {
     const server = await getProxyServer(LOCAL_SERVER_ID);
     const [probe, { exposure }] = await Promise.all([probeProxy(server), getSettings()]);
     if (!probe.configReadable) {
-      throw new ApiError('Die HAProxy-Konfiguration ist nicht lesbar. Der Zustand steht in der Übersicht.', 409);
+      throw new ApiError(msg('Die HAProxy-Konfiguration ist nicht lesbar. Der Zustand steht in der Übersicht.'), 409);
     }
 
     const scopes = parseScopes(probe.raw);
@@ -72,31 +78,41 @@ export async function POST(request: Request) {
     } else {
       const found = findScope(scopes, scopeName);
       if (!found || !found.complete) {
-        throw new ApiError(`Die Gruppe „${scopeName}" gibt es nicht oder nicht vollständig.`, 409);
+        throw new ApiError(msg('Die Gruppe „{name}" gibt es nicht oder nicht vollständig.', { name: scopeName }), 409);
       }
       scope = found.name;
     }
 
     // Ohne `busyPorts`: ob auf einem Port etwas lauscht, fragt der Lauf
     // innerhalb des Locks ohnehin noch einmal.
-    const assessed = assessImport(parseImport(text).entries, {
-      config: probe.raw,
-      exposure,
-      dnsHooks: probe.dnsHooks,
-      dnsHook,
-      acmeReady: probe.acmeReady,
-      busyPorts: {},
-    });
+    const assessed = assessImport(
+      parseImport(text, t).entries,
+      {
+        config: probe.raw,
+        exposure,
+        dnsHooks: probe.dnsHooks,
+        dnsHook,
+        acmeReady: probe.acmeReady,
+        busyPorts: {},
+      },
+      t
+    );
     const byKey = new Map(assessed.map((entry) => [entry.key, entry]));
     const chosen = keys.map((key) => {
       const entry = byKey.get(key);
       if (!entry) {
-        throw new ApiError('Die Auswahl passt nicht zum Text. Lassen Sie die Vorschau neu berechnen.', 409);
+        throw new ApiError(msg('Die Auswahl passt nicht zum Text. Lassen Sie die Vorschau neu berechnen.'), 409);
       }
       if (entry.state !== 'ready') {
         throw new ApiError(
-          `${importTitle(entry)} lässt sich nicht mehr übernehmen: ${entry.reason ?? 'unbekannter Grund'} ` +
-            'Lassen Sie die Vorschau neu berechnen.',
+          entry.reason
+            ? msg('{entry} lässt sich nicht mehr übernehmen: {reason} Lassen Sie die Vorschau neu berechnen.', {
+                entry: importTitle(entry, t),
+                reason: entry.reason,
+              })
+            : msg('{entry} lässt sich nicht mehr übernehmen. Lassen Sie die Vorschau neu berechnen.', {
+                entry: importTitle(entry, t),
+              }),
           409
         );
       }

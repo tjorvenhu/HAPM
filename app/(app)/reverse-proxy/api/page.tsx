@@ -14,6 +14,8 @@ import EntityCard, { EntityGrid, EntityField } from '@/components/EntityCard';
 import IpAllowList from '@/components/IpAllowList';
 import { SkeletonCards } from '@/components/Skeleton';
 import { InfoHint } from '@/ui/primitives/InfoHint';
+import { formatDate, formatRelative, msgid, type Locale } from '@/lib/i18n';
+import { useT } from '@/lib/i18n/react';
 
 /**
  * Der Zugang zur Reverse-Proxy-API an einer Stelle: wohin, womit, von wo — und
@@ -39,38 +41,40 @@ interface TokenRow {
 
 /** Kurzreferenz. Die vollständige Anleitung steht in docs/reverse-proxy-api.md. */
 const ENDPOINTS: { method: string; path: string; what: string }[] = [
-  { method: 'GET', path: '/proxies', what: 'dieser Server als Liste mit einem Eintrag: Gruppen, Admin-IPs, DNS-Hooks, acmeReady' },
-  { method: 'GET', path: '/services', what: 'Einträge, gefiltert über ?scope= ?domain=' },
-  { method: 'POST', path: '/services', what: 'anlegen → { runId }' },
-  { method: 'GET', path: '/services/<id>', what: 'ein Eintrag, mit editable / removable / health' },
-  { method: 'PATCH', path: '/services/<id>', what: 'ändern, vollständiger Rumpf → { runId }' },
-  { method: 'DELETE', path: '/services/<id>', what: 'entfernen → { runId }' },
+  {
+    method: 'GET',
+    path: '/proxies',
+    what: msgid('dieser Server als Liste mit einem Eintrag: Gruppen, Admin-IPs, DNS-Hooks, acmeReady'),
+  },
+  { method: 'GET', path: '/services', what: msgid('Einträge, gefiltert über ?scope= ?domain=') },
+  { method: 'POST', path: '/services', what: msgid('anlegen → { runId }') },
+  { method: 'GET', path: '/services/<id>', what: msgid('ein Eintrag, mit editable / removable / health') },
+  { method: 'PATCH', path: '/services/<id>', what: msgid('ändern, vollständiger Rumpf → { runId }') },
+  { method: 'DELETE', path: '/services/<id>', what: msgid('entfernen → { runId }') },
   {
     method: 'GET',
     path: '/streams',
-    what: 'TCP-Weiterleitungen; mit ?port= stattdessen: ist der Port frei',
+    what: msgid('TCP-Weiterleitungen; mit ?port= stattdessen: ist der Port frei'),
   },
-  { method: 'POST', path: '/streams', what: 'anlegen → { runId }' },
-  { method: 'GET', path: '/streams/<id>', what: 'eine Weiterleitung, mit editable / removable' },
-  { method: 'PATCH', path: '/streams/<id>', what: 'ändern, vollständiger Rumpf → { runId }' },
-  { method: 'DELETE', path: '/streams/<id>', what: 'entfernen → { runId }' },
-  { method: 'GET', path: '/runs', what: 'Historie, gefiltert über ?serviceId= ?mine=true' },
-  { method: 'GET', path: '/runs/<id>', what: 'Stand des Vorgangs: status, phase, steps' },
-  { method: 'GET', path: '/scopes', what: 'Gruppen' },
-  { method: 'POST', path: '/scopes', what: 'Gruppe anlegen → { runs }' },
-  { method: 'DELETE', path: '/scopes', what: 'Gruppe entfernen, nur wenn sie leer ist' },
-  { method: 'GET', path: '/settings', what: 'HTTPS-Zeilen und die Admin-Adressliste' },
-  { method: 'PATCH', path: '/settings', what: 'der einzige Teil-Patch der API' },
-  { method: 'GET', path: '/certificates', what: 'was acme.sh führt, samt „benutzt von“' },
+  { method: 'POST', path: '/streams', what: msgid('anlegen → { runId }') },
+  { method: 'GET', path: '/streams/<id>', what: msgid('eine Weiterleitung, mit editable / removable') },
+  { method: 'PATCH', path: '/streams/<id>', what: msgid('ändern, vollständiger Rumpf → { runId }') },
+  { method: 'DELETE', path: '/streams/<id>', what: msgid('entfernen → { runId }') },
+  { method: 'GET', path: '/runs', what: msgid('Historie, gefiltert über ?serviceId= ?mine=true') },
+  { method: 'GET', path: '/runs/<id>', what: msgid('Stand des Vorgangs: status, phase, steps') },
+  { method: 'GET', path: '/scopes', what: msgid('Gruppen') },
+  { method: 'POST', path: '/scopes', what: msgid('Gruppe anlegen → { runs }') },
+  { method: 'DELETE', path: '/scopes', what: msgid('Gruppe entfernen, nur wenn sie leer ist') },
+  { method: 'GET', path: '/settings', what: msgid('HTTPS-Zeilen und die Admin-Adressliste') },
+  { method: 'PATCH', path: '/settings', what: msgid('der einzige Teil-Patch der API') },
+  { method: 'GET', path: '/certificates', what: msgid('was acme.sh führt, samt „benutzt von“') },
 ];
 
-function relative(iso: string | null, now: number): string {
-  if (!iso) return 'nie';
-  const seconds = Math.max(0, Math.round((now - new Date(iso).getTime()) / 1000));
-  if (seconds < 60) return 'gerade eben';
-  if (seconds < 3600) return `vor ${Math.floor(seconds / 60)} min`;
-  if (seconds < 86_400) return `vor ${Math.floor(seconds / 3600)} h`;
-  return new Date(iso).toLocaleDateString('de-DE');
+/** Wann ein Key zuletzt benutzt wurde. Älter als ein Tag: das Datum. `null` heißt nie. */
+function lastUsed(locale: Locale, iso: string | null, now: number): string | null {
+  if (!iso) return null;
+  if (now - new Date(iso).getTime() >= 86_400_000) return formatDate(locale, iso);
+  return formatRelative(locale, now, iso);
 }
 
 export default function ReverseProxyApiPage() {
@@ -78,6 +82,7 @@ export default function ReverseProxyApiPage() {
   const { notify } = useToast();
   const confirm = useConfirm();
   const now = useNow(30_000);
+  const { t, rich, locale } = useT();
 
   const [tokens, setTokens] = useState<TokenRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -122,12 +127,12 @@ export default function ReverseProxyApiPage() {
         if (data.success) setTokens(data.data as TokenRow[]);
         setError('');
       } catch {
-        setError('Die Schlüssel konnten nicht geladen werden.');
+        setError(t('Die Schlüssel konnten nicht geladen werden.'));
       } finally {
         setLoading(false);
       }
     },
-    [apiFetch]
+    [apiFetch, t]
   );
 
   useEffect(() => {
@@ -153,7 +158,7 @@ export default function ReverseProxyApiPage() {
         body: JSON.stringify({ name, description, allowedIps: newIps }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Anlegen fehlgeschlagen');
+      if (!res.ok) throw new Error(data.error || t('Anlegen fehlgeschlagen'));
       setModalOpen(false);
       setIssued({ name: data.data.name, token: data.data.token });
       setName('');
@@ -161,7 +166,7 @@ export default function ReverseProxyApiPage() {
       setNewIps(['']);
       await load(true);
     } catch (err: unknown) {
-      setFormError(err instanceof Error ? err.message : 'Anlegen fehlgeschlagen');
+      setFormError(err instanceof Error ? err.message : t('Anlegen fehlgeschlagen'));
     } finally {
       setSaving(false);
     }
@@ -177,16 +182,16 @@ export default function ReverseProxyApiPage() {
         body: JSON.stringify({ allowedIps: editIps }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Speichern fehlgeschlagen');
+      if (!res.ok) throw new Error(data.error || t('Speichern fehlgeschlagen'));
       setEditing(null);
       // Erst nachladen, dann melden: sonst steht „gespeichert" neben einer
       // Karte, die noch die alte Liste zeigt.
       await load(true);
-      notify({ message: 'Die Adressliste gilt ab dem nächsten Aufruf.', variant: 'success' });
+      notify({ message: t('Die Adressliste gilt ab dem nächsten Aufruf.'), variant: 'success' });
     } catch (err: unknown) {
       notify({
-        title: 'Speichern fehlgeschlagen',
-        message: err instanceof Error ? err.message : 'Unbekannter Fehler',
+        title: t('Speichern fehlgeschlagen'),
+        message: err instanceof Error ? err.message : t('Unbekannter Fehler.'),
         variant: 'error',
       });
     } finally {
@@ -196,12 +201,12 @@ export default function ReverseProxyApiPage() {
 
   async function handleRevoke(token: TokenRow) {
     await confirm({
-      title: 'Schlüssel zurückziehen',
-      message:
-        `"${token.name}" gilt danach sofort nicht mehr. Ein Dienst, der ihn benutzt, bekommt ab ` +
-        `dem nächsten Aufruf 401. Das betrifft auch Skripte, die gerade laufen. Der Eintrag bleibt ` +
-        `bestehen, damit das Aktivitätsprotokoll auflösbar bleibt.`,
-      confirmLabel: 'Zurückziehen',
+      title: t('Schlüssel zurückziehen'),
+      message: t(
+        '"{name}" gilt danach sofort nicht mehr. Ein Dienst, der ihn benutzt, bekommt ab dem nächsten Aufruf 401. Das betrifft auch Skripte, die gerade laufen. Der Eintrag bleibt bestehen, damit das Aktivitätsprotokoll auflösbar bleibt.',
+        { name: token.name }
+      ),
+      confirmLabel: t('Zurückziehen'),
       variant: 'danger',
       onConfirm: async () => {
         const res = await apiFetch(`/api/settings/service-tokens/${token.$id}`, {
@@ -209,16 +214,16 @@ export default function ReverseProxyApiPage() {
         });
         const data = await res.json();
         if (!res.ok) {
-          notify({ message: data.error || 'Zurückziehen fehlgeschlagen', variant: 'error' });
+          notify({ message: data.error || t('Zurückziehen fehlgeschlagen'), variant: 'error' });
           throw new Error(data.error);
         }
         await load(true);
-        notify({ message: `"${token.name}" gilt nicht mehr.`, variant: 'success' });
+        notify({ message: t('"{name}" gilt nicht mehr.', { name: token.name }), variant: 'success' });
       },
     });
   }
 
-  const active = tokens.filter((t) => !t.revokedAt);
+  const active = tokens.filter((token) => !token.revokedAt);
 
   return (
     <>
@@ -229,18 +234,20 @@ export default function ReverseProxyApiPage() {
             style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '0.8125rem' }}
           >
             <ArrowLeft size={14} />
-            Reverse-Proxy
+            {t('Reverse-Proxy')}
           </Link>
-          <h1 className="page-title">Reverse-Proxy-API</h1>
+          <h1 className="page-title">{t('Reverse-Proxy-API')}</h1>
           <p className="page-subtitle">
-            Womit ein anderer Dienst Domains und Ziele in HAProxy anlegt, ändert und entfernt. Die
-            vollständige Anleitung steht in <code>docs/reverse-proxy-api.md</code>.
+            {rich(
+              'Womit ein anderer Dienst Domains und Ziele in HAProxy anlegt, ändert und entfernt. Die vollständige Anleitung steht in {doc}.',
+              { doc: <code>docs/reverse-proxy-api.md</code> }
+            )}
           </p>
         </div>
         <div className="page-actions">
           <button className="btn btn-primary" onClick={() => setModalOpen(true)}>
             <Plus size={16} />
-            API-Key anlegen
+            {t('API-Key anlegen')}
           </button>
         </div>
       </div>
@@ -253,18 +260,24 @@ export default function ReverseProxyApiPage() {
             <Link2 size={17} />
           </span>
           <div>
-            <div className="form-section-title">Zugang</div>
+            <div className="form-section-title">{t('Zugang')}</div>
             <div className="form-section-sub">
-              Die Basis-URL ist die Adresse, unter der HAPM erreichbar ist. Der Parameter{' '}
-              <code>serverId</code> ist überall freiwillig: ohne ihn gilt dieser Server.
+              {rich(
+                'Die Basis-URL ist die Adresse, unter der HAPM erreichbar ist. Der Parameter {param} ist überall freiwillig: ohne ihn gilt dieser Server.',
+                { param: <code>serverId</code> }
+              )}
             </div>
           </div>
         </div>
 
         <div className="form-group">
           <label className="form-label">
-            Basis-URL
-            <InfoHint text="Jeder Endpunkt der Tabelle unten hängt daran. Kein CSRF-Token: der schützt einen Browser mit Cookie, und hier gibt es weder das eine noch das andere." />
+            {t('Basis-URL')}
+            <InfoHint
+              text={t(
+                'Jeder Endpunkt der Tabelle unten hängt daran. Kein CSRF-Token: der schützt einen Browser mit Cookie, und hier gibt es weder das eine noch das andere.'
+              )}
+            />
           </label>
           <div className="form-list-row">
             <input
@@ -276,7 +289,7 @@ export default function ReverseProxyApiPage() {
             <button
               type="button"
               className="btn btn-secondary btn-icon"
-              data-tooltip="Kopieren"
+              data-tooltip={t('Kopieren')}
               disabled={!baseUrl}
               onClick={() => copy(baseUrl, 'base')}
             >
@@ -286,7 +299,7 @@ export default function ReverseProxyApiPage() {
         </div>
 
         <div className="form-group">
-          <label className="form-label">Kopfzeile</label>
+          <label className="form-label">{t('Kopfzeile')}</label>
           <div className="form-list-row">
             <input
               className="form-input"
@@ -297,21 +310,23 @@ export default function ReverseProxyApiPage() {
             <button
               type="button"
               className="btn btn-secondary btn-icon"
-              data-tooltip="Kopieren"
+              data-tooltip={t('Kopieren')}
               onClick={() => copy('Authorization: Bearer ', 'header')}
             >
               {copied === 'header' ? <Check size={16} /> : <Copy size={16} />}
             </button>
           </div>
           <span className="form-hint">
-            Ersatzweise <code>X-Service-Token: hapm_…</code>, falls ein Proxy dazwischen den
-            Authorization-Header für sich beansprucht.
+            {rich(
+              'Ersatzweise {header}, falls ein Proxy dazwischen den Authorization-Header für sich beansprucht.',
+              { header: <code>X-Service-Token: hapm_…</code> }
+            )}
           </span>
         </div>
       </div>
 
       <h2 className="section-title">
-        API-Keys
+        {t('API-Keys')}
       </h2>
 
       {loading ? (
@@ -319,10 +334,11 @@ export default function ReverseProxyApiPage() {
       ) : active.length === 0 ? (
         <div className="empty-state">
           <KeyRound size={40} />
-          <h3>Noch kein Key</h3>
+          <h3>{t('Noch kein Key')}</h3>
           <p>
-            Solange keiner existiert, erreicht kein anderer Dienst die Reverse-Proxy-API. Ein
-            Deploy-Skript braucht einen, um Ziele anzulegen.
+            {t(
+              'Solange keiner existiert, erreicht kein anderer Dienst die Reverse-Proxy-API. Ein Deploy-Skript braucht einen, um Ziele anzulegen.'
+            )}
           </p>
         </div>
       ) : (
@@ -333,12 +349,12 @@ export default function ReverseProxyApiPage() {
               icon={<KeyRound size={17} />}
               name={token.name}
               subtitle={token.description || undefined}
-              badge={<span className="badge-status badge-success">Aktiv</span>}
+              badge={<span className="badge-status badge-success">{t('Aktiv')}</span>}
               actions={
                 <>
                   <button
                     className="btn btn-ghost btn-icon btn-sm"
-                    data-tooltip="Erlaubte Adressen"
+                    data-tooltip={t('Erlaubte Adressen')}
                     onClick={() => {
                       setEditing(token);
                       setEditIps(token.allowedIps.length > 0 ? [...token.allowedIps] : ['']);
@@ -348,7 +364,7 @@ export default function ReverseProxyApiPage() {
                   </button>
                   <button
                     className="btn btn-ghost btn-icon btn-sm"
-                    data-tooltip="Zurückziehen"
+                    data-tooltip={t('Zurückziehen')}
                     onClick={() => handleRevoke(token)}
                   >
                     <Ban size={16} />
@@ -356,12 +372,12 @@ export default function ReverseProxyApiPage() {
                 </>
               }
             >
-              <EntityField label="Key" mono>{`${token.prefix}…`}</EntityField>
-              <EntityField label="Adressen">
-                {token.allowedIps.length > 0 ? token.allowedIps.join(', ') : 'von überall'}
+              <EntityField label={t('Key')} mono>{`${token.prefix}…`}</EntityField>
+              <EntityField label={t('Adressen')}>
+                {token.allowedIps.length > 0 ? token.allowedIps.join(', ') : t('von überall')}
               </EntityField>
-              <EntityField label="Zuletzt benutzt">
-                {relative(token.lastUsedAt, now)}
+              <EntityField label={t('Zuletzt benutzt')}>
+                {lastUsed(locale, token.lastUsedAt, now) ?? t('nie')}
                 {token.lastUsedIp ? ` · ${token.lastUsedIp}` : ''}
               </EntityField>
             </EntityCard>
@@ -370,21 +386,22 @@ export default function ReverseProxyApiPage() {
       )}
 
       <h2 className="section-title">
-        Endpunkte
+        {t('Endpunkte')}
       </h2>
       <p className="page-subtitle sys-block">
-        Schreibende Aufrufe antworten mit einer Lauf-ID, nicht mit dem Ergebnis: DNS, Zertifikat
-        und Reload dauern Minuten. Der Aufrufer pollt <code>/runs/&lt;id&gt;</code>, bis
-        <code> status</code> nicht mehr <code>running</code> ist.
+        {rich(
+          'Schreibende Aufrufe antworten mit einer Lauf-ID, nicht mit dem Ergebnis: DNS, Zertifikat und Reload dauern Minuten. Der Aufrufer pollt {path}, bis {status} nicht mehr {running} ist.',
+          { path: <code>/runs/&lt;id&gt;</code>, status: <code>status</code>, running: <code>running</code> }
+        )}
       </p>
 
       <div className="table-wrap">
         <table className="table">
           <thead>
             <tr>
-              <th>Methode</th>
-              <th>Pfad</th>
-              <th>Was er tut</th>
+              <th>{t('Methode')}</th>
+              <th>{t('Pfad')}</th>
+              <th>{t('Was er tut')}</th>
             </tr>
           </thead>
           <tbody>
@@ -396,7 +413,7 @@ export default function ReverseProxyApiPage() {
                 <td style={{ fontSize: '0.8125rem', whiteSpace: 'nowrap' }}>
                   <code>{endpoint.path}</code>
                 </td>
-                <td style={{ fontSize: '0.8125rem' }}>{endpoint.what}</td>
+                <td style={{ fontSize: '0.8125rem' }}>{t(endpoint.what)}</td>
               </tr>
             ))}
           </tbody>
@@ -410,32 +427,36 @@ export default function ReverseProxyApiPage() {
         >
           <div className="modal">
             <div className="modal-header">
-              <h2 className="modal-title">API-Key anlegen</h2>
+              <h2 className="modal-title">{t('API-Key anlegen')}</h2>
             </div>
             <form onSubmit={handleSubmit}>
               <div className="modal-body">
                 {formError && <div className="alert alert-danger sys-block">{formError}</div>}
                 <div className="form-group">
                   <label className="form-label">
-                    Name
-                    <InfoHint text="Steht so im Aktivitätsprotokoll und in der Liste der Vorgänge oben. Der Name des Dienstes, nicht der des Menschen." />
+                    {t('Name')}
+                    <InfoHint
+                      text={t(
+                        'Steht so im Aktivitätsprotokoll und in der Liste der Vorgänge oben. Der Name des Dienstes, nicht der des Menschen.'
+                      )}
+                    />
                   </label>
                   <input
                     className="form-input"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    placeholder="deploy-skript"
+                    placeholder={t('deploy-skript')}
                     autoComplete="off"
                     required
                   />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Notiz</label>
+                  <label className="form-label">{t('Notiz')}</label>
                   <input
                     className="form-input"
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    placeholder="Optional: wofür wird er benutzt?"
+                    placeholder={t('Optional: wofür wird er benutzt?')}
                   />
                 </div>
                 <IpAllowList value={newIps} onChange={setNewIps} disabled={saving} />
@@ -447,11 +468,11 @@ export default function ReverseProxyApiPage() {
                   onClick={() => setModalOpen(false)}
                   disabled={saving}
                 >
-                  Abbrechen
+                  {t('Abbrechen')}
                 </button>
                 <button type="submit" className="btn btn-primary" disabled={saving}>
                   {saving && <Loader2 size={16} className="spin" />}
-                  Anlegen
+                  {t('Anlegen')}
                 </button>
               </div>
             </form>
@@ -466,14 +487,14 @@ export default function ReverseProxyApiPage() {
         >
           <div className="modal">
             <div className="modal-header">
-              <h2 className="modal-title">Adressen für „{editing.name}“</h2>
+              <h2 className="modal-title">{t('Adressen für „{name}“', { name: editing.name })}</h2>
             </div>
             <div className="modal-body">
               <IpAllowList value={editIps} onChange={setEditIps} disabled={saving} />
               <span className="form-hint">
-                Wirkt sofort. Der Key bleibt derselbe, er muss also nirgends neu eingetragen
-                werden. Verglichen wird gegen die Adresse, die bei HAPM ankommt. Steht sie
-                nicht auf der Liste, antwortet der Aufruf mit 403 und nennt sie.
+                {t(
+                  'Wirkt sofort. Der Key bleibt derselbe, er muss also nirgends neu eingetragen werden. Verglichen wird gegen die Adresse, die bei HAPM ankommt. Steht sie nicht auf der Liste, antwortet der Aufruf mit 403 und nennt sie.'
+                )}
               </span>
             </div>
             <div className="modal-footer">
@@ -483,11 +504,11 @@ export default function ReverseProxyApiPage() {
                 onClick={() => setEditing(null)}
                 disabled={saving}
               >
-                Abbrechen
+                {t('Abbrechen')}
               </button>
               <button type="button" className="btn btn-primary" onClick={saveIps} disabled={saving}>
                 {saving && <Loader2 size={16} className="spin" />}
-                Speichern
+                {t('Speichern')}
               </button>
             </div>
           </div>
@@ -500,15 +521,16 @@ export default function ReverseProxyApiPage() {
         <div className="modal-overlay">
           <div className="modal">
             <div className="modal-header">
-              <h2 className="modal-title">Key für „{issued.name}“</h2>
+              <h2 className="modal-title">{t('Key für „{name}“', { name: issued.name })}</h2>
             </div>
             <div className="modal-body">
               <div className="alert alert-warning sys-block">
-                Jetzt kopieren. Gespeichert wird nur ein Hash. Nach dem Schließen ist der
-                Klartext weg, und es bleibt nur, einen neuen Key auszustellen.
+                {t(
+                  'Jetzt kopieren. Gespeichert wird nur ein Hash. Nach dem Schließen ist der Klartext weg, und es bleibt nur, einen neuen Key auszustellen.'
+                )}
               </div>
               <div className="form-group">
-                <label className="form-label">Key</label>
+                <label className="form-label">{t('Key')}</label>
                 <div className="form-list-row">
                   <input
                     className="form-input"
@@ -519,21 +541,23 @@ export default function ReverseProxyApiPage() {
                   <button
                     type="button"
                     className="btn btn-secondary btn-icon"
-                    data-tooltip="Kopieren"
+                    data-tooltip={t('Kopieren')}
                     onClick={() => copy(issued.token, 'issued')}
                   >
                     {copied === 'issued' ? <Check size={16} /> : <Copy size={16} />}
                   </button>
                 </div>
                 <span className="form-hint">
-                  Im aufrufenden Dienst als <code>Authorization: Bearer …</code> mitschicken.
+                  {rich('Im aufrufenden Dienst als {header} mitschicken.', {
+                    header: <code>Authorization: Bearer …</code>,
+                  })}
                 </span>
               </div>
             </div>
             <div className="modal-footer">
               <button className="btn btn-primary" onClick={() => setIssued(null)}>
                 <X size={16} />
-                Kopiert, schließen
+                {t('Kopiert, schließen')}
               </button>
             </div>
           </div>

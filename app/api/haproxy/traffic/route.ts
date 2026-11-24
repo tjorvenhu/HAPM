@@ -1,5 +1,7 @@
 import { requireSession } from '@/lib/session';
 import { ok, handleError } from '@/lib/api';
+import { msgid } from '@/lib/i18n';
+import { getT } from '@/lib/i18n/server';
 import { sshExec } from '@/lib/ssh';
 import { getSSHConfig } from '@/lib/helpers';
 import { proxyServers } from '@/lib/haproxy/internal';
@@ -58,6 +60,7 @@ interface ProxyTraffic {
 export async function GET(request: Request) {
   try {
     await requireSession();
+    const { t } = await getT();
 
     const url = new URL(request.url);
     const backend = url.searchParams.get('scope')?.trim() || undefined;
@@ -108,7 +111,8 @@ export async function GET(request: Request) {
         serverName: row.serverName,
         source: row.source,
         logPath: row.logPath,
-        error: row.error,
+        // `analyse` liefert deutsche Schlüssel oder eine fremde Meldung, die `t` stehen lässt.
+        error: row.error === null ? null : t(row.error),
         lines: row.stats?.lines ?? null,
         parsed: row.stats?.parsed ?? null,
         from: row.stats?.from ?? null,
@@ -174,10 +178,9 @@ async function analyse(
         source: 'none',
         logPath: null,
         stats: null,
-        error:
-          'Es wurde kein HAProxy-Log gefunden. HAPM schreibt das Log des HAProxy-Containers nach ' +
-          '/var/log/haproxy/haproxy.log mit. Liegt dort nichts, hat HAProxy noch keine Anfrage ' +
-          'protokolliert oder läuft nicht.',
+        error: msgid(
+          'Es wurde kein HAProxy-Log gefunden. HAPM schreibt das Log des HAProxy-Containers nach /var/log/haproxy/haproxy.log mit. Liegt dort nichts, hat HAProxy noch keine Anfrage protokolliert oder läuft nicht.'
+        ),
       };
     }
 
@@ -200,7 +203,7 @@ async function analyse(
       source: 'none',
       logPath: null,
       stats: null,
-      error: err instanceof Error ? err.message : 'HAProxy ist nicht erreichbar.',
+      error: err instanceof Error ? err.message : msgid('HAProxy ist nicht erreichbar.'),
     };
   }
 }

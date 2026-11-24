@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { germanText, type Message } from '@/lib/i18n/translate';
 import {
   WITHOUT_SURFACE_PROTECTION,
   refuseSurfaceDelete,
@@ -29,6 +30,10 @@ const SERVICES: Service[] = [
 function target(services: Service[] = SERVICES, publicUrl: string | null = ADDRESS) {
   return surfaceTarget(services, { publicUrl });
 }
+
+
+/** Die Meldung auf Deutsch, wie sie ohne Sprache herauskommt. */
+const de = (message: Message | null) => (message ? germanText(message) : message);
 
 describe('surfaceHost', () => {
   it('nimmt den Host aus der Adresse, klein und ohne Port', () => {
@@ -107,10 +112,13 @@ describe('surfaceTarget', () => {
 
 describe('refuseSurfaceDelete', () => {
   it('lehnt das Entfernen des Ziels der Oberfläche ab und nennt Adresse und Ausweg', () => {
-    const message = refuseSurfaceDelete(target(), 'hapm');
+    const message = de(refuseSurfaceDelete(target(), 'hapm'));
     expect(message).toContain(ADDRESS);
     expect(message).toContain('lässt sich nicht entfernen');
     expect(message).toContain('unter Allgemein');
+    // Der Ausweg ist die Adresse. Die Einrichtung lässt sich nicht erneut öffnen.
+    expect(message).toContain('Danach lässt sich dieses Ziel entfernen.');
+    expect(message).not.toContain('Einrichtung');
   });
 
   it('lässt jedes andere Ziel in Ruhe', () => {
@@ -124,7 +132,7 @@ describe('refuseSurfaceDelete', () => {
 
 describe('refuseSurfaceUpdate', () => {
   it('lehnt eine Änderung ab, nach der das Ziel die Domain nicht mehr trägt', () => {
-    const message = refuseSurfaceUpdate(target(), 'hapm', ['neu.example.org']);
+    const message = de(refuseSurfaceUpdate(target(), 'hapm', ['neu.example.org']));
     expect(message).toContain('hapm.example.org');
     expect(message).toContain('unter Allgemein');
   });
@@ -150,7 +158,7 @@ describe('refuseSurfaceUpdate', () => {
 
 describe('refuseSurfaceScopeRemoval', () => {
   it('lehnt das Entfernen der Gruppe ab, in der das Ziel liegt', () => {
-    const message = refuseSurfaceScopeRemoval(target(), 'hapm');
+    const message = de(refuseSurfaceScopeRemoval(target(), 'hapm'));
     expect(message).toContain(ADDRESS);
     expect(message).toContain('lässt sich nicht entfernen');
   });

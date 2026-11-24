@@ -1,5 +1,6 @@
 import { requireSession, requireCsrf } from '@/lib/session';
-import { ok, handleError, jsonBody } from '@/lib/api';
+import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
+import { getT } from '@/lib/i18n/server';
 import { logAudit, getClientIP } from '@/lib/audit';
 import { getProxyServer, readErrorPages } from '@/lib/haproxy/provision';
 import { applyPageDesign } from '@/lib/haproxy/page-design-apply';
@@ -33,6 +34,7 @@ interface ErrorPagesRow {
 export async function GET() {
   try {
     await requireSession();
+    const { t, locale } = await getT();
 
     // Der Zustand einer Datei ist ein Vergleich mit dem gespeicherten Design.
     await loadPageDesign();
@@ -49,7 +51,12 @@ export async function GET() {
           return {
             ...base,
             entries: [],
-            error: err instanceof Error ? err.message : 'HAProxy ist nicht erreichbar.',
+            error:
+              err instanceof ApiError
+                ? err.localized(locale)
+                : err instanceof Error
+                  ? err.message
+                  : t('HAProxy ist nicht erreichbar.'),
           };
         }
       })

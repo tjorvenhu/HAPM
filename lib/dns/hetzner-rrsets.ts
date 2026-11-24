@@ -1,10 +1,10 @@
 /**
- * RRSet ↔ Einträge: wie aus dem, was Hetzner führt, das wird, was die
- * Oberfläche zeigt, und zurück.
+ * RRSet ↔ Einträge: wie aus dem, was Hetzner führt, das wird, womit HAPM
+ * rechnet, und zurück.
  *
  * Hetzner kennt keinen einzelnen Eintrag mit Kennung. Es führt je Name und Art
  * einen Satz von Werten (`www/A` mit zwei Adressen), und die TTL gehört dem
- * Satz. Die Oberfläche zeigt weiter eine Zeile je Wert, wie bei Cloudflare.
+ * Satz. HAPM rechnet wie bei Cloudflare mit einem Eintrag je Wert.
  * Rein und ohne Netz, damit sich genau diese Abbildung prüfen lässt
  * (`tests/dns/hetzner-rrsets.test.ts`).
  *
@@ -37,11 +37,11 @@
  * In der Schreibweise einer Zonendatei. Ziele von CNAME, MX und NS enden auf
  * einen Punkt (`mail.example.org.`), die Priorität steht vor dem Ziel
  * (`10 mail.example.org.`), ein TXT-Wert steht in Anführungszeichen und wird ab
- * 255 Zeichen geteilt. Die Oberfläche zeigt und nimmt die Form, die Cloudflare
- * auch hat: Ziel ohne Punkt, Priorität als eigenes Feld, Text ohne
- * Anführungszeichen.
+ * 255 Zeichen geteilt. HAPM rechnet in der Form, die Cloudflare auch hat: Ziel
+ * ohne Punkt, Priorität als eigenes Feld, Text ohne Anführungszeichen.
  */
 
+import { msg, type Message } from '../i18n';
 import { recordFqdn, recordName } from './zones';
 import type { DnsRecord } from './records';
 
@@ -179,7 +179,7 @@ function writtenTarget(target: string): string {
   return `${target.trim().replace(/\.+$/, '')}.`;
 }
 
-/** Aus dem Wert, wie Hetzner ihn führt, das, was die Oberfläche zeigt. */
+/** Aus dem Wert, wie Hetzner ihn führt, die Form, mit der HAPM rechnet. */
 export function readValue(
   type: string,
   value: string,
@@ -270,14 +270,14 @@ export function writeConflict(
   next: ValueTarget,
   target: HetznerRRSet | null,
   current: RecordKey | null
-): string | null {
+): Message | null {
   if (!target) return null;
   const moved = current === null || !inSameSet(current, next);
   if (hasValue(target, next.value) && (moved || current.value !== next.value)) {
-    return 'Ein Eintrag mit diesem Namen, dieser Art und diesem Wert steht dort bereits.';
+    return msg('Ein Eintrag mit diesem Namen, dieser Art und diesem Wert steht dort bereits.');
   }
   if (moved && SINGLE_VALUE_TYPES.includes(next.type) && target.records.length > 0) {
-    return `Unter diesem Namen steht bereits ein ${next.type}-Eintrag, und ein Name trägt nur einen.`;
+    return msg('Unter diesem Namen steht bereits ein {type}-Eintrag, und ein Name trägt nur einen.', { type: next.type });
   }
   return null;
 }
@@ -287,8 +287,8 @@ export function writeConflict(
  *
  * Steht der Satz schon, geht seine TTL mit: Hetzner verlangt beim Hinzufügen
  * dieselbe. Gewechselt wird sie danach, und nur, wenn jemand eine gewählt hat.
- * „Keine eigene TTL" im Formular zum Anlegen heißt hier: so lassen, wie der
- * Name sie hat, und nicht: die der Nachbarn zurücksetzen.
+ * „Keine eigene TTL" heißt hier: so lassen, wie der Name sie hat, und nicht:
+ * die der Nachbarn zurücksetzen.
  */
 export function planCreate(next: ValueTarget, target: HetznerRRSet | null): RRSetStep[] {
   const ttl = target ? target.ttl : next.ttl;

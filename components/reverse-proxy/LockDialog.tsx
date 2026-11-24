@@ -10,6 +10,7 @@ import {
   validateLockPassword,
   type HaproxyService,
 } from '@/lib/haproxy/config';
+import { useT } from '@/lib/i18n/react';
 import type { ProxyRow } from './types';
 
 /**
@@ -41,6 +42,7 @@ interface Props {
 }
 
 export default function LockDialog({ proxy, service, onPick, onClose }: Props) {
+  const { t } = useT();
   const [step, setStep] = useState<'kind' | 'password'>('kind');
   const [password, setPassword] = useState(suggestPassword);
   const [copied, setCopied] = useState(false);
@@ -68,10 +70,10 @@ export default function LockDialog({ proxy, service, onPick, onClose }: Props) {
       <div className="modal">
         <div className="modal-header">
           <h2 className="modal-title">
-            {step === 'kind' ? 'Wie soll gesperrt werden?' : 'Mit Passwort sperren'}
+            {t(step === 'kind' ? 'Wie soll gesperrt werden?' : 'Mit Passwort sperren')}
             <span className="modal-subject">{service.domains[0] ?? service.id}</span>
           </h2>
-          <button type="button" className="modal-close" onClick={onClose} aria-label="Dialog schließen">
+          <button type="button" className="modal-close" onClick={onClose} aria-label={t('Dialog schließen')}>
             <X size={18} />
           </button>
         </div>
@@ -91,11 +93,13 @@ export default function LockDialog({ proxy, service, onPick, onClose }: Props) {
                   <ShieldCheck size={18} />
                 </span>
                 <span className="kind-card-text">
-                  <span className="kind-card-title">Nur Admin-IPs</span>
+                  <span className="kind-card-title">{t('Nur Admin-IPs')}</span>
                   <span className="kind-card-sub">
                     {hasAdminIps
-                      ? `Nur erreichbar von ${proxy.adminIps.join(', ')}. Alle anderen bekommen 403.`
-                      : 'Es sind keine Admin-IPs gesetzt. Sie stehen unter Reverse-Proxy, Einstellungen.'}
+                      ? t('Nur erreichbar von {addresses}. Alle anderen bekommen 403.', {
+                          addresses: proxy.adminIps.join(', '),
+                        })
+                      : t('Es sind keine Admin-IPs gesetzt. Sie stehen unter Reverse-Proxy, Einstellungen.')}
                   </span>
                 </span>
               </button>
@@ -109,19 +113,22 @@ export default function LockDialog({ proxy, service, onPick, onClose }: Props) {
                   <KeyRound size={18} />
                 </span>
                 <span className="kind-card-text">
-                  <span className="kind-card-title">Mit Passwort</span>
+                  <span className="kind-card-title">{t('Mit Passwort')}</span>
                   <span className="kind-card-sub">
                     {passwordPossible
-                      ? 'Besucher sehen eine Passwortabfrage. Nach richtiger Eingabe kommen sie 30 Tage lang ohne Abfrage durch.'
-                      : `Braucht HAProxy 2.4 oder neuer. Hier läuft ${shortVersion(proxy.version ?? '')}.`}
+                      ? t('Besucher sehen eine Passwortabfrage. Nach richtiger Eingabe kommen sie 30 Tage lang ohne Abfrage durch.')
+                      : t('Braucht HAProxy 2.4 oder neuer. Hier läuft {version}.', {
+                          version: shortVersion(proxy.version ?? ''),
+                        })}
                   </span>
                 </span>
               </button>
             </div>
             {service.domains.length > 1 && (
               <p className="form-hint">
-                Gesperrt werden alle {service.domains.length} Domains des Eintrags. Einzelne
-                Domains sperrt man im Bearbeiten-Dialog.
+                {t('Gesperrt werden alle {count} Domains des Eintrags. Einzelne Domains sperrt man im Bearbeiten-Dialog.', {
+                  count: service.domains.length,
+                })}
               </p>
             )}
           </div>
@@ -130,7 +137,7 @@ export default function LockDialog({ proxy, service, onPick, onClose }: Props) {
             <div className="modal-body">
               <div className="form-group">
                 <label className="form-label" htmlFor="lock-password">
-                  Passwort
+                  {t('Passwort')}
                 </label>
                 <div className="form-list-row">
                   <input
@@ -146,33 +153,33 @@ export default function LockDialog({ proxy, service, onPick, onClose }: Props) {
                   <button
                     type="button"
                     className="btn btn-ghost btn-icon"
-                    data-tooltip="Neuen Vorschlag erzeugen"
+                    data-tooltip={t('Neuen Vorschlag erzeugen')}
                     data-tooltip-pos="left"
                     onClick={() => setPassword(suggestPassword())}
-                    aria-label="Neuen Vorschlag erzeugen"
+                    aria-label={t('Neuen Vorschlag erzeugen')}
                   >
                     <RefreshCw size={16} />
                   </button>
                   <button type="button" className="btn btn-secondary" onClick={copyPassword}>
                     <Copy size={16} />
-                    {copied ? 'Kopiert' : 'Kopieren'}
+                    {t(copied ? 'Kopiert' : 'Kopieren')}
                   </button>
                 </div>
                 <p className="form-hint">
                   {password !== '' && passwordError
-                    ? passwordError
-                    : `Mindestens ${LOCK_PASSWORD_MIN} Zeichen. Jetzt kopieren: gespeichert wird nur ein Hash.`}
+                    ? t(passwordError)
+                    : t('Mindestens {min} Zeichen. Jetzt kopieren: gespeichert wird nur ein Hash.', { min: LOCK_PASSWORD_MIN })}
                 </p>
               </div>
             </div>
             <div className="modal-footer">
               <button type="button" className="btn btn-secondary" onClick={() => setStep('kind')}>
                 <ArrowLeft size={16} />
-                Zurück
+                {t('Zurück')}
               </button>
               <button type="submit" className="btn btn-primary" disabled={!!passwordError}>
                 <Lock size={16} />
-                Sperren
+                {t('Sperren')}
               </button>
             </div>
           </form>

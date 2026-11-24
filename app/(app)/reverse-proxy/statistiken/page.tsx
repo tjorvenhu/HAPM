@@ -19,8 +19,10 @@ import { seriesColor } from '@/lib/systems/series';
 // Aus dem reinen Modul und NICHT aus stats-collect: das zieht lib/db und
 // lib/ssh nach sich und bricht den Build. Siehe dort.
 import { HAPROXY_METRICS_INTERVAL_MS } from '@/lib/haproxy/stats-series';
-import type { ChartPoint, ChartSeries } from '@/lib/systems/series';
-import { fmtCount, fmtCountShort, fmtKb, fmtBytes, fmtMs, fmtShare } from './format';
+import type { ChartPoint } from '@/lib/systems/series';
+import { formatBytes, formatCount, formatDateTime, formatShare, formatTime, msgid } from '@/lib/i18n';
+import { useT } from '@/lib/i18n/react';
+import { STATS_FORMATS, seriesPerLocale } from './format';
 
 /**
  * Die Auswertung des Reverse-Proxys.
@@ -125,52 +127,52 @@ interface TrafficResponse {
  * ══════════════════════════════════════════════════════════════════════ */
 
 const RANGES = [
-  { value: '6', label: 'Letzte 6 Stunden' },
-  { value: '24', label: 'Letzte 24 Stunden' },
-  { value: '72', label: 'Letzte 3 Tage' },
-  { value: '168', label: 'Letzte 7 Tage' },
-  { value: '720', label: 'Letzte 30 Tage' },
+  { value: '6', label: msgid('Letzte 6 Stunden') },
+  { value: '24', label: msgid('Letzte 24 Stunden') },
+  { value: '72', label: msgid('Letzte 3 Tage') },
+  { value: '168', label: msgid('Letzte 7 Tage') },
+  { value: '720', label: msgid('Letzte 30 Tage') },
 ];
 
 /** Die Statusklassen in der Reihenfolge, in der sie gestapelt werden: gut
  *  unten, kaputt oben. Sonst liegt die 5xx-Spur zwischen zwei harmlosen
  *  Bändern und ist beim Überfliegen nicht zu finden. */
-const STATUS_SERIES: ChartSeries[] = [
-  { key: 'http2xx', name: '2xx erfolgreich', color: seriesColor(0) },
-  { key: 'http3xx', name: '3xx weitergeleitet', color: seriesColor(1) },
-  { key: 'httpOther', name: 'Andere', color: seriesColor(5) },
-  { key: 'http4xx', name: '4xx Anfragefehler', color: seriesColor(2) },
-  { key: 'http5xx', name: '5xx Serverfehler', color: seriesColor(3) },
-];
+const STATUS_SERIES = seriesPerLocale([
+  { key: 'http2xx', name: msgid('2xx erfolgreich'), color: seriesColor(0) },
+  { key: 'http3xx', name: msgid('3xx weitergeleitet'), color: seriesColor(1) },
+  { key: 'httpOther', name: msgid('Andere'), color: seriesColor(5) },
+  { key: 'http4xx', name: msgid('4xx Anfragefehler'), color: seriesColor(2) },
+  { key: 'http5xx', name: msgid('5xx Serverfehler'), color: seriesColor(3) },
+]);
 
-const TRAFFIC_SERIES: ChartSeries[] = [
-  { key: 'bytesOutKb', name: 'Ausgehend', color: seriesColor(0) },
-  { key: 'bytesInKb', name: 'Eingehend', color: seriesColor(4) },
-];
+const TRAFFIC_SERIES = seriesPerLocale([
+  { key: 'bytesOutKb', name: msgid('Ausgehend'), color: seriesColor(0) },
+  { key: 'bytesInKb', name: msgid('Eingehend'), color: seriesColor(4) },
+]);
 
-const TIMING_SERIES: ChartSeries[] = [
-  { key: 'responseMs', name: 'Antwort des Ziels', color: seriesColor(0) },
-  { key: 'totalMs', name: 'Gesamt', color: seriesColor(1) },
-  { key: 'queueMs', name: 'Warteschlange', color: seriesColor(3) },
-];
+const TIMING_SERIES = seriesPerLocale([
+  { key: 'responseMs', name: msgid('Antwort des Ziels'), color: seriesColor(0) },
+  { key: 'totalMs', name: msgid('Gesamt'), color: seriesColor(1) },
+  { key: 'queueMs', name: msgid('Warteschlange'), color: seriesColor(3) },
+]);
 
 /** Eine einzelne Reihe fängt bei der ersten Farbe an, wie jede andere
  *  Einzelreihe im Werkzeug. Sie stand auf `seriesColor(4)` und war damit rosa —
  *  neben Diagrammen, in denen Rottöne die Fehler sind, liest sich das als
  *  Warnung, und gleichzeitige Sitzungen sind keine. */
-const SESSION_SERIES: ChartSeries[] = [
-  { key: 'sessionsCurrent', name: 'Gleichzeitige Sitzungen', color: seriesColor(0) },
-];
+const SESSION_SERIES = seriesPerLocale([
+  { key: 'sessionsCurrent', name: msgid('Gleichzeitige Sitzungen'), color: seriesColor(0) },
+]);
 
-const PROBLEM_SERIES: ChartSeries[] = [
-  { key: 'errors', name: 'Fehler', color: seriesColor(3) },
-  { key: 'denied', name: 'Abgewiesen', color: seriesColor(2) },
-  { key: 'retries', name: 'Wiederholt', color: seriesColor(5) },
-];
+const PROBLEM_SERIES = seriesPerLocale([
+  { key: 'errors', name: msgid('Fehler'), color: seriesColor(3) },
+  { key: 'denied', name: msgid('Abgewiesen'), color: seriesColor(2) },
+  { key: 'retries', name: msgid('Wiederholt'), color: seriesColor(5) },
+]);
 
-const REQUEST_SERIES: ChartSeries[] = [
-  { key: 'count', name: 'Anfragen', color: seriesColor(0) },
-];
+const REQUEST_SERIES = seriesPerLocale([
+  { key: 'count', name: msgid('Anfragen'), color: seriesColor(0) },
+]);
 
 /* ══════════════════════════════════════════════════════════════════════
  * Die Seite
@@ -192,6 +194,8 @@ function StatsView() {
   const { apiFetch } = useApp();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { t, locale } = useT();
+  const fmt = STATS_FORMATS[locale];
 
   const [hours, setHours] = useState('24');
   /**
@@ -245,12 +249,12 @@ function StatsView() {
         setStats(data.data as StatsResponse);
         setError('');
       } catch {
-        setError('Die Zeitreihe konnte nicht geladen werden.');
+        setError(t('Die Zeitreihe konnte nicht geladen werden.'));
       } finally {
         setLoading(false);
       }
     },
-    [apiFetch, hours, scope]
+    [apiFetch, hours, scope, t]
   );
 
   useEffect(() => {
@@ -288,11 +292,11 @@ function StatsView() {
       if (!data.success) throw new Error(data.error);
       setTraffic(data.data as TrafficResponse);
     } catch {
-      setTrafficError('Die Zugriffe konnten nicht ausgewertet werden.');
+      setTrafficError(t('Die Zugriffe konnten nicht ausgewertet werden.'));
     } finally {
       setTrafficLoading(false);
     }
-  }, [apiFetch, scope]);
+  }, [apiFetch, scope, t]);
 
   // Beim Öffnen und bei jedem Wechsel des Dienstes. NICHT
   // beim Zeitraum: der gilt für die Zeitreihe, das Log liest immer sein Fenster.
@@ -346,21 +350,21 @@ function StatsView() {
           {scope ? (
             <button type="button" className="sys-back" onClick={() => selectScope('')}>
               <ArrowLeft size={14} />
-              Alle Dienste
+              {t('Alle Dienste')}
             </button>
           ) : (
             <Link className="sys-back" href="/reverse-proxy">
               <ArrowLeft size={14} />
-              Reverse-Proxy
+              {t('Reverse-Proxy')}
             </Link>
           )}
           <h1 className="page-title">
-            {scope ? `Statistik: ${scope}` : 'Reverse-Proxy-Statistik'}
+            {scope ? t('Statistik: {scope}', { scope }) : t('Reverse-Proxy-Statistik')}
           </h1>
           <p className="page-subtitle">
             {scope
-              ? 'Nur dieser Dienst. Die Zahlen kommen aus HAProxys eigener Statistik, die Zugriffe aus seinem Log.'
-              : 'Was über HAProxy läuft: Anfragen, Statuscodes, übertragene Menge, Antwortzeiten und wer zugreift.'}
+              ? t('Nur dieser Dienst. Die Zahlen kommen aus HAProxys eigener Statistik, die Zugriffe aus seinem Log.')
+              : t('Was über HAProxy läuft: Anfragen, Statuscodes, übertragene Menge, Antwortzeiten und wer zugreift.')}
           </p>
         </div>
         {/* Der Zeitraum steht im Seitenkopf und nicht über den Diagrammen: er
@@ -384,7 +388,7 @@ function StatsView() {
                 value={scope}
                 onChange={selectScope}
                 options={[
-                  { value: '', label: 'Alle Dienste' },
+                  { value: '', label: t('Alle Dienste') },
                   ...(stats?.services ?? []).map((service) => ({
                     value: service.scope,
                     label: service.scope,
@@ -394,11 +398,15 @@ function StatsView() {
             </div>
           )}
           <div style={{ minWidth: 180 }}>
-            <Select value={hours} onChange={setHours} options={RANGES} />
+            <Select
+              value={hours}
+              onChange={setHours}
+              options={RANGES.map((range) => ({ value: range.value, label: t(range.label) }))}
+            />
           </div>
           <button className="btn btn-secondary" onClick={refresh} disabled={refreshing}>
             {refreshing ? <Loader2 size={16} className="spin" /> : <RefreshCw size={16} />}
-            Aktualisieren
+            {t('Aktualisieren')}
           </button>
         </div>
       </div>
@@ -422,10 +430,8 @@ function StatsView() {
             <div className="alert alert-info sys-block">
               <Timer size={16} style={{ flexShrink: 0 }} />
               <span>
-                <strong>Die Zeitreihe fängt gerade erst an.</strong> HAProxy liefert Zählerstände
-                seit dem Start seines Prozesses, kein Fenster. Ein Balken ist immer die Differenz
-                zweier Proben. Die gleichzeitigen Sitzungen stehen deshalb schon da, Anfragen,
-                Statuscodes und übertragene Menge ab der zweiten Runde. Erfasst wird jede Minute.
+                <strong>{t('Die Zeitreihe fängt gerade erst an.')}</strong>{' '}
+                {t('HAProxy liefert Zählerstände seit dem Start seines Prozesses, kein Fenster. Ein Balken ist immer die Differenz zweier Proben. Die gleichzeitigen Sitzungen stehen deshalb schon da, Anfragen, Statuscodes und übertragene Menge ab der zweiten Runde. Erfasst wird jede Minute.')}
               </span>
             </div>
           )}
@@ -434,58 +440,58 @@ function StatsView() {
           <div className="kpi-grid sys-block">
             <Kpi
               icon={<Activity size={16} />}
-              label="Anfragen"
-              value={requests === null ? '–' : fmtCount(requests)}
+              label={t('Anfragen')}
+              value={requests === null ? '–' : fmt.count(requests)}
             />
             <Kpi
               icon={<BarChart3 size={16} />}
-              label="Erfolgsquote"
-              value={fmtShare(successRate)}
+              label={t('Erfolgsquote')}
+              value={formatShare(locale, successRate, 1)}
             />
             <Kpi
               icon={<AlertTriangle size={16} />}
-              label="Serverfehler (5xx)"
+              label={t('Serverfehler (5xx)')}
               value={
                 totals.http5xx === null || totals.http5xx === undefined
                   ? '–'
-                  : `${fmtCount(totals.http5xx)}${errorRate === null ? '' : ` · ${fmtShare(errorRate)}`}`
+                  : `${fmt.count(totals.http5xx)}${errorRate === null ? '' : ` · ${formatShare(locale, errorRate, 1)}`}`
               }
             />
             <Kpi
               icon={<ArrowDownUp size={16} />}
-              label="Ausgehend"
+              label={t('Ausgehend')}
               value={
                 totals.bytesOutKb === null || totals.bytesOutKb === undefined
                   ? '–'
-                  : fmtKb(totals.bytesOutKb)
+                  : fmt.kb(totals.bytesOutKb)
               }
             />
             <Kpi
               icon={<Timer size={16} />}
-              label="Ø Antwortzeit"
+              label={t('Ø Antwortzeit')}
               value={
                 totals.responseMs === null || totals.responseMs === undefined
                   ? '–'
-                  : fmtMs(totals.responseMs)
+                  : fmt.ms(totals.responseMs)
               }
             />
             <Kpi
               icon={<Users size={16} />}
-              label="IP-Adressen"
-              value={traffic ? fmtCount(traffic.totals.uniqueIps) : '–'}
+              label={t('IP-Adressen')}
+              value={traffic ? fmt.count(traffic.totals.uniqueIps) : '–'}
             />
             <Kpi
               icon={<Globe size={16} />}
-              label="Länder"
-              value={traffic ? fmtCount(traffic.countries.length) : '–'}
+              label={t('Länder')}
+              value={traffic ? fmt.count(traffic.countries.length) : '–'}
             />
             <Kpi
               icon={<ShieldBan size={16} />}
-              label="Abgewiesen"
+              label={t('Abgewiesen')}
               value={
                 totals.denied === null || totals.denied === undefined
                   ? '–'
-                  : fmtCount(totals.denied)
+                  : fmt.count(totals.denied)
               }
             />
           </div>
@@ -515,90 +521,102 @@ function StatsView() {
               nicht mehr die Höhe des Bandes. Sie steht als Kennzahl oben.
             */}
             <ChartCard
-              title="Anfragen nach Statusklasse"
-              subtitle={`Summe je ${stats?.bucketMinutes ?? 5} Minuten, je Klasse eine Linie. Das Gesamtaufkommen steht als Kennzahl oben.`}
+              title={t('Anfragen nach Statusklasse')}
+              subtitle={t(
+                'Summe je {minutes} Minuten, je Klasse eine Linie. Das Gesamtaufkommen steht als Kennzahl oben.',
+                { minutes: stats?.bucketMinutes ?? 5 }
+              )}
             >
               <MetricChart
                 data={points}
-                series={STATUS_SERIES}
-                format={fmtCountShort}
+                series={STATUS_SERIES[locale]}
+                format={fmt.countShort}
                 rangeMs={rangeMs}
               />
             </ChartCard>
 
             <ChartCard
-              title="Übertragene Menge"
-              subtitle="Aus Sicht des Proxys: ausgehend ist, was an die Besucher ging. Zwei Richtungen, deshalb zwei Linien und kein Stapel: ihre Summe bedeutet nichts."
+              title={t('Übertragene Menge')}
+              subtitle={t(
+                'Aus Sicht des Proxys: ausgehend ist, was an die Besucher ging. Zwei Richtungen, deshalb zwei Linien und kein Stapel: ihre Summe bedeutet nichts.'
+              )}
             >
               <MetricChart
                 data={points}
-                series={TRAFFIC_SERIES}
-                format={fmtKb}
+                series={TRAFFIC_SERIES[locale]}
+                format={fmt.kb}
                 rangeMs={rangeMs}
               />
             </ChartCard>
 
             <ChartCard
-              title="Antwortzeiten"
+              title={t('Antwortzeiten')}
               subtitle={
                 scope
-                  ? 'Gleitende Mittel über die letzten 1024 Antworten, wie HAProxy sie führt, keine Summen.'
-                  : 'Aus den Backends: ein Frontend hat kein Ziel und misst deshalb keine Antwortzeit. Nach Anfragen gewichtet, damit ein Dienst mit drei Aufrufen die Kurve nicht so weit zieht wie einer mit zehntausend.'
+                  ? t('Gleitende Mittel über die letzten 1024 Antworten, wie HAProxy sie führt, keine Summen.')
+                  : t(
+                      'Aus den Backends: ein Frontend hat kein Ziel und misst deshalb keine Antwortzeit. Nach Anfragen gewichtet, damit ein Dienst mit drei Aufrufen die Kurve nicht so weit zieht wie einer mit zehntausend.'
+                    )
               }
             >
               <MetricChart
                 data={points}
-                series={TIMING_SERIES}
-                format={fmtMs}
+                series={TIMING_SERIES[locale]}
+                format={fmt.ms}
                 rangeMs={rangeMs}
               />
             </ChartCard>
 
             <ChartCard
-              title="Gleichzeitige Sitzungen"
-              subtitle="Momentanwert zum Zeitpunkt jeder Probe, nicht der Höchstwert dazwischen."
+              title={t('Gleichzeitige Sitzungen')}
+              subtitle={t('Momentanwert zum Zeitpunkt jeder Probe, nicht der Höchstwert dazwischen.')}
             >
               <MetricChart
                 data={points}
-                series={SESSION_SERIES}
-                format={fmtCount}
+                series={SESSION_SERIES[locale]}
+                format={fmt.count}
                 rangeMs={rangeMs}
                 area
               />
             </ChartCard>
 
             <ChartCard
-              title="Fehler, Abweisungen, Wiederholungen"
-              subtitle="Abgewiesen heißt: von einer Regel gestoppt, etwa der Sperre auf Admin-Adressen. Wiederholt heißt: HAProxy hat es an einem anderen Ziel erneut versucht. Das kennt nur ein Backend. Fehler und Abweisungen sind die Eingangs- und die Zielseite zusammengezählt."
+              title={t('Fehler, Abweisungen, Wiederholungen')}
+              subtitle={t(
+                'Abgewiesen heißt: von einer Regel gestoppt, etwa der Sperre auf Admin-Adressen. Wiederholt heißt: HAProxy hat es an einem anderen Ziel erneut versucht. Das kennt nur ein Backend. Fehler und Abweisungen sind die Eingangs- und die Zielseite zusammengezählt.'
+              )}
             >
               {/* Drei unabhängige Größen, also drei Linien: gestapelt läse man
                   eine Gesamtzahl „Probleme", die keine Bedeutung hat. */}
               <MetricChart
                 data={points}
-                series={PROBLEM_SERIES}
-                format={fmtCountShort}
+                series={PROBLEM_SERIES[locale]}
+                format={fmt.countShort}
                 rangeMs={rangeMs}
               />
             </ChartCard>
 
             <ChartCard
-              title="Zugriffe je Stunde"
+              title={t('Zugriffe je Stunde')}
               subtitle={
                 traffic?.totals.from
-                  ? `Aus dem Access-Log, ${new Date(traffic.totals.from).toLocaleString('de-DE')} bis ${traffic.totals.to ? new Date(traffic.totals.to).toLocaleString('de-DE') : '–'}.`
-                  : 'Aus dem Access-Log.'
+                  ? t('Aus dem Access-Log, {from} bis {to}.', {
+                      from: formatDateTime(locale, traffic.totals.from),
+                      to: traffic.totals.to ? formatDateTime(locale, traffic.totals.to) : '–',
+                    })
+                  : t('Aus dem Access-Log.')
               }
             >
               {trafficLoading ? (
                 <div className="viz-empty">
                   <Loader2 size={16} className="spin" style={{ marginRight: 8 }} />
-                  Das Log wird ausgewertet …
+                  {t('Das Log wird ausgewertet …')}
                 </div>
               ) : (
                 <MetricChart
                   data={hourPoints}
-                  series={REQUEST_SERIES}
-                  format={fmtCountShort}
+                  series={REQUEST_SERIES[locale]}
+                  format={fmt.countShort}
                   rangeMs={24 * 3_600_000}
                   area
                 />
@@ -653,11 +671,12 @@ function Ranking({
   rows: { key: string; label: React.ReactNode; title?: string; count: number }[];
   onSelect?: (key: string) => void;
 }) {
+  const { t } = useT();
   return (
     <BarList
       items={rows.map((row) => ({ key: row.key, label: row.label, title: row.title, value: row.count }))}
       onSelect={onSelect}
-      emptyText="Keine Daten"
+      emptyText={t('Keine Daten')}
     />
   );
 }
@@ -682,6 +701,7 @@ function TrafficSection({
   onReload: () => void;
   scope: string;
 }) {
+  const { t, plural, locale } = useT();
   const withoutLog = traffic?.proxies.filter((proxy) => proxy.source === 'none') ?? [];
   const failed = traffic?.proxies.filter((proxy) => proxy.error) ?? [];
 
@@ -689,16 +709,21 @@ function TrafficSection({
     <div className="sys-block">
       <div className="card-header" style={{ marginBottom: 12 }}>
         <div>
-          <h2 className="card-title">Zugriffe</h2>
+          <h2 className="card-title">{t('Zugriffe')}</h2>
           <p className="card-subtitle">
-            Aus dem Access-Log von HAProxy. {traffic
-              ? `${fmtCount(traffic.totals.parsed)} von ${fmtCount(traffic.totals.lines)} gelesenen Zeilen ausgewertet, zuletzt ${new Date(traffic.collectedAt).toLocaleTimeString('de-DE')}.`
-              : 'Wird nicht im Hintergrund erfasst: jeder Lauf liest das Log neu.'}
+            {t('Aus dem Access-Log von HAProxy.')}{' '}
+            {traffic
+              ? t('{parsed} von {lines} gelesenen Zeilen ausgewertet, zuletzt {time}.', {
+                  parsed: formatCount(locale, traffic.totals.parsed),
+                  lines: formatCount(locale, traffic.totals.lines),
+                  time: formatTime(locale, traffic.collectedAt, true),
+                })
+              : t('Wird nicht im Hintergrund erfasst: jeder Lauf liest das Log neu.')}
           </p>
         </div>
         <button className="btn btn-secondary btn-sm" onClick={onReload} disabled={loading}>
           {loading ? <Loader2 size={16} className="spin" /> : <RefreshCw size={16} />}
-          Neu auswerten
+          {t('Neu auswerten')}
         </button>
       </div>
 
@@ -712,9 +737,9 @@ function TrafficSection({
 
       {!loading && traffic && withoutLog.length > 0 && failed.length === 0 && (
         <div className="alert alert-info sys-block">
-          Es wurde kein HAProxy-Log gefunden. HAPM schreibt das Log des HAProxy-Containers mit.
-          Liegt dort nichts, hat HAProxy noch keine Anfrage protokolliert. Die Zahlen oben (aus
-          HAProxys eigener Statistik) stimmen trotzdem.
+          {t(
+            'Es wurde kein HAProxy-Log gefunden. HAPM schreibt das Log des HAProxy-Containers mit. Liegt dort nichts, hat HAProxy noch keine Anfrage protokolliert. Die Zahlen oben (aus HAProxys eigener Statistik) stimmen trotzdem.'
+          )}
         </div>
       )}
 
@@ -723,11 +748,11 @@ function TrafficSection({
       ) : !traffic || traffic.totals.parsed === 0 ? (
         <div className="empty-state">
           <FileText size={40} />
-          <h3>Keine auswertbaren Zeilen</h3>
+          <h3>{t('Keine auswertbaren Zeilen')}</h3>
           <p>
             {scope
-              ? 'Für diesen Dienst stand im gelesenen Fenster des Logs keine Anfrage.'
-              : 'Im gelesenen Fenster des Logs stand keine Anfrage, oder das Format ist keines, das sich lesen lässt.'}
+              ? t('Für diesen Dienst stand im gelesenen Fenster des Logs keine Anfrage.')
+              : t('Im gelesenen Fenster des Logs stand keine Anfrage, oder das Format ist keines, das sich lesen lässt.')}
           </p>
         </div>
       ) : (
@@ -736,11 +761,13 @@ function TrafficSection({
             <div className="card">
               <div className="card-header">
                 <div>
-                  <h3 className="card-title">Länder</h3>
+                  <h3 className="card-title">{t('Länder')}</h3>
                   <p className="card-subtitle">
                     {!traffic.geoipAvailable
-                      ? 'Es ist keine Länder-Tabelle hinterlegt.'
-                      : `Aus ${fmtShare(traffic.countryCoverage)} der Anfragen. Die Auswertung nimmt die häufigsten Adressen, nicht alle.`}
+                      ? t('Es ist keine Länder-Tabelle hinterlegt.')
+                      : t('Aus {share} der Anfragen. Die Auswertung nimmt die häufigsten Adressen, nicht alle.', {
+                          share: formatShare(locale, traffic.countryCoverage, 1),
+                        })}
                   </p>
                 </div>
               </div>
@@ -748,10 +775,10 @@ function TrafficSection({
                 rows={traffic.countries.slice(0, 12).map((entry) => ({
                   key: entry.code,
                   count: entry.count,
-                  title: countryName(entry.code),
+                  title: countryName(entry.code, locale),
                   label: (
                     <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <CountryFlag code={entry.code} /> {countryName(entry.code)}
+                      <CountryFlag code={entry.code} /> {countryName(entry.code, locale)}
                     </span>
                   ),
                 }))}
@@ -761,9 +788,12 @@ function TrafficSection({
             <div className="card">
               <div className="card-header">
                 <div>
-                  <h3 className="card-title">Adressen</h3>
+                  <h3 className="card-title">{t('Adressen')}</h3>
                   <p className="card-subtitle">
-                    {fmtCount(traffic.totals.uniqueIps)} verschiedene im Fenster.
+                    {plural(traffic.totals.uniqueIps, {
+                      one: '{count} Adresse im Fenster.',
+                      other: '{count} verschiedene im Fenster.',
+                    })}
                   </p>
                 </div>
               </div>
@@ -781,8 +811,8 @@ function TrafficSection({
             <div className="card">
               <div className="card-header">
                 <div>
-                  <h3 className="card-title">Statuscodes</h3>
-                  <p className="card-subtitle">Der genaue Code, nicht die Klasse.</p>
+                  <h3 className="card-title">{t('Statuscodes')}</h3>
+                  <p className="card-subtitle">{t('Der genaue Code, nicht die Klasse.')}</p>
                 </div>
               </div>
               <Ranking
@@ -797,8 +827,8 @@ function TrafficSection({
             <div className="card">
               <div className="card-header">
                 <div>
-                  <h3 className="card-title">Methoden</h3>
-                  <p className="card-subtitle">Womit angefragt wurde.</p>
+                  <h3 className="card-title">{t('Methoden')}</h3>
+                  <p className="card-subtitle">{t('Womit angefragt wurde.')}</p>
                 </div>
               </div>
               <Ranking
@@ -829,9 +859,9 @@ function TrafficSection({
               <div className="card">
                 <div className="card-header">
                   <div>
-                    <h3 className="card-title">Pfade</h3>
+                    <h3 className="card-title">{t('Pfade')}</h3>
                     <p className="card-subtitle">
-                      Ohne Abfrageteil, sonst wäre jede Suche ein eigener Pfad.
+                      {t('Ohne Abfrageteil, sonst wäre jede Suche ein eigener Pfad.')}
                     </p>
                   </div>
                 </div>
@@ -848,11 +878,11 @@ function TrafficSection({
               <div className="card">
                 <div className="card-header">
                   <div>
-                    <h3 className="card-title">Dieser Dienst im Log</h3>
+                    <h3 className="card-title">{t('Dieser Dienst im Log')}</h3>
                     <p className="card-subtitle">
-                      Eine andere Zählung als die Zeitreihe oben: hier zählt jede Zeile im
-                      gelesenen Fenster, dort HAProxys eigener Zähler über den gewählten Zeitraum.
-                      Zwei verschiedene Zahlen sind hier normal und kein Widerspruch.
+                      {t(
+                        'Eine andere Zählung als die Zeitreihe oben: hier zählt jede Zeile im gelesenen Fenster, dort HAProxys eigener Zähler über den gewählten Zeitraum. Zwei verschiedene Zahlen sind hier normal und kein Widerspruch.'
+                      )}
                     </p>
                   </div>
                 </div>
@@ -865,33 +895,33 @@ function TrafficSection({
                       fontSize: '0.875rem',
                     }}
                   >
-                    Keine Daten
+                    {t('Keine Daten')}
                   </div>
                 ) : (
                   <dl className="detail-grid">
                     <div>
-                      <dt>Anfragen</dt>
-                      <dd>{traffic.backends[0].requests.toLocaleString('de-DE')}</dd>
+                      <dt>{t('Anfragen')}</dt>
+                      <dd>{formatCount(locale, traffic.backends[0].requests)}</dd>
                     </div>
                     <div>
-                      <dt>Übertragen</dt>
-                      <dd>{fmtBytes(traffic.backends[0].bytes)}</dd>
+                      <dt>{t('Übertragen')}</dt>
+                      <dd>{formatBytes(locale, traffic.backends[0].bytes)}</dd>
                     </div>
                     <div>
-                      <dt>Erfolgreich (2xx)</dt>
-                      <dd>{traffic.backends[0].http2xx.toLocaleString('de-DE')}</dd>
+                      <dt>{t('Erfolgreich (2xx)')}</dt>
+                      <dd>{formatCount(locale, traffic.backends[0].http2xx)}</dd>
                     </div>
                     <div>
-                      <dt>Weitergeleitet (3xx)</dt>
-                      <dd>{traffic.backends[0].http3xx.toLocaleString('de-DE')}</dd>
+                      <dt>{t('Weitergeleitet (3xx)')}</dt>
+                      <dd>{formatCount(locale, traffic.backends[0].http3xx)}</dd>
                     </div>
                     <div>
-                      <dt>Anfragefehler (4xx)</dt>
-                      <dd>{traffic.backends[0].http4xx.toLocaleString('de-DE')}</dd>
+                      <dt>{t('Anfragefehler (4xx)')}</dt>
+                      <dd>{formatCount(locale, traffic.backends[0].http4xx)}</dd>
                     </div>
                     <div>
-                      <dt>Serverfehler (5xx)</dt>
-                      <dd>{traffic.backends[0].http5xx.toLocaleString('de-DE')}</dd>
+                      <dt>{t('Serverfehler (5xx)')}</dt>
+                      <dd>{formatCount(locale, traffic.backends[0].http5xx)}</dd>
                     </div>
                   </dl>
                 )}
@@ -920,14 +950,16 @@ function ServiceTable({
   onSelect: (scope: string) => void;
   hours: number;
 }) {
+  const { t, plural } = useT();
   if (services.length === 0) {
     return (
       <div className="empty-state">
         <BarChart3 size={40} />
-        <h3>Noch keine Messwerte</h3>
+        <h3>{t('Noch keine Messwerte')}</h3>
         <p>
-          Die Zeitreihe wird jede Minute erfasst. Nach dem Start von HAPM steht der erste Punkt
-          nach zwei Runden: eine einzelne Probe ist ein Zählerstand, kein Zeitraum.
+          {t(
+            'Die Zeitreihe wird jede Minute erfasst. Nach dem Start von HAPM steht der erste Punkt nach zwei Runden: eine einzelne Probe ist ein Zählerstand, kein Zeitraum.'
+          )}
         </p>
       </div>
     );
@@ -937,10 +969,12 @@ function ServiceTable({
     <div className="card sys-block">
       <div className="card-header">
         <div>
-          <h3 className="card-title">Dienste</h3>
+          <h3 className="card-title">{t('Dienste')}</h3>
           <p className="card-subtitle">
-            Anfragen der letzten {hours === 1 ? 'Stunde' : `${hours} Stunden`}, je Backend. Ein
-            Klick öffnet die Auswertung dieses Dienstes.
+            {plural(hours, {
+              one: 'Anfragen der letzten Stunde, je Backend. Ein Klick öffnet die Auswertung dieses Dienstes.',
+              other: 'Anfragen der letzten {count} Stunden, je Backend. Ein Klick öffnet die Auswertung dieses Dienstes.',
+            })}
           </p>
         </div>
       </div>

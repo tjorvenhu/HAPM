@@ -4,6 +4,7 @@ import { useId } from 'react';
 import { RotateCcw } from 'lucide-react';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import { isHexColor } from '@/ui/static/page';
+import { useT } from '@/lib/i18n/react';
 
 /**
  * Eine Farbe: Farbwahl des Browsers und daneben dieselbe Farbe als `#rrggbb`.
@@ -23,6 +24,7 @@ interface ColorFieldProps {
 }
 
 export default function ColorField({ label, hint, value, fallback, onChange }: ColorFieldProps) {
+  const { t } = useT();
   const id = useId();
   const invalid = value !== null && !isHexColor(value);
 
@@ -38,7 +40,7 @@ export default function ColorField({ label, hint, value, fallback, onChange }: C
         <input
           type="color"
           className="hapm-color-swatch"
-          aria-label={`${label} wählen`}
+          aria-label={t('{label} wählen', { label })}
           // Die Farbwahl kennt nur gültige Werte. Steht im Feld gerade keiner,
           // zeigt sie die Vorgabe.
           value={value !== null && isHexColor(value) ? value.toLowerCase() : fallback}
@@ -58,15 +60,17 @@ export default function ColorField({ label, hint, value, fallback, onChange }: C
         <button
           type="button"
           className="btn btn-ghost btn-icon"
-          data-tooltip="Zurück auf die Vorgabe"
-          aria-label={`${label}: zurück auf die Vorgabe`}
+          data-tooltip={t('Zurück auf die Vorgabe')}
+          aria-label={t('{label}: zurück auf die Vorgabe', { label })}
           disabled={value === null}
           onClick={() => onChange(null)}
         >
           <RotateCcw size={16} />
         </button>
       </div>
-      {invalid && <span className="form-hint">Eine Farbe hat die Form #rrggbb, zum Beispiel {fallback}.</span>}
+      {invalid && (
+        <span className="form-hint">{t('Eine Farbe hat die Form #rrggbb, zum Beispiel {color}.', { color: fallback })}</span>
+      )}
     </div>
   );
 }

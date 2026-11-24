@@ -33,7 +33,7 @@ export const common: Dictionary = {
   'Erfolgreich': 'Succeeded',
   'Mit Hinweisen': 'With warnings',
   'Fehlgeschlagen': 'Failed',
-  'Abgebrochen': 'Cancelled',
+  'Abgebrochen': 'Canceled',
   'Update': 'Update',
 
   // Meldungen, die jede Route geben kann (`lib/api.ts`)
@@ -46,4 +46,11 @@ export const common: Dictionary = {
   'Zu viele Versuche. Bitte warten Sie 5 Minuten.': 'Too many attempts. Please wait 5 minutes.',
   'Die Anfrage ist fehlgeschlagen.': 'The request failed.',
   'Der Vorgang ist fehlgeschlagen.': 'The operation failed.',
+  // Von mehreren Bereichen gebraucht
+  'Die Passwörter stimmen nicht überein.': 'The passwords do not match.',
+  'Passwort wiederholen': 'Repeat password',
+  'Die Einrichtung ließ sich nicht starten.': 'Setup could not be started.',
+  'Mindestens 10 Zeichen mit Groß- und Kleinbuchstaben und einer Zahl.': 'At least 10 characters with uppercase and lowercase letters and a digit.',
+  'Wert': 'Value',
+  'Erneut versuchen': 'Try again',
 };

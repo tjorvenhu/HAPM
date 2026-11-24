@@ -126,7 +126,7 @@ export default function SetupPage() {
       if (!live) return;
       setCsrf(me.data?.csrfToken ?? '');
       setSetup(view);
-      // „Einrichtung erneut öffnen" beginnt vorn, nicht beim letzten Schritt.
+      // Zurück auf einen schon erreichten Schritt, etwa aus dem Hinweis der Übersicht.
       const wanted = new URLSearchParams(window.location.search).get('schritt') as Shown | null;
       setShown(wanted && SETUP_STEPS.includes(wanted) && wanted !== 'account' && stepReached(wanted, view.step) ? wanted : view.step);
     })().catch(() => {
@@ -904,43 +904,47 @@ function AddressStep({
             ) : (
               (addresses[0] ?? t('Die Adresse dieses Servers'))
             )}
-            {addresses.length === 0 && <div className="detail-sub">{t('Sie ließ sich nicht ermitteln.')}</div>}
+            {addresses.length === 0 && <InfoHint text={t('Sie ließ sich nicht ermitteln.')} />}
             {addresses.length > 1 && (
-              <div className="detail-sub">
-                {t('Weitere Adressen dieses Servers: {addresses}', { addresses: addresses.slice(1).join(', ') })}
-              </div>
+              <InfoHint
+                text={t('Weitere Adressen dieses Servers: {addresses}', { addresses: addresses.slice(1).join(', ') })}
+              />
             )}
           </dd>
           <dt>{t('Wo')}</dt>
           {internal ? (
             <dd>
-              {t('Im DNS-Server Ihres Netzes, etwa im Router, in Pi-hole oder AdGuard Home.')}
-              <div className="detail-sub">
-                {t('Nur dann erreichen Geräte in Ihrem Netz die Oberfläche unter dieser Adresse.')}
-              </div>
-              {recordProvider && (
-                <div className="detail-sub">
-                  {t(
-                    'Oder bei {provider}: die Domain zeigt dann überall auf diese interne Adresse. Manche Router verwerfen solche Antworten (Rebind-Schutz).',
-                    { provider: recordProvider.label }
-                  )}
-                </div>
-              )}
-              {wildcardOn && base && (
-                <div className="detail-sub">
-                  {t(
-                    'Mit dem Wildcard-Zertifikat lohnt sich auch ein Eintrag für *.{base}: weitere Ziele sind dann ohne neuen Eintrag erreichbar.',
-                    { base }
-                  )}
-                </div>
-              )}
+              {t('Im DNS-Server Ihres Netzes')}
+              <InfoHint
+                text={[
+                  t('Etwa im Router, in Pi-hole oder AdGuard Home. Nur dann erreichen Geräte in Ihrem Netz die Oberfläche unter dieser Adresse.'),
+                  recordProvider
+                    ? t(
+                        'Oder bei {provider}: die Domain zeigt dann überall auf diese interne Adresse. Manche Router verwerfen solche Antworten (Rebind-Schutz).',
+                        { provider: recordProvider.label }
+                      )
+                    : '',
+                  wildcardOn && base
+                    ? t(
+                        'Mit dem Wildcard-Zertifikat lohnt sich auch ein Eintrag für *.{base}: weitere Ziele sind dann ohne neuen Eintrag erreichbar.',
+                        { base }
+                      )
+                    : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+              />
             </dd>
           ) : (
             <dd>
-              {recordProvider
-                ? t('Bei {provider}, über den Knopf oder von Hand.', { provider: recordProvider.label })
-                : t('Bei Ihrem DNS-Anbieter.')}
-              <div className="detail-sub">{t('Es muss die öffentliche Adresse dieses Servers sein.')}</div>
+              {recordProvider ? t('Bei {provider}', { provider: recordProvider.label }) : t('Bei Ihrem DNS-Anbieter')}
+              <InfoHint
+                text={
+                  recordProvider
+                    ? t('Über den Knopf unten oder von Hand. Es muss die öffentliche Adresse dieses Servers sein.')
+                    : t('Es muss die öffentliche Adresse dieses Servers sein.')
+                }
+              />
             </dd>
           )}
         </dl>

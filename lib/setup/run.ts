@@ -105,7 +105,7 @@ async function prechecked<T>(check: () => Promise<T>): Promise<T> {
   try {
     return await check();
   } catch (err) {
-    if (err instanceof HaproxyConfigError) throw new ApiError(err.message, 409);
+    if (err instanceof HaproxyConfigError) throw new ApiError(err, 409);
     throw err;
   }
 }

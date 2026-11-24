@@ -33,6 +33,10 @@ import {
   type CreateStreamInput,
 } from '@/lib/haproxy/streams';
 import { hapmServiceInput } from '@/lib/setup/rules';
+import { germanText, type Message } from '@/lib/i18n/translate';
+
+/** Die Meldung einer Prüfung auf Deutsch, wie sie ohne Sprache herauskommt. */
+const de = (message: Message | null) => (message ? germanText(message) : message);
 
 /**
  * Was an die Stelle der Presets getreten ist: einzelne Header und der Schalter
@@ -193,7 +197,7 @@ describe('Einträge aus der Preset-Zeit', () => {
     let text = BASE;
     for (const body of LEGACY_BODIES) {
       const input = readServiceRequest(body);
-      expect(validateCreateInput(input)).toBeNull();
+      expect(de(validateCreateInput(input))).toBeNull();
       text = addService(text, input);
     }
     expect(text).toBe(LEGACY);
@@ -228,10 +232,10 @@ describe('Einträge aus der Preset-Zeit', () => {
   });
 
   it('lehnt ein Preset ab, das es nie gab, statt es als „keins" zu lesen', () => {
-    expect(legacyPresetError({ preset: 'wordpress' })).toMatch(/Unbekanntes Preset/);
-    expect(legacyPresetError({ preset: 'nextcloud' })).toBeNull();
-    expect(legacyPresetError({})).toBeNull();
-    expect(legacyPresetError(null)).toBeNull();
+    expect(de(legacyPresetError({ preset: 'wordpress' }))).toMatch(/Unbekanntes Preset/);
+    expect(de(legacyPresetError({ preset: 'nextcloud' }))).toBeNull();
+    expect(de(legacyPresetError({}))).toBeNull();
+    expect(de(legacyPresetError(null))).toBeNull();
     expect(() => readServiceRequest({ ...LEGACY_BODIES[0], preset: 'wordpress' })).toThrow(
       /Unbekanntes Preset/
     );
@@ -351,9 +355,9 @@ describe('Header schreiben und lesen', () => {
 });
 
 describe('validateHeaderRule', () => {
-  const ok = (rule: HeaderRule) => expect(validateHeaderRule(rule), JSON.stringify(rule)).toBeNull();
+  const ok = (rule: HeaderRule) => expect(de(validateHeaderRule(rule)), JSON.stringify(rule)).toBeNull();
   const bad = (rule: HeaderRule, message: RegExp) =>
-    expect(validateHeaderRule(rule), JSON.stringify(rule)).toMatch(message);
+    expect(de(validateHeaderRule(rule)), JSON.stringify(rule)).toMatch(message);
 
   it('nimmt übliche Namen und Werte', () => {
     ok({ name: 'X-Frame-Options', value: 'SAMEORIGIN' });
@@ -386,27 +390,27 @@ describe('validateHeaderRule', () => {
 
   it('lehnt in der Eingabe doppelte Namen und zu viele Zeilen ab', () => {
     expect(
-      validateCreateInput({
+      de(validateCreateInput({
         ...INPUT,
         id: 'shop',
         responseHeaders: [
           { name: 'X-A', value: '1' },
           { name: 'x-a', value: '2' },
         ],
-      })
+      }))
     ).toMatch(/doppelt/);
     // Dieselbe Richtung zählt, die andere nicht: an das Ziel und an den
     // Besucher sind zwei Dinge.
     expect(
-      validateCreateInput({
+      de(validateCreateInput({
         ...INPUT,
         id: 'shop',
         responseHeaders: [{ name: 'X-A', value: '1' }],
         requestHeaders: [{ name: 'X-A', value: '1' }],
-      })
+      }))
     ).toBeNull();
     const many = Array.from({ length: HEADERS_MAX + 1 }, (_, i) => ({ name: `X-${i}`, value: '1' }));
-    expect(validateCreateInput({ ...INPUT, id: 'shop', requestHeaders: many })).toMatch(/mehr als/);
+    expect(de(validateCreateInput({ ...INPUT, id: 'shop', requestHeaders: many }))).toMatch(/mehr als/);
   });
 
   it('wirft leere Zeilen aus dem Formular weg, eine halbe bleibt und fällt auf', () => {
@@ -419,7 +423,7 @@ describe('validateHeaderRule', () => {
       ],
     });
     expect(input.responseHeaders).toEqual([{ name: 'X-A', value: '' }]);
-    expect(validateCreateInput(input)).toMatch(/braucht einen Wert/);
+    expect(de(validateCreateInput(input))).toMatch(/braucht einen Wert/);
   });
 });
 
@@ -466,7 +470,7 @@ describe('serviceIdFor', () => {
 
   it('ergibt immer eine gültige ID', () => {
     for (const domain of ['*.example.org', 'a.example', '0.example', 'ÄÖÜ.example']) {
-      expect(validateCreateInput({ ...INPUT, id: serviceIdFor(domain) }), domain).toBeNull();
+      expect(de(validateCreateInput({ ...INPUT, id: serviceIdFor(domain) })), domain).toBeNull();
     }
   });
 });
@@ -530,9 +534,9 @@ describe('Die interne API: `id` ist freiwillig', () => {
   it('nimmt einen Rumpf ohne `id` beim Anlegen an', () => {
     const draft = readServiceRequest(body);
     expect(draft.id).toBe('');
-    expect(validateNewService(draft)).toBeNull();
+    expect(de(validateNewService(draft))).toBeNull();
     // Geschrieben wird nie ohne: erst die Vorabprüfung vergibt sie.
-    expect(validateCreateInput(draft)).toMatch(/Dienst-ID/);
+    expect(de(validateCreateInput(draft))).toMatch(/Dienst-ID/);
     const id = assignServiceId(BASE, draft);
     expect(find(addService(BASE, { ...draft, id }), 'shop_example_org').domains).toEqual([
       'shop.example.org',
@@ -541,8 +545,8 @@ describe('Die interne API: `id` ist freiwillig', () => {
 
   it('behält eine mitgegebene `id` und prüft sie wie bisher', () => {
     expect(readServiceRequest({ ...body, id: 'Mein_Shop' }).id).toBe('mein_shop');
-    expect(validateNewService(readServiceRequest({ ...body, id: 'mein shop' }))).toMatch(/Dienst-ID/);
-    expect(validateNewService(readServiceRequest({ ...body, id: '_x' }))).toMatch(/Dienst-ID/);
+    expect(de(validateNewService(readServiceRequest({ ...body, id: 'mein shop' })))).toMatch(/Dienst-ID/);
+    expect(de(validateNewService(readServiceRequest({ ...body, id: '_x' })))).toMatch(/Dienst-ID/);
   });
 });
 
@@ -612,7 +616,7 @@ describe('Die Kennung einer TCP-Weiterleitung', () => {
       check: true,
       allowedSources: [],
     };
-    expect(validateNewStream(input)).toBeNull();
-    expect(validateStreamInput(input)).toMatch(/Kennung/);
+    expect(de(validateNewStream(input))).toBeNull();
+    expect(de(validateStreamInput(input))).toMatch(/Kennung/);
   });
 });

@@ -1,6 +1,8 @@
 'use client';
 
 import { X, Globe, Scale, CornerUpRight, Cable } from 'lucide-react';
+import { msgid } from '@/lib/i18n';
+import { useT } from '@/lib/i18n/react';
 
 /**
  * Was für ein Ziel es werden soll.
@@ -48,10 +50,10 @@ export const TARGET_KINDS: TargetKind[] = ['proxy', 'balance', 'redirect', 'stre
  * die zwei, von denen eine bei der nächsten Umbenennung stehen bleibt.
  */
 export const TARGET_KIND_LABELS: Record<TargetKind, string> = {
-  proxy: 'Reverse-Proxy',
-  balance: 'Lastverteilung',
-  redirect: 'HTTP-Weiterleitung',
-  stream: 'TCP-Weiterleitung',
+  proxy: msgid('Reverse-Proxy'),
+  balance: msgid('Lastverteilung'),
+  redirect: msgid('HTTP-Weiterleitung'),
+  stream: msgid('TCP-Weiterleitung'),
 };
 
 const KINDS: {
@@ -62,22 +64,22 @@ const KINDS: {
   {
     kind: 'proxy',
     icon: <Globe size={18} />,
-    sub: 'Eine Domain auf ein Ziel im Backend. Mit Zertifikat und Healthcheck, der Normalfall.',
+    sub: msgid('Eine Domain auf ein Ziel im Backend. Mit Zertifikat und Healthcheck, der Normalfall.'),
   },
   {
     kind: 'balance',
     icon: <Scale size={18} />,
-    sub: 'Eine Domain auf mehrere Ziele: Verfahren, Gewichtung und auf Wunsch Sitzungsbindung.',
+    sub: msgid('Eine Domain auf mehrere Ziele: Verfahren, Gewichtung und auf Wunsch Sitzungsbindung.'),
   },
   {
     kind: 'redirect',
     icon: <CornerUpRight size={18} />,
-    sub: 'Eine Domain antwortet mit 301 oder 302 und zeigt woanders hin. Ohne eigenen Server dahinter.',
+    sub: msgid('Eine Domain antwortet mit 301 oder 302 und zeigt woanders hin. Ohne eigenen Server dahinter.'),
   },
   {
     kind: 'stream',
     icon: <Cable size={18} />,
-    sub: 'Ein Port dieses Servers, durchgereicht an ein Ziel dahinter: Datenbank, SSH, SMTP. Ohne Domain und ohne Zertifikat.',
+    sub: msgid('Ein Port dieses Servers, durchgereicht an ein Ziel dahinter: Datenbank, SSH, SMTP. Ohne Domain und ohne Zertifikat.'),
   },
 ];
 
@@ -88,6 +90,7 @@ export default function TargetKindDialog({
   onPick: (kind: TargetKind) => void;
   onClose: () => void;
 }) {
+  const { t } = useT();
   return (
     <div
       className="modal-overlay"
@@ -95,12 +98,12 @@ export default function TargetKindDialog({
     >
       <div className="modal">
         <div className="modal-header">
-          <h2 className="modal-title">Was soll angelegt werden?</h2>
+          <h2 className="modal-title">{t('Was soll angelegt werden?')}</h2>
           <button
             type="button"
             className="modal-close"
             onClick={onClose}
-            aria-label="Dialog schließen"
+            aria-label={t('Dialog schließen')}
           >
             <X size={18} />
           </button>
@@ -116,8 +119,8 @@ export default function TargetKindDialog({
               >
                 <span className="kind-card-icon">{icon}</span>
                 <span className="kind-card-text">
-                  <span className="kind-card-title">{TARGET_KIND_LABELS[kind]}</span>
-                  <span className="kind-card-sub">{sub}</span>
+                  <span className="kind-card-title">{t(TARGET_KIND_LABELS[kind])}</span>
+                  <span className="kind-card-sub">{t(sub)}</span>
                 </span>
               </button>
             ))}

@@ -27,6 +27,8 @@ import {
   type ImportState,
 } from '@/lib/haproxy/import';
 import type { HaproxyStep, RunStatus } from '@/lib/types';
+import { msgid } from '@/lib/i18n';
+import { useT } from '@/lib/i18n/react';
 
 /**
  * Eine bestehende HAProxy-Konfiguration übernehmen.
@@ -42,17 +44,17 @@ import type { HaproxyStep, RunStatus } from '@/lib/types';
  */
 
 const KIND_LABELS: Record<ImportKind, string> = {
-  proxy: 'Reverse-Proxy',
-  balance: 'Lastverteilung',
-  redirect: 'HTTP-Weiterleitung',
-  tcp: 'TCP-Weiterleitung',
+  proxy: msgid('Reverse-Proxy'),
+  balance: msgid('Lastverteilung'),
+  redirect: msgid('HTTP-Weiterleitung'),
+  tcp: msgid('TCP-Weiterleitung'),
 };
 
 const STATE_LABELS: Record<ImportState, string> = {
-  ready: 'Übernehmbar',
-  conflict: 'Konflikt',
-  blocked: 'Hier nicht möglich',
-  unsupported: 'Nicht übernehmbar',
+  ready: msgid('Übernehmbar'),
+  conflict: msgid('Konflikt'),
+  blocked: msgid('Hier nicht möglich'),
+  unsupported: msgid('Nicht übernehmbar'),
 };
 
 const STATE_CLASS: Record<ImportState, string> = {
@@ -63,11 +65,11 @@ const STATE_CLASS: Record<ImportState, string> = {
 };
 
 const RUN_LABELS: Record<RunStatus, string> = {
-  running: 'Läuft',
-  success: 'Abgeschlossen',
-  warning: 'Mit Hinweisen',
-  error: 'Mit Fehlern',
-  cancelled: 'Abgebrochen',
+  running: msgid('Läuft'),
+  success: msgid('Abgeschlossen'),
+  warning: msgid('Mit Hinweisen'),
+  error: msgid('Mit Fehlern'),
+  cancelled: msgid('Abgebrochen'),
 };
 
 const RUN_CLASS: Record<RunStatus, string> = {
@@ -89,17 +91,12 @@ interface RunView {
   steps: HaproxyStep[];
 }
 
-const LIMITS_HINT =
-  `Let's Encrypt stellt je registrierter Domain höchstens ${LE_CERTS_PER_DOMAIN_WEEK} Zertifikate in 7 Tagen aus, ` +
-  `nimmt je Konto höchstens ${LE_ORDERS_PER_3H} neue Bestellungen in 3 Stunden an und lässt je Name ` +
-  `${LE_FAILURES_PER_HOUR} gescheiterte Prüfungen in einer Stunde zu (Stand August 2026). ` +
-  'Deckt ein vorhandenes Zertifikat einen Eintrag schon ab, wird für ihn keins beantragt.';
-
 export default function ReverseProxyImportPage() {
   const { apiFetch } = useApp();
   const { notify } = useToast();
   const confirm = useConfirm();
   const fileInput = useRef<HTMLInputElement>(null);
+  const { t, plural, rich } = useT();
 
   const [text, setText] = useState('');
   const [fileName, setFileName] = useState<string | null>(null);
@@ -126,13 +123,13 @@ export default function ReverseProxyImportPage() {
   async function loadFile(file: File) {
     setInputError('');
     if (file.size > IMPORT_MAX_BYTES) {
-      setInputError(`Die Datei ist größer als ${IMPORT_MAX_BYTES / 1_000_000} MB.`);
+      setInputError(t('Die Datei ist größer als {size} MB.', { size: IMPORT_MAX_BYTES / 1_000_000 }));
       return;
     }
     const content = await file.text();
     const invalid = importTextError(content);
     if (invalid) {
-      setInputError(invalid);
+      setInputError(t(invalid));
       return;
     }
     setText(content);
@@ -142,7 +139,7 @@ export default function ReverseProxyImportPage() {
   async function computePreview(hook = dnsHook) {
     const invalid = importTextError(text);
     if (invalid) {
-      setInputError(invalid);
+      setInputError(t(invalid));
       return;
     }
     setPreviewing(true);
@@ -154,14 +151,14 @@ export default function ReverseProxyImportPage() {
         body: JSON.stringify({ text, dnsHook: hook || undefined }),
       });
       const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error || 'Die Vorschau ließ sich nicht berechnen.');
+      if (!res.ok || !data.success) throw new Error(data.error || t('Die Vorschau ließ sich nicht berechnen.'));
       const next = data.data as ImportPreview;
       setPreview(next);
       setPreviewText(text);
       setSelected(new Set(next.entries.filter((e) => e.state === 'ready').map((e) => e.key)));
       setNewScope((current) => current || next.suggestedScope);
     } catch (err) {
-      setInputError(err instanceof Error ? err.message : 'Unbekannter Fehler.');
+      setInputError(err instanceof Error ? err.message : t('Unbekannter Fehler.'));
     } finally {
       setPreviewing(false);
     }
@@ -203,16 +200,35 @@ export default function ReverseProxyImportPage() {
   async function startImport() {
     if (!preview || chosen.length === 0 || scopeError) return;
     const certificates = load.certificates;
+    const scope = { scope: scopeLabel(scopeName) };
     const ok = await confirm({
-      title: 'Konfiguration importieren',
-      message:
-        `${chosen.length === 1 ? 'Ein Eintrag wird' : `${chosen.length} Einträge werden`} nacheinander in der ` +
-        `Gruppe „${scopeLabel(scopeName)}" angelegt${creatingScope ? ', die dafür neu entsteht' : ''}. ` +
-        'Jeder geht durch dieselbe Prüfung wie im Dialog und lädt HAProxy einzeln neu. ' +
-        (certificates > 0
-          ? `Beantragt werden bis zu ${certificates} Zertifikate, jedes kann einige Minuten dauern.`
-          : 'Zertifikate werden keine beantragt.'),
-      confirmLabel: 'Importieren',
+      title: t('Konfiguration importieren'),
+      message: [
+        creatingScope
+          ? plural(
+              chosen.length,
+              {
+                one: 'Ein Eintrag wird in der Gruppe „{scope}" angelegt, die dafür neu entsteht.',
+                other: '{count} Einträge werden nacheinander in der Gruppe „{scope}" angelegt, die dafür neu entsteht.',
+              },
+              scope
+            )
+          : plural(
+              chosen.length,
+              {
+                one: 'Ein Eintrag wird in der Gruppe „{scope}" angelegt.',
+                other: '{count} Einträge werden nacheinander in der Gruppe „{scope}" angelegt.',
+              },
+              scope
+            ),
+        t('Jeder geht durch dieselbe Prüfung wie im Dialog und lädt HAProxy einzeln neu.'),
+        certificates > 0
+          ? t('Beantragt werden bis zu {count} Zertifikate, jedes kann einige Minuten dauern.', {
+              count: certificates,
+            })
+          : t('Zertifikate werden keine beantragt.'),
+      ].join(' '),
+      confirmLabel: t('Importieren'),
     });
     if (!ok) return;
 
@@ -230,20 +246,20 @@ export default function ReverseProxyImportPage() {
         }),
       });
       const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error || 'Der Import ließ sich nicht starten.');
+      if (!res.ok || !data.success) throw new Error(data.error || t('Der Import ließ sich nicht starten.'));
       setRun(null);
       setRunId(data.data.runId);
       setImportedFrom(preview);
       notify({
         variant: 'info',
-        title: 'Import läuft',
-        message: 'Die Einträge werden nacheinander angelegt. Der Fortschritt steht hier und unten rechts.',
+        title: t('Import läuft'),
+        message: t('Die Einträge werden nacheinander angelegt. Der Fortschritt steht hier und unten rechts.'),
       });
     } catch (err) {
       notify({
         variant: 'error',
-        title: 'Import nicht gestartet',
-        message: err instanceof Error ? err.message : 'Unbekannter Fehler.',
+        title: t('Import nicht gestartet'),
+        message: err instanceof Error ? err.message : t('Unbekannter Fehler.'),
       });
     } finally {
       setStarting(false);
@@ -259,11 +275,11 @@ export default function ReverseProxyImportPage() {
             style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '0.8125rem' }}
           >
             <ArrowLeft size={14} />
-            Reverse-Proxy
+            {t('Reverse-Proxy')}
           </Link>
-          <h1 className="page-title">Konfiguration importieren</h1>
+          <h1 className="page-title">{t('Konfiguration importieren')}</h1>
           <p className="page-subtitle">
-            Einträge aus einer bestehenden haproxy.cfg übernehmen, statt sie einzeln abzutippen.
+            {t('Einträge aus einer bestehenden haproxy.cfg übernehmen, statt sie einzeln abzutippen.')}
           </p>
         </div>
       </div>
@@ -273,30 +289,31 @@ export default function ReverseProxyImportPage() {
           <div className="card-header">
             <h2 className="card-title">
               {running ? <Loader2 size={16} className="spin" /> : <FileInput size={16} />}
-              Import
-              {run && <span className={`badge-status ${RUN_CLASS[run.status]}`}>{RUN_LABELS[run.status]}</span>}
+              {t('Import')}
+              {run && <span className={`badge-status ${RUN_CLASS[run.status]}`}>{t(RUN_LABELS[run.status])}</span>}
             </h2>
             <Link className="btn btn-secondary btn-sm" href="/reverse-proxy/logs">
               <ScrollText size={14} />
-              Zur Historie
+              {t('Zur Historie')}
             </Link>
           </div>
           <div className="card-body">
             {running && (
               <span className="form-hint">
-                {run?.phase ? HAPROXY_PHASE_LABELS[run.phase] ?? run.phase : 'Wird gestartet'}. Der Lauf geht
-                auch weiter, wenn Sie die Seite verlassen.
+                {t('{phase}. Der Lauf geht auch weiter, wenn Sie die Seite verlassen.', {
+                  phase: run?.phase ? t(HAPROXY_PHASE_LABELS[run.phase] ?? run.phase) : t('Wird gestartet'),
+                })}
               </span>
             )}
-            {run?.error && <div className="alert alert-danger">{run.error}</div>}
+            {run?.error && <div className="alert alert-danger">{t(run.error)}</div>}
             {run && run.steps.length > 0 && (
               <ul className="hapm-steps">
                 {run.steps.map((step, index) => (
                   <li key={`${index}-${step.label}`} className={`hapm-step ${step.ok ? 'is-ok' : 'is-failed'}`}>
                     {step.ok ? <Check size={14} strokeWidth={1.5} /> : <X size={14} strokeWidth={1.5} />}
                     <span className="hapm-step-text">
-                      <span className="hapm-step-label">{step.label}</span>
-                      {step.detail && <span className="hapm-step-detail">{step.detail}</span>}
+                      <span className="hapm-step-label">{t(step.label)}</span>
+                      {step.detail && <span className="hapm-step-detail">{t(step.detail)}</span>}
                     </span>
                   </li>
                 ))}
@@ -309,8 +326,12 @@ export default function ReverseProxyImportPage() {
       <div className="card sys-block">
         <div className="card-header">
           <h2 className="card-title">
-            Konfiguration
-            <InfoHint text="Eine haproxy.cfg als Text, höchstens 1 MB. Sie wird nur gelesen und nirgends gespeichert. Übernommen wird erst, was Sie in der Vorschau auswählen und importieren." />
+            {t('Konfiguration')}
+            <InfoHint
+              text={t(
+                'Eine haproxy.cfg als Text, höchstens 1 MB. Sie wird nur gelesen und nirgends gespeichert. Übernommen wird erst, was Sie in der Vorschau auswählen und importieren.'
+              )}
+            />
           </h2>
         </div>
         <div className="card-body">
@@ -323,7 +344,7 @@ export default function ReverseProxyImportPage() {
               disabled={running || previewing}
             >
               <Upload size={16} />
-              Datei wählen
+              {t('Datei wählen')}
             </button>
             {fileName && <span className="form-hint">{fileName}</span>}
             <input
@@ -339,7 +360,7 @@ export default function ReverseProxyImportPage() {
             />
           </div>
           <div className="form-group">
-            <label className="form-label" htmlFor="importText">Oder den Text einfügen</label>
+            <label className="form-label" htmlFor="importText">{t('Oder den Text einfügen')}</label>
             <textarea
               id="importText"
               className="form-textarea"
@@ -363,10 +384,10 @@ export default function ReverseProxyImportPage() {
               disabled={previewing || running || text.trim() === ''}
             >
               {previewing ? <Loader2 size={16} className="spin" /> : <Eye size={16} />}
-              Vorschau berechnen
+              {t('Vorschau berechnen')}
             </button>
             {preview && previewText !== text && (
-              <span className="form-hint">Der Text hat sich geändert. Die Vorschau gilt noch für den vorigen.</span>
+              <span className="form-hint">{t('Der Text hat sich geändert. Die Vorschau gilt noch für den vorigen.')}</span>
             )}
           </div>
         </div>
@@ -375,61 +396,74 @@ export default function ReverseProxyImportPage() {
       {preview && (
         <>
           <div className="alert alert-info sys-block">
-            Globale Abschnitte (global, defaults), TLS-Einstellungen und die bind-Zeilen der Frontends
-            werden nicht übernommen: HAPM bringt eigene mit. Übernommen werden Domains, Ziele und
-            TCP-Ports, und nur, wo sie sich in HAPM genauso verhalten wie bisher.
+            {t(
+              'Globale Abschnitte (global, defaults), TLS-Einstellungen und die bind-Zeilen der Frontends werden nicht übernommen: HAPM bringt eigene mit. Übernommen werden Domains, Ziele und TCP-Ports, und nur, wo sie sich in HAPM genauso verhalten wie bisher.'
+            )}
           </div>
 
           {!preview.acmeReady && (
             <div className="alert alert-danger sys-block">
-              acme.sh fehlt. Ohne lässt sich kein Zertifikat ausstellen, und kein Eintrag mit Domain ist
-              übernehmbar. Der Zustand steht in der <Link href="/dashboard">Übersicht</Link>.
+              {rich(
+                'acme.sh fehlt. Ohne lässt sich kein Zertifikat ausstellen, und kein Eintrag mit Domain ist übernehmbar. Der Zustand steht in der {overview}.',
+                { overview: <Link href="/dashboard">{t('Übersicht')}</Link> }
+              )}
             </div>
           )}
 
           <div className={`alert ${load.exceeds || load.near ? 'alert-warning' : 'alert-info'} sys-block`}>
             <span>
-              Bestehende Zertifikate werden nicht übernommen, sondern neu ausgestellt: jeder Eintrag mit
-              Domain bekommt sein Zertifikat wie beim Anlegen im Dialog.{' '}
+              {t(
+                'Bestehende Zertifikate werden nicht übernommen, sondern neu ausgestellt: jeder Eintrag mit Domain bekommt sein Zertifikat wie beim Anlegen im Dialog.'
+              )}{' '}
               {preview.exposure === 'internal'
-                ? 'Diese Installation ist intern, jedes Zertifikat geht über DNS-01.'
-                : 'Ausgestellt wird über HTTP-01, Wildcards über DNS-01. Die Domains müssen dafür schon auf diesen Server zeigen, sonst scheitert der Antrag. DNS-Einträge legt der Import nicht an.'}{' '}
-              Mit der Auswahl werden bis zu {load.certificates} Zertifikate beantragt.
+                ? t('Diese Installation ist intern, jedes Zertifikat geht über DNS-01.')
+                : t(
+                    'Ausgestellt wird über HTTP-01, Wildcards über DNS-01. Die Domains müssen dafür schon auf diesen Server zeigen, sonst scheitert der Antrag. DNS-Einträge legt der Import nicht an.'
+                  )}{' '}
+              {t('Mit der Auswahl werden bis zu {count} Zertifikate beantragt.', { count: load.certificates })}
               {load.busiest && (load.exceeds || load.near) && (
                 <>
                   {' '}
-                  {load.busiest.count} davon entfallen auf {load.busiest.domain}.{' '}
+                  {t('{count} davon entfallen auf {domain}.', {
+                    count: load.busiest.count,
+                    domain: load.busiest.domain,
+                  })}{' '}
                   {load.exceeds
-                    ? 'Das ist mehr, als Let\'s Encrypt annimmt. Importieren Sie in Etappen.'
-                    : 'Das ist mehr als die Hälfte dessen, was Let\'s Encrypt in einer Woche annimmt.'}
+                    ? t("Das ist mehr, als Let's Encrypt annimmt. Importieren Sie in Etappen.")
+                    : t("Das ist mehr als die Hälfte dessen, was Let's Encrypt in einer Woche annimmt.")}
                 </>
               )}{' '}
-              <InfoHint text={LIMITS_HINT} />
+              <InfoHint
+                text={t(
+                  "Let's Encrypt stellt je registrierter Domain höchstens {certs} Zertifikate in 7 Tagen aus, nimmt je Konto höchstens {orders} neue Bestellungen in 3 Stunden an und lässt je Name {failures} gescheiterte Prüfungen in einer Stunde zu (Stand August 2026). Deckt ein vorhandenes Zertifikat einen Eintrag schon ab, wird für ihn keins beantragt.",
+                  { certs: LE_CERTS_PER_DOMAIN_WEEK, orders: LE_ORDERS_PER_3H, failures: LE_FAILURES_PER_HOUR }
+                )}
+              />
             </span>
           </div>
 
           <div className="card sys-block">
             <div className="card-header">
-              <h2 className="card-title">Ziel-Gruppe</h2>
+              <h2 className="card-title">{t('Ziel-Gruppe')}</h2>
             </div>
             <div className="card-body">
               <div className="form-row">
                 <div className="form-group">
-                  <label className="form-label" htmlFor="importScope">Gruppe</label>
+                  <label className="form-label" htmlFor="importScope">{t('Gruppe')}</label>
                   <Select
                     id="importScope"
                     value={scopeChoice}
                     disabled={running}
                     onChange={setScopeChoice}
                     options={[
-                      { value: NEW_SCOPE, label: 'Neue Gruppe' },
+                      { value: NEW_SCOPE, label: t('Neue Gruppe') },
                       ...preview.scopes.map((s) => ({ value: s.name, label: s.label })),
                     ]}
                   />
                 </div>
                 {creatingScope && (
                   <div className="form-group">
-                    <label className="form-label" htmlFor="importNewScope">Name der neuen Gruppe</label>
+                    <label className="form-label" htmlFor="importNewScope">{t('Name der neuen Gruppe')}</label>
                     <input
                       id="importNewScope"
                       className="form-input"
@@ -438,21 +472,25 @@ export default function ReverseProxyImportPage() {
                       onChange={(e) => setNewScope(e.target.value)}
                       autoComplete="off"
                     />
-                    {scopeError && <span className="form-hint">{scopeError}</span>}
+                    {scopeError && <span className="form-hint">{t(scopeError)}</span>}
                   </div>
                 )}
               </div>
               {needsDns && preview.dnsHooks.length > 1 && (
                 <div className="form-group">
                   <label className="form-label" htmlFor="importHook">
-                    DNS-Zugangsdaten für DNS-01
-                    <InfoHint text="Mehrere DNS-Anbieter sind eingerichtet. Welcher die Zonen der importierten Domains führt, lässt sich nicht raten. Die Auswahl gilt für alle Einträge, die über DNS-01 ausgestellt werden." />
+                    {t('DNS-Zugangsdaten für DNS-01')}
+                    <InfoHint
+                      text={t(
+                        'Mehrere DNS-Anbieter sind eingerichtet. Welcher die Zonen der importierten Domains führt, lässt sich nicht raten. Die Auswahl gilt für alle Einträge, die über DNS-01 ausgestellt werden.'
+                      )}
+                    />
                   </label>
                   <Select
                     id="importHook"
                     value={dnsHook || null}
                     disabled={running || previewing}
-                    placeholder="Bitte wählen"
+                    placeholder={t('Bitte wählen')}
                     onChange={(hook) => {
                       setDnsHook(hook);
                       void computePreview(hook);
@@ -467,19 +505,19 @@ export default function ReverseProxyImportPage() {
           <div className="sys-block">
             <div className="section-header">
               <h2 className="section-title">
-                Vorschau
+                {t('Vorschau')}
                 <span className="section-count">
-                  {ready.length} von {preview.entries.length} übernehmbar
+                  {t('{ready} von {total} übernehmbar', { ready: ready.length, total: preview.entries.length })}
                 </span>
               </h2>
-              <span className="section-hint">Die Kennung vergibt der Server beim Anlegen</span>
+              <span className="section-hint">{t('Die Kennung vergibt der Server beim Anlegen')}</span>
             </div>
 
             {preview.entries.length === 0 ? (
               <div className="empty-state">
                 <FileInput size={40} />
-                <h3>Nichts gefunden</h3>
-                <p>In dem Text steht kein Frontend mit Domains und kein TCP-Port, den HAPM übernehmen könnte.</p>
+                <h3>{t('Nichts gefunden')}</h3>
+                <p>{t('In dem Text steht kein Frontend mit Domains und kein TCP-Port, den HAPM übernehmen könnte.')}</p>
               </div>
             ) : (
               <div className="table-wrap">
@@ -487,7 +525,7 @@ export default function ReverseProxyImportPage() {
                   <thead>
                     <tr>
                       <th>
-                        <label className="toggle-switch" data-tooltip="Alle übernehmbaren">
+                        <label className="toggle-switch" data-tooltip={t('Alle übernehmbaren')}>
                           <input
                             type="checkbox"
                             checked={ready.length > 0 && chosen.length === ready.length}
@@ -495,16 +533,16 @@ export default function ReverseProxyImportPage() {
                             onChange={(e) =>
                               setSelected(new Set(e.target.checked ? ready.map((r) => r.key) : []))
                             }
-                            aria-label="Alle übernehmbaren auswählen"
+                            aria-label={t('Alle übernehmbaren auswählen')}
                           />
                           <span className="toggle-slider" />
                         </label>
                       </th>
-                      <th>Art</th>
-                      <th>Domains bzw. Port</th>
-                      <th>Ziele</th>
-                      <th>Zusätze</th>
-                      <th>Zustand</th>
+                      <th>{t('Art')}</th>
+                      <th>{t('Domains bzw. Port')}</th>
+                      <th>{t('Ziele')}</th>
+                      <th>{t('Zusätze')}</th>
+                      <th>{t('Zustand')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -537,16 +575,15 @@ export default function ReverseProxyImportPage() {
                 }
               >
                 {starting ? <Loader2 size={16} className="spin" /> : <FileInput size={16} />}
-                {chosen.length === 1 ? 'Einen Eintrag importieren' : `${chosen.length} Einträge importieren`}
+                {plural(chosen.length, { one: 'Einen Eintrag importieren', other: '{count} Einträge importieren' })}
               </button>
               {previewText !== text ? (
-                <span className="form-hint">Erst die Vorschau für den geänderten Text berechnen.</span>
+                <span className="form-hint">{t('Erst die Vorschau für den geänderten Text berechnen.')}</span>
               ) : (
                 importedFrom === preview &&
                 !running && (
                   <span className="form-hint">
-                    Aus dieser Vorschau wurde schon importiert. Für einen weiteren Durchgang die Vorschau neu
-                    berechnen.
+                    {t('Aus dieser Vorschau wurde schon importiert. Für einen weiteren Durchgang die Vorschau neu berechnen.')}
                   </span>
                 )
               )}
@@ -562,16 +599,16 @@ export default function ReverseProxyImportPage() {
                 aria-expanded={showSkipped}
               >
                 {showSkipped ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                Nicht übernommen ({preview.skipped.length})
+                {t('Nicht übernommen ({count})', { count: preview.skipped.length })}
               </button>
               {showSkipped && (
                 <div className="table-wrap" style={{ marginTop: 8 }}>
                   <table className="table">
                     <thead>
                       <tr>
-                        <th>Zeile</th>
-                        <th>Inhalt</th>
-                        <th>Grund</th>
+                        <th>{t('Zeile')}</th>
+                        <th>{t('Inhalt')}</th>
+                        <th>{t('Grund')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -581,7 +618,7 @@ export default function ReverseProxyImportPage() {
                           <td style={{ fontSize: '0.8125rem' }}>
                             <code>{item.text}</code>
                           </td>
-                          <td style={{ fontSize: '0.8125rem' }}>{item.reason}</td>
+                          <td style={{ fontSize: '0.8125rem' }}>{t(item.reason)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -607,6 +644,7 @@ function EntryRow({
   disabled: boolean;
   onToggle: (on: boolean) => void;
 }) {
+  const { t } = useT();
   const muted = { fontSize: '0.75rem', color: 'var(--text-tertiary)' };
   const selectable = entry.state === 'ready';
   return (
@@ -618,42 +656,40 @@ function EntryRow({
             checked={selectable && checked}
             disabled={disabled || !selectable}
             onChange={(e) => onToggle(e.target.checked)}
-            aria-label={`${entry.domains[0] ?? `Port ${entry.port}`} übernehmen`}
+            aria-label={t('{name} übernehmen', { name: entry.domains[0] ?? `Port ${entry.port}` })}
           />
           <span className="toggle-slider" />
         </label>
       </td>
-      <td style={{ fontSize: '0.8125rem', whiteSpace: 'nowrap' }}>{KIND_LABELS[entry.kind]}</td>
+      <td style={{ fontSize: '0.8125rem', whiteSpace: 'nowrap' }}>{t(KIND_LABELS[entry.kind])}</td>
       <td style={{ fontSize: '0.8125rem' }}>
         {entry.domains.length > 0
           ? entry.domains.map((domain) => <div key={domain}>{domain}</div>)
-          : <div>Port {entry.port ?? '?'}</div>}
-        {entry.id && <div style={muted}>Kennung {entry.id}</div>}
-        <div style={muted}>
-          Zeile {entry.line}, {entry.source}
-        </div>
+          : <div>{t('Port {port}', { port: entry.port ?? '?' })}</div>}
+        {entry.id && <div style={muted}>{t('Kennung {id}', { id: entry.id })}</div>}
+        <div style={muted}>{t('Zeile {line}, {source}', { line: entry.line, source: entry.source })}</div>
       </td>
       <td style={{ fontSize: '0.8125rem' }}>
         {entry.targets.length > 0
           ? entry.targets.map((target) => <div key={target}>{target}</div>)
-          : <span style={muted}>keine</span>}
+          : <span style={muted}>{t('keine')}</span>}
       </td>
       <td style={{ fontSize: '0.8125rem' }}>
         {entry.extras.length > 0
           ? entry.extras.map((extra) => <div key={extra}>{extra}</div>)
-          : <span style={muted}>keine</span>}
+          : <span style={muted}>{t('keine')}</span>}
       </td>
       <td style={{ fontSize: '0.8125rem', minWidth: '14rem' }}>
-        <span className={`badge-status ${STATE_CLASS[entry.state]}`}>{STATE_LABELS[entry.state]}</span>
+        <span className={`badge-status ${STATE_CLASS[entry.state]}`}>{t(STATE_LABELS[entry.state])}</span>
         {(entry.state === 'unsupported' ? entry.problems : entry.reason ? [entry.reason] : []).map((reason) => (
           <div key={reason} style={{ marginTop: 4 }}>
-            {reason}
+            {t(reason)}
           </div>
         ))}
         {entry.state !== 'unsupported' &&
           entry.notes.map((note) => (
             <div key={note} style={{ ...muted, marginTop: 4 }}>
-              {note}
+              {t(note)}
             </div>
           ))}
       </td>

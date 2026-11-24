@@ -10,9 +10,14 @@
  * `updateAvailable: null` heißt unbekannt (Registry nicht erreichbar, Abbild
  * selbst gebaut) und wird auch so angezeigt. „Aktuell" steht dort nur, wenn es
  * geprüft ist.
+ *
+ * `error` ist ein deutscher Text. Was keine Werte einsetzt, ist ein Schlüssel
+ * (`msgid`) und wird auf der Seite übersetzt. Meldungen von Registry und
+ * Docker bleiben, wie sie kamen.
  */
 
 import { createDocument, getDocument, listAll, updateDocument, NotFoundError } from '../db';
+import { msgid } from '../i18n';
 import { COLLECTIONS, type UpdateComponent, type UpdateState } from '../types';
 import { containerInfo, haproxyContainerName, ownContainer, registryArchitecture } from '../docker';
 import { remoteDetails, remoteDigest } from '../docker/registry';
@@ -51,7 +56,7 @@ async function checkImage(component: 'haproxy' | 'hapm', container: string | nul
     checkedAt: now,
     error: null,
   };
-  if (!container) return { ...empty, error: 'HAPM läuft nicht in einem Container.' };
+  if (!container) return { ...empty, error: msgid('HAPM läuft nicht in einem Container.') };
 
   let info;
   try {
@@ -69,10 +74,13 @@ async function checkImage(component: 'haproxy' | 'hapm', container: string | nul
   };
 
   if (info.reference.includes('@sha256:')) {
-    return { ...base, error: 'Das Abbild ist auf einen Digest festgelegt. Ein Update gibt es dann nur von Hand.' };
+    return {
+      ...base,
+      error: msgid('Das Abbild ist auf einen Digest festgelegt. Ein Update gibt es dann nur von Hand.'),
+    };
   }
   if (info.repoDigests.length === 0) {
-    return { ...base, error: 'Das Abbild ist lokal gebaut und stammt aus keiner Registry.' };
+    return { ...base, error: msgid('Das Abbild ist lokal gebaut und stammt aus keiner Registry.') };
   }
 
   try {
@@ -111,11 +119,11 @@ async function checkAcme(): Promise<StateData> {
     checkedAt: now,
     error: null,
   };
-  if (!status?.installed || !status.version) return { ...base, error: 'acme.sh ist nicht installiert.' };
+  if (!status?.installed || !status.version) return { ...base, error: msgid('acme.sh ist nicht installiert.') };
 
   try {
     const latest = await latestAcmeVersion();
-    if (!latest) return { ...base, error: 'GitHub nennt keine Fassung.' };
+    if (!latest) return { ...base, error: msgid('GitHub nennt keine Fassung.') };
     return { ...base, latestVersion: latest, updateAvailable: isNewerVersion(latest, status.version) };
   } catch (err) {
     const before = await previous('acme');

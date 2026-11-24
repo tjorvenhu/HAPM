@@ -23,9 +23,15 @@
  * Einfallstelle, nicht der Wert. `dns_cf` und `CF_Token` stehen deshalb hier
  * und nicht im Formular.
  *
- * Rein und ohne Importe, damit `tests/haproxy/dns-credentials.test.ts` das
- * erzeugte Kommando gegen eine echte Bash laufen lassen kann.
+ * Rein (nur `lib/i18n` für die Meldungen), damit
+ * `tests/haproxy/dns-credentials.test.ts` das erzeugte Kommando gegen eine
+ * echte Bash laufen lassen kann.
+ *
+ * `label`, `hint` und `note` sind deutsche Schlüssel (`msgid`), die Seite
+ * übersetzt sie beim Zeigen. `label` des Anbieters ist ein Eigenname.
  */
+
+import { msg, msgid, type Message } from '../i18n/translate';
 
 export interface DnsCredentialField {
   /** Der Name der Variablen, wie acme.sh sie liest — ohne `SAVED_`. */
@@ -91,13 +97,15 @@ export const DNS_PROVIDERS: readonly DnsProvider[] = [
     fields: [
       {
         name: 'HETZNER_TOKEN',
-        label: 'API-Token',
+        label: msgid('API-Token'),
         required: true,
-        hint: 'Aus der Hetzner-Konsole: im Projekt der Zone unter Sicherheit, API-Tokens. Mit Lese- und Schreibrecht.',
+        hint: msgid(
+          'Aus der Hetzner-Konsole: im Projekt der Zone unter Sicherheit, API-Tokens. Mit Lese- und Schreibrecht.'
+        ),
       },
     ],
     alsoSaved: ['HETZNER_API', 'HETZNER_TTL', 'HETZNER_MAX_ATTEMPTS'],
-    note: 'Der Token gilt für alle Zonen seines Projekts.',
+    note: msgid('Der Token gilt für alle Zonen seines Projekts.'),
   },
   {
     hook: 'dns_cf',
@@ -108,18 +116,20 @@ export const DNS_PROVIDERS: readonly DnsProvider[] = [
     fields: [
       {
         name: 'CF_Token',
-        label: 'API-Token',
+        label: msgid('API-Token'),
         required: true,
-        hint: 'Ein Token mit der Berechtigung „Zone · DNS · Bearbeiten" auf den betreffenden Zonen. Nicht der Global API Key.',
+        hint: msgid(
+          'Ein Token mit der Berechtigung „Zone · DNS · Bearbeiten" auf den betreffenden Zonen. Nicht der Global API Key.'
+        ),
       },
       {
         name: 'CF_Account_ID',
-        label: 'Account-ID',
+        label: msgid('Account-ID'),
         required: false,
-        hint: 'Nur nötig, wenn der Token für mehrere Konten gilt. Steht in der Cloudflare-Übersicht rechts.',
+        hint: msgid('Nur nötig, wenn der Token für mehrere Konten gilt. Steht in der Cloudflare-Übersicht rechts.'),
       },
     ],
-    note: 'Der Token wird für jede Zone in diesem Konto benutzt. Eine neue Domain braucht danach nichts mehr.',
+    note: msgid('Der Token wird für jede Zone in diesem Konto benutzt. Eine neue Domain braucht danach nichts mehr.'),
   },
 ];
 
@@ -182,19 +192,19 @@ export interface DnsCredentialInput {
  * oder `null` — wie `validateCreateInput`, und aus demselben Grund: dieselbe
  * Funktion läuft im Formular und in der Route.
  */
-export function validateDnsCredentials(input: DnsCredentialInput): string | null {
+export function validateDnsCredentials(input: DnsCredentialInput): Message | null {
   const provider = findDnsProvider(input.hook);
-  if (!provider) return 'Unbekannter DNS-Anbieter.';
+  if (!provider) return msg('Unbekannter DNS-Anbieter.');
 
   for (const [name, value] of Object.entries(input.values)) {
     if (!provider.fields.some((field) => field.name === name)) {
-      return `Das Feld ${name} gehört nicht zu ${provider.label}.`;
+      return msg('Das Feld {name} gehört nicht zu {provider}.', { name, provider: provider.label });
     }
     if (!value) continue;
     if (!CREDENTIAL_VALUE.test(value)) {
-      return (
-        `Der Wert für ${name} enthält ein Zeichen, das acme.sh nicht ablegen kann. ` +
-        'Erlaubt sind Buchstaben, Ziffern und . _ ~ + / = : @ -'
+      return msg(
+        'Der Wert für {name} enthält ein Zeichen, das acme.sh nicht ablegen kann. Erlaubt sind Buchstaben, Ziffern und . _ ~ + / = : @ -',
+        { name }
       );
     }
   }
@@ -203,7 +213,11 @@ export function validateDnsCredentials(input: DnsCredentialInput): string | null
 
   for (const field of provider.fields) {
     if (field.required && !input.values[field.name]) {
-      return `${field.label} wird benötigt.`;
+      // Das Pflichtfeld aller Anbieter ist der Token, und er hat einen eigenen
+      // Satz: eine eingesetzte Beschriftung bliebe im Englischen deutsch.
+      return field.label === 'API-Token'
+        ? msg('API-Token wird benötigt.')
+        : msg('{field} wird benötigt.', { field: field.label });
     }
   }
 

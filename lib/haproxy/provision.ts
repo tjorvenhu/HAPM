@@ -37,6 +37,7 @@ import { acmeServer } from '../acme';
 import { getSSHConfig, getServer } from '../helpers';
 import { buildCommand, withEnv, withStdin, batchCommands, splitSections, shellEscape } from '../shell';
 import { ApiError } from '../api';
+import { germanText, msg, msgid, type Message } from '../i18n/translate';
 import {
   HAPROXY_CFG,
   HAPROXY_CERT_DIR,
@@ -271,7 +272,7 @@ function reserveId(id: string): void {
 function assertNotReserved(id: string): void {
   if (id !== '' && currentlyReserved().includes(id)) {
     throw new HaproxyConfigError(
-      `Der Name "${id}" wird gerade von einem laufenden Vorgang angelegt. Die Dienst-ID ist vergeben.`
+      msg('Der Name "{id}" wird gerade von einem laufenden Vorgang angelegt. Die Dienst-ID ist vergeben.', { id })
     );
   }
 }
@@ -281,7 +282,7 @@ function assertNotReserved(id: string): void {
 export async function getProxyServer(serverId: string): Promise<Server> {
   const server = await getServer(serverId);
   if (!server.roleReverseProxy) {
-    throw new ApiError(`Server "${server.name}" hat die Rolle "Reverse-Proxy" nicht.`);
+    throw new ApiError(msg('Server "{name}" hat die Rolle "Reverse-Proxy" nicht.', { name: server.name }));
   }
   return server;
 }
@@ -383,8 +384,10 @@ async function assertPortFree(
   if (parseBindPorts(config).some((b) => b.port === port)) return;
 
   throw new ApiError(
-    `Auf diesem Server ("${serverName}") lauscht bereits ein anderer Dienst auf Port ${port}. ` +
-      'HAProxy könnte ihn beim Neuladen nicht binden, und das fällt der Konfigurationsprüfung nicht auf.'
+    msg(
+      'Auf diesem Server ("{server}") lauscht bereits ein anderer Dienst auf Port {port}. HAProxy könnte ihn beim Neuladen nicht binden, und das fällt der Konfigurationsprüfung nicht auf.',
+      { server: serverName, port }
+    )
   );
 }
 
@@ -434,9 +437,11 @@ export async function writeDnsCredentials(
     if (res.code !== 0) {
       throw new ApiError(
         res.code === 3
-          ? `Es gibt keine acme.sh-Konfiguration (${ACME_HOME}/account.conf). ` +
-            'HAPM richtet acme.sh beim Start ein. Ob das geklappt hat, steht in der Übersicht.'
-          : `Die Zugangsdaten ließen sich nicht ablegen: ${tail(res.stderr || res.stdout)}`
+          ? msg(
+              'Es gibt keine acme.sh-Konfiguration ({file}). HAPM richtet acme.sh beim Start ein. Ob das geklappt hat, steht in der Übersicht.',
+              { file: `${ACME_HOME}/account.conf` }
+            )
+          : msg('Die Zugangsdaten ließen sich nicht ablegen: {detail}', { detail: tail(res.stderr || res.stdout) })
       );
     }
 
@@ -608,8 +613,10 @@ function assertLockSupported(server: Server, probe: ProxyProbe, input: CreateSer
   if (input.passwordLock === null || input.passwordLock === INHERIT_LOCK) return;
   if (supportsPasswordLock(probe.version) === false) {
     throw new ApiError(
-      `Die Passwortsperre braucht HAProxy 2.4 oder neuer. Hier läuft ${probe.version}. ` +
-        'Die Sperre auf Admin-IPs geht dort weiterhin.'
+      msg(
+        'Die Passwortsperre braucht HAProxy 2.4 oder neuer. Hier läuft {version}. Die Sperre auf Admin-IPs geht dort weiterhin.',
+        { version: String(probe.version) }
+      )
     );
   }
 }
@@ -668,11 +675,11 @@ async function installAndReload(
     );
     if (now.stdout.trim() !== expectedDigest) {
       await steps.push({
-        label: 'Konfiguration einsetzen',
+        label: msgid('Konfiguration einsetzen'),
         ok: false,
-        detail:
-          'Die Konfiguration hat sich geändert, seit sie gelesen wurde. ' +
-          'Es wurde nichts überschrieben. Bitte erneut versuchen.',
+        detail: msgid(
+          'Die Konfiguration hat sich geändert, seit sie gelesen wurde. Es wurde nichts überschrieben. Bitte erneut versuchen.'
+        ),
       });
       return false;
     }
@@ -681,14 +688,14 @@ async function installAndReload(
   const backup = `${HAPROXY_CFG}.backup-${stamp()}`;
   const copy = await sshExec(ssh, buildCommand(['cp', '-a', HAPROXY_CFG, backup]), SHORT_MS);
   if (copy.code !== 0) {
-    await steps.push({ label: 'Backup anlegen', ok: false, detail: tail(copy.stderr) });
+    await steps.push({ label: msgid('Backup anlegen'), ok: false, detail: tail(copy.stderr) });
     return false;
   }
-  await steps.push({ label: 'Backup angelegt', ok: true, detail: backup });
+  await steps.push({ label: msgid('Backup angelegt'), ok: true, detail: backup });
 
   const install = await sshExec(ssh, buildCommand(['cp', STAGING_CFG, HAPROXY_CFG]), SHORT_MS);
   if (install.code !== 0) {
-    await steps.push({ label: 'Konfiguration einsetzen', ok: false, detail: tail(install.stderr) });
+    await steps.push({ label: msgid('Konfiguration einsetzen'), ok: false, detail: tail(install.stderr) });
     return false;
   }
 
@@ -697,14 +704,14 @@ async function installAndReload(
     await sshExec(ssh, buildCommand(['cp', '-a', backup, HAPROXY_CFG]), SHORT_MS).catch(() => null);
     await sshExec(ssh, buildCommand(RELOAD_ARGV), RELOAD_MS).catch(() => null);
     await steps.push({
-      label: 'HAProxy neu laden',
+      label: msgid('HAProxy neu laden'),
       ok: false,
       detail: `${tail(reload.stderr || reload.stdout)}. Rollback auf ${backup} durchgeführt.`,
     });
     return false;
   }
 
-  await steps.push({ label: 'Konfiguration eingesetzt und HAProxy neu geladen', ok: true });
+  await steps.push({ label: msgid('Konfiguration eingesetzt und HAProxy neu geladen'), ok: true });
   await sshExec(ssh, buildCommand(['rm', '-f', STAGING_CFG]), SHORT_MS).catch(() => null);
   await pruneBackups(ssh, steps);
   return true;
@@ -775,7 +782,7 @@ async function pruneBackups(
   if (!res || res.code !== 0 || !Number.isFinite(remaining)) return;
 
   await steps.push({
-    label: 'Alte Konfigurations-Backups aufgeräumt',
+    label: msgid('Alte Konfigurations-Backups aufgeräumt'),
     ok: true,
     detail: `${remaining} von höchstens ${BACKUP_KEEP} Sicherungen liegen noch in /etc/haproxy.`,
   });
@@ -808,8 +815,10 @@ function assertIssuable(
 ): ChallengePlan {
   if (!probe.acmeReady) {
     throw new ApiError(
-      `acme.sh (${ACME}) oder das Zertifikatsverzeichnis (${HAPROXY_CERT_DIR}) fehlt. Ohne beides lässt sich ` +
-        'kein Zertifikat ausstellen. HAPM legt beides beim Start an. Ob das geklappt hat, steht in der Übersicht.'
+      msg(
+        'acme.sh ({acme}) oder das Zertifikatsverzeichnis ({dir}) fehlt. Ohne beides lässt sich kein Zertifikat ausstellen. HAPM legt beides beim Start an. Ob das geklappt hat, steht in der Übersicht.',
+        { acme: ACME, dir: HAPROXY_CERT_DIR }
+      )
     );
   }
   const plan = planChallenge(domains, challenge, probe.dnsHooks);
@@ -845,7 +854,7 @@ async function issueAndDeploy(
   const existing = findCertificateFor(certs, domains);
   if (existing) {
     await steps.push({
-      label: 'Zertifikat schon vorhanden',
+      label: msgid('Zertifikat schon vorhanden'),
       ok: true,
       detail: `${existing.mainDomain} deckt ${domains.join(', ')} ab. Es wurde keins beantragt.`,
     });
@@ -870,14 +879,14 @@ async function issueAndDeploy(
   // kein Fehlschlag, sondern der zweite Normalfall.
   if (issue.code !== 0 && issue.code !== 2) {
     await steps.push({
-      label: 'Zertifikat ausstellen',
+      label: msgid('Zertifikat ausstellen'),
       ok: false,
       detail: tail(issue.stderr || issue.stdout),
     });
     return false;
   }
   await steps.push({
-    label: issue.code === 2 ? 'Zertifikat war noch gültig' : 'Zertifikat ausgestellt',
+    label: msgid(issue.code === 2 ? 'Zertifikat war noch gültig' : 'Zertifikat ausgestellt'),
     ok: true,
     detail: `${domains.join(', ')} (${plan.method === 'dns' ? `DNS-01 über ${plan.hook}` : 'HTTP-01'})`,
   });
@@ -903,7 +912,7 @@ async function issueAndDeploy(
   );
   if (deploy.code !== 0) {
     await steps.push({
-      label: 'Zertifikat ausrollen',
+      label: msgid('Zertifikat ausrollen'),
       ok: false,
       detail: tail(deploy.stderr || deploy.stdout),
     });
@@ -913,13 +922,13 @@ async function issueAndDeploy(
   const pem = await sshExec(ssh, buildCommand(['test', '-f', pemPath(mainDomain)]), SHORT_MS);
   if (pem.code !== 0) {
     await steps.push({
-      label: 'Zertifikat ausrollen',
+      label: msgid('Zertifikat ausrollen'),
       ok: false,
       detail: `${pemPath(mainDomain)} liegt nach dem Ausrollen nicht vor.`,
     });
     return false;
   }
-  await steps.push({ label: 'Zertifikat ausgerollt', ok: true, detail: pemPath(mainDomain) });
+  await steps.push({ label: msgid('Zertifikat ausgerollt'), ok: true, detail: pemPath(mainDomain) });
   return true;
 }
 
@@ -957,7 +966,7 @@ async function dropCertificate(
     SHORT_MS
   );
   await steps.push({
-    label: 'Zertifikat aus der Erneuerung genommen',
+    label: msgid('Zertifikat aus der Erneuerung genommen'),
     ok: remove.code === 0,
     detail: remove.code === 0 ? mainDomain : tail(remove.stderr || remove.stdout),
   });
@@ -991,7 +1000,9 @@ export async function createService(
 
     if (!probe.configReadable) {
       throw new ApiError(
-        `${HAPROXY_CFG} ist nicht lesbar. Ob die Ersteinrichtung durchgelaufen ist, steht in der Übersicht.`
+        msg('{file} ist nicht lesbar. Ob die Ersteinrichtung durchgelaufen ist, steht in der Übersicht.', {
+          file: HAPROXY_CFG,
+        })
       );
     }
     const plan = assertIssuable(probe, input.domains, challenge);
@@ -1014,13 +1025,13 @@ export async function createService(
     const staged = await stageAndCheck(ssh, nextConfig);
     if (!staged.ok) {
       await steps.push({
-        label: 'Neue Konfiguration prüfen',
+        label: msgid('Neue Konfiguration prüfen'),
         ok: false,
         detail: `${staged.detail}. Es wurde nichts eingesetzt, die bestehende Konfiguration ist unverändert.`,
       });
       return { steps: steps.steps };
     }
-    await steps.push({ label: 'Neue Konfiguration geprüft', ok: true });
+    await steps.push({ label: msgid('Neue Konfiguration geprüft'), ok: true });
 
     await steps.phase('installing');
     await installAndReload(ssh, probe.digest, steps);
@@ -1055,17 +1066,14 @@ export async function deleteService(
     const probe = await probeProxy(server);
 
     if (!probe.configReadable) {
-      throw new ApiError(`${HAPROXY_CFG} ist nicht lesbar.`);
+      throw new ApiError(msg('{file} ist nicht lesbar.', { file: HAPROXY_CFG }));
     }
 
     const service = probe.services.find((s) => s.id === id);
-    if (!service) throw new ApiError(`Der Dienst "${id}" steht nicht in ${HAPROXY_CFG}.`, 404);
+    if (!service) throw new ApiError(msg('Der Dienst "{id}" steht nicht in {file}.', { id, file: HAPROXY_CFG }), 404);
     assertSurfaceKept(refuseSurfaceDelete(surfaceTarget(probe.services, protection), id));
     if (!service.removable) {
-      throw new ApiError(
-        `"${id}" wurde nicht über HAPM angelegt und lässt sich hier nicht entfernen. ` +
-          'ACL, Weiche oder Backend folgen nicht dem erwarteten Schema.'
-      );
+      throw new ApiError(serviceNotRemovable(id));
     }
 
     const nextConfig = removeService(probe.raw, id);
@@ -1084,7 +1092,7 @@ export async function deleteService(
 
     if (cert && sharedWith.length > 0) {
       await steps.push({
-        label: 'Zertifikat bleibt stehen',
+        label: msgid('Zertifikat bleibt stehen'),
         ok: true,
         detail:
           `${cert.mainDomain} deckt auch ${sharedWith.map((s) => s.id).join(', ')} ab. ` +
@@ -1117,13 +1125,13 @@ export async function deleteService(
     if (!staged.ok) {
       await restorePem();
       await steps.push({
-        label: 'Neue Konfiguration prüfen',
+        label: msgid('Neue Konfiguration prüfen'),
         ok: false,
         detail: `${staged.detail}. Es wurde nichts geändert.`,
       });
       return { steps: steps.steps };
     }
-    await steps.push({ label: 'Neue Konfiguration geprüft', ok: true });
+    await steps.push({ label: msgid('Neue Konfiguration geprüft'), ok: true });
 
     await steps.phase('installing');
     const installed = await installAndReload(ssh, probe.digest, steps);
@@ -1183,22 +1191,16 @@ export async function updateService(
     const probe = await probeProxy(server);
 
     if (!probe.configReadable) {
-      throw new ApiError(`${HAPROXY_CFG} ist nicht lesbar.`);
+      throw new ApiError(msg('{file} ist nicht lesbar.', { file: HAPROXY_CFG }));
     }
 
     const current = probe.services.find((s) => s.id === oldId);
-    if (!current) throw new ApiError(`Der Dienst "${oldId}" steht nicht in ${HAPROXY_CFG}.`, 404);
+    if (!current) throw new ApiError(msg('Der Dienst "{id}" steht nicht in {file}.', { id: oldId, file: HAPROXY_CFG }), 404);
     assertSurfaceKept(
       refuseSurfaceUpdate(surfaceTarget(probe.services, protection), oldId, input.domains)
     );
     if (!current.editable) {
-      throw new ApiError(
-        `"${oldId}" lässt sich nicht bearbeiten. ` +
-          (current.extras.length > 0
-            ? `Der Backend-Block enthält Einstellungen, die dieses Formular nicht abbildet: ${current.extras.join(', ')}. ` +
-              'Sie gingen beim Speichern verloren.'
-            : 'ACL, Weiche oder Backend folgen nicht dem erwarteten Schema.')
-      );
+      throw new ApiError(serviceNotEditable(oldId, current.extras));
     }
 
     assertLockSupported(server, probe, input);
@@ -1223,9 +1225,9 @@ export async function updateService(
       }
     } else {
       await steps.push({
-        label: 'Zertifikat unverändert',
+        label: msgid('Zertifikat unverändert'),
         ok: true,
-        detail: 'Die Domains sind dieselben geblieben, es wurde keins beantragt.',
+        detail: msgid('Die Domains sind dieselben geblieben, es wurde keins beantragt.'),
       });
     }
 
@@ -1233,13 +1235,13 @@ export async function updateService(
     const staged = await stageAndCheck(ssh, nextConfig);
     if (!staged.ok) {
       await steps.push({
-        label: 'Neue Konfiguration prüfen',
+        label: msgid('Neue Konfiguration prüfen'),
         ok: false,
         detail: `${staged.detail}. Es wurde nichts eingesetzt, die bestehende Konfiguration ist unverändert.`,
       });
       return { steps: steps.steps };
     }
-    await steps.push({ label: 'Neue Konfiguration geprüft', ok: true });
+    await steps.push({ label: msgid('Neue Konfiguration geprüft'), ok: true });
 
     await steps.phase('installing');
     if (!(await installAndReload(ssh, probe.digest, steps))) return { steps: steps.steps };
@@ -1264,7 +1266,7 @@ export async function updateService(
 
       if (sharedWith.length > 0) {
         await steps.push({
-          label: 'Altes Zertifikat bleibt stehen',
+          label: msgid('Altes Zertifikat bleibt stehen'),
           ok: true,
           detail: `${oldMain} deckt auch ${sharedWith.map((s) => s.id).join(', ')} ab.`,
         });
@@ -1298,11 +1300,31 @@ export async function updateService(
  * Frage darf nicht aus einer Momentaufnahme von vorhin kommen.
  */
 
+/** Ein Dienst, den HAPM nicht angelegt hat: ohne erkennbares Schema kein Entfernen. */
+function serviceNotRemovable(id: string): Message {
+  return msg(
+    '"{id}" wurde nicht über HAPM angelegt und lässt sich hier nicht entfernen. ACL, Weiche oder Backend folgen nicht dem erwarteten Schema.',
+    { id }
+  );
+}
+
+/** Ein Dienst, den das Formular nicht abbilden kann. */
+function serviceNotEditable(id: string, extras: string[]): Message {
+  return extras.length > 0
+    ? msg(
+        '"{id}" lässt sich nicht bearbeiten. Der Backend-Block enthält Einstellungen, die dieses Formular nicht abbildet: {extras}. Sie gingen beim Speichern verloren.',
+        { id, extras: extras.join(', ') }
+      )
+    : msg('"{id}" lässt sich nicht bearbeiten. ACL, Weiche oder Backend folgen nicht dem erwarteten Schema.', { id });
+}
+
 async function readableProbe(server: Server): Promise<ProxyProbe> {
   const probe = await probeProxy(server);
   if (!probe.configReadable) {
     throw new ApiError(
-      `${HAPROXY_CFG} ist nicht lesbar. Ob die Ersteinrichtung durchgelaufen ist, steht in der Übersicht.`
+      msg('{file} ist nicht lesbar. Ob die Ersteinrichtung durchgelaufen ist, steht in der Übersicht.', {
+        file: HAPROXY_CFG,
+      })
     );
   }
   return probe;
@@ -1313,7 +1335,7 @@ async function readableProbe(server: Server): Promise<ProxyProbe> {
  * (`protected.ts`). 409 und nicht 400: an der Eingabe ist nichts falsch, der
  * Stand der Installation steht ihr entgegen.
  */
-function assertSurfaceKept(refusal: string | null): void {
+function assertSurfaceKept(refusal: string | Message | null): void {
   if (refusal) throw new ApiError(refusal, 409);
 }
 
@@ -1360,18 +1382,12 @@ export async function precheckUpdate(
 ): Promise<HaproxyService> {
   const probe = await readableProbe(server);
   const current = probe.services.find((s) => s.id === oldId);
-  if (!current) throw new ApiError(`Der Dienst "${oldId}" steht nicht in ${HAPROXY_CFG}.`, 404);
+  if (!current) throw new ApiError(msg('Der Dienst "{id}" steht nicht in {file}.', { id: oldId, file: HAPROXY_CFG }), 404);
   assertSurfaceKept(
     refuseSurfaceUpdate(surfaceTarget(probe.services, protection), oldId, input.domains)
   );
   if (!current.editable) {
-    throw new ApiError(
-      `"${oldId}" lässt sich nicht bearbeiten. ` +
-        (current.extras.length > 0
-          ? `Der Backend-Block enthält Einstellungen, die dieses Formular nicht abbildet: ${current.extras.join(', ')}. ` +
-            'Sie gingen beim Speichern verloren.'
-          : 'ACL, Weiche oder Backend folgen nicht dem erwarteten Schema.')
-    );
+    throw new ApiError(serviceNotEditable(oldId, current.extras));
   }
   if (certificateChanged(current.domains, input.domains)) {
     assertIssuable(probe, input.domains, challenge);
@@ -1395,10 +1411,10 @@ export async function precheckUpdate(
  * „Benutzt von".
  */
 
-export function validateCertificateDomains(domains: string[]): string | null {
-  if (domains.length === 0) return 'Mindestens eine Domain wird benötigt.';
+export function validateCertificateDomains(domains: string[]): Message | null {
+  if (domains.length === 0) return msg('Mindestens eine Domain wird benötigt.');
   for (const domain of domains) {
-    if (!isValidDomain(domain)) return `"${domain}" ist keine gültige Domain.`;
+    if (!isValidDomain(domain)) return msg('"{domain}" ist keine gültige Domain.', { domain });
   }
   return null;
 }
@@ -1462,13 +1478,13 @@ async function writeStreamConfig(
   const staged = await stageAndCheck(ssh, nextConfig);
   if (!staged.ok) {
     await steps.push({
-      label: 'Neue Konfiguration prüfen',
+      label: msgid('Neue Konfiguration prüfen'),
       ok: false,
       detail: `${staged.detail}. Es wurde nichts eingesetzt, die bestehende Konfiguration ist unverändert.`,
     });
     return { steps: steps.steps };
   }
-  await steps.push({ label: 'Neue Konfiguration geprüft', ok: true });
+  await steps.push({ label: msgid('Neue Konfiguration geprüft'), ok: true });
 
   await steps.phase('installing');
   await installAndReload(ssh, probeDigest, steps);
@@ -1487,7 +1503,7 @@ export async function createStream(
     const ssh = await getSSHConfig(server);
     const probe = await probeProxy(server);
     if (!probe.configReadable) {
-      throw new ApiError(`${HAPROXY_CFG} ist nicht lesbar.`);
+      throw new ApiError(msg('{file} ist nicht lesbar.', { file: HAPROXY_CFG }));
     }
 
     // Wirft bei belegtem Namen oder belegtem Port — innerhalb des Locks noch
@@ -1498,7 +1514,7 @@ export async function createStream(
     await steps.push({
       label: `Port ${input.port} ist frei`,
       ok: true,
-      detail: 'Weder in der Konfiguration noch auf diesem Server hält ihn jemand.',
+      detail: msgid('Weder in der Konfiguration noch auf diesem Server hält ihn jemand.'),
     });
 
     return writeStreamConfig(nextConfig, probe.digest, ssh, steps);
@@ -1518,12 +1534,12 @@ export async function updateStream(
     const ssh = await getSSHConfig(server);
     const probe = await probeProxy(server);
     if (!probe.configReadable) {
-      throw new ApiError(`${HAPROXY_CFG} ist nicht lesbar.`);
+      throw new ApiError(msg('{file} ist nicht lesbar.', { file: HAPROXY_CFG }));
     }
 
     const current = probe.streams.find((s) => s.id === oldId);
     if (!current) {
-      throw new ApiError(`Die TCP-Weiterleitung "${oldId}" steht nicht in ${HAPROXY_CFG}.`, 404);
+      throw new ApiError(msg('Die TCP-Weiterleitung "{id}" steht nicht in {file}.', { id: oldId, file: HAPROXY_CFG }), 404);
     }
     if (!current.editable) throw new ApiError(notEditable(current));
 
@@ -1551,12 +1567,12 @@ export async function deleteStream(
     const ssh = await getSSHConfig(server);
     const probe = await probeProxy(server);
     if (!probe.configReadable) {
-      throw new ApiError(`${HAPROXY_CFG} ist nicht lesbar.`);
+      throw new ApiError(msg('{file} ist nicht lesbar.', { file: HAPROXY_CFG }));
     }
 
     const current = probe.streams.find((s) => s.id === id);
     if (!current) {
-      throw new ApiError(`Die TCP-Weiterleitung "${id}" steht nicht in ${HAPROXY_CFG}.`, 404);
+      throw new ApiError(msg('Die TCP-Weiterleitung "{id}" steht nicht in {file}.', { id, file: HAPROXY_CFG }), 404);
     }
     if (!current.removable) throw new ApiError(notRemovable(current));
 
@@ -1564,21 +1580,19 @@ export async function deleteStream(
   });
 }
 
-function notEditable(stream: HaproxyStream): string {
-  return (
-    `"${stream.id}" lässt sich nicht bearbeiten. ` +
-    (stream.extras.length > 0
-      ? `Der Abschnitt enthält Einstellungen, die dieses Formular nicht abbildet: ${stream.extras.join(', ')}. ` +
-        'Sie gingen beim Speichern verloren.'
-      : 'Der Abschnitt folgt nicht dem erwarteten Schema.')
-  );
+function notEditable(stream: HaproxyStream): Message {
+  return stream.extras.length > 0
+    ? msg(
+        '"{id}" lässt sich nicht bearbeiten. Der Abschnitt enthält Einstellungen, die dieses Formular nicht abbildet: {extras}. Sie gingen beim Speichern verloren.',
+        { id: stream.id, extras: stream.extras.join(', ') }
+      )
+    : msg('"{id}" lässt sich nicht bearbeiten. Der Abschnitt folgt nicht dem erwarteten Schema.', { id: stream.id });
 }
 
-function notRemovable(stream: HaproxyStream): string {
-  return (
-    `"${stream.id}" steht außerhalb der Marker-Blöcke und lässt sich hier nicht entfernen. ` +
-    'Wo der Abschnitt anfängt, wäre geraten, und geraten wird an einer Konfiguration nicht, ' +
-    'die fremde Ports bedient.'
+function notRemovable(stream: HaproxyStream): Message {
+  return msg(
+    '"{id}" steht außerhalb der Marker-Blöcke und lässt sich hier nicht entfernen. Wo der Abschnitt anfängt, wäre geraten, und geraten wird an einer Konfiguration nicht, die fremde Ports bedient.',
+    { id: stream.id }
   );
 }
 
@@ -1616,7 +1630,7 @@ export async function precheckStreamUpdate(
   const probe = await readableProbe(server);
   const current = probe.streams.find((s) => s.id === oldId);
   if (!current) {
-    throw new ApiError(`Die TCP-Weiterleitung "${oldId}" steht nicht in ${HAPROXY_CFG}.`, 404);
+    throw new ApiError(msg('Die TCP-Weiterleitung "{id}" steht nicht in {file}.', { id: oldId, file: HAPROXY_CFG }), 404);
   }
   if (!current.editable) throw new ApiError(notEditable(current));
 
@@ -1634,7 +1648,7 @@ export async function precheckStreamDelete(
   const probe = await readableProbe(server);
   const stream = probe.streams.find((s) => s.id === id);
   if (!stream) {
-    throw new ApiError(`Die TCP-Weiterleitung "${id}" steht nicht in ${HAPROXY_CFG}.`, 404);
+    throw new ApiError(msg('Die TCP-Weiterleitung "{id}" steht nicht in {file}.', { id, file: HAPROXY_CFG }), 404);
   }
   if (!stream.removable) throw new ApiError(notRemovable(stream));
   return stream;
@@ -1651,21 +1665,29 @@ export async function precheckStreamDelete(
 export async function checkStreamPort(
   server: Server,
   port: number,
-  exclude?: string
+  exclude?: string,
+  // `reason` geht als Text in die Antwort. Die Route gibt `t` aus `getT()` mit,
+  // ohne kommt er deutsch.
+  translate: (message: Message) => string = germanText
 ): Promise<{ free: boolean; reason: string | null }> {
   const probe = await readableProbe(server);
 
   const inConfig = bindConflict(probe.raw, port, exclude);
-  if (inConfig) return { free: false, reason: `In der Konfiguration gebunden von "${inConfig}".` };
+  if (inConfig) {
+    return { free: false, reason: translate(msg('In der Konfiguration gebunden von "{name}".', { name: inConfig })) };
+  }
 
   const listening = await probeListeningPorts(await getSSHConfig(server));
   if (listening === null) {
     // Unbekannt ist nicht frei. Der Vorgang läuft trotzdem weiter — was die
     // Datei hergibt, ist geprüft —, aber behauptet wird hier nichts.
-    return { free: true, reason: 'Ob auf diesem Server etwas darauf lauscht, ließ sich nicht feststellen.' };
+    return {
+      free: true,
+      reason: translate(msg('Ob auf diesem Server etwas darauf lauscht, ließ sich nicht feststellen.')),
+    };
   }
   if (listening.includes(port) && !parseBindPorts(probe.raw).some((b) => b.port === port)) {
-    return { free: false, reason: 'Auf diesem Server lauscht bereits ein anderer Dienst darauf.' };
+    return { free: false, reason: translate(msg('Auf diesem Server lauscht bereits ein anderer Dienst darauf.')) };
   }
   return { free: true, reason: null };
 }
@@ -1714,15 +1736,15 @@ export async function updateGlobalSettings(
     const ssh = await getSSHConfig(server);
     const probe = await probeProxy(server);
     if (!probe.configReadable) {
-      throw new ApiError(`${HAPROXY_CFG} ist nicht lesbar.`);
+      throw new ApiError(msg('{file} ist nicht lesbar.', { file: HAPROXY_CFG }));
     }
 
     const nextConfig = applyGlobalSettings(probe.raw, input);
     if (nextConfig === probe.raw) {
       await steps.push({
-        label: 'Keine Änderung',
+        label: msgid('Keine Änderung'),
         ok: true,
-        detail: 'Die Konfiguration steht bereits so da. Es wurde nichts geschrieben.',
+        detail: msgid('Die Konfiguration steht bereits so da. Es wurde nichts geschrieben.'),
       });
       return { steps: steps.steps };
     }
@@ -1731,13 +1753,13 @@ export async function updateGlobalSettings(
     const staged = await stageAndCheck(ssh, nextConfig);
     if (!staged.ok) {
       await steps.push({
-        label: 'Neue Konfiguration prüfen',
+        label: msgid('Neue Konfiguration prüfen'),
         ok: false,
         detail: `${staged.detail}. Es wurde nichts eingesetzt, die bestehende Konfiguration ist unverändert.`,
       });
       return { steps: steps.steps };
     }
-    await steps.push({ label: 'Neue Konfiguration geprüft', ok: true });
+    await steps.push({ label: msgid('Neue Konfiguration geprüft'), ok: true });
 
     await steps.phase('installing');
     await installAndReload(ssh, probe.digest, steps);
@@ -1791,7 +1813,7 @@ export async function precheckScope(
     scopeConfig(probe, name, { action });
     return;
   }
-  if (!protection) throw new Error('Das Entfernen einer Gruppe braucht die Adresse von HAPM.');
+  if (!protection) throw new Error(msgid('Das Entfernen einer Gruppe braucht die Adresse von HAPM.'));
   scopeConfig(probe, name, { action, protection });
 }
 
@@ -1824,7 +1846,7 @@ export async function updateScopes(
     const ssh = await getSSHConfig(server);
     const probe = await probeProxy(server);
     if (!probe.configReadable) {
-      throw new ApiError(`${HAPROXY_CFG} ist nicht lesbar.`);
+      throw new ApiError(msg('{file} ist nicht lesbar.', { file: HAPROXY_CFG }));
     }
 
     const nextConfig = scopeConfig(probe, name, change);
@@ -1833,13 +1855,13 @@ export async function updateScopes(
     const staged = await stageAndCheck(ssh, nextConfig);
     if (!staged.ok) {
       await steps.push({
-        label: 'Neue Konfiguration prüfen',
+        label: msgid('Neue Konfiguration prüfen'),
         ok: false,
         detail: `${staged.detail}. Es wurde nichts eingesetzt, die bestehende Konfiguration ist unverändert.`,
       });
       return { steps: steps.steps };
     }
-    await steps.push({ label: 'Neue Konfiguration geprüft', ok: true });
+    await steps.push({ label: msgid('Neue Konfiguration geprüft'), ok: true });
 
     await steps.phase('installing');
     await installAndReload(ssh, probe.digest, steps);
@@ -1856,13 +1878,10 @@ export async function precheckDelete(
 ): Promise<HaproxyService> {
   const probe = await readableProbe(server);
   const service = probe.services.find((s) => s.id === id);
-  if (!service) throw new ApiError(`Der Dienst "${id}" steht nicht in ${HAPROXY_CFG}.`, 404);
+  if (!service) throw new ApiError(msg('Der Dienst "{id}" steht nicht in {file}.', { id, file: HAPROXY_CFG }), 404);
   assertSurfaceKept(refuseSurfaceDelete(surfaceTarget(probe.services, protection), id));
   if (!service.removable) {
-    throw new ApiError(
-      `"${id}" wurde nicht über HAPM angelegt und lässt sich hier nicht entfernen. ` +
-        'ACL, Weiche oder Backend folgen nicht dem erwarteten Schema.'
-    );
+    throw new ApiError(serviceNotRemovable(id));
   }
   return service;
 }
@@ -1930,9 +1949,9 @@ export async function updateErrorPages(
 
     if (targets.length === 0) {
       steps.push({
-        label: 'Nichts zu schreiben',
+        label: msgid('Nichts zu schreiben'),
         ok: true,
-        detail: 'Keine Fehlerdatei weicht von der Vorlage ab.',
+        detail: msgid('Keine Fehlerdatei weicht von der Vorlage ab.'),
       });
       return { steps, entries: before };
     }
@@ -1973,26 +1992,26 @@ export async function updateErrorPages(
     if (check.code !== 0) {
       await restore();
       steps.push({
-        label: 'Konfiguration prüfen',
+        label: msgid('Konfiguration prüfen'),
         ok: false,
         detail: `${tail(check.stderr || check.stdout)}. Alle Fehlerdateien sind wieder auf dem Stand von vorher.`,
       });
       return { steps, entries: await probeErrorPages(ssh, probe.raw) };
     }
-    steps.push({ label: 'Konfiguration geprüft', ok: true });
+    steps.push({ label: msgid('Konfiguration geprüft'), ok: true });
 
     const reload = await sshExec(ssh, buildCommand(RELOAD_ARGV), RELOAD_MS);
     if (reload.code !== 0) {
       await restore();
       await sshExec(ssh, buildCommand(RELOAD_ARGV), RELOAD_MS).catch(() => null);
       steps.push({
-        label: 'HAProxy neu laden',
+        label: msgid('HAProxy neu laden'),
         ok: false,
         detail: `${tail(reload.stderr || reload.stdout)}. Alle Fehlerdateien sind wieder auf dem Stand von vorher.`,
       });
       return { steps, entries: await probeErrorPages(ssh, probe.raw) };
     }
-    steps.push({ label: 'HAProxy neu geladen', ok: true });
+    steps.push({ label: msgid('HAProxy neu geladen'), ok: true });
 
     return { steps, entries: await probeErrorPages(ssh, probe.raw) };
   });

@@ -77,7 +77,7 @@ export async function PATCH(request: Request, { params }: Params) {
     try {
       current = await precheckUpdate(server, id, input, challenge, protection);
     } catch (err) {
-      if (err instanceof HaproxyConfigError) throw new ApiError(err.message, 409);
+      if (err instanceof HaproxyConfigError) throw new ApiError(err, 409);
       throw err;
     }
 
@@ -133,7 +133,7 @@ export async function DELETE(request: Request, { params }: Params) {
     try {
       service = await precheckDelete(server, id, protection);
     } catch (err) {
-      if (err instanceof HaproxyConfigError) throw new ApiError(err.message, 409);
+      if (err instanceof HaproxyConfigError) throw new ApiError(err, 409);
       throw err;
     }
 

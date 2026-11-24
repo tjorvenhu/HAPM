@@ -28,8 +28,9 @@ Zertifikate von Let's Encrypt richtet HAPM selbst ein.
 - **Fehlerseiten:** Farben, Logo, Name, Fußzeile und Texte der Fehlerseiten und
   der Passwortabfrage einstellen, mit Vorschau der Seite, wie HAProxy sie
   ausliefert.
-- **DNS:** Zonen bei Cloudflare und Hetzner anbinden und den Eintrag zu einem
-  Ziel gleich mit anlegen.
+- **DNS:** Zonen bei Cloudflare und Hetzner anbinden. HAPM legt damit den
+  Eintrag zu einem Ziel gleich mit an. Alle übrigen Einträge verwaltet man beim
+  Anbieter.
 - **Statistik:** Anfragen, Statusklassen, Antwortzeiten und Datenmenge aus
   HAProxy selbst, Herkunft und Pfade aus dem Zugriffsprotokoll. Die Länder
   werden auf dem Server bestimmt, keine Adresse geht an einen Dritten.
@@ -43,6 +44,8 @@ Zertifikate von Let's Encrypt richtet HAPM selbst ein.
 - **Anmeldung:** Konten mit Passwort, auf Wunsch mit zweitem Faktor (Code aus
   einer Authenticator-App) und mit Passkeys. Passkeys setzen voraus, dass die
   Adresse von HAPM und ein SMTP-Konto eingerichtet sind.
+- **Sprache:** Oberfläche auf Deutsch und Englisch, je Konto wählbar. Ohne
+  Wahl gilt die Sprache des Browsers.
 - **Historie:** jeder Vorgang mit seinen Schritten, wer ihn ausgelöst hat und
   wie er ausging.
 - **API:** dieselben Vorgänge für Skripte und andere Dienste, mit Token.
@@ -164,8 +167,9 @@ Schritten durch die Einrichtung:
 Scheitert ein Schritt, etwa an einem falschen Token oder einem fehlenden
 DNS-Eintrag, bleibt das Konto bestehen. Die Eingaben lassen sich ändern und der
 Schritt wiederholen, oder die Einrichtung wird später fortgesetzt: die Übersicht
-erinnert daran. Unter „Allgemein" lässt sich die Art der Installation später
-umstellen und die Einrichtung erneut öffnen.
+erinnert daran. Ist die Einrichtung abgeschlossen oder übersprungen, ist sie
+fertig. Art der Installation und Adresse lassen sich danach unter „Allgemein"
+ändern.
 
 Solange keine Adresse eingerichtet ist, spricht die Oberfläche unverschlüsselt
 auf Port 7080. In jedem Fall sinnvoll:
@@ -224,7 +228,21 @@ Alle Angaben sind freiwillig, siehe [`.env.example`](.env.example).
 
 Unter „Sicherung" schreibt HAPM täglich oder auf Knopfdruck ein Archiv in einen
 Ordner auf dem Server: Datenbank, Schlüssel, `/etc/haproxy` mit Zertifikaten,
-acme.sh. Zurückgespielt wird von Hand, auf einem Server mit Docker, auf dem HAPM
+acme.sh.
+
+**Über die Oberfläche:** auf derselben Seite, Karte „Sicherung zurückspielen".
+Ein Archiv aus dem Ordner wählen oder eines hochladen (etwa beim Umzug von
+einem anderen Server, auf ein frisch installiertes HAPM). HAPM prüft es und
+zeigt Zeitpunkt, Fassung und Inhalt. Nach Passwort und Bestätigung sichert es
+zuerst den aktuellen Stand (in den Ordner als `…-vor-ruecksicherung.tar.gz`,
+ohne Ordner nach `data/hapm/hapm-before-restore.tar.gz`), hält sich an,
+spielt Datenbank, Schlüssel, HAProxy und acme.sh ein, lässt HAProxy die
+Konfiguration prüfen und neu laden und startet wieder. Scheitert ein Schritt,
+kommt der alte Stand zurück. Danach melden Sie sich mit einem Konto aus der
+Sicherung an. Der Ablauf im Einzelnen steht in
+[`docs/betrieb.md`](docs/betrieb.md), Abschnitt „Zurückspielen".
+
+**Von Hand**, wenn HAPM nicht läuft: auf einem Server mit Docker, auf dem HAPM
 noch nicht läuft. In einem leeren Ordner mit `docker-compose.yml` (hier
 `/opt/hapm`, mit `/srv/hapm-backup` als Ordner der Sicherungen):
 

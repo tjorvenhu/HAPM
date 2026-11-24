@@ -22,7 +22,7 @@ export const auth: Dictionary = {
   'Die Anmeldung mit Passkey ist gerade nicht möglich.': 'Signing in with a passkey is not possible right now.',
   'Die Anmeldung mit Passkey ist fehlgeschlagen.': 'Signing in with a passkey failed.',
   'Die Anmeldung mit diesem Passkey war nicht möglich.': 'Signing in with this passkey was not possible.',
-  'Die Anmeldung wurde abgebrochen.': 'Sign-in was cancelled.',
+  'Die Anmeldung wurde abgebrochen.': 'Sign-in was canceled.',
   'Dieser Passkey bestätigt Sie nicht per Fingerabdruck, Gesicht oder PIN und wird deshalb nicht angenommen.':
     'This passkey does not verify you by fingerprint, face or PIN and is therefore not accepted.',
   'Die Antwort des Geräts war unvollständig.': 'The response from the device was incomplete.',
@@ -43,9 +43,7 @@ export const auth: Dictionary = {
     'If an account exists for this address, a link is on its way. It is valid for one hour.',
   'Passwort festlegen': 'Set password',
   'Geben Sie Ihr neues Passwort ein.': 'Enter your new password.',
-  'Passwort wiederholen': 'Repeat password',
   'Passwort speichern': 'Save password',
-  'Die Passwörter stimmen nicht überein.': 'The passwords do not match.',
   'Das Passwort ließ sich nicht speichern.': 'The password could not be saved.',
   'Der Link ist unvollständig. Bitte fordern Sie einen neuen an.': 'The link is incomplete. Please request a new one.',
   'Neuen Link anfordern': 'Request a new link',
@@ -112,5 +110,4 @@ export const auth: Dictionary = {
   'Sie werden weitergeleitet...': 'Redirecting...',
   'Fehler bei der Einrichtung': 'Setup failed',
   'Verifizierung fehlgeschlagen': 'Verification failed',
-  'Die Einrichtung ließ sich nicht starten.': 'Setup could not be started.',
 };

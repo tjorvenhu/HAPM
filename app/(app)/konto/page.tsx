@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import Link from 'next/link';
-import { UI_LOCALE_FIXED } from '@/lib/i18n/locale';
 import { Fingerprint, KeyRound, Languages, Loader2, Pencil, Plus, ShieldCheck, ShieldOff, Trash2, X } from 'lucide-react';
 import { browserSupportsWebAuthn, startRegistration } from '@simplewebauthn/browser';
 import { useApp } from '@/components/AppShell';
@@ -322,7 +321,6 @@ export default function AccountPage() {
 
       {error && <div className="alert alert-danger sys-block">{error}</div>}
 
-      {!UI_LOCALE_FIXED && (
       <div className="card sys-block">
         <div className="card-header">
           <div>
@@ -348,8 +346,6 @@ export default function AccountPage() {
           </div>
         </div>
       </div>
-
-      )}
 
       <div className="card sys-block">
         <div className="card-header">

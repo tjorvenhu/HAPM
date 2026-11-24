@@ -1,5 +1,7 @@
 import { requireServiceToken } from '@/lib/service-auth';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
+import { msg } from '@/lib/i18n';
+import { getT } from '@/lib/i18n/server';
 import { serviceActor } from '@/lib/audit';
 import { precheckScope } from '@/lib/haproxy/provision';
 import { startHaproxyRun } from '@/lib/haproxy/runner';
@@ -27,13 +29,14 @@ export async function GET(request: Request) {
 
     const servers = await proxyServers();
     const rows = await Promise.all(servers.map(proxyView));
+    const { t } = await getT();
 
     return ok(
       rows.map((row) => ({
         serverId: row.id,
         serverName: row.name,
         scopes: row.scopes,
-        error: row.error,
+        error: row.error === null ? null : t(row.error),
       }))
     );
   } catch (err) {
@@ -61,7 +64,7 @@ async function applyToAll(
       else await precheckScope(server, name, 'remove', protection);
     } catch (err) {
       if (err instanceof HaproxyConfigError) {
-        throw new ApiError(err.message, 409);
+        throw new ApiError(err, 409);
       }
       throw err;
     }
@@ -101,7 +104,7 @@ export async function DELETE(request: Request) {
     const service = await requireServiceToken(request);
     const body = await jsonBody<{ name?: string }>(request);
     const name = String(body.name ?? '').trim();
-    if (!name) throw new ApiError('Es wurde keine Gruppe angegeben.');
+    if (!name) throw new ApiError(msg('Es wurde keine Gruppe angegeben.'));
 
     return await applyToAll(name, 'scope-remove', haproxyActor(serviceActor(service), request));
   } catch (err) {

@@ -62,7 +62,8 @@ describe('die Routen des Imports', () => {
 
   it('der Import liest den Text selbst und nimmt aus dem Browser nur Schlüssel', () => {
     const run = CASES.find((c) => c.file === join(IMPORT_DIR, 'route.ts'))!.body;
-    expect(run).toContain('parseImport(text)');
+    // Mit oder ohne Übersetzer als zweites Argument: gelesen wird der Text selbst.
+    expect(run).toMatch(/parseImport\(text[,)]/);
     expect(run).not.toMatch(/body\.(entries|service|stream|items)/);
     expect(run).toContain('logAudit(');
     expect(run).toContain('handleError(err)');

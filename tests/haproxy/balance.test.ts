@@ -12,6 +12,10 @@ import {
   STICKY_COOKIE,
   type CreateServiceInput,
 } from '@/lib/haproxy/config';
+import { germanText, type Message } from '@/lib/i18n/translate';
+
+/** Die Meldung einer Prüfung auf Deutsch, wie sie ohne Sprache herauskommt. */
+const de = (message: Message | null) => (message ? germanText(message) : message);
 
 /**
  * Lastverteilung: das Verfahren aus `balance` und die Sitzungsbindung über
@@ -226,7 +230,7 @@ describe('Gewichtung', () => {
 
   it('nimmt die 0: sie nimmt ein Ziel aus der Verteilung, ohne es abzuwerfen', () => {
     const aus = { ...GEWICHTET, servers: [{ ...GEWICHTET.servers[0], weight: 0 }] };
-    expect(validateCreateInput(aus)).toBeNull();
+    expect(de(validateCreateInput(aus))).toBeNull();
     const service = find(addService(CONFIG, aus), 'shop');
     expect(service.servers[0].weight).toBe(0);
     expect(service.editable).toBe(true);
@@ -234,10 +238,10 @@ describe('Gewichtung', () => {
 
   it('lehnt einen Wert außerhalb von 0 bis 256 ab', () => {
     expect(
-      validateCreateInput({ ...GEWICHTET, servers: [{ ...GEWICHTET.servers[0], weight: 300 }] })
+      de(validateCreateInput({ ...GEWICHTET, servers: [{ ...GEWICHTET.servers[0], weight: 300 }] }))
     ).toContain('Ungültige Gewichtung');
     expect(
-      validateCreateInput({ ...GEWICHTET, servers: [{ ...GEWICHTET.servers[0], weight: -1 }] })
+      de(validateCreateInput({ ...GEWICHTET, servers: [{ ...GEWICHTET.servers[0], weight: -1 }] }))
     ).toContain('Ungültige Gewichtung');
   });
 
@@ -296,7 +300,7 @@ describe('Gewichtung', () => {
   it('lässt „2abc" ungültig, statt daraus 2 zu machen', () => {
     const input = readServiceInput({ servers: [{ target: '10.0.0.1:80', weight: '2abc' }] });
     expect(Number.isNaN(input.servers[0].weight)).toBe(true);
-    expect(validateCreateInput({ ...INPUT, servers: input.servers })).toContain(
+    expect(de(validateCreateInput({ ...INPUT, servers: input.servers }))).toContain(
       'Ungültige Gewichtung'
     );
   });
@@ -304,7 +308,7 @@ describe('Gewichtung', () => {
 
 describe('validateCreateInput', () => {
   it('lehnt ein unbekanntes Verfahren ab', () => {
-    expect(validateCreateInput({ ...INPUT, balance: 'schnellste' as never })).toBe(
+    expect(de(validateCreateInput({ ...INPUT, balance: 'schnellste' as never }))).toBe(
       'Unbekanntes Verteilverfahren.'
     );
   });
@@ -316,9 +320,9 @@ describe('validateCreateInput', () => {
       redirect: { to: 'https://example.org', keepPath: false, permanent: false },
       healthcheck: false,
     };
-    expect(validateCreateInput(redirect)).toContain('Verteilverfahren');
-    expect(validateCreateInput({ ...redirect, balance: null })).toContain('Sitzungsbindung');
-    expect(validateCreateInput({ ...redirect, balance: null, sticky: false })).toBeNull();
+    expect(de(validateCreateInput(redirect))).toContain('Verteilverfahren');
+    expect(de(validateCreateInput({ ...redirect, balance: null }))).toContain('Sitzungsbindung');
+    expect(de(validateCreateInput({ ...redirect, balance: null, sticky: false }))).toBeNull();
   });
 });
 
@@ -336,7 +340,7 @@ describe('readServiceInput', () => {
     // Auf einen Vorgabewert gebogen wäre er eine Entscheidung, die niemand
     // getroffen hat. Abgelehnt wird er erst von der Prüfung, und die ist
     // dieselbe, die auch das Formular aufruft.
-    expect(validateCreateInput({ ...INPUT, balance: input.balance })).toBe(
+    expect(de(validateCreateInput({ ...INPUT, balance: input.balance }))).toBe(
       'Unbekanntes Verteilverfahren.'
     );
   });

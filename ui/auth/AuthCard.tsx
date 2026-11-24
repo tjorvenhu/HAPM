@@ -1,7 +1,6 @@
 import type { ReactNode } from "react"
 import { Logo } from "../primitives/Logo"
 import { LanguageSwitch } from "./LanguageSwitch"
-import { UI_LOCALE_FIXED } from "@/lib/i18n/locale"
 
 interface AuthCardProps {
   /** Überschrift der Karte, etwa „Anmelden" oder „Konto einrichten". */
@@ -40,7 +39,7 @@ export function AuthCard({ title, subtitle, className, standalone = false, child
         {title && <h1 className="auth-title">{title}</h1>}
         {subtitle && <p className="auth-subtitle">{subtitle}</p>}
         {children}
-        {languageSwitch && !UI_LOCALE_FIXED && <LanguageSwitch />}
+        {languageSwitch && <LanguageSwitch />}
       </div>
     </div>
   )

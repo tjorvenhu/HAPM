@@ -18,11 +18,12 @@
 import { listDocuments, updateDocument, Query } from '../db';
 import { COLLECTIONS } from '../types';
 import type { HaproxyRun } from '../types';
+import { msgid } from '../i18n/translate';
 
-const INTERRUPTED =
-  'HAPM wurde neu gestartet, während der Vorgang lief. Die Schritte unten sind die, ' +
-  'die noch abgeschlossen wurden; ob der letzte begonnene durchkam, sagt die Konfiguration ' +
-  'von HAProxy.';
+/** Gespeichert als deutscher Schlüssel, die Seite übersetzt ihn beim Zeigen. */
+const INTERRUPTED = msgid(
+  'HAPM wurde neu gestartet, während der Vorgang lief. Die Schritte unten sind die, die noch abgeschlossen wurden; ob der letzte begonnene durchkam, sagt die Konfiguration von HAProxy.'
+);
 
 export async function reconcileOrphanedHaproxyRuns(): Promise<void> {
   let running: HaproxyRun[];

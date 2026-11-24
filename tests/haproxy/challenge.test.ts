@@ -6,6 +6,7 @@ import {
   type ChallengePlan,
 } from '@/lib/haproxy/challenge';
 import type { Exposure } from '@/lib/types';
+import { germanText, msg, type Message } from '@/lib/i18n/translate';
 
 /**
  * Die Regel, nach der ein Zertifikat über HTTP-01 oder DNS-01 ausgestellt wird.
@@ -55,7 +56,7 @@ describe('planChallenge', () => {
     it('ohne Hook nicht ausstellbar, mit dem Weg zu den Zugangsdaten', () => {
       const result = plan([...domains], exposure, []);
       expect(result.method).toBe('unavailable');
-      expect((result as { message: string }).message).toContain('Reverse-Proxy, Einstellungen');
+      expect(germanText((result as { message: Message }).message)).toContain('Reverse-Proxy, Einstellungen');
     });
 
     it('genau ein Hook gilt, ohne dass ihn jemand nennt', () => {
@@ -65,7 +66,7 @@ describe('planChallenge', () => {
     it('bei mehreren muss er gewählt sein', () => {
       const result = plan([...domains], exposure, ['dns_cf', 'dns_hetznercloud']);
       expect(result.method).toBe('unavailable');
-      expect((result as { message: string }).message).toContain('dns_cf, dns_hetznercloud');
+      expect(germanText((result as { message: Message }).message)).toContain('dns_cf, dns_hetznercloud');
     });
 
     it('der gewählte Hook gilt', () => {
@@ -79,14 +80,14 @@ describe('planChallenge', () => {
       // Nicht still auf den einen ausweichen: der Aufrufer hat etwas anderes verlangt.
       const result = plan([...domains], exposure, ['dns_cf'], 'dns_hetznercloud');
       expect(result.method).toBe('unavailable');
-      expect((result as { message: string }).message).toContain('dns_hetznercloud');
+      expect(germanText((result as { message: Message }).message)).toContain('dns_hetznercloud');
     });
   });
 
   it('sagt bei einer internen Installation ohne Hook, dass sie intern ist', () => {
     const result = plan(PLAIN, 'internal', []);
-    expect((result as { message: string }).message).toContain('intern');
-    expect((result as { message: string }).message).toContain('DNS-Zugangsdaten');
+    expect(germanText((result as { message: Message }).message)).toContain('intern');
+    expect(germanText((result as { message: Message }).message)).toContain('DNS-Zugangsdaten');
   });
 });
 
@@ -100,6 +101,6 @@ describe('challengeArgs', () => {
   });
 
   it('ohne Weg gibt es kein Kommando', () => {
-    expect(() => challengeArgs({ method: 'unavailable', message: 'fehlt' }, '8888')).toThrow('fehlt');
+    expect(() => challengeArgs({ method: 'unavailable', message: msg('fehlt') }, '8888')).toThrow('fehlt');
   });
 });
