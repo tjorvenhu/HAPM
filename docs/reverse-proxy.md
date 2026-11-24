@@ -47,7 +47,7 @@ Backend-Adresse (`matchesSearch`, rein und getestet).
   Collection eine Tabelle mit dem Dokument als `jsonb`
   (`lib/db/postgres-driver.ts`, siehe [`betrieb.md`](betrieb.md)). Collections des
   Bereichs: `haproxy_runs`, `haproxy_metrics`, `geoip_table`, `dns_zones`,
-  `service_tokens`.
+  `service_tokens`, `page_design`.
 - **Service-Token ohne Bereiche.** Ein Token gilt für die Reverse-Proxy-API
   (`/api/internal/haproxy/**`), andere Teilbäume gibt es nicht. Er lässt sich an
   Adressen binden. Siehe [`reverse-proxy-api.md`](reverse-proxy-api.md).
@@ -71,7 +71,7 @@ danach ins Formular:
 
 **Jede Auswahl führt auf ein eigenes Formular, das nur seine Felder zeigt.** Im
 Reverse-Proxy-Formular gibt es kein Verteilverfahren, keine Gewichtung und keine
-Sitzungsbindung; im Weiterleitungs-Formular keine Backend-Zeilen, kein Preset,
+Sitzungsbindung; im Weiterleitungs-Formular keine Backend-Zeilen, keine Header,
 keinen Healthcheck und keine Pfad-Regeln. EIN Formular mit einem Umschalter in
 der Mitte hätte geheißen: wer eine Weiterleitung will, füllt erst Backend-Zeilen
 aus und findet den Schalter danach.
@@ -117,9 +117,8 @@ nach dem `balance` aus dem `defaults`-Block. Das Feld benennt das Verfahren:
 ohne es landete eine `balance leastconn`-Zeile in `extras` und machte den
 Eintrag unbearbeitbar.
 
-- **`balance` ist ein Feld und kein Preset.** Ein Preset ist eine feste Liste
-  Zeilen, die man ganz oder gar nicht bekommt; hier gibt es genau einen Wert.
-  `null` heißt **keine Zeile** und nicht „roundrobin": was im `defaults`-Block
+- **`balance` ist ein eigenes Feld**: es gibt genau einen Wert, und er ist die
+  Frage, um die es beim Verteilen geht. `null` heißt **keine Zeile** und nicht „roundrobin": was im `defaults`-Block
   steht, gilt weiter, und eine hingeschriebene Vorgabe wäre eine Behauptung über
   eine Datei, in die `config.ts` nicht sieht.
 - **Der Wert kommt aus einer Allow-Liste** (`HAPROXY_BALANCE`), aus demselben
@@ -166,6 +165,10 @@ gespeichert — zwei Quellen für denselben Namen wären genau dann verschieden,
 wenn jemand in der Datei einen Block umbenennt. `INTERNE-TOOLS` heißt „Interne
 Tools" und liegt unter `/reverse-proxy/interne-tools`. Eine Tabelle mit eigenen
 Schreibweisen gibt es nicht: eine Gruppe heißt so, wie sie im Marker steht.
+Genau eine Ausnahme steht in `scopeLabel`: das Wort `HAPM` behält seine
+Großbuchstaben, in jeder Schreibweise des Markers. Es ist der Name des Produkts,
+und die Einrichtung legt eine Gruppe dieses Namens an, die sonst „Hapm" hieße.
+`HAPM-INTERN` heißt „HAPM Intern". Der Adressteil bleibt klein.
 
 **Eine frische Installation hat keine Gruppe.** Die Grundkonfiguration
 (`base-config.ts`) bringt keine mit, die erste legt der Nutzer in der
@@ -204,6 +207,52 @@ dann statt der Liste den Weg zur ersten.
   sie nicht. Ganz wegzulassen wäre ein stiller blinder Fleck, und der fällt erst
   auf, wenn eine Domain doppelt vergeben wird.
 
+### Das Ziel der Oberfläche ist geschützt
+
+Die Einrichtung legt die Gruppe `HAPM` und darin das Ziel `hapm` an: die Domain
+der Oberfläche auf den Port von HAPM. Wer dieses Ziel entfernt, ihm die Domain
+nimmt oder seine Gruppe abräumt, sperrt sich aus. Die Oberfläche, in der sich
+das rückgängig machen ließe, ist danach nicht mehr erreichbar. Deshalb lehnt
+HAPM das ab (`lib/haproxy/protected.ts`, rein, `tests/haproxy/protected.test.ts`).
+
+- **Geschützt ist das Ziel, über das die Adresse von HAPM läuft**: das, dessen
+  Domains den Host aus `publicUrl` (Einstellungen) treffen, exakt oder über eine
+  Wildcard des Ziels (`ownsDomain`, die Semantik der ACL). Treffen zwei, gilt
+  die obere Weiche, wie bei HAProxy. Ist `publicUrl` leer oder trägt kein Ziel
+  die Domain, ist nichts geschützt.
+- **An `publicUrl` und nicht am Namen.** Ein Name sagt nichts darüber, worüber
+  die Oberfläche läuft: wer das Ziel von Hand angelegt oder umbenannt hat, wäre
+  ungeschützt, und ein beliebiges Ziel namens `hapm` wäre unlöschbar. Die
+  Konstanten `SETUP_SCOPE` und `SETUP_SERVICE_ID` kommen in der Regel nicht vor.
+- **Drei Absagen** (jeweils `409` mit der Adresse und dem Ausweg im Text): das
+  Ziel entfernen, das Ziel so ändern, dass es die Domain aus `publicUrl` nicht
+  mehr trägt, und die Gruppe entfernen, in der es liegt. Alles andere bleibt
+  möglich: Server, Healthcheck, weitere Domains, Sperren, auch der Umzug in eine
+  andere Gruppe und, über die API, ein neuer Name. Der Schutz der Gruppe folgt
+  dem Ziel.
+- **Der Ausweg** steht in jeder Meldung: unter „Allgemein" die Adresse von HAPM
+  ändern oder leeren, oder dort die Einrichtung erneut öffnen. Danach trifft
+  kein Ziel mehr die Adresse, und der Schutz greift nicht.
+- **`provision.ts` liest die Einstellungen nicht**, wie bei `exposure`. Die
+  Routen lesen `publicUrl` und geben es als `SurfaceProtection` mit:
+  `precheckDelete`, `precheckUpdate`, `precheckScope(…, 'remove', …)` und über
+  `RunOptions.protection` an den Lauf, der im Lock noch einmal prüft. Der Runner
+  hat keine Vorgabe: ein Lauf `delete`, `update` oder `scope-remove` ohne die
+  Angabe scheitert, statt still ohne Schutz zu laufen. Das gilt für die
+  Sitzungs-Routen und für `/api/internal/haproxy/**` gleich.
+- **Die Einrichtung ist die eine Ausnahme.** Sie ändert die Domain des Ziels
+  selbst und setzt `publicUrl` erst im letzten Schritt neu. Dafür gibt sie
+  ausdrücklich `WITHOUT_SURFACE_PROTECTION` mit (`lib/setup/run.ts`, nur dort).
+  Die Regel selbst kennt keine Ausnahme.
+- **Die Oberfläche zeigt den Stand, statt einen Knopf anzubieten, der
+  scheitert.** `/api/haproxy/services` trägt je Proxy `surface` (Ziel, Gruppe,
+  Host, Adresse oder `null`). Die Karte des Ziels trägt die Marke „Oberfläche von
+  HAPM", ihr Löschen-Knopf ist gesperrt. Die Gruppe trägt dieselbe Marke, und
+  „Gruppe entfernen" steht gesperrt da (bei jeder anderen nicht leeren Gruppe
+  fehlt der Knopf). Der Bearbeiten-Dialog prüft mit derselben Funktion wie die
+  Route (`refuseSurfaceUpdate`) und sperrt das Speichern, solange die Domain
+  fehlt. Die interne API nennt es am Eintrag als `surface: true`.
+
 ### Die Datei ist die Wahrheit
 
 **Es gibt keine Collection dahinter.** `/etc/haproxy/haproxy.cfg` ist die
@@ -233,6 +282,33 @@ Konfigurationstext nach.
   `# AUTO: <id>`.** Was HAPM angelegt hat, erkennt es an den Markern wieder;
   was jemand von Hand danebengeschrieben hat, bleibt lesbar stehen. Die Gruppe
   sagt nur, vor welchem Marker der Block landet.
+- **Die Dienst-ID ergibt sich aus der Hauptdomain** (`serviceIdFor`): klein
+  geschrieben, alles außer `a-z0-9` wird zu einem `_`, höchstens 48 Zeichen,
+  eine Wildcard bekommt `wildcard_` davor (`*.example.org` und `example.org`
+  sind oft zwei Einträge nebeneinander, und der zweite hieße sonst
+  `example_org_2`). Als Feld im Formular war sie eine Frage, auf die fast jeder
+  mit einer Abwandlung der Domain geantwortet hat.
+  **Vergeben wird sie auf dem Server**, in der Vorabprüfung, die die Datei
+  ohnehin liest (`assignServiceId` in `precheckCreate`): nur dort steht, was
+  schon vergeben ist. Belegt ist eine ID, wenn ACL (`host_`, `lock_`, `pass_`),
+  ein Abschnitt (`frontend`, `backend`, `listen`) oder der Name einer Pfad-Regel
+  des neuen Eintrags sie schon tragen, und zwar mit derselben Funktion, mit der
+  `addService` ablehnt (`serviceNameConflict`). Dann kommt ein Zähler dran
+  (`_2`, `_3`, gekürzt wird davor). Zwischen Vorabprüfung und Schreiben liegt
+  die Zertifikatsausstellung, also Minuten; ein zweiter Dialog läse in der Zeit
+  dieselbe Datei. Deshalb merkt sich der Prozess vergebene, noch nicht
+  geschriebene IDs (`reservedIds` in `provision.ts`, im Prozess wie der Lock,
+  mit 30 Minuten Ablauf für einen Lauf, der gar nicht erst startet). Die
+  Antwort der Route nennt die vergebene ID (`serviceId`), die Pille und die
+  Historie tragen sie.
+  **Danach ändert sie sich nicht**, auch nicht mit der Hauptdomain. Sie
+  benennt ACL, Weiche und Backend, den Cookie der Passwortsperre und jede Zeile
+  der Historie; sie mitzuziehen hieße, all das umzubenennen. Der
+  Bearbeiten-Dialog zeigt sie nur lesend. Die interne API nimmt `id` weiter an
+  (siehe [`reverse-proxy-api.md`](reverse-proxy-api.md)), und die Einrichtung
+  gibt `hapm` fest mit.
+  Eine TCP-Weiterleitung hält es genauso, nur aus dem Port: `tcp_5432`
+  (`streamIdFor`, `assignStreamId`).
 - **Der Bereich einer Zeile ergibt sich aus dem nächsten Marker DARUNTER**, nicht
   aus einem Zustand beim Lesen. Das ist die Semantik des Einfügens und stimmt
   auch ohne `# BEGIN`-Marker und bei vertauschten Blöcken.
@@ -277,7 +353,7 @@ Konfigurationstext nach.
   komplett weg, und das steht im Bestätigungsdialog.
   Die Rücklese-Muster in `config.ts` sind das Gegenstück zu `renderBackendBlock`.
   Wer das eine erweitert, erweitert das andere — `tests/haproxy/edit.test.ts`
-  rendert dafür jede Kombination aus Preset und Healthcheck und besteht darauf,
+  rendert dafür jede Kombination aus Zusätzen und Healthcheck und besteht darauf,
   dass sie danach bearbeitbar ist und `toCreateInput` exakt die Eingabe
   zurückgibt; `tests/haproxy/routes.test.ts` tut dasselbe für die Pfad-Regeln.
   Die Healthcheck-Gruppe zählt dabei nur vollständig UND mit dem Host-Header der
@@ -339,8 +415,10 @@ Konfigurationstext nach.
   wiederfindet.
   **Ein Zertifikat braucht sie trotzdem.** Die Weiterleitung antwortet über
   HTTPS, und der Browser prüft das Zertifikat, bevor er die Antwort liest.
-  **Sie schließt Ziele, Pfad-Regeln, Preset und Healthcheck aus**, und zwar
-  ablehnend statt still: alle vier setzen ein Backend mit Servern voraus. Ein
+  **Sie schließt Ziele, Pfad-Regeln, Zusätze und Healthcheck aus**, und zwar
+  ablehnend statt still: alle vier setzen ein Backend mit Servern voraus. Bei
+  den Zusätzen kommt dazu, dass HAProxy die Weiterleitung selbst beantwortet,
+  und auf solche Antworten wirken `http-response`-Regeln nicht. Ein
   vorgefundener Block mit beidem wird gelesen, ist aber nur lesbar — ein
   Speichern ließe eine der beiden Hälften weg.
   **Zwei Entscheidungen bleiben, weil sie wirklich zwei sind.** `location` gegen
@@ -355,15 +433,67 @@ Konfigurationstext nach.
   Zeile zum Kommentar, aus `code 301` würde nichts, und die Weiterleitung stünde
   ohne Code da. Leerzeichen trennen Argumente, ein Anführungszeichen bricht die
   Zeile auf.
-- **Ein Preset ist eine feste Liste Zeilen in JEDEM Backend des Dienstes**
-  (`PRESET_BACKEND_LINES`). Nur so lässt es sich zurücklesen, ohne zu raten:
-  steht die Liste vollständig da, ist es das Preset, sonst hat jemand von Hand
-  etwas geändert und der Eintrag wird nicht mehr angefasst. `coolify` ist
-  deshalb ein Preset und kein Eingabefeld — es setzt `timeout tunnel 1h`, ohne
-  das fallen Terminal und Live-Ansicht nach `timeout client` aus dem
+- **Zusätze statt Presets: jeder ist EINE Zeile in JEDEM Backend des
+  Eintrags**, auch in denen der Pfad-Regeln. Es gibt drei: feste Header der
+  Antwort (`http-response set-header`), feste Header der Anfrage
+  (`http-request set-header`) und den Schalter „Lange Verbindungen"
+  (`TUNNEL_LINE`, `timeout tunnel 1h`). Geschrieben werden sie in dieser
+  Reihenfolge (Timeout, Anfrage, Antwort: der Weg einer Anfrage), zwischen
+  Verfahren und Healthcheck (`addonLines`).
+  **Warum keine Presets mehr.** Ein Preset war eine feste Liste Zeilen, die es
+  nur ganz oder gar nicht gab („Nextcloud" = zwei Header, „Coolify" = das
+  Timeout). Wer nur einen der beiden Header wollte oder einen dritten, hatte
+  einen Eintrag, den HAPM nicht mehr anfassen konnte. Einzelne Zeilen lassen
+  sich einzeln zurücklesen, und damit fällt die Bedingung „vollständig oder gar
+  nicht" weg.
+  **Warum nur diese drei.** Ein Zusatz kommt nur dazu, wenn er sich als genau
+  eine Zeile ausdrücken lässt, die sich eindeutig und verlustfrei zurücklesen
+  lässt. Alles mit Bedingung, Ausdruck oder mehreren Zeilen bleibt eine fremde
+  Zeile in `extras`, und der Eintrag ist nur lesbar.
+  **Der Wert ist Text, kein Ausdruck** (`headerLine`). `set-header` nimmt ein
+  Log-Format: `%[src]` würde zur Adresse des Besuchers, `%T` zur Uhrzeit. Und
+  die Zeile geht durch den Parser der Konfiguration, der in Anführungszeichen
+  `$NAME` durch eine Umgebungsvariable ersetzt und den Backslash als
+  Maskierung liest. Ein Wert aus einem Formular soll so ankommen, wie er
+  eingetippt wurde, deshalb wird `%` zu `%%`, und `"`, `$` und `\` bekommen
+  einen `\` davor. Geprüft gegen HAProxy 2.4, 3.0 und 3.4 mit Werten wie
+  `C:\pfad`, `a\ b`, `ende\`, `q\"x`, `\$HOME`, `50%` und `%[src]`: jeder kam
+  Zeichen für Zeichen so beim Empfänger an. Erlaubt ist druckbares ASCII;
+  Namen sind Tokens (Buchstaben, Ziffern, Bindestrich), Header der Übertragung
+  (`Content-Length`, `Transfer-Encoding`, `Connection` …) sind ausgeschlossen,
+  ein Name steht je Richtung höchstens einmal da (`set-header` ersetzt, der
+  zweite überschriebe den ersten), höchstens 20 je Richtung
+  (`validateHeaderRule`).
+  **Zurückgelesen wird nur, was `headerLine` genau so geschrieben hätte**
+  (`readHeaderLine`). Eine Zeile, die sich so nicht verlustfrei lesen lässt,
+  bleibt fremd und unangetastet: ein `%[src]` von Hand, eine Zeile mit `if`,
+  ein Wert ohne Anführungszeichen. Als Header gelesen stünde dort nach dem
+  Speichern `%%[src]`, und aus der Adresse des Besuchers würde der Text
+  „%[src]".
+  **Bestehende Presets sind damit nur noch das, was sie in der Datei immer
+  waren**: die Nextcloud-Zeilen werden als zwei Header der Antwort gelesen, die
+  Coolify-Zeile als der Schalter, und ein Speichern ohne Änderung schreibt
+  dieselben Zeilen Zeichen für Zeichen wieder hin
+  (`tests/haproxy/addons.test.ts` hält eine Datei aus der Preset-Zeit fest).
+  Die interne API nimmt `preset` weiter an und übersetzt es in genau diese
+  Zusätze (`readServiceInput`); ein ausdrücklich genannter Header gewinnt.
+  Gemeldet wird `preset` nirgends mehr, auch der Filter „Alle Presets" auf der
+  Gruppenseite ist weg.
+  **Vorschläge sind kein zweites Preset-System** (`HEADER_SUGGESTIONS`). Ein
+  Klick im Dialog fügt Zeilen ein, die danach gewöhnliche Zeilen sind; sie
+  werden nirgends gespeichert und nicht als Vorschlag zurückgelesen.
+  **Ein Header gleichen Namens im Frontend ist zweierlei**
+  (`parseGlobalHeaders`, geprüft gegen 2.4, 2.8 und 3.0): `http-request`-Regeln
+  laufen erst im Frontend, dann im Backend, ein Header der Anfrage am Ziel
+  ersetzt also den globalen. `http-response`-Regeln laufen andersherum, ein
+  Header der Antwort am Ziel wird vom Frontend wieder überschrieben und kommt
+  nie an. Der Dialog sagt das an der Zeile, und zwar sichtbar: bei der Antwort
+  hat der Eintrag sonst keine Wirkung, ohne dass es jemand merkt.
+  **Der Schalter und kein Feld für die Dauer**: ohne `timeout tunnel` fallen
+  WebSocket, Terminal und Live-Ansicht nach `timeout client` aus dem
   `defaults`-Block und reißen mitten in der Arbeit ab. Ein Feld für den Wert
-  hätte dieselbe Wirkung und wäre eine Frage mehr im Formular, auf die niemand
-  eine andere Antwort hat als „1h".
+  wäre eine Frage mehr im Formular, auf die niemand eine andere Antwort hat
+  als „lange".
 - **acme.sh ist eine Einrichtung und keine Nebenwirkung eines Klicks auf
   „Anlegen".** Es wird beim Start eingerichtet (`lib/bootstrap.ts` →
   `ensureAcme` in `lib/acme.ts`), zusammen
@@ -483,7 +613,9 @@ statt hier ein zweites Mal geschrieben.
   (`/api/haproxy/streams`), weil sich dort die Vorgänge unterscheiden.
 
 Was es hier **nicht** gibt und auch nicht geben soll: Zertifikat, DNS-Eintrag,
-Pfad-Regeln, Preset, Sperre über die Admin-IPs. Alle fünf setzen HTTP voraus.
+Pfad-Regeln, Header, Sperre über die Admin-IPs. Alle fünf setzen HTTP voraus.
+Die Kennung des `listen`-Abschnitts ergibt sich aus dem Port (`tcp_5432`), wie
+die Dienst-ID aus der Domain, und bleibt, wenn sich der Port ändert.
 
 ### Der DNS-Eintrag zum Ziel
 
@@ -781,7 +913,7 @@ sie versehentlich zu ändern.
   und die bekannten Zeilen müsste bei allem daneben (`X-Content-Type-Options`,
   ein eigenes `X-Forwarded-For`) den ganzen Block **unbearbeitbar** machen — nach
   derselben `extras`-Regel wie bei einem Dienst. Bei einem Dienst trägt die Regel:
-  die Maske kennt Domains, Ziele und Preset, und was daneben steht, ist die
+  die Maske kennt Domains, Ziele und Zusätze, und was daneben steht, ist die
   Ausnahme. Hier ist es umgekehrt. Der Block ist die Stelle, an der ein Betreiber
   gerade die Zeile hinschreibt, die kein Formular vorhersieht; ein Werkzeug, das
   dann für ALLE Zeilen zumacht, ist genau dort keins mehr. Also wird nicht
@@ -802,8 +934,22 @@ sie versehentlich zu ändern.
 Stellen, die auseinanderlaufen, sobald sich eine Büro-IP ändert; hier ändert man
 sie einmal. Gesperrt wird ein Eintrag mit genau einer Zeile
 (`http-request deny deny_status 403 if host_<id> !admin_ips`), umgelegt am
-Schloss auf seiner Karte oder im Dialog — beides schreibt denselben vollständigen
-Eintrag und läuft über denselben abgekoppelten Vorgang.
+Schloss auf seiner Karte oder im Dialog unter „Zugriff". Beides schreibt
+denselben vollständigen Eintrag und läuft über denselben abgekoppelten Vorgang.
+
+**Im Dialog ist der Zugriff eine Karte mit einer Frage**: Offen, Nur Admin-IPs
+oder Passwort. Vorher trug jede Domainzeile ein Schloss, daneben stand ein
+Umschalter für die Art und darunter ein Satz; die Art stand damit auch dann im
+Formular, wenn gar nichts gesperrt war. Was die Antwort braucht, steht darunter
+und nur dann: bei „Nur Admin-IPs" die hinterlegten Adressen mit dem Weg zu
+Reverse-Proxy, Einstellungen (fehlen sie, ist die Wahl gesperrt und der Grund
+steht sichtbar da, ein Tooltip auf einem gesperrten Knopf erscheint nicht),
+bei „Passwort" das Feld, und bei mehr als einer Domain „Für welche Domains"
+mit „Alle Domains" als Vorgabe. Das Schloss in der Domainzeile ist nur noch
+ein Kennzeichen. Das Modell dahinter ist dasselbe geblieben (`lockedDomains`,
+`passwordLock`), und ein Eintrag behält beim Öffnen seine Art, auch wenn ihre
+Voraussetzung inzwischen fehlt. „Offen" schickt keine gesperrte Domain, was
+auch immer in der Auswahl noch steht.
 
 **Ob ein Ziel antwortet, sagt HAProxy selbst.** Die Farbe der Healthcheck-Marke
 auf der Karte (grün erreichbar, gelb teilweise, rot keins) kommt aus `show stat`
@@ -940,26 +1086,36 @@ Wer durchgelassen ist, erreicht das Ziel, als gäbe es die Sperre nicht.
 
 **Die Seite, die der Besucher sieht, liegt als Datei neben der Konfiguration**
 (`/etc/haproxy/hapm-lock/`, drei Fassungen: Abfrage, falsches Passwort, zu viele
-Versuche). **Ihr Aussehen kommt aus `ui/static/page.ts`** und wird dort
-geändert; `lib/haproxy/lock-page.ts` gibt nur die drei Texte und den Namen des
-Feldes herein. HAProxy liest die Dateien beim Laden der Konfiguration ein, und
-daraus folgt:
+Versuche). **Ihr Aufbau kommt aus `ui/static/page.ts`** und wird dort
+geändert; `lib/haproxy/lock-page.ts` gibt die Texte und den Namen des Feldes
+herein. Farben, Logo, Name, Fußzeile, Überschrift, Text und Knopf kommen aus dem
+Design unter „Reverse-Proxy → Fehlerseiten" (nächster Abschnitt), die Hinweise
+„Das Passwort stimmt nicht." und „Zu viele Versuche" bleiben fest. HAProxy liest
+die Dateien beim Laden der Konfiguration ein, und daraus folgt:
 
 - **Eine Datei, nichts zum Nachladen, kein JavaScript.** Vor der Sperre bekäme
   jede weitere Anfrage an die Domain wieder diese Seite. Stil und Logo stehen im
-  Dokument, die Schrift ist die des Systems, und das Formular schickt an die
-  eigene Adresse.
-- **Unter 12 KB** (`LOCK_PAGE_MAX_BYTES`): die Antwort muss samt Kopfzeilen in
-  HAProxys Puffer von 16 KB passen.
-- **Ein geändertes Aussehen wirkt nicht von selbst.** Es kommt mit einem neuen
-  Abbild von HAPM und dem nächsten Schreibvorgang an, siehe den nächsten Punkt.
+  Dokument (ein eigenes Logo als Data-URI), die Schrift ist die des Systems, und
+  das Formular schickt an die eigene Adresse.
+- **Höchstens 15.000 Bytes** (`PAGE_MAX_BYTES` in `lib/haproxy/page-design.ts`,
+  für die Fehlerseiten dieselbe Zahl). HAProxy hält die Seite in seinem Puffer
+  (`tune.bufsize`, 16.384 Bytes). Gemessen mit 2.4 bis 3.4: ab 15.361 Bytes
+  warnt `haproxy -c`, nimmt die Seite aber an, und ab rund 16.160 Bytes
+  antwortet HAProxy dem Besucher mit 500. Diese zweite Grenze sieht keine
+  Prüfung von HAProxy, deshalb prüft HAPM jede Seite vor dem Speichern selbst.
+- **Ein geändertes Design wirkt sofort.** Speichern schreibt die drei Seiten mit
+  (`page-design-apply.ts`), wenn die Konfiguration auf sie verweist, mit
+  Sicherung, `haproxy -c`, Reload und Rückstellen bei einem Fehlschlag. Eine
+  neue Fassung des Aufbaus kommt dagegen mit einem neuen Abbild von HAPM und dem
+  nächsten Schreibvorgang an, siehe den nächsten Punkt.
 - **Die Dateien müssen liegen, bevor `haproxy -c` läuft.** Fehlt eine, lehnt
   HAProxy die ganze Konfiguration ab. `stageAndCheck` stellt sie deshalb vor
   JEDER Prüfung sicher, sobald die Konfiguration darauf verweist, nicht nur beim
   Anlegen einer Sperre: sonst scheiterte ein Jahr später das Ändern einer fremden
   Backend-Adresse daran, dass jemand das Verzeichnis aufgeräumt hat. Verglichen
-  wird über die Prüfsumme, geschrieben nur bei einer Abweichung. So kommt auch
-  eine geänderte Fassung der Seite mit dem nächsten Vorgang an.
+  wird über die Prüfsumme, geschrieben nur bei einer Abweichung, und zwar im
+  gespeicherten Design (`activeDesign`, beim Start aus der Datenbank gelesen).
+  So kommt auch eine geänderte Fassung der Seite mit dem nächsten Vorgang an.
   Aufgeräumt wird nicht.
 
 **Geprüft wird gegen ein echtes HAProxy, und zwar mit einem Skript**
@@ -970,8 +1126,11 @@ niemand sieht: ein Passwort mit Umlaut, das der Browser anders kodiert, als der
 Hash es erwartet, ergibt eine gültige Datei und eine Sperre, durch die niemand
 kommt. Das Skript baut dieselbe Konfiguration wie der Betrieb, startet HAProxy
 2.4, 2.8 und 3.0 damit und schickt, was ein Browser-Formular schickt. Es prüft
-auch die Fehlerseiten (nächster Abschnitt). **Wer `passwordLockRules` oder
-`renderErrorFile` ändert, lässt es laufen.**
+auch die Fehlerseiten (nächster Abschnitt) und liefert ein Design genau an der
+Größengrenze aus, einmal mit der Passwortabfrage, einmal mit der 503 als
+größter Seite: beide müssen vollständig und mit ihrem Status ankommen.
+**Wer `passwordLockRules`, `renderErrorFile` oder das Design der Seiten
+ändert, lässt es laufen.**
 
 Die Größe der Konfiguration ist keine Grenze: sie geht als Heredoc in EINEM
 Kommando an die Shell, und ein einzelnes Argument fasst unter Linux 128 KB (ein
@@ -982,13 +1141,68 @@ ein Kommando ab 64 KB deshalb als Datei an `bash` statt als Argument
 ### Die Fehlerseiten
 
 Was ein Besucher sieht, wenn ein Ziel nicht antwortet (502, 503, 504), eine
-Domain unbekannt ist oder die Sperre auf Admin-IPs greift (403). Unter
-„Reverse-Proxy → Einstellungen" steht, welche Fehlerdateien die
-Konfiguration nennt, und ein Knopf bringt sie auf den Stand von HAPM
-(`lib/haproxy/error-pages.ts`, `ErrorPagesPanel`). Das Aussehen selbst kommt aus
+Domain unbekannt ist oder die Sperre auf Admin-IPs greift (403). Alles dazu
+steht auf EINER Seite, `/reverse-proxy/fehlerseiten`: links das Design, rechts
+die Vorschau, darunter welche Fehlerdateien die Konfiguration nennt und ein
+Knopf, der sie auf den Stand des gespeicherten Designs bringt
+(`lib/haproxy/error-pages.ts`, `ErrorPagesPanel`). Der Aufbau kommt aus
 `ui/static/page.ts` (`renderErrorPage`): eine Seite mit schwebender Kopfleiste,
 ohne Karte. Die Passwortabfrage aus demselben Modul ist dagegen die
 Anmeldekarte.
+
+**Das Design** (`lib/haproxy/page-design.ts`, gespeichert in der Collection
+`page_design`, eine Zeile) gilt für Fehlerseiten und Passwortabfrage zugleich:
+
+- Einstellbar: drei Farben (Akzent, Hintergrund, Text; alles Weitere wie Fläche
+  der Karte, Rahmen, gedämpfter Text, Schrift auf dem Knopf wird daraus
+  abgeleitet), das Logo (das von HAPM, ein eigenes als SVG, PNG, JPEG oder WebP,
+  oder keines), ein Name daneben, eine Fußzeile, je Fall Überschrift und Text,
+  bei der Passwortabfrage auch der Knopf. Eine helle und eine dunkle Fassung
+  kennen die Seiten nicht: ein dunkles Design ist ein dunkler Hintergrund.
+- **Vorgabe heißt: nichts gesetzt, und daraus entsteht Byte für Byte die Seite
+  von vorher.** Eine bestehende Installation erkennt ihre Dateien nach dem
+  Update deshalb weiter als „Aktuell". `tests/haproxy/page-design.test.ts` hält
+  die Prüfsummen fest. Ein Text, der genau der Vorgabe entspricht, ist die
+  Vorgabe.
+- **Die Datei bleibt die Wahrheit.** Was HAProxy ausliefert, wird bei jedem
+  Blick an der Datei abgelesen, nicht an der Zeile. Die Zeile sagt nur, was
+  entstehen SOLL: aus einer fertigen Seite ließe sich nicht zurücklesen, welche
+  Farbe gewählt war und welcher Text nur die Vorgabe.
+- **Speichern heißt ausliefern** (`PUT /api/haproxy/error-pages/design`,
+  `page-design-apply.ts`). Erst die Fehlerdateien über `updateErrorPages`, also
+  denselben Weg wie der Knopf, dann die Seiten der Passwortabfrage, wenn die
+  Konfiguration auf sie verweist. Jeder Teil sichert, prüft, lädt neu und
+  stellt bei einem Fehlschlag seine eigenen Dateien zurück. Scheitert das
+  Ausliefern, bleibt das Design gespeichert: die Dateien stehen dann wieder wie
+  vorher, gelten als „Andere Seite", und der Knopf versucht es erneut. Weichen
+  vor dem Speichern Dateien vom gespeicherten Stand ab (eine Seite von Hand),
+  fragt die Seite nach, denn sie werden mit ersetzt. „Zurück auf das Design von
+  HAPM" ist `DELETE` auf dieselbe Route.
+- **Die Vorschau ist das Ergebnis, keine Nachbildung.** Sie rechnet im Browser
+  mit denselben Funktionen, mit denen die Route schreibt (`design-pages.ts`), und
+  zeigt das Dokument in einem `iframe` mit leerem `sandbox` über `srcDoc`: ohne
+  Skript, ohne Formular, ohne Zugriff auf die Sitzung, und das `<style>` der
+  Seite färbt die Oberfläche nicht um. Die CSP der Oberfläche musste dafür nicht
+  geändert werden (`style-src 'unsafe-inline'` und `img-src data:` gab es schon).
+- **Eingaben werden geprüft, nicht gedeutet.** Farben nur als `#rrggbb`, sonst
+  geht nichts in das `<style>`. Texte in einer Zeile mit Höchstlänge, maskiert
+  beim Schreiben. Das Logo wird am Inhalt erkannt (die ersten Bytes, bei SVG der
+  Anfang des Dokuments, ein DOCTYPE mit eigenen Entitäten fällt durch), nicht an
+  Endung oder angegebenem Typ, und steht als Data-URI in einem `<img>`: dort
+  führt ein SVG kein Skript aus und lädt nichts nach. Ein SVG geht
+  prozentkodiert hinein, wenn das kürzer ist als Base64.
+- **Die Größe ist die Grenze von HAProxy, nicht unsere.** Jede fertige Seite
+  darf samt Logo höchstens 15.000 Bytes haben (`PAGE_MAX_BYTES`, Herleitung im
+  Abschnitt zur Passwortsperre und im Kopf von `page-design.ts`). Die Seite
+  zeigt die größte Seite gegen diese Zahl, ein zu großes Logo wird beim Wählen
+  abgelehnt, und die Meldung nennt, wie groß die Datei mit den jetzigen Texten
+  sein darf (`logoByteBudget`). Die Route prüft dasselbe noch einmal. HAPM
+  verkleinert kein Bild und installiert dafür nichts: ein Bild, das hier nicht
+  passt, wäre nach einer stillen Verkleinerung ein Ergebnis, das niemand
+  gesehen hat.
+- Der Start (`lib/bootstrap.ts`) liest das Design, bevor er fehlende Dateien
+  anlegt, und setzt es für den Prozess (`activeDesign`): daraus entstehen auch
+  die Seiten der Passwortsperre bei jedem Schreibvorgang.
 
 - **Geschrieben wird nur, worauf `haproxy.cfg` schon verweist.** Der Knopf
   legt keine Fehlerdatei an und schreibt keine `errorfile`-Zeile. Welche Fehler
@@ -1034,8 +1248,8 @@ Anmeldekarte.
   Zertifikat, keine neue Konfiguration. Die Schritte kommen in der Antwort zurück
   und stehen im Audit, in der Historie der Läufe stehen sie nicht.
 - **Eine neue Fassung der Seiten zeigt sich als „Andere Seite"**: die Prüfsumme
-  der Datei auf der Platte weicht dann von der ab, die jetzt entstünde. Der Knopf
-  schreibt sie neu.
+  der Datei auf der Platte weicht dann von der ab, die jetzt aus dem
+  gespeicherten Design entstünde. Der Knopf schreibt sie neu.
 - **Die 404 heißt hier anders als im Baustein `ui/static/page.ts`.** Auf dem Proxy meint sie die ganze
   Domain („Unter dieser Adresse ist nichts eingerichtet"), und „Zur Startseite"
   führte auf dieselbe Seite.
@@ -1343,4 +1557,122 @@ eine Regel ergänzt, ergänzt sie für beide — genau dafür liegt die Logik in
 `lib/haproxy/` und nicht in den Routen. Der Unterschied ist der Actor: die Zeile
 in `haproxy_runs` trägt den Namen des Dienstes (`serviceActor`) statt einer
 E-Mail-Adresse.
+
+### Import einer bestehenden Konfiguration: `/reverse-proxy/import`
+
+Wer von einem HAProxy umzieht, das er bisher von Hand gepflegt hat, soll seine
+Domains nicht einzeln abtippen. Die Seite nimmt eine `haproxy.cfg` (Datei oder
+eingefügt, höchstens 1 MB, nur Text), zeigt eine Vorschau, und die gewählten
+Einträge entstehen in einem Lauf. Der Parser steht in `lib/haproxy/import.ts`
+(rein), der Lauf in `lib/haproxy/import-run.ts`, die Routen unter
+`app/api/haproxy/import/`.
+
+**Es wird nicht geraten.** Eine fremde Konfiguration kann alles, was HAProxy
+kann; HAPM bildet einen kleinen Teil davon ab. Zu übernehmen, was passt, und
+den Rest wegzulassen, ergäbe Einträge, die grün in der Vorschau stehen und
+kaputt sind: aus `server web 10.0.0.1:443 check ssl verify none` würde ein
+Ziel, das Klartext mit einem TLS-Server spricht. Deshalb gilt die Regel von
+`extras`, nur strenger: **ein halb erkannter Eintrag ist ein nicht übernommener
+Eintrag**, mit Zeile und Grund. Was übernommen wird, verhält sich wie vorher.
+Wo HAPM etwas bewusst selbst festlegt, steht ein Hinweis am Eintrag und nicht
+still darin: TLS und Zertifikat, der Name des Cookies der Sitzungsbindung
+(`HAPMSRV`), die Form des Healthchecks, `option forwardfor`.
+
+**Was erkannt wird:**
+
+- Host-ACLs: `hdr(host)`, `req.hdr(host)` (mit `,lower`, `-i`, `-m str`),
+  `ssl_fc_sni`/`req.ssl_sni` im HTTP-Frontend, mehrere Domains und mehrere
+  Zeilen je ACL, ein Port in der Domain (`example.org:443`), Inline-ACLs
+  (`{ … }`). `hdr_end(host) -i .example.org` (oder `-m end`) wird
+  `*.example.org`; ohne führenden Punkt und bei `hdr_dom` werden es Domain
+  **und** Wildcard, mit Hinweis, denn beide treffen auch Namen, die HAPM nicht
+  träfe.
+- Weichen: `use_backend b if acl`, auch `acl1 or acl2`/`||`. Eine Weiche
+  `if host_acl path_acl` (mit `path_beg`) wird eine Pfad-Regel des Eintrags,
+  dessen Hauptweiche `if host_acl` ist. Domains mit demselben Weg werden ein
+  Eintrag.
+- Backends: `server` (Name, `host:port`, `weight`, `check`), `balance` aus der
+  Allow-Liste, `cookie … insert` mit Marke auf jeder server-Zeile (als
+  Sitzungsbindung), `option httpchk`/`http-check` (nur als „Healthcheck an",
+  HAPM prüft GET / mit 200 bis 399), `http-request`/`http-response set-header`
+  mit festem Text, `timeout tunnel` von genau einer Stunde in jeder
+  Schreibweise.
+- Weiterleitungen: `http-request redirect location|prefix … code 301|302 if
+  host_acl` und das ältere `redirect …`, im Frontend wie im Backend.
+- TCP: `listen` in `mode tcp` und `frontend` in `mode tcp` mit
+  `default_backend`; Port aus `bind :port`, `*:port`, `0.0.0.0:port`, Absender
+  aus `tcp-request connection reject if !{ src … }` (auch mit benannter
+  `src`-ACL).
+- Der Modus kommt aus dem Abschnitt, sonst aus `defaults` (auch benannten mit
+  `from`), sonst gilt HAProxys Vorgabe `tcp`. Ein Backend ohne `mode http`
+  hinter einem HTTP-Frontend ist deshalb ein Grund und keine Annahme.
+
+**Die Reihenfolge der Regeln wird gelesen**, weil HAProxy die erste passende
+Weiche nimmt. Eine Regel, die HAPM nicht abbilden kann, nimmt jeder Domain
+darunter etwas weg, wenn sie sie treffen kann (`use_backend x if
+hdr_beg(host) -i dyn.`, eine Weiche nach `src`, eine ohne Bedingung): alles
+darunter wird dann nicht übernommen. Eine Regel, die nie zum Zug kam (dieselbe
+Domain zweimal, eine Pfad-Regel unter der Hauptweiche), fällt dagegen weg und
+steht als „kam nie zum Zug" in der Liste: ohne sie verhält sich der Eintrag
+genau wie vorher. Ebenso eine Domain, die eine Wildcard davor schon bedient:
+HAPM sortiert exakte Domains vor Wildcards, sie käme danach zum Zug, und das
+wäre eine Änderung. `http-request`-Regeln laufen in HAProxy vor jedem
+`use_backend`, egal wo sie stehen; der Parser liest die Weiterleitungen
+deshalb zuerst. Zwei Frontends (HTTP und HTTPS), die dieselbe Domain gleich
+routen, ergeben einen Eintrag; routen sie verschieden, ist das ein Grund.
+
+**Was bewusst nicht übernommen wird**, jeweils mit Grund in der Liste:
+`global` und `defaults` (einmal je Abschnitt, nicht je Zeile), Ports, TLS und
+Zertifikate der Frontends (`bind … ssl crt …`), die Umleitung auf HTTPS (macht
+HAPM selbst), `default_backend` eines HTTP-Frontends (in HAPM antwortet dort die
+Seite für unbekannte Domains), `stats`, `userlist`, Lua, Regeln mit Ausdrücken
+oder Umgebungsvariablen (`%[src]`, `"$NAME"`), Map-Dateien, Weichen nach SNI in
+`mode tcp` (Durchreichen von TLS nach Namen), IPv6-Ziele (`BACKEND_TARGET` in
+`config.ts` kennt sie nicht), Parameter auf der server-Zeile außer `check`,
+`weight`, `cookie` (`inter`, `ssl`, `send-proxy`, `backup`, …), TCP-Ports an
+einer festen Adresse (HAPM bände an alle, der Port stünde weiter offen), Backends
+ohne Weiche. Ein `\` am Zeilenende ist keine Fortsetzung: HAProxy kennt keine
+(geprüft gegen 3.4) und lädt so eine Datei nicht, also wird nichts verbunden.
+
+**Die Vorschau rechnet der Server**, obwohl der Parser rein ist. Die Konflikte
+hängen an der Datei auf der Maschine: eine Domain, die schon ein Eintrag
+bedient (`findDomainConflict`, dieselbe Prüfung wie `addService`), ein Port,
+den die Datei bindet (`bindConflict`) oder auf dem schon etwas lauscht
+(`checkStreamPort`), fehlende DNS-Zugangsdaten für eine Wildcard oder eine
+interne Installation (`planChallenge`), fehlendes acme.sh. Zustände:
+übernehmbar, Konflikt, hier nicht möglich, nicht übernehmbar. Die Kennung zeigt
+die Vorschau als voraussichtlich; fest wird sie im Lauf (`assignServiceId`).
+
+**Beim Ausführen wird der Vorschau nicht geglaubt.** Der Browser schickt den
+Text und die Schlüssel der gewählten Einträge (`http:<domains>`,
+`tcp:<port>`); die Route liest den Text erneut, prüft jeden gewählten Eintrag
+gegen den jetzigen Stand und lehnt ab, was nicht mehr übernehmbar ist. Eine
+neue Gruppe prüft `validateScopeName` samt der Namen der Unterseiten; der
+Vorschlag ist deshalb `IMPORTIERT` und nicht `IMPORT`, dessen Seite unter
+dieser hier läge.
+
+**Zertifikate:** jeder Eintrag mit Domain bekommt sein Zertifikat über den
+normalen Weg (HTTP-01, Wildcard oder interne Installation DNS-01). Vorhandene
+PEM-Dateien werden nicht übernommen. Die Vorschau sagt das, sagt bei HTTP-01,
+dass die Domains schon auf diesen Server zeigen müssen (DNS-Einträge legt der
+Import nicht an), und zählt die Anträge gegen die Grenzen von Let's Encrypt
+(Stand August 2026: 50 Zertifikate je registrierter Domain in 7 Tagen, 300
+Bestellungen je Konto in 3 Stunden, 5 gescheiterte Prüfungen je Name in einer
+Stunde; `certificateLoad`, grob nach den letzten beiden Teilen der Domain). Ab
+der Hälfte einer Grenze warnt sie.
+
+**Der Lauf** (`action: 'import'`) ist EIN abgekoppelter Lauf mit einer Zeile in
+der Historie und legt die Einträge nacheinander über die vorhandenen Vorgänge
+an: `precheckCreate` + `createService` bzw. `precheckStreamCreate` +
+`createStream`, also mit Lock, Prüfsumme, `haproxy -c`, Reload und Rückweg je
+Eintrag. Kein zweiter Schreibweg und keine Sammelfassung: ein Zertifikat, das
+Let's Encrypt verweigert, nähme in einem gemeinsamen Schreibvorgang alle
+anderen mit. Eine neue Gruppe entsteht vorher über `updateScopes`; scheitert
+das, hört der Lauf auf. Ein Eintrag, dessen Domain oder Port seit der Vorschau
+belegt wurde, wird übersprungen (kein Fehler, die Lage hat sich geändert), ein
+Fehlschlag hält die übrigen nicht auf. Die Schritte tragen den Eintrag im
+Namen, am Ende steht eine Zusammenfassung (angelegt, übersprungen,
+gescheitert). Ein gescheiterter Eintrag macht den Lauf zu einem gescheiterten,
+mit Mail wie bei jedem anderen. Die Seite verfolgt den Lauf über
+`/api/haproxy/runs/[id]` und verlinkt in die Historie.
 

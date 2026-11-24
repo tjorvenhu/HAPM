@@ -9,7 +9,6 @@ import {
   readServiceInput,
   validateCreateInput,
   HaproxyConfigError,
-  HAPROXY_PRESETS,
   type CreateServiceInput,
 } from '@/lib/haproxy/config';
 
@@ -78,7 +77,9 @@ const INPUT: CreateServiceInput = {
   sticky: false,
   lockedDomains: [],
   passwordLock: null,
-  preset: 'default',
+  responseHeaders: [],
+  requestHeaders: [],
+  tunnel: false,
   healthcheck: true,
 };
 
@@ -101,7 +102,9 @@ describe('replaceService', () => {
       sticky: false,
       lockedDomains: [],
       passwordLock: null,
-      preset: 'default',
+      responseHeaders: [],
+      requestHeaders: [],
+      tunnel: false,
       healthcheck: true,
     });
     expect(find(next, 'website_blog').servers).toEqual([
@@ -156,9 +159,19 @@ describe('editable', () => {
     expect(service.editable).toBe(true);
   });
 
-  it('liest das Preset aus den Header-Zeilen zurück', () => {
-    expect(find(CONFIG, 'nextcloud_intern').preset).toBe('nextcloud');
-    expect(find(CONFIG, 'website_blog').preset).toBe('default');
+  it('liest die Nextcloud-Zeilen als zwei Header der Antwort zurück', () => {
+    // Früher das Preset „Nextcloud". Die Zeilen sind dieselben geblieben, und
+    // `addons.test.ts` schreibt sie byte-genau zurück.
+    const service = find(CONFIG, 'nextcloud_intern');
+    expect(service.responseHeaders).toEqual([
+      { name: 'X-Robots-Tag', value: 'noindex,nofollow' },
+      { name: 'X-Permitted-Cross-Domain-Policies', value: 'none' },
+    ]);
+    expect(service.requestHeaders).toEqual([]);
+    expect(service.tunnel).toBe(false);
+    expect(service.extras).toEqual([]);
+    expect(service.editable).toBe(true);
+    expect(find(CONFIG, 'website_blog').responseHeaders).toEqual([]);
   });
 
   it('ist falsch, sobald der Backend-Block etwas Unbekanntes trägt', () => {
@@ -192,16 +205,18 @@ describe('editable', () => {
     expect(service.servers[0].target).toBe('10.10.0.20:80');
   });
 
-  it('nimmt eine halbe Preset-Gruppe nicht als Preset', () => {
-    // Nur eine der beiden Header-Zeilen: als Preset gedeutet ginge die andere
-    // beim Speichern verloren.
+  it('liest eine einzelne der früheren Preset-Zeilen als einen Header', () => {
+    // Als Preset war das eine halbe Gruppe und der Eintrag nur lesbar. Als
+    // einzelner Header ist die Zeile vollständig und wird wieder so geschrieben.
     const halb = CONFIG.replace(
       '    http-response set-header X-Robots-Tag "noindex,nofollow"\n',
       ''
     );
     const service = find(halb, 'nextcloud_intern');
-    expect(service.preset).toBe('default');
-    expect(service.editable).toBe(false);
+    expect(service.responseHeaders).toEqual([
+      { name: 'X-Permitted-Cross-Domain-Policies', value: 'none' },
+    ]);
+    expect(service.editable).toBe(true);
   });
 
   it('ist falsch bei einer ACL, die nicht unserer Schreibweise folgt', () => {
@@ -222,14 +237,33 @@ describe('editable', () => {
   it('was gerendert wurde, ist danach bearbeitbar — in jeder Kombination', () => {
     // Die Klammer um alles: `renderBackendBlock` und die Rücklese-Muster dürfen
     // nicht auseinanderlaufen. Wer das eine erweitert, sieht hier das andere.
-    for (const preset of HAPROXY_PRESETS) {
+    const ADDONS: Pick<CreateServiceInput, 'responseHeaders' | 'requestHeaders' | 'tunnel'>[] = [
+      { responseHeaders: [], requestHeaders: [], tunnel: false },
+      { responseHeaders: [], requestHeaders: [], tunnel: true },
+      {
+        responseHeaders: [
+          { name: 'X-Robots-Tag', value: 'noindex,nofollow' },
+          { name: 'X-Permitted-Cross-Domain-Policies', value: 'none' },
+        ],
+        requestHeaders: [],
+        tunnel: false,
+      },
+      {
+        responseHeaders: [{ name: 'Content-Security-Policy', value: "default-src 'self'; img-src *" }],
+        requestHeaders: [{ name: 'X-Quelle', value: '100% "echt" $HOME %[src]' }],
+        tunnel: true,
+      },
+    ];
+    for (const addons of ADDONS) {
       for (const healthcheck of [true, false]) {
-        const input = { ...INPUT, preset, healthcheck };
-        const label = `${preset}/${healthcheck}`;
+        const input = { ...INPUT, ...addons, healthcheck };
+        const label = `${JSON.stringify(addons)}/${healthcheck}`;
         const service = find(addService(CONFIG, input), INPUT.id);
         expect(service.extras, label).toEqual([]);
         expect(service.editable, label).toBe(true);
-        expect(service.preset, label).toBe(preset);
+        expect(service.responseHeaders, label).toEqual(addons.responseHeaders);
+        expect(service.requestHeaders, label).toEqual(addons.requestHeaders);
+        expect(service.tunnel, label).toBe(addons.tunnel);
         expect(service.healthcheck, label).toBe(healthcheck);
         // Und das Formular bekommt exakt zurück, was hineinging.
         expect(toCreateInput(service), label).toEqual(input);

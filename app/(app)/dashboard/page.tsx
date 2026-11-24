@@ -70,6 +70,7 @@ const ACTION_LABELS: Record<HaproxyAction, string> = {
   'stream-update': 'TCP geändert',
   'stream-delete': 'TCP gelöscht',
   certificate: 'Zertifikat',
+  import: 'Import',
 };
 
 const BOOTSTRAP_LABELS: Record<BootstrapState['status'], string> = {

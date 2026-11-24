@@ -165,10 +165,102 @@
 /* Knöpfe unter einem Schritt: der Hauptknopf oben, die Nebenwege darunter in einer Zeile. */
 .hapm-setup-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
 
-/* Der DNS-Eintrag, den der Benutzer selbst anlegt, und die Zusammenfassung vor dem Ausführen. */
+/* Der DNS-Eintrag, den der Benutzer selbst anlegt, und die Zusammenfassung vor
+ * dem Ausführen: dieselbe Fläche wie die Auswahlkarten, innen Bezeichnung und
+ * Wert aus `.detail-grid`. */
 .hapm-setup-note {
-  display: flex; flex-direction: column; gap: 6px; padding: 12px 16px;
-  border-radius: var(--radius-panel); background: var(--surface-muted); font-size: 0.875rem; line-height: 1.45;
+  display: flex; flex-direction: column; gap: 14px; padding: 16px 18px;
+  border: 1px solid var(--border); border-radius: var(--radius-panel);
+  background: var(--surface); font-size: 0.875rem; line-height: 1.45;
 }
 
-.hapm-setup-note code { font-family: var(--font-mono); font-size: 0.8125rem; overflow-wrap: anywhere; }
+.hapm-setup-note-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+
+.hapm-setup-note-head strong { font-weight: 600; }
+
+/* Schmaler als in einer Seite: die Karte der Einrichtung ist 36rem breit. */
+.hapm-setup-note .detail-grid { grid-template-columns: minmax(96px, max-content) 1fr; column-gap: 20px; row-gap: 12px; }
+
+.hapm-setup-note .detail-grid dd { font-size: 0.875rem; overflow-wrap: anywhere; }
+
+/* Das Zeichen eines DNS-Anbieters, in der Auswahl und neben seinem Namen. */
+.hapm-provider-logo { flex-shrink: 0; border-radius: var(--radius); }
+
+.hapm-provider { display: inline-flex; align-items: center; gap: 8px; }
+
+/* Die Anbieter im Dialog „Domain hinzufügen" unter „DNS": nur Zeichen und Name,
+ * deshalb nebeneinander und mittig statt untereinander mit Text darunter. */
+.hapm-choices-row { flex-direction: row; }
+
+.hapm-choices-row .hapm-choice { align-items: center; }
+
+/* In einem Fließtext (Kopf einer Zone) sitzt das Zeichen auf der Zeile. */
+.page-subtitle .hapm-provider { gap: 6px; vertical-align: bottom; color: var(--text); }
+
+/* ── Dialog eines Reverse-Proxy-Ziels ──
+ * Knöpfe unter einer Liste: „hinzufügen" und daneben die Vorschläge. */
+.hapm-inline-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+/* Ein Kennzeichen am Ende einer Zeile, das nichts tut: die Domain ist gesperrt. */
+.hapm-row-mark { display: inline-flex; flex-shrink: 0; padding: 0 9px; color: var(--text-tertiary); }
+
+/* Eine Wahl, die gerade nicht geht (Zugriff ohne Admin-IPs). Der Grund steht darunter. */
+.segmented button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Fehlerseiten: Einstellungen links, Vorschau rechts ──
+ * Erst ab dieser Breite nebeneinander: darunter wäre die Vorschau so schmal,
+ * dass man an ihr nichts mehr erkennt. Sie bleibt beim Scrollen stehen, damit
+ * jede Änderung links neben ihrer Wirkung steht. */
+.hapm-design { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
+
+@media (min-width: 1100px) {
+  .hapm-design { grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); }
+  .hapm-design-preview { position: sticky; top: 16px; }
+}
+
+.hapm-design-preview { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+.hapm-design-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+.hapm-design-bar > :first-child { flex: 1 1 14rem; min-width: 0; }
+
+/* Der Rahmen hat die Maße eines Bildschirms und wird verkleinert (`DesignPreview`).
+ * Seine Breite im Fluss bleibt die volle, deshalb schneidet die Bühne ab. */
+.hapm-design-stage {
+  position: relative; overflow: hidden;
+  border: 1px solid var(--border); border-radius: var(--radius-panel); background: var(--surface-muted);
+}
+
+.hapm-design-frame { display: block; border: 0; transform-origin: 0 0; background: var(--surface); }
+
+/* Ein Feld mit Knopf daneben: das Feld nimmt den Platz, der Knopf bleibt oben. */
+.hapm-design-field { display: flex; align-items: flex-start; gap: 8px; }
+
+.hapm-design-field > :first-child { flex: 1 1 auto; min-width: 0; }
+
+/* Eine Farbe: Farbwahl, Wert als Text, zurück auf die Vorgabe. */
+.hapm-color { display: flex; align-items: center; gap: 8px; }
+
+.hapm-color .form-input { flex: 1 1 auto; min-width: 0; }
+
+.hapm-color-swatch {
+  flex-shrink: 0; width: 2.75rem; height: var(--control-height); padding: 3px;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-input);
+  background: var(--field); cursor: pointer;
+}
+
+.hapm-color-swatch::-webkit-color-swatch-wrapper { padding: 0; }
+
+.hapm-color-swatch::-webkit-color-swatch { border: 0; border-radius: var(--radius); }
+
+.hapm-color-swatch::-moz-color-swatch { border: 0; border-radius: var(--radius); }
+
+/* Die Größe der größten Seite gegen die Grenze von HAProxy. */
+.hapm-meter { height: 6px; overflow: hidden; border-radius: var(--radius-full); background: var(--surface-muted); }
+
+.hapm-meter > i { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+
+.hapm-meter.is-over > i { background: var(--danger); }
+
+/* Die Wahl der Sprache unter „Konto": zwei Einträge brauchen keine volle Breite. */
+.hapm-locale-field { max-width: 20rem; margin-bottom: 0; }

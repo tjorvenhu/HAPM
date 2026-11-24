@@ -40,7 +40,8 @@ export const HAPROXY_CERT_DIR = '/etc/haproxy/certs';
  * Der Name im Marker ist die Kennung. Beschriftung (`scopeLabel`) und
  * Adressteil (`scopeSlug`) werden daraus abgeleitet und nirgends gespeichert:
  * `INTERNE-TOOLS` heißt „Interne Tools" und steht unter
- * `/reverse-proxy/interne-tools`.
+ * `/reverse-proxy/interne-tools`. Nur das Wort `HAPM` behält seine
+ * Großbuchstaben.
  */
 export type HaproxyScope = string;
 
@@ -54,7 +55,13 @@ export function scopeLabel(name: string): string {
   return name
     .split(/[_-]+/)
     .filter(Boolean)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .map((word) =>
+      // Die eine Ausnahme: HAPM ist der Name des Produkts und eine Abkürzung,
+      // und die Einrichtung legt eine Gruppe dieses Namens an.
+      word.toLowerCase() === 'hapm'
+        ? 'HAPM'
+        : word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+    )
     .join(' ');
 }
 
@@ -174,47 +181,244 @@ export function findScope(scopes: HaproxyScopeInfo[], name: string): HaproxyScop
   return scopes.find((scope) => scope.name.toUpperCase() === name.trim().toUpperCase());
 }
 
-export const HAPROXY_PRESETS = ['default', 'nextcloud', 'coolify'] as const;
-export type HaproxyPreset = (typeof HAPROXY_PRESETS)[number];
+/* ── Zusätze ──
+ *
+ * Was sich an einem Ziel neben Domains und Adressen setzen lässt: feste Header
+ * der Antwort, feste Header der Anfrage und ein langes Timeout für
+ * Verbindungen, die offen bleiben. Jeder Zusatz ist EINE Zeile, einzeln
+ * geschrieben und einzeln zurückgelesen, und er steht in JEDEM Backend-Block
+ * des Eintrags, auch in denen der Pfad-Regeln.
+ *
+ * Früher waren das Presets: feste Listen, die es nur ganz oder gar nicht gab
+ * („Nextcloud" = zwei Header, „Coolify" = das Timeout). Wer nur einen der
+ * beiden Header wollte oder einen dritten, hatte einen Eintrag, den dieses
+ * Werkzeug nicht mehr anfassen konnte. Die Zeilen der Presets sind dieselben
+ * geblieben: ein Eintrag aus dieser Zeit liest sich als zwei Header bzw. als
+ * der Schalter, und ein Speichern schreibt ihn Zeichen für Zeichen wieder so
+ * hin.
+ */
 
-export const PRESET_LABELS: Record<HaproxyPreset, string> = {
-  default: 'Ohne Zusätze',
-  nextcloud: 'Nextcloud',
-  coolify: 'Coolify',
-};
+export interface HeaderRule {
+  name: string;
+  /** Der Wert als Text, so wie er beim Empfänger ankommt. Kein Ausdruck:
+   *  siehe `headerLine`. */
+  value: string;
+}
+
+/** `request`: an das Ziel. `response`: an den Besucher. */
+export type HeaderDirection = 'request' | 'response';
 
 /**
- * Was ein Preset in JEDEN Backend-Block dieses Dienstes schreibt — auch in die
- * der Pfad-Regeln.
+ * Das Timeout für Verbindungen, die nach dem Aufbau offen bleiben (WebSocket,
+ * Terminal, Live-Ansicht).
  *
- * Ein Preset ist damit genau eine Sache: eine feste Liste Zeilen. Das ist die
- * Bedingung dafür, dass es sich zurücklesen lässt, ohne zu raten — steht die
- * Liste vollständig da, ist es das Preset, sonst hat jemand von Hand etwas
- * geändert und der Eintrag wird nur noch gelesen.
- *
- * `coolify` ist deshalb ein Preset und kein Eingabefeld: die WebSocket-Strecken
- * von Coolify (Terminal auf 6002, Realtime auf 6001) fallen ohne
- * `timeout tunnel` nach `timeout client`/`timeout server` aus dem `defaults`-
- * Block — üblicherweise nach einer Minute Stille. Sichtbar wird das als
- * Terminal, das mitten in der Arbeit abbricht, und als Oberfläche, die
- * aufhört, sich selbst zu aktualisieren. Eine Stunde ist der Wert, den Coolify
- * selbst in seinen Beispielen nennt.
+ * Ohne die Zeile fallen sie nach `timeout client`/`timeout server` aus dem
+ * `defaults`-Block, üblicherweise nach einer Minute Stille. Sichtbar wird das
+ * als Terminal, das mitten in der Arbeit abbricht. Ein Schalter und kein Feld
+ * für die Dauer: es wäre eine Frage im Formular, auf die niemand eine andere
+ * Antwort hat als „lange".
  */
-export const PRESET_BACKEND_LINES: Record<Exclude<HaproxyPreset, 'default'>, string[]> = {
-  nextcloud: [
-    'http-response set-header X-Robots-Tag "noindex,nofollow"',
-    'http-response set-header X-Permitted-Cross-Domain-Policies "none"',
-  ],
-  coolify: ['timeout tunnel 1h'],
+export const TUNNEL_LINE = 'timeout tunnel 1h';
+
+export const HEADER_NAME_MAX = 64;
+export const HEADER_VALUE_MAX = 1024;
+/** Je Richtung. Eine Grenze, damit ein Backend-Block lesbar bleibt. */
+export const HEADERS_MAX = 20;
+
+const HEADER_NAME = /^[A-Za-z0-9][A-Za-z0-9-]*$/;
+/** Druckbares ASCII: mehr trägt ein Header nicht verlässlich bis zum Empfänger. */
+const HEADER_VALUE = /^[\x20-\x7e]+$/;
+
+/** Header, die beschreiben, wie die Nachricht übertragen wird. Fest gesetzt
+ *  zerlegen sie die Antwort oder die Anfrage, statt sie zu ergänzen. */
+const TRANSPORT_HEADERS = new Set([
+  'content-length',
+  'transfer-encoding',
+  'connection',
+  'keep-alive',
+  'upgrade',
+  'te',
+  'trailer',
+]);
+
+export const HEADER_DIRECTION_LABELS: Record<HeaderDirection, string> = {
+  request: 'Anfrage',
+  response: 'Antwort',
 };
 
-export const PRESET_HINTS: Record<HaproxyPreset, string> = {
-  default: 'Nur die Zeilen, die aus diesem Formular kommen.',
-  nextcloud: 'Setzt zusätzlich die beiden Header, die Nextcloud in seiner Sicherheitsprüfung erwartet.',
-  coolify:
-    'Setzt in jedem Backend „timeout tunnel 1h". Ohne das reißen die WebSocket-Verbindungen ' +
-    '(Terminal, Live-Ansicht) nach der Standard-Zeit ab.',
-};
+export function validateHeaderRule(rule: HeaderRule): string | null {
+  if (!HEADER_NAME.test(rule.name)) {
+    return `Ungültiger Header-Name: „${rule.name}". Erlaubt sind Buchstaben, Ziffern und der Bindestrich.`;
+  }
+  if (rule.name.length > HEADER_NAME_MAX) {
+    return `Der Header-Name ${rule.name} ist länger als ${HEADER_NAME_MAX} Zeichen.`;
+  }
+  if (TRANSPORT_HEADERS.has(rule.name.toLowerCase())) {
+    return `Der Header ${rule.name} gehört zur Übertragung selbst und lässt sich nicht fest setzen.`;
+  }
+  if (rule.value === '') return `Der Header ${rule.name} braucht einen Wert.`;
+  if (rule.value.length > HEADER_VALUE_MAX) {
+    return `Der Wert von ${rule.name} ist länger als ${HEADER_VALUE_MAX} Zeichen.`;
+  }
+  if (!HEADER_VALUE.test(rule.value)) {
+    return `Der Wert von ${rule.name} enthält ein Zeichen, das hier nicht geht. Erlaubt sind druckbare ASCII-Zeichen, keine Umlaute und keine Zeilenumbrüche.`;
+  }
+  if (rule.value !== rule.value.trim()) {
+    return `Der Wert von ${rule.name} beginnt oder endet mit einem Leerzeichen.`;
+  }
+  return null;
+}
+
+function validateHeaders(rules: readonly HeaderRule[], direction: HeaderDirection): string | null {
+  const where = `den Headern der ${HEADER_DIRECTION_LABELS[direction]}`;
+  if (rules.length > HEADERS_MAX) {
+    return `In ${where} stehen mehr als ${HEADERS_MAX} Einträge.`;
+  }
+  const seen = new Set<string>();
+  for (const rule of rules) {
+    const invalid = validateHeaderRule(rule);
+    if (invalid) return invalid;
+    // `set-header` ersetzt: der zweite Eintrag überschriebe den ersten.
+    const key = rule.name.toLowerCase();
+    if (seen.has(key)) return `Der Header ${rule.name} steht doppelt in ${where}.`;
+    seen.add(key);
+  }
+  return null;
+}
+
+/**
+ * Die Zeile, die einen Header setzt.
+ *
+ * ── Der Wert ist Text, kein Ausdruck ──
+ *
+ * `set-header` nimmt in HAProxy ein Log-Format: `%[src]` würde ausgewertet,
+ * `%T` durch einen Zeitstempel ersetzt. Und die Zeile selbst geht durch den
+ * Parser der Konfiguration, der in Anführungszeichen `$NAME` durch eine
+ * Umgebungsvariable ersetzt. Ein Wert aus einem Formular soll wörtlich
+ * ankommen, deshalb wird maskiert: `%` wird `%%`, und `"`, `$` und der
+ * Backslash bekommen einen Backslash davor.
+ *
+ * Geprüft gegen HAProxy 2.4, 3.0 und 3.4 mit Werten wie `C:\pfad`, `a\ b`,
+ * `ende\`, `q\"x`, `\t`, `\$HOME`, `50%` und `%[src]`: jeder kam Zeichen für
+ * Zeichen so beim Empfänger an, auch ein Backslash vor einem Leerzeichen oder
+ * am Ende des Werts.
+ */
+export function headerLine(direction: HeaderDirection, rule: HeaderRule): string {
+  const value = rule.value.replace(/%/g, '%%').replace(/[\\"$]/g, '\\$&');
+  return `http-${direction} set-header ${rule.name} "${value}"`;
+}
+
+const HEADER_RULE = /^http-(request|response) set-header (\S+) "(.*)"$/;
+
+/** Das Gegenstück zur Maskierung. `null` heißt: so hätte `headerLine` es nicht
+ *  geschrieben (ein einzelnes `%`, ein `$NAME`, ein Backslash vor etwas
+ *  anderem als `\`, `"` oder `$`). */
+function unmaskHeaderValue(masked: string): string | null {
+  let value = '';
+  for (let i = 0; i < masked.length; i++) {
+    const ch = masked[i];
+    const next = masked[i + 1];
+    if (ch === '\\') {
+      if (next !== '\\' && next !== '"' && next !== '$') return null;
+      value += next;
+      i++;
+    } else if (ch === '%') {
+      if (next !== '%') return null;
+      value += '%';
+      i++;
+    } else if (ch === '"' || ch === '$') {
+      return null;
+    } else {
+      value += ch;
+    }
+  }
+  return value;
+}
+
+/**
+ * Eine Zeile als Header aus dem Formular lesen.
+ *
+ * Sie ist nur dann einer, wenn `headerLine` aus dem Gelesenen wieder genau
+ * diese Zeile macht. Alles andere (`%[src]` von Hand, eine Bedingung dahinter,
+ * ein Wert ohne Anführungszeichen) bleibt eine fremde Zeile, die angezeigt und
+ * nicht angefasst wird: neu geschrieben stünde dort etwas anderes.
+ */
+export function readHeaderLine(
+  line: string
+): { direction: HeaderDirection; rule: HeaderRule } | null {
+  const match = HEADER_RULE.exec(line);
+  if (!match) return null;
+  const value = unmaskHeaderValue(match[3]);
+  if (value === null) return null;
+  const direction = match[1] as HeaderDirection;
+  const rule = { name: match[2], value };
+  if (validateHeaderRule(rule) !== null) return null;
+  return headerLine(direction, rule) === line ? { direction, rule } : null;
+}
+
+/** Die Zusätze eines Eintrags, wie sie in jedem seiner Backend-Blöcke stehen. */
+interface ServiceAddons {
+  responseHeaders: readonly HeaderRule[];
+  requestHeaders: readonly HeaderRule[];
+  tunnel: boolean;
+}
+
+/** In der Reihenfolge, in der eine Anfrage sie durchläuft: erst die
+ *  Verbindung, dann der Weg zum Ziel, dann der Weg zurück. */
+function addonLines(addons: ServiceAddons): string[] {
+  return [
+    ...(addons.tunnel ? [TUNNEL_LINE] : []),
+    ...addons.requestHeaders.map((rule) => headerLine('request', rule)),
+    ...addons.responseHeaders.map((rule) => headerLine('response', rule)),
+  ];
+}
+
+const NEXTCLOUD_HEADERS: HeaderRule[] = [
+  { name: 'X-Robots-Tag', value: 'noindex,nofollow' },
+  { name: 'X-Permitted-Cross-Domain-Policies', value: 'none' },
+];
+
+/**
+ * Vorschläge für Header der Antwort, im Dialog mit einem Klick einzufügen.
+ *
+ * Kein zweites Preset-System: ein Vorschlag fügt Zeilen ein, die danach
+ * gewöhnliche Zeilen sind. Er wird nirgends gespeichert und nicht
+ * zurückgelesen.
+ */
+export const HEADER_SUGGESTIONS: { label: string; hint: string; headers: HeaderRule[] }[] = [
+  {
+    label: 'Nextcloud',
+    hint: 'Die beiden Header, die Nextcloud in seiner Sicherheitsprüfung erwartet.',
+    headers: NEXTCLOUD_HEADERS,
+  },
+  {
+    label: 'X-Frame-Options',
+    hint: 'Die Seite lässt sich nicht in fremde Seiten einbetten.',
+    headers: [{ name: 'X-Frame-Options', value: 'SAMEORIGIN' }],
+  },
+  {
+    label: 'X-Robots-Tag: noindex',
+    hint: 'Suchmaschinen nehmen die Seite nicht in ihren Index auf.',
+    headers: [{ name: 'X-Robots-Tag', value: 'noindex' }],
+  },
+];
+
+/**
+ * Die früheren Presets, für Aufrufer von `/api/internal`, die `preset` noch
+ * schicken. `readServiceInput` übersetzt sie in die Zusätze, die sie immer
+ * waren. In Antworten kommen sie nicht mehr vor.
+ */
+export const LEGACY_PRESETS = ['default', 'nextcloud', 'coolify'] as const;
+
+/** Die Meldung zu einem `preset`, das es nie gab. `null`: keins geschickt oder
+ *  ein bekanntes. Nicht auf „keins" gebogen: das wäre eine Entscheidung, die
+ *  der Aufrufer nicht getroffen hat. */
+export function legacyPresetError(body: unknown): string | null {
+  const preset = String((body as Record<string, unknown> | null)?.preset ?? '').trim();
+  return preset === '' || (LEGACY_PRESETS as readonly string[]).includes(preset)
+    ? null
+    : 'Unbekanntes Preset.';
+}
 
 /* ── Lastverteilung ──
  *
@@ -224,9 +428,8 @@ export const PRESET_HINTS: Record<HaproxyPreset, string> = {
  * landete eine `balance leastconn`-Zeile in `extras` und machte den Eintrag
  * unbearbeitbar.
  *
- * Deshalb ist `balance` ein Feld und kein Preset. Ein Preset ist eine feste
- * Liste Zeilen, die man ganz oder gar nicht bekommt; hier gibt es genau einen
- * Wert, und er ist die Frage, um die es beim Verteilen geht.
+ * Deshalb ist `balance` ein eigenes Feld: es gibt genau einen Wert, und er ist
+ * die Frage, um die es beim Verteilen geht.
  *
  * `null` heißt „keine Zeile" und nicht „roundrobin": was im `defaults`-Block
  * steht, gilt weiter, und eine hingeschriebene Vorgabe wäre eine Behauptung
@@ -330,6 +533,57 @@ const ROUTE_PATH = /^\/\S*$/;
 
 export function isValidServiceId(id: string): boolean {
   return SERVICE_ID.test(id);
+}
+
+/* ── Die Dienst-ID ergibt sich aus der Hauptdomain ──
+ *
+ * Sie benennt ACL und Backend, ist also die Kennung des Eintrags in der Datei.
+ * Als Feld im Formular war sie eine Frage, auf die fast jeder mit einer
+ * Abwandlung der Domain geantwortet hat. Vergeben wird sie beim Anlegen, und
+ * zwar auf dem Server (`assignServiceId`, aufgerufen in der Vorabprüfung): nur
+ * dort liegt die Datei vor, in der steht, was schon vergeben ist.
+ *
+ * Danach bleibt sie, wie sie ist. Wer später die Hauptdomain ändert, behält
+ * die ID: sie umzuschreiben hieße, ACL, Weiche und Backend umzubenennen, und
+ * mit ihnen den Cookie der Passwortsperre und jede Zeile der Historie.
+ */
+
+/** So lang wird eine abgeleitete ID höchstens. HAProxy selbst setzt keine
+ *  Grenze, aber die ID steht in jedem ACL-Namen des Eintrags. Eine von Hand
+ *  vergebene darf länger sein (`isValidServiceId` kennt keine Länge). */
+export const SERVICE_ID_MAX = 48;
+
+function serviceIdBase(domain: string): string {
+  const name = domain.trim().toLowerCase();
+  const wildcard = isWildcardDomain(name);
+  const slug = (wildcard ? name.slice(2) : name)
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  // `*.example.org` und `example.org` sind zwei Einträge und oft beide da. Das
+  // Präfix hält sie auseinander, statt dass der zweite „example_org_2" heißt.
+  const base = `${wildcard ? 'wildcard_' : ''}${slug}`.slice(0, SERVICE_ID_MAX).replace(/_+$/, '');
+  return base || 'dienst';
+}
+
+/** Die erste freie Fassung: `base`, dann `base_2`, `base_3`, … Der Zähler
+ *  zählt zur Länge, gekürzt wird davor. */
+export function firstFreeId(base: string, taken: (id: string) => boolean): string {
+  if (!taken(base)) return base;
+  for (let n = 2; ; n++) {
+    const suffix = `_${n}`;
+    const candidate = `${base.slice(0, SERVICE_ID_MAX - suffix.length).replace(/_+$/, '')}${suffix}`;
+    if (!taken(candidate)) return candidate;
+  }
+}
+
+/**
+ * Die Dienst-ID zu einer Hauptdomain: klein, alles außer `a-z0-9` wird `_`,
+ * eine Wildcard bekommt `wildcard_` davor. Ist sie vergeben, kommt ein Zähler
+ * dran.
+ */
+export function serviceIdFor(domain: string, taken: Iterable<string> = []): string {
+  const used = new Set([...taken].map((id) => id.toLowerCase()));
+  return firstFreeId(serviceIdBase(domain), (id) => used.has(id));
 }
 
 export function isValidRouteName(name: string): boolean {
@@ -537,8 +791,8 @@ export interface HaproxyBackendServer {
 /**
  * Was für eine Sorte Eintrag das ist.
  *
- * Abgeleitet und nirgends gespeichert, aus demselben Grund wie `preset`: es gibt
- * keine Zeile in `haproxy.cfg`, in der es stünde. Die Auswahl beim Anlegen ist
+ * Abgeleitet und nirgends gespeichert: es gibt keine Zeile in `haproxy.cfg`,
+ * in der es stünde. Die Auswahl beim Anlegen ist
  * eine Frage nach der Absicht und keine Eigenschaft, die mitgeschrieben würde.
  *
  * ── Warum die Ableitung vollständig sein MUSS ──
@@ -694,9 +948,13 @@ export interface HaproxyService {
    */
   passwordLock: PasswordLockInput | null;
   healthcheck: boolean;
-  /** Aus dem Backend-Block zurückgelesen, nicht gespeichert — es gibt keine Zeile,
-   *  in der es stünde. */
-  preset: HaproxyPreset;
+  /** Feste Header an den Besucher, in der Reihenfolge der Datei. Sie stehen in
+   *  jedem Backend-Block des Eintrags, siehe „Zusätze". */
+  responseHeaders: HeaderRule[];
+  /** Feste Header an das Ziel. */
+  requestHeaders: HeaderRule[];
+  /** `TUNNEL_LINE` steht da: offene Verbindungen bleiben eine Stunde. */
+  tunnel: boolean;
   /** Trägt den `# AUTO: id`-Kommentar, stammt also aus einem Vorgang wie diesem. */
   auto: boolean;
   /**
@@ -802,7 +1060,12 @@ export interface CreateServiceInput {
    * „das Passwort, das schon in der Datei steht" (`replaceService` löst es auf).
    */
   passwordLock: PasswordLockInput | null;
-  preset: HaproxyPreset;
+  /** Die Zusätze. Sie setzen ein Backend mit Zielen voraus: eine Weiterleitung
+   *  beantwortet HAProxy selbst, und auf solche Antworten wirken
+   *  `http-response`-Regeln nicht. */
+  responseHeaders: HeaderRule[];
+  requestHeaders: HeaderRule[];
+  tunnel: boolean;
   healthcheck: boolean;
 }
 
@@ -817,13 +1080,29 @@ export interface CreateServiceInput {
  * durchlässt, was die Route danach ablehnt.
  */
 export function validateCreateInput(input: CreateServiceInput): string | null {
+  return validateService(input, true);
+}
+
+/**
+ * Dasselbe für einen Eintrag, den es noch nicht gibt: eine leere ID heißt dort
+ * „wird beim Anlegen vergeben" (`assignServiceId`). Eine mitgegebene wird
+ * geprüft wie immer.
+ */
+export function validateNewService(input: CreateServiceInput): string | null {
+  return validateService(input, input.id !== '');
+}
+
+function validateService(input: CreateServiceInput, idGiven: boolean): string | null {
   // Nur die Form. OB es den Bereich gibt, weiß erst `addService` — dort liegt
   // die Konfiguration vor, und sie ist die einzige Wahrheit darüber.
   if (!SCOPE_NAME.test(input.scope)) return 'Es wurde keine Gruppe ausgewählt.';
-  if (!isValidServiceId(input.id)) {
+  if (idGiven && !isValidServiceId(input.id)) {
     return 'Die Dienst-ID darf nur a-z, 0-9 und _ enthalten und muss mit einem Buchstaben oder einer Ziffer beginnen.';
   }
-  if (!HAPROXY_PRESETS.includes(input.preset)) return 'Unbekanntes Preset.';
+  const headersInvalid =
+    validateHeaders(input.requestHeaders, 'request') ??
+    validateHeaders(input.responseHeaders, 'response');
+  if (headersInvalid) return headersInvalid;
   // Der Wert geht als Wort in eine Zeile der Konfiguration. Eine Allow-Liste
   // und kein Freitextfeld, aus demselben Grund wie bei den DNS-Anbietern.
   if (input.balance !== null && !HAPROXY_BALANCE.includes(input.balance)) {
@@ -862,11 +1141,11 @@ export function validateCreateInput(input: CreateServiceInput): string | null {
     if (input.routes.length > 0) {
       return 'Eine Weiterleitung und Pfad-Regeln schließen sich aus: es gibt kein Backend, auf das eine Regel zeigen könnte.';
     }
-    // Ein Preset schreibt Zeilen in ein Backend, in dem hier nur die
-    // Weiterleitung steht. Sie würden beim Zurücklesen fehlen — also ablehnen,
-    // statt sie still wegzulassen.
-    if (input.preset !== 'default') {
-      return 'Ein Preset gehört zu einem Backend mit Zielen. Eine Weiterleitung hat keine.';
+    // Die Weiterleitung beantwortet HAProxy selbst, und auf eigene Antworten
+    // wirken `http-response`-Regeln nicht (geprüft gegen 2.4 und 3.0). Die
+    // Zeilen stünden wirkungslos da, also ablehnen, statt sie still wegzulassen.
+    if (addonLines(input).length > 0) {
+      return 'Header und lange Verbindungen gehören zu einem Backend mit Zielen. Eine Weiterleitung hat keine.';
     }
     // Beide beschreiben, wie Anfragen auf Ziele verteilt werden. Eine
     // Weiterleitung hat keine — die Zeilen stünden wirkungslos da und kämen
@@ -1010,21 +1289,6 @@ export const SECTION_KEYWORDS =
  * Wer `renderBackendBlock` erweitert, erweitert diese Liste mit. Der Test
  * „was gerendert wurde, ist danach bearbeitbar" hält das fest. */
 
-/** Alle Zeilen, die ein Preset schreibt — flach, für die Zuordnung beim Lesen. */
-const ALL_PRESET_LINES = new Set(Object.values(PRESET_BACKEND_LINES).flat());
-
-/** Welches Preset genau diese Zeilen schreibt. `null` heißt: kein Preset — auch
- *  bei einer halben Gruppe, denn die käme beim Neuschreiben nicht wieder mit. */
-function presetOf(lines: string[]): HaproxyPreset | null {
-  if (lines.length === 0) return 'default';
-  for (const [preset, expected] of Object.entries(PRESET_BACKEND_LINES)) {
-    if (expected.length === lines.length && expected.every((l) => lines.includes(l))) {
-      return preset as HaproxyPreset;
-    }
-  }
-  return null;
-}
-
 /** Die drei Healthcheck-Zeilen, wie `renderBackendBlock` sie schreibt. Mit dem
  *  Host-Header, denn der hängt an der Hauptdomain. */
 function healthcheckLinesFor(mainDomain: string): string[] {
@@ -1144,6 +1408,35 @@ export function serverParams(input: {
   ].join('');
 }
 
+/** Ein Backend-Block beim Lesen, bevor feststeht, zu welchem Dienst er gehört. */
+interface ParsedBackend {
+  servers: HaproxyBackendServer[];
+  /** Die Zeilen der Healthcheck-Gruppe, wie sie dastehen. Erst am Ende
+   *  ausgewertet: sie müssen vollständig sein UND den richtigen Host-Header
+   *  tragen, sonst schriebe ein Neuschreiben etwas anderes hin. */
+  checkLines: string[];
+  /** Die Zusätze, jeder für sich gelesen (`readHeaderLine`, `TUNNEL_LINE`). */
+  responseHeaders: HeaderRule[];
+  requestHeaders: HeaderRule[];
+  tunnel: boolean;
+  /** Die Weiterleitung, wenn genau eine dasteht. Eine zweite ist ein
+   *  `extras`-Eintrag: das Formular kennt eine. */
+  redirect: RedirectTarget | null;
+  /** Das Verteilverfahren, wenn genau eine Zeile dasteht und es zur
+   *  Allow-Liste gehört. Sonst `null`, und die Zeile ist ein `extras`. */
+  balance: HaproxyBalance | null;
+  /** Ob die Cookie-Zeile der Sitzungsbindung dasteht. */
+  stickyLine: boolean;
+  /** Die server-Zeilen, die eine passende Cookie-Marke tragen. Erst am Ende
+   *  ausgewertet: die Bindung zählt nur, wenn ALLE sie tragen UND die Zeile
+   *  im Backend dazu dasteht — die Hälfte davon bindet nichts. */
+  cookieServerLines: string[];
+  /** Ob die Zählung der Passwortsperre dasteht (`LOCK_TABLE_LINE`). */
+  lockTable: boolean;
+  extras: string[];
+  index: number;
+}
+
 /**
  * Die Dienste einer Konfiguration.
  *
@@ -1176,36 +1469,7 @@ export function parseHaproxyConfig(text: string): HaproxyService[] {
    * übersehen zu werden.
    */
   const requestRules: { text: string; conditions: string[] }[] = [];
-  const backends = new Map<
-    string,
-    {
-      servers: HaproxyBackendServer[];
-      /** Die Zeilen der Healthcheck-Gruppe, wie sie dastehen. Erst am Ende
-       *  ausgewertet: sie müssen vollständig sein UND den richtigen Host-Header
-       *  tragen, sonst schriebe ein Neuschreiben etwas anderes hin. */
-      checkLines: string[];
-      /** Erkannte Preset-Zeilen. Ebenfalls erst am Ende ausgewertet: eine
-       *  einzelne von zweien ist kein Preset, sondern eine Zeile, die niemand
-       *  reproduziert. */
-      presetLines: string[];
-      /** Die Weiterleitung, wenn genau eine dasteht. Eine zweite ist ein
-       *  `extras`-Eintrag: das Formular kennt eine. */
-      redirect: RedirectTarget | null;
-      /** Das Verteilverfahren, wenn genau eine Zeile dasteht und es zur
-       *  Allow-Liste gehört. Sonst `null`, und die Zeile ist ein `extras`. */
-      balance: HaproxyBalance | null;
-      /** Ob die Cookie-Zeile der Sitzungsbindung dasteht. */
-      stickyLine: boolean;
-      /** Die server-Zeilen, die eine passende Cookie-Marke tragen. Erst am Ende
-       *  ausgewertet: die Bindung zählt nur, wenn ALLE sie tragen UND die Zeile
-       *  im Backend dazu dasteht — die Hälfte davon bindet nichts. */
-      cookieServerLines: string[];
-      /** Ob die Zählung der Passwortsperre dasteht (`LOCK_TABLE_LINE`). */
-      lockTable: boolean;
-      extras: string[];
-      index: number;
-    }
-  >();
+  const backends = new Map<string, ParsedBackend>();
   /** ACL-Name → ihre Zeilen, für ACLs auf einen Cookie. Die dritte Sorte ACL,
    *  die dieses Modul schreibt: der Durchlass der Passwortsperre. */
   const cookieAcls = new Map<string, string[]>();
@@ -1234,7 +1498,9 @@ export function parseHaproxyConfig(text: string): HaproxyService[] {
         backends.set(currentBackend, {
           servers: [],
           checkLines: [],
-          presetLines: [],
+          responseHeaders: [],
+          requestHeaders: [],
+          tunnel: false,
           redirect: null,
           balance: null,
           stickyLine: false,
@@ -1275,8 +1541,23 @@ export function parseHaproxyConfig(text: string): HaproxyService[] {
         return;
       }
 
-      if (ALL_PRESET_LINES.has(line)) {
-        entry.presetLines.push(line);
+      if (line === TUNNEL_LINE) {
+        if (entry.tunnel) entry.extras.push(line);
+        else entry.tunnel = true;
+        return;
+      }
+
+      const header = readHeaderLine(line);
+      if (header) {
+        const list = header.direction === 'response' ? entry.responseHeaders : entry.requestHeaders;
+        const name = header.rule.name.toLowerCase();
+        // Ein zweiter Header desselben Namens überschriebe den ersten, und das
+        // Formular nimmt ihn nicht an. Gelesen wird er, neu geschrieben nicht.
+        if (list.length >= HEADERS_MAX || list.some((rule) => rule.name.toLowerCase() === name)) {
+          entry.extras.push(line);
+        } else {
+          list.push(header.rule);
+        }
         return;
       }
 
@@ -1506,16 +1787,12 @@ export function parseHaproxyConfig(text: string): HaproxyService[] {
       extras.push(partialLock);
     }
 
-    // Beide Preset-Zeilen heißt Preset. Eine von beiden heißt: da hat jemand von
-    // Hand etwas hingeschrieben, und ein Neuschreiben ließe es weg.
-    const presetLines = backend?.presetLines ?? [];
-    const preset = presetOf(presetLines);
-    if (preset === null) extras.push(...presetLines);
-    // Jedes Backend des Dienstes trägt dieselben Preset-Zeilen. Eine Pfad-Regel
-    // mit anderen ist nicht reproduzierbar — beim Speichern stünde dort, was das
-    // Preset des Dienstes sagt.
-    const routePresetsMatch = routes.every(
-      (route) => presetOf(route.presetLines) === (preset ?? 'default')
+    // Jedes Backend des Dienstes trägt dieselben Zusätze. Eine Pfad-Regel mit
+    // anderen ist nicht reproduzierbar: beim Speichern stünde dort, was im
+    // Backend des Dienstes steht.
+    const ownAddons = backend ? addonLines(backend) : [];
+    const routeAddonsMatch = routes.every(
+      (route) => route.addonLines.join('\n') === ownAddons.join('\n')
     );
 
     // Die Healthcheck-Gruppe muss vollständig sein UND den Host-Header der
@@ -1548,7 +1825,7 @@ export function parseHaproxyConfig(text: string): HaproxyService[] {
       extras.push(...cookieLines);
     }
 
-    /* Eine Weiterleitung schließt Ziele, Pfad-Regeln, Preset, Healthcheck,
+    /* Eine Weiterleitung schließt Ziele, Pfad-Regeln, Zusätze, Healthcheck,
      * Verteilverfahren und Sitzungsbindung aus — `renderBackendBlock` schreibt
      * bei einer Weiterleitung nichts davon. Steht beides da, ist der Block
      * gelesen, aber nicht reproduzierbar: ein Speichern ließe die Hälfte weg. */
@@ -1557,7 +1834,7 @@ export function parseHaproxyConfig(text: string): HaproxyService[] {
       redirect === null ||
       (ownServers.length === 0 &&
         routes.length === 0 &&
-        presetLines.length === 0 &&
+        ownAddons.length === 0 &&
         checkLines.length === 0 &&
         (backend?.balance ?? null) === null &&
         !stickyLine);
@@ -1587,13 +1864,15 @@ export function parseHaproxyConfig(text: string): HaproxyService[] {
       domains,
       servers: backend?.servers ?? [],
       redirect,
-      routes: routes.map(({ extras: _extras, index: _index, presetLines: _preset, ...route }) => route),
+      routes: routes.map(({ extras: _extras, index: _index, addonLines: _addons, ...route }) => route),
       balance: backend?.balance ?? null,
       sticky,
       lockedDomains,
       passwordLock: lockedDomains.length > 0 ? passwordLock : null,
       healthcheck,
-      preset: preset ?? 'default',
+      responseHeaders: backend?.responseHeaders ?? [],
+      requestHeaders: backend?.requestHeaders ?? [],
+      tunnel: backend?.tunnel ?? false,
       auto: autoIds.has(id),
       extras,
       removable,
@@ -1605,7 +1884,7 @@ export function parseHaproxyConfig(text: string): HaproxyService[] {
         removable &&
         extras.length === 0 &&
         routesClean &&
-        routePresetsMatch &&
+        routeAddonsMatch &&
         serversMatchCheck &&
         aclCanonical(aclForms.get(aclName)),
       shadowedBy: null,
@@ -1629,14 +1908,14 @@ export function parseHaproxyConfig(text: string): HaproxyService[] {
 
 /** Eine Pfad-Regel beim Lesen: alles, was sie nicht reproduzierbar macht,
  *  kommt als `extras` zurück; passt schon der Name nicht, gibt es sie nicht. */
-type ParsedRoute = HaproxyRoute & { extras: string[]; presetLines: string[]; index: number };
+type ParsedRoute = HaproxyRoute & { extras: string[]; addonLines: string[]; index: number };
 
 function readRoute(
   id: string,
   hostAcl: string,
   use: { backend: string; conditions: string[]; index: number },
   pathAcls: Map<string, string[]>,
-  backends: Map<string, { servers: HaproxyBackendServer[]; checkLines: string[]; presetLines: string[]; extras: string[]; index: number }>,
+  backends: Map<string, ParsedBackend>,
   aclUses: Map<string, number>,
   backendUses: Map<string, number>,
   backendScope: (index: number) => HaproxyScope | null
@@ -1691,7 +1970,7 @@ function readRoute(
         .filter((s) => s.weight !== null)
         .map((s) => `server ${s.name} ${s.target} weight ${s.weight}`),
     ],
-    presetLines: backend.presetLines,
+    addonLines: addonLines(backend),
     index: use.index,
   };
 }
@@ -1795,10 +2074,11 @@ export function renderServiceBlock(input: CreateServiceInput): string[] {
   return lines;
 }
 
-/** Die Zeilen des Presets, eingerückt. Sie stehen in JEDEM Backend des Dienstes. */
-function presetLinesFor(preset: HaproxyPreset): string[] {
-  if (preset === 'default') return [];
-  return [...PRESET_BACKEND_LINES[preset].map((line) => `    ${line}`), ''];
+/** Die Zusätze, eingerückt und mit einer Leerzeile dahinter. Sie stehen in
+ *  JEDEM Backend des Dienstes. */
+function addonBlock(addons: ServiceAddons): string[] {
+  const lines = addonLines(addons);
+  return lines.length === 0 ? [] : [...lines.map((line) => `    ${line}`), ''];
 }
 
 /**
@@ -1820,7 +2100,7 @@ export function renderBackendBlock(input: CreateServiceInput): string[] {
   // Weiterleitung: gezählt wird im Frontend, hier liegt nur die Tabelle.
   const lockTable = passwordLockOf(input) !== null;
 
-  // Eine Weiterleitung ist ein Backend aus einer Zeile: kein Preset, kein
+  // Eine Weiterleitung ist ein Backend aus einer Zeile: keine Zusätze, kein
   // Healthcheck, keine Ziele, keine Pfad-Regeln. Alles davon setzt einen Server
   // voraus, den es hier nicht gibt — `validateCreateInput` lehnt es vorher ab.
   if (input.redirect) {
@@ -1829,7 +2109,7 @@ export function renderBackendBlock(input: CreateServiceInput): string[] {
     return lines;
   }
 
-  /* Verfahren und Bindung stehen ganz oben, vor Preset und Healthcheck: sie
+  /* Verfahren und Bindung stehen ganz oben, vor Zusätzen und Healthcheck: sie
    * sagen, was dieses Backend mit seinen Zielen macht, und wer die Datei von
    * Hand liest, sucht das über den server-Zeilen und nicht darunter. Für
    * HAProxy ist die Reihenfolge innerhalb eines Abschnitts ohne Bedeutung. */
@@ -1839,7 +2119,7 @@ export function renderBackendBlock(input: CreateServiceInput): string[] {
   if (input.sticky) head.push(`    ${STICKY_BACKEND_LINE}`);
   if (head.length > 0) lines.push(...head, '');
 
-  lines.push(...presetLinesFor(input.preset));
+  lines.push(...addonBlock(input));
 
   if (input.healthcheck) {
     // Der Host-Header trägt die Hauptdomain: ein virtueller Host antwortet auf
@@ -1888,7 +2168,7 @@ export function renderRouteBackend(input: CreateServiceInput, route: RouteInput)
   const lines = [
     '',
     `backend ${routeBackendFor(input.id, route.name)}`,
-    ...presetLinesFor(input.preset),
+    ...addonBlock(input),
   ];
 
   route.servers.forEach((server, position) => {
@@ -2258,7 +2538,7 @@ const LOCK_UNLOCK_RULE = /,concat\(([0-9a-f]+)\),sha2\(256\),hex,lower -m str ([
 /**
  * Die Passwortsperre aus den Zeilen eines Eintrags zurücklesen.
  *
- * Wie bei den Presets zählt sie nur vollständig: aus Cookie-ACL und vierter
+ * Wie die Sitzungsbindung zählt sie nur vollständig: aus Cookie-ACL und vierter
  * Regel entsteht ein Kandidat, und der gilt erst, wenn alle sechs Regeln Wort
  * für Wort so dastehen, wie `passwordLockRules` sie für ihn schriebe. Eine
  * halbe Sperre ist keine, und neu geschrieben wäre sie eine ganze.
@@ -2444,6 +2724,48 @@ export function parseGlobalSettings(text: string): GlobalSettings {
   }
 
   return result;
+}
+
+/**
+ * Welche Header das Frontend der Dienste schon für alle Ziele setzt.
+ *
+ * Das Formular braucht es, weil derselbe Name an einem Ziel zwei verschiedene
+ * Dinge bedeutet (geprüft gegen HAProxy 2.4, 2.8 und 3.0):
+ *
+ *  - `http-request`-Regeln laufen erst im Frontend, dann im Backend. Ein
+ *    Header der Anfrage am Ziel ersetzt also den des Frontends.
+ *  - `http-response`-Regeln laufen andersherum, erst im Backend, dann im
+ *    Frontend. Ein Header der Antwort am Ziel wird vom Frontend wieder
+ *    überschrieben und kommt nie beim Besucher an.
+ *
+ * Gelesen wird der ganze Abschnitt und nicht nur der Block unter dem Marker:
+ * `alt-svc` steht in der Grundkonfiguration darüber. Eine Zeile mit Bedingung
+ * zählt nicht: ob sie für dieses Ziel greift, weiß hier niemand, und ein
+ * Hinweis „kommt nicht an", der nicht stimmt, ist schlechter als keiner.
+ */
+export function parseGlobalHeaders(text: string): Record<HeaderDirection, string[]> {
+  const lines = text.split('\n');
+  const found: Record<HeaderDirection, string[]> = { request: [], response: [] };
+
+  let anchor = lines.findIndex((line) => clean(line) === HTTPS_MARKER);
+  if (anchor === -1) {
+    anchor = scopeMarkers(lines).find((marker) => marker.kind === 'services')?.index ?? -1;
+  }
+  if (anchor === -1) return found;
+
+  let start = anchor;
+  while (start > 0 && !SECTION_KEYWORDS.test(clean(lines[start]))) start--;
+  let end = anchor + 1;
+  while (end < lines.length && !SECTION_KEYWORDS.test(clean(lines[end]))) end++;
+
+  for (let i = start; i < end; i++) {
+    const line = clean(lines[i]);
+    const match = /^http-(request|response)\s+set-header\s+(\S+)/.exec(line);
+    if (!match || /\s(if|unless)\s/.test(line)) continue;
+    const list = found[match[1] as HeaderDirection];
+    if (!list.some((name) => name.toLowerCase() === match[2].toLowerCase())) list.push(match[2]);
+  }
+  return found;
 }
 
 /** Ob sich die Einstellungen überhaupt schreiben lassen. Anders als bei einem
@@ -2708,8 +3030,27 @@ export function validateScopeName(name: string): string | null {
   if (!SCOPE_NAME.test(value)) {
     return 'Der Name darf nur a-z, 0-9, _ und - enthalten und muss mit einem Buchstaben beginnen.';
   }
+  if (RESERVED_SCOPE_SLUGS.includes(scopeSlug(value))) {
+    return `„${value}“ ist der Name einer Seite unter Reverse-Proxy. Bitte einen anderen Namen wählen.`;
+  }
   return null;
 }
+
+/**
+ * Die festen Seiten unter `/reverse-proxy/`. Eine Gruppe steht unter
+ * `/reverse-proxy/<slug>`, und eine mit einem dieser Namen wäre hinter der
+ * Seite verborgen: Next nimmt den festen Pfad vor `[scope]`. Eine vorhandene
+ * Gruppe dieses Namens bleibt lesbar, nur neu anlegen lässt sie sich nicht.
+ */
+export const RESERVED_SCOPE_SLUGS: readonly string[] = [
+  'api',
+  'einstellungen',
+  'fehlerseiten',
+  'import',
+  'logs',
+  'statistiken',
+  'zertifikate',
+];
 
 /**
  * Wohin die ERSTE Gruppe gehört, solange es keine gibt.
@@ -2860,6 +3201,74 @@ export function removeScope(text: string, name: string, alsoOccupiedBy: string[]
 }
 
 /**
+ * Warum sich unter dieser ID kein Eintrag anlegen lässt, oder `null`.
+ *
+ * Eine Funktion für zwei Aufrufer: `addService` lehnt damit ab, und
+ * `assignServiceId` sucht damit die erste freie ID. Zwei Fassungen derselben
+ * Frage wären eine vergebene ID, die erst `haproxy -c` bemerkt.
+ */
+function serviceNameConflict(
+  lines: string[],
+  id: string,
+  routes: readonly { name: string }[]
+): string | null {
+  const hasAcl = (name: string) =>
+    lines.some((line) => new RegExp(`^\\s*acl\\s+${escapeRegExp(name)}\\s`).test(line));
+
+  for (const acl of [aclNameFor(id), lockAclFor(id), passAclFor(id)]) {
+    if (hasAcl(acl)) return `Die ACL "${acl}" gibt es bereits. Die Dienst-ID ist vergeben.`;
+  }
+  /* Ein Abschnittsname gilt in HAProxy über `frontend`, `backend` und `listen`
+   * hinweg. Nur gegen `backend` zu prüfen ließ einen Dienst entstehen, der so
+   * heißt wie eine TCP-Weiterleitung daneben — und die Datei wird als Ganzes
+   * abgelehnt, also fällt es erst im `haproxy -c` des Vorgangs auf. */
+  const section = lines.find((line) =>
+    new RegExp(`^\\s*(frontend|backend|listen)\\s+${escapeRegExp(id)}\\s*$`).test(clean(line))
+  );
+  if (section) {
+    return `Der Name "${id}" ist in der Konfiguration bereits vergeben (${clean(section)}). Die Dienst-ID ist belegt.`;
+  }
+
+  // Dieselbe Prüfung für jede Pfad-Regel. Ihre Namen sind abgeleitet, aber
+  // trotzdem echte Namen im selben Namensraum: „coolify" mit einer Regel
+  // „terminal" belegt `coolify_terminal`, und das kann ein eigener Dienst sein,
+  // den jemand vorher angelegt hat.
+  for (const route of routes) {
+    const routeAcl = routeAclFor(id, route.name);
+    const routeBackend = routeBackendFor(id, route.name);
+    if (hasAcl(routeAcl)) {
+      return `Die ACL "${routeAcl}" gibt es bereits. Der Name der Pfad-Regel „${route.name}" ist vergeben.`;
+    }
+    if (lines.some((line) => new RegExp(`^\\s*backend\\s+${escapeRegExp(routeBackend)}\\s*$`).test(line))) {
+      return `Das Backend "${routeBackend}" gibt es bereits. Der Name der Pfad-Regel „${route.name}" ist vergeben.`;
+    }
+  }
+  return null;
+}
+
+/**
+ * Die ID für einen neuen Eintrag: aus seiner Hauptdomain (`serviceIdFor`), und
+ * zwar die erste Fassung, die in DIESER Konfiguration frei ist.
+ *
+ * `reserved` sind IDs, die schon vergeben, aber noch nicht geschrieben sind:
+ * zwischen der Vorabprüfung und dem Schreiben liegt die Zertifikatsausstellung,
+ * und ein zweiter Dialog läse in der Zeit dieselbe Datei. Die Liste führt
+ * `provision.ts`, hier kommt sie nur herein.
+ */
+export function assignServiceId(
+  text: string,
+  input: Pick<CreateServiceInput, 'domains' | 'routes'>,
+  reserved: Iterable<string> = []
+): string {
+  const lines = text.split('\n');
+  const held = new Set(reserved);
+  return firstFreeId(
+    serviceIdBase(input.domains[0] ?? ''),
+    (id) => held.has(id) || serviceNameConflict(lines, id, input.routes) !== null
+  );
+}
+
+/**
  * Einen Dienst in die Konfiguration einsetzen.
  *
  * Prüft vorher, was HAProxy erst beim Laden bemerken würde: ein doppelter
@@ -2875,53 +3284,8 @@ export function addService(text: string, input: CreateServiceInput): string {
   const services = parseHaproxyConfig(text);
   let lines = text.split('\n');
 
-  const acl = aclNameFor(input.id);
-  if (lines.some((line) => new RegExp(`^\\s*acl\\s+${escapeRegExp(acl)}\\s`).test(line))) {
-    throw new HaproxyConfigError(`Die ACL "${acl}" gibt es bereits. Die Dienst-ID ist vergeben.`);
-  }
-  const lockAcl = lockAclFor(input.id);
-  if (lines.some((line) => new RegExp(`^\\s*acl\\s+${escapeRegExp(lockAcl)}\\s`).test(line))) {
-    throw new HaproxyConfigError(
-      `Die ACL "${lockAcl}" gibt es bereits. Die Dienst-ID ist vergeben.`
-    );
-  }
-  const passAcl = passAclFor(input.id);
-  if (lines.some((line) => new RegExp(`^\\s*acl\\s+${escapeRegExp(passAcl)}\\s`).test(line))) {
-    throw new HaproxyConfigError(
-      `Die ACL "${passAcl}" gibt es bereits. Die Dienst-ID ist vergeben.`
-    );
-  }
-  /* Ein Abschnittsname gilt in HAProxy über `frontend`, `backend` und `listen`
-   * hinweg. Nur gegen `backend` zu prüfen ließ einen Dienst entstehen, der so
-   * heißt wie eine TCP-Weiterleitung daneben — und die Datei wird als Ganzes
-   * abgelehnt, also fällt es erst im `haproxy -c` des Vorgangs auf. */
-  const section = lines.find((line) =>
-    new RegExp(`^\\s*(frontend|backend|listen)\\s+${escapeRegExp(input.id)}\\s*$`).test(clean(line))
-  );
-  if (section) {
-    throw new HaproxyConfigError(
-      `Der Name "${input.id}" ist in der Konfiguration bereits vergeben (${clean(section)}). Die Dienst-ID ist belegt.`
-    );
-  }
-
-  // Dieselbe Prüfung für jede Pfad-Regel. Ihre Namen sind abgeleitet, aber
-  // trotzdem echte Namen im selben Namensraum: „coolify" mit einer Regel
-  // „terminal" belegt `coolify_terminal`, und das kann ein eigener Dienst sein,
-  // den jemand vorher angelegt hat.
-  for (const route of input.routes) {
-    const routeAcl = routeAclFor(input.id, route.name);
-    const routeBackend = routeBackendFor(input.id, route.name);
-    if (lines.some((line) => new RegExp(`^\\s*acl\\s+${escapeRegExp(routeAcl)}\\s`).test(line))) {
-      throw new HaproxyConfigError(
-        `Die ACL "${routeAcl}" gibt es bereits. Der Name der Pfad-Regel „${route.name}" ist vergeben.`
-      );
-    }
-    if (lines.some((line) => new RegExp(`^\\s*backend\\s+${escapeRegExp(routeBackend)}\\s*$`).test(line))) {
-      throw new HaproxyConfigError(
-        `Das Backend "${routeBackend}" gibt es bereits. Der Name der Pfad-Regel „${route.name}" ist vergeben.`
-      );
-    }
-  }
+  const taken = serviceNameConflict(lines, input.id, input.routes);
+  if (taken) throw new HaproxyConfigError(taken);
 
   const conflict = findDomainConflict(services, input.domains);
   if (conflict) {
@@ -3165,7 +3529,9 @@ export function toCreateInput(service: HaproxyService): CreateServiceInput {
       service.passwordLock !== null && typeof service.passwordLock === 'object'
         ? { ...service.passwordLock }
         : service.passwordLock,
-    preset: service.preset,
+    responseHeaders: service.responseHeaders.map((rule) => ({ ...rule })),
+    requestHeaders: service.requestHeaders.map((rule) => ({ ...rule })),
+    tunnel: service.tunnel,
     healthcheck: service.healthcheck,
   };
 }
@@ -3268,7 +3634,20 @@ export function readServiceInput(body: unknown): CreateServiceInput {
     : [];
 
   const scope = String(raw.scope ?? '').trim();
-  const preset = String(raw.preset ?? '') as HaproxyPreset;
+
+  /* Die Zusätze, und daneben `preset` für Aufrufer aus der Zeit davor. Ein
+   * Preset war nie mehr als diese Zeilen, also wird es hier zu ihnen. Was der
+   * Aufrufer ausdrücklich nennt, gewinnt: ein eigener `X-Robots-Tag` neben
+   * `preset: "nextcloud"` bleibt der eigene. */
+  const legacyPreset = String(raw.preset ?? '').trim();
+  const responseHeaders = readHeaders(raw.responseHeaders);
+  if (legacyPreset === 'nextcloud') {
+    for (const rule of NEXTCLOUD_HEADERS) {
+      if (!responseHeaders.some((own) => own.name.toLowerCase() === rule.name.toLowerCase())) {
+        responseHeaders.push({ ...rule });
+      }
+    }
+  }
 
   const lockedDomains = Array.isArray(raw.lockedDomains)
     ? raw.lockedDomains.map((d) => String(d).trim().toLowerCase()).filter(Boolean)
@@ -3333,7 +3712,9 @@ export function readServiceInput(body: unknown): CreateServiceInput {
           : lockUnsaid
             ? INHERIT_LOCK
             : null,
-    preset,
+    responseHeaders,
+    requestHeaders: readHeaders(raw.requestHeaders),
+    tunnel: raw.tunnel === true || legacyPreset === 'coolify',
     // Eine Wildcard als Hauptdomain schließt den Healthcheck aus, siehe
     // `healthcheckPossible`. Normalisiert und nicht abgelehnt: das Formular
     // sperrt den Schalter bereits, und die Route soll dieselbe Eingabe
@@ -3422,6 +3803,19 @@ export function readGlobalSettingsPatch(
     httpsLines: list(raw.httpsLines) ?? current.httpsLines ?? [],
     adminIps,
   };
+}
+
+/** Leere Zeilen fallen weg statt abgelehnt zu werden: das Formular hält eine
+ *  bereit, damit man tippen kann. Eine halb gefüllte bleibt und fällt in der
+ *  Prüfung auf. */
+function readHeaders(value: unknown): HeaderRule[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => {
+      const h = (entry ?? {}) as Record<string, unknown>;
+      return { name: String(h.name ?? '').trim(), value: String(h.value ?? '').trim() };
+    })
+    .filter((rule) => rule.name !== '' || rule.value !== '');
 }
 
 function readServers(value: unknown): BackendServerInput[] {

@@ -1,6 +1,21 @@
 import type { RunStatus, UpdateComponent, UpdateState } from '@/lib/types';
+import {
+  formatDate as formatDateIn,
+  formatDateTime as formatDateTimeIn,
+  formatDuration,
+  formatRelative,
+  msgid,
+  type Locale,
+} from '@/lib/i18n';
 
-/** Zeit- und Zustandsangaben, wie Übersicht und Updates sie beide schreiben. */
+/**
+ * Zeit- und Zustandsangaben, wie Übersicht und Updates sie beide schreiben.
+ *
+ * Die Formate liegen in `lib/i18n/format.ts`, hier stehen sie mit Deutsch als
+ * Vorgabe, damit die Seiten bis zur Umstellung unverändert bleiben. Eine
+ * umgestellte Seite gibt `locale` aus `useT()` mit. Die Beschriftungen sind
+ * Schlüssel (`msgid`): die Seite zeigt sie mit `t(...)`.
+ */
 
 export const COMPONENT_LABELS: Record<UpdateComponent, string> = {
   haproxy: 'HAProxy',
@@ -9,11 +24,11 @@ export const COMPONENT_LABELS: Record<UpdateComponent, string> = {
 };
 
 export const RUN_STATUS_LABELS: Record<RunStatus, string> = {
-  running: 'Läuft',
-  success: 'Erfolgreich',
-  warning: 'Mit Hinweisen',
-  error: 'Fehlgeschlagen',
-  cancelled: 'Abgebrochen',
+  running: msgid('Läuft'),
+  success: msgid('Erfolgreich'),
+  warning: msgid('Mit Hinweisen'),
+  error: msgid('Fehlgeschlagen'),
+  cancelled: msgid('Abgebrochen'),
 };
 
 export const RUN_STATUS_CLASS: Record<RunStatus, string> = {
@@ -24,56 +39,22 @@ export const RUN_STATUS_CLASS: Record<RunStatus, string> = {
   cancelled: 'badge-neutral',
 };
 
-export function formatDateTime(iso: string | null): string {
-  if (!iso) return 'Unbekannt';
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  return date.toLocaleString('de-DE', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+export function formatDateTime(iso: string | null, locale: Locale = 'de'): string {
+  return formatDateTimeIn(locale, iso);
 }
 
-export function formatDate(iso: string | null): string {
-  if (!iso) return 'Unbekannt';
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  return date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
-}
-
-function plural(count: number, one: string, many: string): string {
-  return `${count} ${count === 1 ? one : many}`;
+export function formatDate(iso: string | null, locale: Locale = 'de'): string {
+  return formatDateIn(locale, iso);
 }
 
 /** „vor 3 Minuten". Unter einer Minute steht kein Sekundenzähler, der bei jedem Laden springt. */
-export function formatAgo(now: number, iso: string | null): string {
-  if (!iso) return 'Unbekannt';
-  const then = Date.parse(iso);
-  if (Number.isNaN(then)) return iso;
-  const seconds = Math.max(0, Math.floor((now - then) / 1000));
-  if (seconds < 60) return 'vor weniger als einer Minute';
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `vor ${plural(minutes, 'Minute', 'Minuten')}`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 48) return `vor ${plural(hours, 'Stunde', 'Stunden')}`;
-  return `vor ${plural(Math.floor(hours / 24), 'Tag', 'Tagen')}`;
+export function formatAgo(now: number, iso: string | null, locale: Locale = 'de'): string {
+  return formatRelative(locale, now, iso);
 }
 
 /** Eine Laufzeit: „3 Tage 4 Std.", „5 Std. 12 Min.", „12 Min.". */
-export function formatUptime(now: number, iso: string | null): string {
-  if (!iso) return 'Unbekannt';
-  const then = Date.parse(iso);
-  if (Number.isNaN(then)) return 'Unbekannt';
-  const minutes = Math.max(0, Math.floor((now - then) / 60_000));
-  if (minutes < 1) return 'unter 1 Min.';
-  if (minutes < 60) return `${minutes} Min.`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} Std. ${minutes % 60} Min.`;
-  const days = Math.floor(hours / 24);
-  return `${plural(days, 'Tag', 'Tage')} ${hours % 24} Std.`;
+export function formatUptime(now: number, iso: string | null, locale: Locale = 'de'): string {
+  return formatDuration(locale, now, iso);
 }
 
 /** Die Dauer eines Laufs als `mm:ss`. */

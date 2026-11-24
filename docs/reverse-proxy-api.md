@@ -90,7 +90,7 @@ gedacht, nicht zum Auswerten — verzweigt wird über den HTTP-Status:
 | `401` | Token fehlt, ist unbekannt oder zurückgezogen |
 | `403` | Das Token gilt, aber die Adresse des Aufrufers ist nicht freigegeben |
 | `404` | Diese Dienst-ID oder diesen Lauf gibt es nicht, oder `serverId` ist nicht `local` |
-| `409` | Konflikt in der Konfiguration: ID belegt, Domain gehört einem anderen Eintrag, Eintrag nicht bearbeitbar |
+| `409` | Konflikt in der Konfiguration: ID belegt, Domain gehört einem anderen Eintrag, Eintrag nicht bearbeitbar, Ziel der Oberfläche von HAPM (`surface`) |
 | `429` | Zu viele Fehlversuche |
 | `502` | Die Konfiguration von HAProxy ist nicht lesbar |
 
@@ -129,12 +129,12 @@ Alle unter `/api/internal/haproxy/`.
 |---|---|
 | `GET /proxies` | das eine HAProxy: Gruppen, Admin-IPs, DNS-Hooks, `acmeReady` |
 | `GET /services` | Einträge, gefiltert über `?scope=` `?domain=` |
-| `POST /services` | anlegen → `{ runId }` |
+| `POST /services` | anlegen → `{ runId, serviceId }` |
 | `GET /services/<id>` | ein Eintrag, mit `editable` / `removable` / `health` |
 | `PATCH /services/<id>` | ändern → `{ runId }` |
 | `DELETE /services/<id>` | entfernen → `{ runId }` |
 | `GET /streams` | TCP-Weiterleitungen; mit `?port=` stattdessen: ist der Port frei |
-| `POST /streams` | anlegen → `{ runId }` |
+| `POST /streams` | anlegen → `{ runId, streamId }` |
 | `GET`/`PATCH`/`DELETE /streams/<id>` | einzeln lesen, ändern, entfernen |
 | `GET /runs` | die Historie, gefiltert über `?serviceId=` `?mine=true` |
 | `GET /runs/<id>` | Stand des Vorgangs: `status`, `phase`, `steps` |
@@ -198,7 +198,7 @@ type Service = {
   // Zahl in jede Zeile, in der vorher keine stand.
   servers: { name: string; target: string; check: boolean; weight: number | null }[];
   // Gesetzt: die Domains werden weitergeleitet statt bedient. Dann sind
-  // `servers` und `routes` leer, `preset` ist `default` und `healthcheck` false.
+  // `servers`, `routes` und die Header leer, `tunnel` und `healthcheck` false.
   redirect: { to: string; keepPath: boolean; permanent: boolean } | null;
   // Die Ziele einer Regel tragen KEIN weight: sie verteilen nichts.
   routes: {
@@ -211,10 +211,17 @@ type Service = {
   // defaults-Block der Konfiguration — nicht "roundrobin".
   balance: 'roundrobin' | 'leastconn' | 'source' | 'uri' | 'random' | null;
   sticky: boolean;             // Sitzungsbindung über einen Cookie
-  preset: 'default' | 'nextcloud' | 'coolify';
+  // Feste Header an den Besucher und an das Ziel, in der Reihenfolge der
+  // Datei. `value` ist der Text, wie er ankommt (nicht maskiert).
+  responseHeaders: { name: string; value: string }[];
+  requestHeaders: { name: string; value: string }[];
+  tunnel: boolean;             // `timeout tunnel 1h`: offene Verbindungen bleiben
   healthcheck: boolean;
   editable: boolean;           // false → PATCH wird abgelehnt
   removable: boolean;          // false → DELETE wird abgelehnt
+  // true: über dieses Ziel läuft die Adresse von HAPM. DELETE wird abgelehnt,
+  // auch bei removable: true, ebenso ein PATCH ohne die Domain der Adresse.
+  surface: boolean;
   shadowedBy: string | null;   // ein Eintrag weiter oben nimmt ihm den Verkehr weg
   extras: string[];            // Zeilen, die dieser Weg nicht abbilden kann
   health: 'up' | 'down' | 'partial' | 'unknown';
@@ -237,7 +244,7 @@ Feld, bevor du aus einer leeren Liste einen Schluss ziehst.**
 {
   "serverId": "local",                // weglassbar
   "scope": "KUNDEN",                  // Pflicht, aus GET /proxies
-  "id": "kunde_shop",                 // Pflicht, a-z 0-9 _
+  "id": "kunde_shop",                 // optional, a-z 0-9 _; fehlt sie, ergibt sie sich aus domains[0]
   "domains": ["kunde.example", "www.kunde.example"],   // Pflicht, die erste ist die Hauptdomain
   "servers": [{ "name": "", "target": "10.0.0.12:3000" }],   // Pflicht, außer bei redirect
   "redirect": null,                   // optional, siehe unten
@@ -246,13 +253,31 @@ Feld, bevor du aus einer leeren Liste einen Schluss ziehst.**
   "sticky": false,                    // optional: Sitzungsbindung
   "lockedDomains": [],                // optional
   "lockPassword": "…",                // optional: sperrt mit Passwort statt auf Admin-IPs
-  "preset": "default",                // Pflicht
+  "responseHeaders": [{ "name": "X-Frame-Options", "value": "SAMEORIGIN" }],   // optional
+  "requestHeaders": [],               // optional
+  "tunnel": false,                    // optional: lange Verbindungen (WebSocket, Terminal)
   "healthcheck": true,
   "dnsDomains": "auto",               // optional
   "dnsHook": "dns_cf"                 // nur für DNS-01, und nur bei mehreren Hooks nötig
 }
 → data: { runId: string; serverId: string; serviceId: string }
 ```
+
+**`serviceId` in der Antwort ist die ID, unter der der Eintrag angelegt wird.**
+Ohne `id` im Rumpf vergibt HAPM sie aus der Hauptdomain, wie im Dialog:
+`shop.kunde.example` wird `shop_kunde_example`, `*.kunde.example` wird
+`wildcard_kunde_example`, ist sie vergeben, kommt `_2`, `_3` dran. Unter dieser
+ID steht der Eintrag danach in `GET /services/<id>`, und sie ändert sich nicht,
+auch nicht mit der Hauptdomain. Wer die ID selbst bestimmen will, schickt sie
+mit; dann gilt sie, oder es kommt `409`, wenn sie belegt ist.
+
+**`preset` wird weiter angenommen** und in das übersetzt, was es in der Datei
+immer war: `nextcloud` in die beiden Header der Antwort `X-Robots-Tag:
+noindex,nofollow` und `X-Permitted-Cross-Domain-Policies: none`, `coolify` in
+`tunnel: true`, `default` in nichts. Ein ausdrücklich in `responseHeaders`
+genannter Header gleichen Namens gewinnt. Ein unbekanntes `preset` ergibt
+`400`. In Antworten kommt `preset` nicht mehr vor: ein Eintrag aus der
+Preset-Zeit steht dort mit seinen Headern bzw. `tunnel: true`.
 
 Mehrere Einträge in `servers` sind Lastverteilung. Das reicht schon ohne
 `balance` — dann verteilt HAProxy nach dem, was im `defaults`-Block steht. Mit
@@ -287,8 +312,12 @@ oben).
 
 **Der Rumpf ist vollständig, kein Teil-Patch.** Wer nur `servers` schickt,
 bekommt einen Eintrag ohne Domains, und die Prüfung lehnt ihn ab. Der Weg ist:
-`GET`, das Ergebnis ändern, `PATCH`. Die `id` im Pfad ist die **alte** — steht im
-Rumpf eine andere, wird umbenannt.
+`GET`, das Ergebnis ändern, `PATCH`. Die `id` im Pfad ist die **alte** — fehlt
+sie im Rumpf, bleibt sie, steht dort eine andere, wird umbenannt. Das gilt auch
+für `responseHeaders`, `requestHeaders` und `tunnel`: wer sie nicht mitschickt,
+nimmt sie dem Eintrag weg. Ein Aufrufer, der noch `preset` schickt, sollte
+deshalb auf GET, ändern, PATCH umstellen, sonst gehen Header verloren, die
+jemand in der Oberfläche gesetzt hat.
 
 Vorher `editable` prüfen. `false` heißt: der Block in der Konfiguration enthält
 Zeilen, die dieser Weg nicht abbilden kann (`extras` sagt welche), und sie gingen
@@ -296,6 +325,10 @@ beim Speichern verloren. Löschen bleibt trotzdem erlaubt.
 
 Domains, die aus der Liste fallen, verlieren ihren DNS-Eintrag — aber nur, wenn
 HAPM ihn selbst gesetzt hat.
+
+Bei `surface: true` muss die Domain aus der Adresse von HAPM in `domains`
+bleiben (oder von einer Wildcard darin getroffen werden), sonst `409`. Alles
+andere an dem Eintrag lässt sich ändern.
 
 ### `DELETE /services/<id>`
 
@@ -308,6 +341,13 @@ den Haken mit „ja" vor, weil ein Mensch ihn sieht und abwählen kann; ein Aufr
 ohne das Feld hat nichts gesagt. Entfernt wird ohnehin nur, was HAPM
 selbst gesetzt hat — ein A-Eintrag von Hand bleibt stehen und sagt das als
 Schritt.
+
+**Das Ziel der Oberfläche lässt sich nicht entfernen** (`surface: true`, `409`).
+Über es ist HAPM selbst erreichbar. Welches Ziel das ist, ergibt sich aus der
+Adresse von HAPM in den Einstellungen, nicht aus einem Namen. Wer es wirklich
+loswerden will, ändert oder leert zuerst diese Adresse in der Oberfläche unter
+„Allgemein". Über die API geht das nicht. Siehe
+[`reverse-proxy.md`](reverse-proxy.md), „Das Ziel der Oberfläche ist geschützt".
 
 ### `GET /streams`, `POST /streams`
 
@@ -356,7 +396,7 @@ POST /streams
 {
   "serverId": "local",              // weglassbar
   "scope": "KUNDEN",                // Pflicht
-  "id": "pg_kunde",                 // Pflicht, a-z 0-9 _
+  "id": "pg_kunde",                 // optional, a-z 0-9 _; fehlt sie: tcp_<port>
   "port": 5432,                     // Pflicht, 1–65535
   "servers": [{ "name": "db1", "target": "10.0.0.50:5432", "weight": null }],
   "balance": null,                  // optional; "uri" gibt es hier nicht
@@ -365,6 +405,10 @@ POST /streams
 }
 → data: { runId: string; serverId: string; streamId: string }
 ```
+
+Ohne `id` vergibt HAPM die Kennung aus dem Port (`tcp_5432`, ist sie vergeben,
+`tcp_5432_2`) und nennt sie als `streamId`. Sie bleibt, auch wenn sich der Port
+später ändert.
 
 **`allowedSources` wegzulassen ist erlaubt und heißt „von überall".** HAPM setzt
 dir nichts vor: welche Absender an diesen Port dürfen, weißt nur
@@ -386,7 +430,8 @@ der Firewall des Anbieters, falls davor eine liegt. Ein Lauf mit
 ### `GET /streams/<id>`, `PATCH /streams/<id>`, `DELETE /streams/<id>`
 
 Wie bei den Diensten: die `id` im Pfad ist die **alte**
-(im Rumpf eine andere heißt umbenennen), und der PATCH-Rumpf ist **vollständig**.
+(fehlt sie im Rumpf, bleibt sie; eine andere heißt umbenennen), und der
+PATCH-Rumpf ist **vollständig**.
 Vorher `editable` prüfen.
 
 Für `allowedSources` heißt das ausdrücklich: **das Feld wegzulassen setzt die
@@ -451,7 +496,9 @@ Die Marker einer Gruppe stehen in `haproxy.cfg`. `runs` ist eine Liste mit
 das Richtige. Ein `serverId` nimmt die Route nicht.
 
 Name: 2 bis 24 Zeichen, `a-z 0-9 _ -`, beginnt mit einem Buchstaben. Entfernen
-geht nur, wenn die Gruppe leer ist. Umbenennen gibt es nicht.
+geht nur, wenn die Gruppe leer ist. Umbenennen gibt es nicht. Die Gruppe, in
+der das Ziel der Oberfläche liegt (`surface: true` am Eintrag), wird mit `409`
+abgelehnt, mit diesem Grund statt mit „nicht leer".
 
 `GET` liefert `[{ serverId, serverName, scopes, error }]` (ein Eintrag).
 
@@ -527,21 +574,23 @@ Token weg, und auffallen würde es zwei Monate später.
 
 | Feld | Regel |
 |---|---|
-| `id` | `a-z 0-9 _`, beginnt mit Buchstabe oder Ziffer. Es ist der Backend-Name in der Konfiguration und muss dort frei sein. |
+| `id` | Beim Anlegen freiwillig: fehlt sie, ergibt sie sich aus `domains[0]` und steht als `serviceId` in der Antwort. Gesetzt: `a-z 0-9 _`, beginnt mit Buchstabe oder Ziffer. Es ist der Backend-Name in der Konfiguration und muss dort frei sein. |
 | `scope` | Der Name aus `GET /proxies`, in Großschreibung wie im Marker. |
 | `domains` | Mindestens eine, kleingeschrieben, keine Dubletten. **`domains[0]` ist die Hauptdomain**: nach ihr heißt die PEM-Datei, und sie geht als Host-Header in den Healthcheck. Wildcards werden `*.kunde.example` geschrieben — ein Stern woanders ist ein Tippfehler und wird abgelehnt. |
 | `servers` | Mindestens eins, außer bei einer Weiterleitung. `target` ist `host:port`, Port 1–65535. `name` darf leer sein, dann heißen sie `server1`, `server2`, … Mehr als eins ist Lastverteilung. |
 | `servers[].weight` | Der Anteil eines Ziels im Verhältnis zu den anderen, 0 bis 256. **Fehlt oder `null` heißt: es wird keine `weight`-Angabe geschrieben** und HAProxys Vorgabe gilt (alle gleich) — nicht 1. **`0`** nimmt ein Ziel aus der Verteilung, ohne seine gebundenen Sitzungen abzuwerfen: der Weg, einen Server in Ruhe herauszunehmen. Es gibt sie **nur am Backend des Dienstes**, nicht an den Zielen einer Pfad-Regel: die verteilt nichts, sie trennt. |
 | `balance` | `roundrobin`, `leastconn`, `source`, `uri` oder `random`. `null` schreibt keine `balance`-Zeile und lässt den `defaults`-Block der Konfiguration gelten. Bei einer Weiterleitung wird ein Wert abgelehnt: sie hat keine Ziele. |
 | `sticky` | Sitzungsbindung über einen Cookie, den HAProxy selbst setzt und vor dem Ziel wieder aus der Anfrage nimmt. Nötig für alles, was Sitzungen im Arbeitsspeicher hält statt in einer gemeinsamen Datenbank; ohne das wird ein Besucher bei jeder Anfrage neu angemeldet. Schließt eine Weiterleitung aus. |
-| `redirect` | Statt `servers`: die Domains werden weitergeleitet. `to` ist eine vollständige Adresse mit Schema (`https://example.com`) ohne Leerzeichen, `#` oder Anführungszeichen — sie steht unverändert in einer Zeile von `haproxy.cfg`. `keepPath: true` hängt Pfad und Query an (`/preise` → `…/preise`), `false` schickt alles auf die Zieladresse selbst. `permanent: true` ist 301, sonst 302. **Zusammen mit `servers`, `routes` oder einem Preset wird der Rumpf abgelehnt** — alle drei setzen ein Backend mit Zielen voraus. Ein Zertifikat wird trotzdem ausgestellt. |
+| `redirect` | Statt `servers`: die Domains werden weitergeleitet. `to` ist eine vollständige Adresse mit Schema (`https://example.com`) ohne Leerzeichen, `#` oder Anführungszeichen — sie steht unverändert in einer Zeile von `haproxy.cfg`. `keepPath: true` hängt Pfad und Query an (`/preise` → `…/preise`), `false` schickt alles auf die Zieladresse selbst. `permanent: true` ist 301, sonst 302. **Zusammen mit `servers`, `routes`, Headern oder `tunnel` wird der Rumpf abgelehnt**: alle setzen ein Backend mit Zielen voraus, und auf die Antwort einer Weiterleitung, die HAProxy selbst erzeugt, wirken Header-Regeln nicht. Ein Zertifikat wird trotzdem ausgestellt. |
 | `routes` | Gleiche Domain, anderer Port (der Fall ist Coolify: Oberfläche 8000, Terminal 6002). `name` wie `id`, `paths` beginnen mit `/` und enthalten kein Leerzeichen, jeder Pfad nur einmal über alle Regeln. `check: true` ist ein reines TCP-`check` ohne HTTP-Prüfung — eine WebSocket-Strecke antwortet auf `GET /` nicht mit 200 und flöge sonst aus dem Betrieb. |
 | `lockedDomains` | Die gesperrten Domains. Ohne weitere Angabe beim Anlegen: nur für die Admin-IPs erreichbar (HTTP 403 für alle anderen), und das setzt voraus, dass Admin-IPs eingetragen sind. Jede muss zum Eintrag gehören — bei `*.kunde.example` zählt auch `intern.kunde.example` dazu. |
 | `lockPassword` | Sperrt die Domains aus `lockedDomains` mit einer Passwortabfrage statt auf die Admin-IPs. 8 bis 128 Zeichen. Gespeichert wird nur ein Hash in `haproxy.cfg`; zurück kommt das Passwort nie, `lockMode` im GET sagt nur die Art. Ein neues Passwort meldet alle ab, die schon durchgelassen sind. Braucht HAProxy 2.4 oder neuer, sonst `400`. |
 | `passwordLock` | Nur beim Ändern von Belang. **Fehlt das Feld, bleibt die Art der Sperre, wie sie ist**: ein Eintrag mit Passwort behält es, einer auf Admin-IPs bleibt dort. Wer GET, ändern, PATCH macht, muss also nichts tun. `"unchanged"` verlangt ausdrücklich, dass das bestehende Passwort bleibt (`409`, wenn keins da ist). `null` stellt auf die Admin-IPs um. Ein Hash oder Cookie-Wert wird nie angenommen. |
-| `preset` | `default`, `nextcloud` oder `coolify`. Eine feste Liste Zeilen im Backend; `coolify` setzt `timeout tunnel 1h`, ohne das reißen Terminal und Live-Ansicht mitten in der Arbeit ab. |
+| `responseHeaders`, `requestHeaders` | Feste Header an den Besucher bzw. an das Ziel, je `{ name, value }`, höchstens 20 je Richtung. Sie stehen in jedem Backend des Eintrags, auch in denen der Pfad-Regeln. `name`: Buchstaben, Ziffern, Bindestrich, je Richtung nur einmal; Header der Übertragung (`Content-Length`, `Transfer-Encoding`, `Connection`, `Upgrade` …) werden abgelehnt. `value`: druckbares ASCII, bis 1024 Zeichen, **wörtlich**: `%[src]` kommt als Text an und wird nicht ausgewertet. Ein Header der Antwort, den die globalen Einstellungen auch setzen, wird von dort überschrieben; einer der Anfrage ersetzt den globalen. Leere Einträge (`name` und `value` leer) fallen weg. |
+| `tunnel` | `true` schreibt `timeout tunnel 1h` in jedes Backend des Eintrags. Ohne das reißen WebSocket, Terminal und Live-Ansicht nach der Zeit aus dem `defaults`-Block ab, üblicherweise nach einer Minute ohne Daten. |
+| `preset` | Nur noch angenommen, nie gemeldet: `nextcloud` wird zu den beiden Headern der Antwort, `coolify` zu `tunnel: true`, `default` zu nichts. Ein anderer Wert ergibt `400`. |
 | `healthcheck` | **Geht nicht, wenn `domains[0]` eine Wildcard ist** — `*.kunde.example` ist als Host-Header kein gültiger Name, das Ziel antwortete mit 404 und HAProxy nähme ein funktionierendes Backend aus dem Betrieb. Der Wert wird in dem Fall stillschweigend auf `false` normalisiert, nicht abgelehnt. |
-| `dnsDomains` | Fehlt → bei Cloudflare wird nichts angefasst. `"auto"` → jede Domain, für die unter `/dns` eine Zone eingerichtet ist. Eine Liste → genau diese, geschnitten mit `domains`. |
+| `dnsDomains` | Fehlt → beim DNS-Anbieter wird nichts angefasst. `"auto"` → jede Domain, für die unter `/dns` eine Zone eingerichtet ist. Eine Liste → genau diese, geschnitten mit `domains`. |
 | `dnsHook` | Der acme.sh-Hook für DNS-01, aus `dnsHooks` von `GET /proxies`. DNS-01 gilt bei einer Wildcard und, in einer als intern eingerichteten Installation, bei jeder Domain. Ist genau ein Hook eingerichtet, darf das Feld fehlen. Bei mehreren muss es gesetzt sein. |
 
 ## Fallen, die Zeit kosten
@@ -568,6 +617,9 @@ Token weg, und auffallen würde es zwei Monate später.
   deshalb stehen, solange ein anderer Eintrag es braucht — das steht als Schritt
   im Lauf und ist kein Fehler.
 - **Umbenennen einer Gruppe gibt es nicht.** Anlegen und Entfernen, sonst nichts.
+- **Das Ziel der Oberfläche von HAPM bleibt stehen.** `DELETE` darauf, ein
+  `PATCH`, das ihm die Domain der Oberfläche nimmt, und `DELETE /scopes` auf
+  seine Gruppe enden mit `409`. Vorher `surface` am Eintrag lesen.
 - **Ein belegter Port fällt `haproxy -c` nicht auf.** Die Prüfung liest die
   Datei, sie bindet keine Sockets — der Fehlschlag käme erst beim Reload, und
   dann ist die Konfiguration bereits eingesetzt. `POST /streams` prüft das
@@ -629,25 +681,23 @@ async function awaitRun(runId: string, timeoutMs = 6 * 60_000): Promise<Run> {
 
 export async function createProxyTarget(input: {
   scope: string;
-  id: string;
   domains: string[];
   target: string;
 }) {
-  const { runId } = await hapm<{ runId: string }>('/services', {
+  // Ohne `id`: HAPM leitet sie aus domains[0] ab und nennt sie in der Antwort.
+  const { runId, serviceId } = await hapm<{ runId: string; serviceId: string }>('/services', {
     method: 'POST',
     body: JSON.stringify({
       scope: input.scope,
-      id: input.id,
       domains: input.domains,
       servers: [{ name: '', target: input.target }],
       routes: [],
       lockedDomains: [],
-      preset: 'default',
       healthcheck: true,
       dnsDomains: 'auto',
     }),
   });
-  return awaitRun(runId);
+  return { serviceId, run: await awaitRun(runId) };
 }
 ```
 
@@ -753,7 +803,7 @@ Fünf Dinge daran sind Entscheidungen und keine Form:
 - **`dnsDomains: "auto"` heißt: jede Domain, für die es hier eine Zone gibt**
   (`autoDnsDomains`). Im Dialog wählt der Mensch aus, weil er die Zonen sieht;
   ein Aufrufer sieht sie nicht. Die Zone selbst fällt heraus und ebenso jede
-  Domain ohne Zone. Ohne das Feld wird bei Cloudflare nichts angefasst.
+  Domain ohne Zone. Ohne das Feld wird beim DNS-Anbieter nichts angefasst.
 - **Ändern ist ein vollständiger Rumpf, die Einstellungen sind der einzige
   Teil-Patch.** Ein Eintrag entsteht aus EINEM Text, der in EINEM `haproxy -c`
   geprüft und mit EINEM Reload gültig wird; ihn aus „alt plus die Felder, die

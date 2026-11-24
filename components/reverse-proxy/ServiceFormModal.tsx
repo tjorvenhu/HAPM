@@ -1,18 +1,16 @@
 'use client';
 
-import { useEffect, useState, type FormEvent } from 'react';
+import { Fragment, useEffect, useState, type FormEvent } from 'react';
+import Link from 'next/link';
 import {
-  Plus, Trash2, Loader2, X, Settings2, Server, Waypoints, Info, Globe, Lock, LockOpen,
-  ChevronDown, ChevronRight, CornerUpRight, Scale, RefreshCw,
+  Plus, Trash2, Loader2, X, Server, Waypoints, Info, Globe, Lock,
+  ChevronDown, ChevronRight, CornerUpRight, Scale, RefreshCw, ShieldCheck, SlidersHorizontal,
 } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { suggestPassword } from '@/components/suggestPassword';
 import Select from '@/components/Select';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import {
-  HAPROXY_PRESETS,
-  PRESET_LABELS,
-  PRESET_HINTS,
   HAPROXY_BALANCE,
   BALANCE_LABELS,
   BALANCE_HINTS,
@@ -21,23 +19,32 @@ import {
   WEIGHT_MIN,
   KEEP_PASSWORD,
   LOCK_PASSWORD_MIN,
+  HEADER_DIRECTION_LABELS,
+  HEADER_SUGGESTIONS,
+  HEADERS_MAX,
+  TUNNEL_LINE,
+  locksEveryDomain,
+  ownsDomain,
   readWeight,
   shortVersion,
   supportsPasswordLock,
   validateLockPassword,
   validateCreateInput,
+  validateNewService,
   certificateChanged,
   isWildcardDomain,
   healthcheckPossible,
   serviceKind,
   type HaproxyScope,
-  type HaproxyPreset,
   type HaproxyBalance,
+  type HeaderDirection,
+  type HeaderRule,
   type ServiceKind,
   type HaproxyService,
   type CreateServiceInput,
 } from '@/lib/haproxy/config';
 import { needsDnsChallenge } from '@/lib/haproxy/challenge';
+import { refuseSurfaceUpdate } from '@/lib/haproxy/protected';
 import type { DomainMatch } from '@/lib/dns/zones';
 import type { ProxyRow } from './types';
 
@@ -91,6 +98,23 @@ const KIND_TITLES: Record<ServiceKind, string> = {
   balance: 'Lastverteilung',
   redirect: 'HTTP-Weiterleitung',
 };
+
+/**
+ * Wer die Domains aufrufen darf. Drei Zustände und eine Frage, statt eines
+ * Schlosses je Domainzeile, eines Umschalters für die Art und eines Satzes
+ * darunter: so stand die Art der Sperre auch dann im Formular, wenn gar nichts
+ * gesperrt war.
+ */
+type Access = 'open' | 'ip' | 'password';
+
+const ACCESS_LABELS: Record<Access, string> = {
+  open: 'Offen',
+  ip: 'Nur Admin-IPs',
+  password: 'Passwort',
+};
+
+/** Ab so vielen Adressen steht im Formular nur noch ihre Anzahl. */
+const ADMIN_IPS_SHOWN = 4;
 
 const EMPTY_ROUTE: RouteRow = {
   name: '',
@@ -186,8 +210,12 @@ export default function ServiceFormModal({
   const balancing = kind === 'balance';
 
   const usable = proxies.filter((p) => !p.error && p.acmeReady);
-  /** Beim Bearbeiten der ALTE Dienstname. Er steht im Pfad des PATCH, während
-   *  der Rumpf schon den neuen trägt — beim Umbenennen sind das zwei Werte. */
+  /**
+   * Die Dienst-ID, beim Bearbeiten. Ein neuer Eintrag hat noch keine: sie
+   * ergibt sich aus der Hauptdomain und wird beim Anlegen auf dem Server
+   * vergeben, wo die Konfiguration vorliegt. Danach bleibt sie, auch wenn sich
+   * die Domain ändert: sie benennt ACL und Backend in der Datei.
+   */
   const editingId = edit?.service.id ?? null;
 
   const [saving, setSaving] = useState(false);
@@ -213,7 +241,6 @@ export default function ServiceFormModal({
    * ersten Antrag.
    */
   const [dnsHook, setDnsHook] = useState('');
-  const [serviceId, setServiceId] = useState(edit?.service.id ?? '');
   const [domains, setDomains] = useState<string[]>(
     edit && edit.service.domains.length > 0 ? [...edit.service.domains] : ['']
   );
@@ -264,29 +291,44 @@ export default function ServiceFormModal({
   /** Nur die Lastverteilung kennt sie. Die anderen beiden Formulare schicken
    *  hart `null` bzw. `false`, egal was hier steht. */
   const [sticky, setSticky] = useState(edit?.service.sticky ?? false);
-  /** Ob die Erklärung hinter dem „i" aufgeklappt ist. Zugeklappt als Vorgabe:
-   *  wer das Verfahren kennt, will den Absatz nicht bei jedem Öffnen sehen. */
-  const [preset, setPreset] = useState<HaproxyPreset>(edit?.service.preset ?? 'default');
+  /**
+   * Die Zusätze: feste Header und das lange Timeout. Sie stehen in jedem
+   * Backend des Eintrags, auch in denen der Pfad-Regeln. Im Normalfall leer.
+   */
+  const [headers, setHeaders] = useState<Record<HeaderDirection, HeaderRule[]>>({
+    response: edit?.service.responseHeaders.map((rule) => ({ ...rule })) ?? [],
+    request: edit?.service.requestHeaders.map((rule) => ({ ...rule })) ?? [],
+  });
+  const [tunnel, setTunnel] = useState(edit?.service.tunnel ?? false);
+  /** Zugeklappt wie die Pfad-Regeln, aus demselben Grund. */
+  const [addonsOpen, setAddonsOpen] = useState(false);
   const [healthcheck, setHealthcheck] = useState(edit?.service.healthcheck ?? true);
   /**
-   * Welche Domains gesperrt sein sollen.
+   * Der Zugriff: offen, nur für die Admin-IPs oder mit Passwort.
    *
-   * Kein Schalter „gesperrt ja/nein": ein Eintrag kann `kunde.example` und
-   * `intern.kunde.example` bedienen, und gesperrt gehört oft nur die zweite. Ohne
-   * definierte Adressen bleibt die Auswahl bei der Sperre auf Admin-IPs
-   * gesperrt — die ACL, auf die die Regel zeigt, gäbe es dann nicht.
+   * Eine Art je Eintrag und nicht je Domain: es gibt in der Datei eine ACL der
+   * gesperrten Domains, und an ihr hängt entweder die eine Regel oder die
+   * Abfrage. Das Modell dahinter ist dasselbe geblieben (`lockedDomains`,
+   * `passwordLock`), nur die Frage steht jetzt an einer Stelle.
    */
-  const [lockedDomains, setLockedDomains] = useState<string[]>(
-    edit?.service.lockedDomains ?? []
+  const [access, setAccess] = useState<Access>(
+    !edit || edit.service.lockedDomains.length === 0
+      ? 'open'
+      : edit.service.passwordLock
+        ? 'password'
+        : 'ip'
   );
   /**
-   * WIE die gesperrten Domains gesperrt sind: auf die Admin-IPs oder mit
-   * Passwort. Eine Art je Eintrag und nicht je Domain: es gibt in der Datei
-   * eine ACL der gesperrten Domains, und an ihr hängt entweder die eine Regel
-   * oder die Abfrage.
+   * Für welche Domains. Vorgabe: alle. Wer nur einzelne meint (`kunde.example`
+   * offen, `intern.kunde.example` gesperrt), wählt sie aus der Liste.
    */
-  const [lockMode, setLockMode] = useState<'ip' | 'password'>(
-    edit?.service.passwordLock ? 'password' : 'ip'
+  const [lockAll, setLockAll] = useState(
+    !edit ||
+      edit.service.lockedDomains.length === 0 ||
+      locksEveryDomain(edit.service.domains, edit.service.lockedDomains)
+  );
+  const [lockedDomains, setLockedDomains] = useState<string[]>(
+    edit?.service.lockedDomains ?? []
   );
   /**
    * Ein NEUES Passwort. Leer heißt beim Bearbeiten „das bisherige bleibt": es
@@ -302,56 +344,97 @@ export default function ServiceFormModal({
   /** `null` (Version unbekannt) sperrt nichts: dann entscheidet der Vorgang. */
   const proxyVersion = proxies.find((p) => p.$id === serverId)?.version ?? null;
   const passwordPossible = supportsPasswordLock(proxyVersion) !== false;
-  /** Warum sich gerade keine Domain sperren lässt. Leer heißt: es geht. */
-  const lockBlocked =
-    lockMode === 'ip'
-      ? adminIps.length === 0
-        ? 'Zum Sperren zuerst Admin-IPs setzen'
-        : ''
-      : passwordPossible
-        ? ''
-        : 'Die Passwortsperre braucht HAProxy 2.4 oder neuer';
+  /* Eine Art, der gerade etwas fehlt, lässt sich nicht wählen. Wer sie schon
+   * hat, behält sie: der Eintrag soll sich öffnen lassen, auch wenn inzwischen
+   * die Voraussetzung fehlt. */
+  const accessBlocked: Record<Access, boolean> = {
+    open: false,
+    ip: adminIps.length === 0 && access !== 'ip',
+    password: !passwordPossible && access !== 'password',
+  };
+
+  /** Die Domains des Formulars, so wie sie geschickt werden. */
+  const domainList = domains.map((d) => d.trim().toLowerCase()).filter(Boolean);
   /**
-   * Das Schloss je Zeile: EINE Domain sperren, nicht den ganzen Eintrag.
-   *
-   * Eine Funktion, weil Hauptdomain und Alias in getrennten Blöcken stehen und
-   * denselben Knopf brauchen. Ohne Admin-IPs gibt es nichts zu sperren — dann
-   * ist er aus und der Tooltip sagt, wo die Adressen herkommen.
+   * Woraus sich einzelne Domains wählen lassen: die des Eintrags, und dazu,
+   * was schon gesperrt ist und unter einer seiner Wildcards liegt
+   * (`intern.kunde.example` unter `*.kunde.example`). Ohne die zweite Hälfte
+   * verlöre ein solcher Eintrag seine Sperre beim Speichern.
    */
-  function renderLockButton(domain: string) {
-    const value = domain.trim().toLowerCase();
-    const isLocked = value !== '' && lockedDomains.includes(value);
-    return (
-      <button
-        type="button"
-        className={`btn btn-ghost btn-icon${isLocked ? ' is-locked' : ''}`}
-        /* Nach links: der Knopf sitzt am rechten Rand des Dialogs, und ein
-           mittig gesetzter Tooltip liefe dort aus dem Fenster. */
-        data-tooltip-pos="left"
-        data-tooltip={
-          lockBlocked && !isLocked
-            ? lockBlocked
-            : isLocked
-              ? 'Sperre dieser Domain lösen'
-              : lockMode === 'password'
-                ? 'Mit Passwort sperren'
-                : 'Nur für Admin-IPs erreichbar machen'
-        }
-        // Lösen geht immer: eine gesperrte Domain soll nicht gesperrt bleiben
-        // müssen, weil der gewählten Art gerade etwas fehlt.
-        disabled={value === '' || (lockBlocked !== '' && !isLocked)}
-        onClick={() => toggleDomainLock(value)}
-        aria-label={isLocked ? 'Sperre dieser Domain lösen' : 'Diese Domain sperren'}
-      >
-        {isLocked ? <Lock size={16} /> : <LockOpen size={16} />}
-      </button>
-    );
-  }
+  const lockChoices = [
+    ...new Set([...domainList, ...lockedDomains.filter((d) => ownsDomain(domainList, d))]),
+  ];
 
   function toggleDomainLock(domain: string) {
     setLockedDomains((current) =>
       current.includes(domain) ? current.filter((d) => d !== domain) : [...current, domain]
     );
+  }
+
+  /** Das Kennzeichen an einer gesperrten Domain. Nur lesend: gewählt wird in
+   *  der Karte „Zugriff", nicht an der Zeile. */
+  function renderLockMark(domain: string) {
+    const value = domain.trim().toLowerCase();
+    if (value === '' || !effectiveLocked.includes(value)) return null;
+    return (
+      <span
+        className="hapm-row-mark"
+        data-tooltip-pos="left"
+        data-tooltip={
+          access === 'password' ? 'Mit Passwort gesperrt, siehe Zugriff' : 'Nur für Admin-IPs, siehe Zugriff'
+        }
+      >
+        <Lock size={15} />
+      </span>
+    );
+  }
+
+  function updateHeader(direction: HeaderDirection, index: number, patch: Partial<HeaderRule>) {
+    setHeaders((current) => ({
+      ...current,
+      [direction]: current[direction].map((rule, i) => (i === index ? { ...rule, ...patch } : rule)),
+    }));
+  }
+
+  /** Ein Vorschlag fügt gewöhnliche Zeilen ein. Steht der Name schon da, wird
+   *  sein Wert ersetzt: zwei Zeilen desselben Namens nimmt die Prüfung nicht an. */
+  function insertHeaders(direction: HeaderDirection, rules: HeaderRule[]) {
+    setHeaders((current) => {
+      const next = current[direction].filter((row) => row.name.trim() !== '' || row.value !== '');
+      for (const rule of rules) {
+        const at = next.findIndex((row) => row.name.trim().toLowerCase() === rule.name.toLowerCase());
+        if (at === -1) next.push({ ...rule });
+        else next[at] = { ...rule };
+      }
+      return { ...current, [direction]: next };
+    });
+  }
+
+  /** Name und Wert, wie sie geschickt werden. Eine leere Zeile ist keine. */
+  const sentHeaders = (direction: HeaderDirection) =>
+    headers[direction]
+      .map((rule) => ({ name: rule.name.trim(), value: rule.value.trim() }))
+      .filter((rule) => rule.name !== '' || rule.value !== '');
+
+  /** Die Header, die das Frontend schon für alle Ziele setzt. */
+  const globalHeaders = proxies.find((p) => p.$id === serverId)?.globalHeaders ?? {
+    request: [],
+    response: [],
+  };
+
+  /**
+   * Was es heißt, wenn ein Header hier denselben Namen trägt wie einer der
+   * globalen Einstellungen. Die beiden Richtungen verhalten sich gegenteilig
+   * (`parseGlobalHeaders`), deshalb steht es an der Zeile und nicht hinter
+   * einem „i": bei der Antwort hat der Eintrag keine Wirkung.
+   */
+  function globalHeaderNote(direction: HeaderDirection, name: string): string {
+    const wanted = name.trim().toLowerCase();
+    const known = globalHeaders[direction].find((entry) => entry.toLowerCase() === wanted);
+    if (!wanted || !known) return '';
+    return direction === 'request'
+      ? `Die globalen Einstellungen setzen ${known} schon. Für dieses Ziel gilt der Wert hier.`
+      : `Die globalen Einstellungen setzen ${known} für alle Ziele und überschreiben den Wert hier. Er kommt beim Besucher nicht an.`;
   }
 
   /* ── Was geschickt wird, folgt der Kategorie und nicht dem Zustand ──
@@ -364,17 +447,22 @@ export default function ServiceFormModal({
    *
    * Zusammen mit `serviceKind` schließt sich der Kreis: ein Eintrag, der eines
    * dieser Felder trägt, geht gar nicht erst in diesem Formular auf. */
-  // Nur, was auch als Domain dasteht: wer eine gesperrte Domain aus der Liste
-  // entfernt, hat sie entfernt — nicht heimlich weiter gesperrt.
-  const effectiveLocked = lockedDomains.filter((locked) =>
-    domains.some((d) => d.trim().toLowerCase() === locked)
-  );
-  const lockingByPassword = lockMode === 'password' && effectiveLocked.length > 0;
+  // Nur, was dem Eintrag gehört: wer eine gesperrte Domain aus der Liste
+  // entfernt, hat sie entfernt, nicht heimlich weiter gesperrt. „Offen" schickt
+  // keine, was auch immer in der Auswahl noch steht.
+  const effectiveLocked =
+    access === 'open'
+      ? []
+      : lockAll
+        ? domainList
+        : lockedDomains.filter((locked) => lockChoices.includes(locked));
+  const lockingByPassword = access === 'password' && effectiveLocked.length > 0;
 
   const input: CreateServiceInput = {
     scope,
-    id: serviceId.trim().toLowerCase(),
-    domains: domains.map((d) => d.trim().toLowerCase()).filter(Boolean),
+    // Leer heißt beim Anlegen: der Server vergibt sie.
+    id: editingId ?? '',
+    domains: domainList,
     servers: redirecting
       ? []
       : backends
@@ -401,18 +489,33 @@ export default function ServiceFormModal({
     // Nie ein Hash: hier steht nur der Verweis, und ein neues Passwort geht als
     // `lockPassword` daneben mit. Hash und Cookie-Wert entstehen in der Route.
     passwordLock: lockingByPassword ? KEEP_PASSWORD : null,
-    preset: redirecting ? 'default' : preset,
+    // Eine Weiterleitung hat kein Backend, in dem die Zeilen stünden, und ihr
+    // Formular zeigt sie nicht.
+    responseHeaders: redirecting ? [] : sentHeaders('response'),
+    requestHeaders: redirecting ? [] : sentHeaders('request'),
+    tunnel: !redirecting && tunnel,
     // Eine Wildcard als Hauptdomain schließt ihn aus. Der Schalter behält
     // dabei seinen Wert im Zustand — wer die Domain wieder ändert, findet ihn
     // so vor, wie er ihn gesetzt hat, statt ihn erneut umlegen zu müssen.
     healthcheck:
       !redirecting &&
       healthcheck &&
-      healthcheckPossible(domains.map((d) => d.trim().toLowerCase())),
+      healthcheckPossible(domainList),
   };
   // Dieselbe Funktion, die die Route aufruft. Zwei Regelwerke wären ein Dialog,
   // der etwas durchlässt, was der Server danach ablehnt.
-  const inputError = validateCreateInput(input);
+  const inputError = editingId ? validateCreateInput(input) : validateNewService(input);
+  const addonCount = input.responseHeaders.length + input.requestHeaders.length + (input.tunnel ? 1 : 0);
+
+  /* Das Ziel, über das die Adresse von HAPM läuft, behält deren Domain
+   * (`lib/haproxy/protected.ts`). Dieselbe Funktion wie in der Route, hier
+   * vorweg: sonst ginge der Dialog erst nach dem Speichern mit der Absage
+   * wieder auf. */
+  const surface =
+    edit && edit.proxy.surface?.serviceId === edit.service.id ? edit.proxy.surface : null;
+  const surfaceError = surface
+    ? refuseSurfaceUpdate(surface, surface.serviceId, input.domains)
+    : null;
 
   /** Beim Bearbeiten: ob diese Änderung ein neues Zertifikat auslöst. Dieselbe
    *  Funktion, nach der die Route sich richtet — damit der Hinweis im Dialog
@@ -463,20 +566,12 @@ export default function ServiceFormModal({
           ...dnsHooks.map((hook) => ({ value: hook, label: hook })),
         ];
 
-  /** Der Satz zur Sperre unter der Domainliste. Leer heißt: es gibt dazu gerade
-   *  nichts zu sagen, und dann steht dort auch nichts. */
-  const domainLockNote =
-    lockMode === 'password'
-      ? passwordPossible
-        ? effectiveLocked.length > 0
-          ? `Passwortabfrage für: ${effectiveLocked.join(', ')}.`
-          : ''
-        : `Die Passwortsperre braucht HAProxy 2.4 oder neuer. Hier läuft ${shortVersion(proxyVersion ?? '')}.`
-      : adminIps.length === 0
-        ? 'Zum Sperren auf Admin-IPs braucht es Adressen. Sie stehen unter Reverse-Proxy, Einstellungen.'
-        : effectiveLocked.length > 0
-          ? `Gesperrt auf ${adminIps.join(', ')}: ${effectiveLocked.join(', ')}. Alle anderen bekommen dort 403.`
-          : '';
+  /** „Nur einzelne" ohne eine einzige Auswahl wäre ein Eintrag, der gesperrt
+   *  aussieht und offen ist. Leer heißt: nichts zu beanstanden. */
+  const accessError =
+    access !== 'open' && domainList.length > 0 && effectiveLocked.length === 0
+      ? 'Für die Sperre ist keine Domain ausgewählt.'
+      : '';
 
   /** Was am Passwort der Sperre noch fehlt. Leer heißt: nichts. */
   const lockPasswordError = !lockingByPassword
@@ -560,8 +655,12 @@ export default function ServiceFormModal({
       setFormError(inputError);
       return;
     }
-    if (lockPasswordError) {
-      setFormError(lockPasswordError);
+    if (accessError || lockPasswordError) {
+      setFormError(accessError || lockPasswordError);
+      return;
+    }
+    if (surfaceError) {
+      setFormError(surfaceError);
       return;
     }
     // Dieselbe Bedingung, die `assertIssuable` auf dem Server prüft. Hier
@@ -604,13 +703,14 @@ export default function ServiceFormModal({
       // damit niemand fünf Minuten vor einem Spinner sitzt; was die Route noch
       // synchron geprüft hat (belegte ID, fremde Domain), steht oben im
       // Formular und kam gar nicht bis hierher.
+      // Die ID eines neuen Eintrags steht in der Antwort: vergeben hat sie
+      // der Server.
+      const startedId: string = editingId ?? data.data.serviceId;
       onStarted({
         id: data.data.runId,
-        label: `Ziel „${input.id}" ${editingId ? 'ändern' : 'anlegen'}`,
-        // Beim Umbenennen heißt die Zeile in der Liste noch wie vorher: der
-        // Vorgang läuft auf den ALTEN Namen, der neue steht erst danach da.
-        serviceId: editingId ?? input.id,
-        title: input.domains[0] ?? input.id,
+        label: `Ziel „${startedId}" ${editingId ? 'ändern' : 'anlegen'}`,
+        serviceId: startedId,
+        title: input.domains[0] ?? startedId,
         isNew: !editingId,
       });
     } catch (err: unknown) {
@@ -663,76 +763,11 @@ export default function ServiceFormModal({
 
           <div className="form-columns">
             <div className="form-col">
-              {/* ── Allgemein ── */}
-              <section className="form-section">
-                <div className="form-section-head">
-                  <span className="form-section-icon">
-                    <Settings2 size={17} />
-                  </span>
-                  <div>
-                    <div className="form-section-title">Allgemein</div>
-                    <div className="form-section-sub">
-                      In welcher Gruppe der Eintrag steht und wie er heißt.
-                    </div>
-                  </div>
-                </div>
-
-                <div className="form-pair">
-                  <div className="form-group">
-                    <label className="form-label">Gruppe</label>
-                    <Select
-                      value={scope}
-                      onChange={setScope}
-                      options={scopeOptions.map((s) => ({ value: s.name, label: s.label }))}
-                      disabled={scopeOptions.length === 0}
-                    />
-                    {scopeOptions.length === 0 && (
-                      <span className="form-hint">
-                        In der Konfiguration steht kein vollständiger Marker-Block. Gruppen legt
-                        man in der Übersicht an.
-                      </span>
-                    )}
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Dienst-ID</label>
-                    <input
-                      className="form-input"
-                      value={serviceId}
-                      onChange={(e) => setServiceId(e.target.value)}
-                      placeholder="website_beispiel"
-                      autoComplete="off"
-                      required
-                    />
-                    <span className="form-hint">
-                      Nur a-z, 0-9 und _. Sie benennt ACL und Backend.
-                    </span>
-                  </div>
-                </div>
-
-                {/* Kein Preset bei einer Weiterleitung: es schreibt Zeilen in
-                    ein Backend mit Zielen, und die hat sie nicht. Das Feld
-                    fehlt hier ganz, statt gesperrt dazustehen — gesperrt läse
-                    es sich wie ein fehlendes Recht und nicht wie eine Frage,
-                    die sich in diesem Formular gar nicht stellt. */}
-                {!redirecting && (
-                  <div className="form-group">
-                    <label className="form-label">Preset</label>
-                    <Select
-                      value={preset}
-                      onChange={(v) => setPreset(v as HaproxyPreset)}
-                      options={HAPROXY_PRESETS.map((p) => ({
-                        value: p,
-                        label: PRESET_LABELS[p],
-                      }))}
-                    />
-                    {/* Der Hinweistext steht bei den Presets selbst, damit
-                        Formular und Konfiguration nicht auseinanderlaufen. */}
-                    <span className="form-hint">{PRESET_HINTS[preset]}</span>
-                  </div>
-                )}
-              </section>
-
-              {/* ── Domains ── */}
+              {/* ── Domains ──
+                  Die Gruppe steht hier mit drin. Eine eigene Karte „Allgemein"
+                  trug zuletzt nur noch dieses eine Feld: die Dienst-ID ergibt
+                  sich aus der Hauptdomain, und die Zusätze haben ihre eigene
+                  Karte. */}
               <section className="form-section">
                 <div className="form-section-head">
                   <span className="form-section-icon">
@@ -741,9 +776,25 @@ export default function ServiceFormModal({
                   <div>
                     <div className="form-section-title">Domains</div>
                     <div className="form-section-sub">
-                      Das Schloss je Zeile sperrt EINE Domain, auf Admin-IPs oder mit Passwort.
+                      Die Adressen des Eintrags und seine Gruppe.
                     </div>
                   </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Gruppe</label>
+                  <Select
+                    value={scope}
+                    onChange={setScope}
+                    options={scopeOptions.map((s) => ({ value: s.name, label: s.label }))}
+                    disabled={scopeOptions.length === 0}
+                  />
+                  {scopeOptions.length === 0 && (
+                    <span className="form-hint">
+                      In der Konfiguration steht kein vollständiger Marker-Block. Gruppen legt
+                      man in der Übersicht an.
+                    </span>
+                  )}
                 </div>
 
                 {/* Die Hauptdomain steht in ihrem eigenen Feld und nicht als
@@ -756,7 +807,13 @@ export default function ServiceFormModal({
                 <div className="form-group">
                   <label className="form-label">
                     Hauptdomain
-                    <InfoHint text="Nach ihr heißt das Zertifikat, und sie steht im Host-Header des Healthchecks." />
+                    <InfoHint
+                      text={
+                        editingId
+                          ? 'Nach ihr heißt das Zertifikat, und sie steht im Host-Header des Healthchecks. Die Dienst-ID bleibt, auch wenn sich die Hauptdomain ändert.'
+                          : 'Nach ihr heißt das Zertifikat, sie steht im Host-Header des Healthchecks, und aus ihr ergibt sich die Dienst-ID, die ACL und Backend benennt.'
+                      }
+                    />
                   </label>
                   <div className="form-list-row">
                     <input
@@ -768,8 +825,16 @@ export default function ServiceFormModal({
                       placeholder="kunde.example"
                       autoComplete="off"
                     />
-                    {renderLockButton(domains[0] ?? '')}
+                    {renderLockMark(domains[0] ?? '')}
                   </div>
+                  {/* Nur lesend: sie benennt ACL und Backend in der Datei und
+                      ändert sich nicht mehr. Gebraucht wird sie für die API und
+                      beim Nachsehen in haproxy.cfg. */}
+                  {editingId && (
+                    <span className="form-hint">
+                      Dienst-ID: <code>{editingId}</code>
+                    </span>
+                  )}
                 </div>
 
                 <div className="form-group">
@@ -791,7 +856,7 @@ export default function ServiceFormModal({
                               placeholder="www.kunde.example"
                               autoComplete="off"
                             />
-                            {renderLockButton(domain)}
+                            {renderLockMark(domain)}
                             <button
                               type="button"
                               className="btn btn-ghost btn-icon"
@@ -818,64 +883,13 @@ export default function ServiceFormModal({
                   </div>
                 </div>
 
-                {/* ── Sperrart ──
-                    Immer da und nicht erst nach dem ersten Schloss: ohne
-                    Admin-IPs lässt sich in der einen Art nichts sperren, und
-                    der Weg zur anderen darf dann nicht hinter einem Knopf
-                    liegen, der aus ist. */}
-                <div className="form-group">
-                  <label className="form-label">Sperrart</label>
-                  <div>
-                    <div className="segmented">
-                      <button
-                        type="button"
-                        className={lockMode === 'ip' ? 'active' : ''}
-                        onClick={() => setLockMode('ip')}
-                      >
-                        Admin-IPs
-                      </button>
-                      <button
-                        type="button"
-                        className={lockMode === 'password' ? 'active' : ''}
-                        onClick={() => setLockMode('password')}
-                      >
-                        Passwort
-                      </button>
-                    </div>
-                  </div>
-                  {domainLockNote && <span className="form-hint">{domainLockNote}</span>}
-                </div>
-
-                {lockingByPassword && (
-                  <div className="form-group">
-                    <label className="form-label" htmlFor="service-lock-password">
-                      {hasStoredPassword ? 'Neues Passwort der Sperre' : 'Passwort der Sperre'}
-                    </label>
-                    <div className="form-list-row">
-                      <input
-                        id="service-lock-password"
-                        className="form-input mono"
-                        value={lockPassword}
-                        onChange={(e) => setLockPassword(e.target.value)}
-                        placeholder={hasStoredPassword ? 'Leer lassen: das bisherige bleibt' : ''}
-                        autoComplete="off"
-                        spellCheck={false}
-                      />
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-icon"
-                        data-tooltip-pos="left"
-                        data-tooltip="Vorschlag erzeugen"
-                        onClick={() => setLockPassword(suggestPassword())}
-                        aria-label="Vorschlag erzeugen"
-                      >
-                        <RefreshCw size={16} />
-                      </button>
-                    </div>
-                    <span className="form-hint">
-                      {hasStoredPassword
-                        ? 'Ein neues Passwort meldet alle ab, die schon durchgelassen sind.'
-                        : `Mindestens ${LOCK_PASSWORD_MIN} Zeichen. Jetzt notieren: gespeichert wird nur ein Hash.`}
+                {surface && (
+                  <div className="form-note">
+                    <ShieldCheck size={14} />
+                    <span>
+                      Über dieses Ziel ist die Oberfläche von HAPM erreichbar ({surface.url}). Die
+                      Domain <code>{surface.host}</code> bleibt deshalb in der Liste. Die Adresse
+                      lässt sich unter Allgemein ändern.
                     </span>
                   </div>
                 )}
@@ -964,7 +978,7 @@ export default function ServiceFormModal({
                               ? `Die Zone ${zoneName} ist gerade nicht lesbar: ${match.error}`
                               : impossible
                                 ? (match.blocked ?? '')
-                                : `Legt ${match.plan?.fqdn} als CNAME auf ${zoneName} an, ohne Cloudflare-Proxy.`;
+                                : `Legt ${match.plan?.fqdn} als CNAME auf ${zoneName} an${match.zone?.provider === 'cloudflare' ? ', ohne Cloudflare-Proxy' : ''}.`;
 
                         return (
                           <label className="form-list-row" key={match.domain} data-tooltip={tooltip}>
@@ -1001,8 +1015,6 @@ export default function ServiceFormModal({
                   </div>
                 )}
 
-                {/* Der Satz zur Sperre stand hier mit und steht jetzt bei der
-                    Sperrart, zu der er gehört. */}
                 {hasWildcard && (
                   <div className="form-note">
                     <Info size={14} />
@@ -1376,6 +1388,161 @@ export default function ServiceFormModal({
                 </>
                 )}
               </section>
+
+              {/* ── Zugriff ──
+                  Eine Karte mit einer Frage zuerst. Was die gewählte Antwort
+                  braucht (Adressen, ein Passwort, die Auswahl der Domains),
+                  steht darunter und nur dann. */}
+              <section className="form-section">
+                <div className="form-section-head">
+                  <span className="form-section-icon">
+                    <Lock size={17} />
+                  </span>
+                  <div>
+                    <div className="form-section-title">Zugriff</div>
+                    <div className="form-section-sub">
+                      {access === 'open'
+                        ? 'Jede Adresse kommt durch.'
+                        : access === 'ip'
+                          ? 'Nur die Admin-IPs kommen durch, alle anderen bekommen 403.'
+                          : 'Besucher sehen eine Passwortabfrage.'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <div>
+                    <div className="segmented" role="group" aria-label="Zugriff">
+                      {(['open', 'ip', 'password'] as const).map((mode) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          className={access === mode ? 'active' : ''}
+                          aria-pressed={access === mode}
+                          disabled={accessBlocked[mode]}
+                          onClick={() => setAccess(mode)}
+                        >
+                          {ACCESS_LABELS[mode]}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {/* Warum eine Art nicht zur Wahl steht, steht sichtbar da:
+                      ein Tooltip auf einem gesperrten Knopf erscheint nicht. */}
+                  {adminIps.length === 0 && (
+                    <span className="form-hint">
+                      {access === 'ip'
+                        ? 'Es sind keine Admin-IPs hinterlegt. Ohne Adressen kommt niemand hinein.'
+                        : 'Für „Nur Admin-IPs" sind keine Adressen hinterlegt.'}{' '}
+                      <Link href="/reverse-proxy/einstellungen">Einstellungen öffnen</Link>
+                    </span>
+                  )}
+                  {!passwordPossible && (
+                    <span className="form-hint">
+                      Die Passwortsperre braucht HAProxy 2.4 oder neuer. Hier läuft{' '}
+                      {shortVersion(proxyVersion ?? '')}.
+                    </span>
+                  )}
+                </div>
+
+                {access === 'ip' && adminIps.length > 0 && (
+                  <div className="form-note">
+                    <ShieldCheck size={14} />
+                    <span>
+                      {adminIps.length === 1
+                        ? 'Eine Adresse ist hinterlegt'
+                        : `${adminIps.length} Adressen sind hinterlegt`}
+                      {adminIps.length <= ADMIN_IPS_SHOWN && (
+                        <>
+                          : <code>{adminIps.join(', ')}</code>
+                        </>
+                      )}
+                      . Die Liste gilt für alle Ziele.{' '}
+                      <Link href="/reverse-proxy/einstellungen">Einstellungen öffnen</Link>
+                    </span>
+                  </div>
+                )}
+
+                {access === 'password' && (
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="service-lock-password">
+                      {hasStoredPassword ? 'Neues Passwort' : 'Passwort'}
+                    </label>
+                    <div className="form-list-row">
+                      <input
+                        id="service-lock-password"
+                        className="form-input mono"
+                        value={lockPassword}
+                        onChange={(e) => setLockPassword(e.target.value)}
+                        placeholder={hasStoredPassword ? 'Leer lassen: das bisherige bleibt' : ''}
+                        autoComplete="off"
+                        spellCheck={false}
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-icon"
+                        data-tooltip-pos="left"
+                        data-tooltip="Vorschlag erzeugen"
+                        onClick={() => setLockPassword(suggestPassword())}
+                        aria-label="Vorschlag erzeugen"
+                      >
+                        <RefreshCw size={16} />
+                      </button>
+                    </div>
+                    <span className="form-hint">
+                      {hasStoredPassword
+                        ? 'Ein neues Passwort meldet alle ab, die schon durchgelassen sind.'
+                        : `Mindestens ${LOCK_PASSWORD_MIN} Zeichen. Jetzt notieren: gespeichert wird nur ein Hash.`}
+                    </span>
+                  </div>
+                )}
+
+                {/* Bei einer Domain gibt es nichts zu wählen. */}
+                {access !== 'open' && lockChoices.length > 1 && (
+                  <div className="form-group">
+                    <label className="form-label">Für welche Domains</label>
+                    <div>
+                      <div className="segmented" role="group" aria-label="Für welche Domains">
+                        <button
+                          type="button"
+                          className={lockAll ? 'active' : ''}
+                          aria-pressed={lockAll}
+                          onClick={() => setLockAll(true)}
+                        >
+                          Alle Domains
+                        </button>
+                        <button
+                          type="button"
+                          className={lockAll ? '' : 'active'}
+                          aria-pressed={!lockAll}
+                          onClick={() => setLockAll(false)}
+                        >
+                          Nur einzelne
+                        </button>
+                      </div>
+                    </div>
+                    {!lockAll && (
+                      <div className="form-list">
+                        {lockChoices.map((domain) => (
+                          <label className="form-list-row" key={domain}>
+                            <span className="toggle-switch">
+                              <input
+                                type="checkbox"
+                                checked={lockedDomains.includes(domain)}
+                                onChange={() => toggleDomainLock(domain)}
+                                aria-label={`${domain} sperren`}
+                              />
+                              <span className="toggle-slider" />
+                            </span>
+                            <span style={{ flex: 1, minWidth: 0 }}>{domain}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                    {accessError && <span className="form-hint">{accessError}</span>}
+                  </div>
+                )}
+              </section>
             </div>
 
             <div className="form-col">
@@ -1388,7 +1555,7 @@ export default function ServiceFormModal({
                 <div className="form-note">
                   <Info size={14} />
                   <span>
-                    Eine Weiterleitung hat kein Backend. Pfad-Regeln, Preset, Healthcheck und
+                    Eine Weiterleitung hat kein Backend. Pfad-Regeln, Header, Healthcheck und
                     Verteilverfahren stehen deshalb nicht in diesem Formular: sie alle gehören zu
                     einem Eintrag mit Zielen. Wer die braucht, legt einen Reverse-Proxy oder eine
                     Lastverteilung an.
@@ -1452,7 +1619,9 @@ export default function ServiceFormModal({
                             autoComplete="off"
                           />
                           <span className="form-hint">
-                            Backend und ACL: {serviceId || 'dienst'}_{route.name || 'name'}
+                            {editingId
+                              ? `Backend und ACL: ${editingId}_${route.name || 'name'}`
+                              : 'Nur a-z, 0-9 und _. Er wird Teil des Backend-Namens.'}
                           </span>
                         </div>
                         <button
@@ -1646,12 +1815,184 @@ export default function ServiceFormModal({
               </section>
               )}
 
+              {/* ── Header und Verbindung ──
+                  Was früher ein Preset war, einzeln: jede Zeile hier ist eine
+                  Zeile im Backend. Zugeklappt und im Normalfall leer, wie die
+                  Pfad-Regeln. Bei einer Weiterleitung fehlt die Karte: ihre
+                  Antwort erzeugt HAProxy selbst, und darauf wirken diese
+                  Zeilen nicht. */}
+              {!redirecting && (
+              <section className="form-section">
+                <button
+                  type="button"
+                  className="form-section-head form-section-toggle"
+                  onClick={() => setAddonsOpen((open) => !open)}
+                  aria-expanded={addonsOpen}
+                >
+                  <span className="form-section-icon">
+                    <SlidersHorizontal size={17} />
+                  </span>
+                  <div>
+                    <div className="form-section-title">Header und Verbindung</div>
+                    <div className="form-section-sub">
+                      {addonCount === 0
+                        ? 'Nichts gesetzt. Das ist der Normalfall.'
+                        : 'Feste Header und lange Verbindungen für dieses Ziel.'}
+                    </div>
+                  </div>
+                  <span className="form-section-count">{addonCount}</span>
+                  {addonsOpen ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                </button>
+
+                {addonsOpen &&
+                  (['response', 'request'] as const).map((direction) => (
+                    <div className="form-group" key={direction}>
+                      <div className="form-label-row">
+                        <label className="form-label">
+                          Header der {HEADER_DIRECTION_LABELS[direction]}
+                        </label>
+                        <InfoHint
+                          text={
+                            direction === 'response'
+                              ? 'Gehen mit jeder Antwort dieses Ziels an den Besucher. Der Wert kommt wörtlich an: Ausdrücke wie %[src] werden nicht ausgewertet.'
+                              : 'Gehen mit jeder Anfrage an das Ziel. Der Wert kommt wörtlich an: Ausdrücke wie %[src] werden nicht ausgewertet.'
+                          }
+                        />
+                      </div>
+                      {headers[direction].length > 0 && (
+                        <div className="form-list">
+                          <div className="form-list-head">
+                            <span style={{ flex: '0 0 36%' }}>Name</span>
+                            <span style={{ flex: 1 }}>Wert</span>
+                            <span style={{ width: 34 }} />
+                          </div>
+                          {headers[direction].map((rule, index) => {
+                            const note = globalHeaderNote(direction, rule.name);
+                            return (
+                              <Fragment key={index}>
+                                <div className="form-list-row">
+                                  <input
+                                    className="form-input mono"
+                                    style={{ flex: '0 0 36%', minWidth: 0 }}
+                                    value={rule.name}
+                                    onChange={(e) =>
+                                      updateHeader(direction, index, { name: e.target.value })
+                                    }
+                                    placeholder={
+                                      direction === 'response' ? 'X-Frame-Options' : 'X-Api-Version'
+                                    }
+                                    autoComplete="off"
+                                    spellCheck={false}
+                                    aria-label={`Name von Header ${index + 1}`}
+                                  />
+                                  <input
+                                    className="form-input mono"
+                                    value={rule.value}
+                                    onChange={(e) =>
+                                      updateHeader(direction, index, { value: e.target.value })
+                                    }
+                                    placeholder={direction === 'response' ? 'SAMEORIGIN' : '2'}
+                                    autoComplete="off"
+                                    spellCheck={false}
+                                    aria-label={`Wert von Header ${index + 1}`}
+                                  />
+                                  <button
+                                    type="button"
+                                    className="btn btn-ghost btn-icon"
+                                    data-tooltip-pos="left"
+                                    data-tooltip="Zeile entfernen"
+                                    onClick={() =>
+                                      setHeaders((current) => ({
+                                        ...current,
+                                        [direction]: current[direction].filter((_, i) => i !== index),
+                                      }))
+                                    }
+                                  >
+                                    <X size={16} />
+                                  </button>
+                                </div>
+                                {note && <span className="form-hint">{note}</span>}
+                              </Fragment>
+                            );
+                          })}
+                        </div>
+                      )}
+                      <div className="hapm-inline-actions">
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          disabled={headers[direction].length >= HEADERS_MAX}
+                          onClick={() =>
+                            setHeaders((current) => ({
+                              ...current,
+                              [direction]: [...current[direction], { name: '', value: '' }],
+                            }))
+                          }
+                        >
+                          <Plus size={14} />
+                          Header hinzufügen
+                        </button>
+                        {/* Vorschläge und kein Preset: ein Klick fügt Zeilen
+                            ein, die danach gewöhnliche Zeilen sind. */}
+                        {direction === 'response' &&
+                          HEADER_SUGGESTIONS.map((suggestion) => (
+                            <button
+                              key={suggestion.label}
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              data-tooltip={suggestion.hint}
+                              onClick={() => insertHeaders('response', suggestion.headers)}
+                            >
+                              {suggestion.label}
+                            </button>
+                          ))}
+                      </div>
+                    </div>
+                  ))}
+
+                {addonsOpen && (
+                  <div className="form-subsection">
+                    <div className="form-subsection-head">
+                      <div>
+                        <div className="form-label-row">
+                          <div className="form-section-title">Lange Verbindungen</div>
+                          {/* Die Zeile aus der Konstante und nicht abgetippt. */}
+                          <InfoHint
+                            text={`Für WebSocket, Terminal und Live-Ansicht. Ohne den Schalter beendet HAProxy eine offene Verbindung nach der Zeit aus dem defaults-Block, üblicherweise nach einer Minute ohne Daten. In der Konfiguration: „${TUNNEL_LINE}" in jedem Backend des Eintrags, auch in denen der Pfad-Regeln.`}
+                          />
+                        </div>
+                        <div className="form-section-sub">
+                          {tunnel
+                            ? 'Eine offene Verbindung bleibt bis zu einer Stunde bestehen.'
+                            : 'Es gilt die Zeit aus der Grundkonfiguration.'}
+                        </div>
+                      </div>
+                      <label className="toggle-switch">
+                        <input
+                          type="checkbox"
+                          checked={tunnel}
+                          onChange={(e) => setTunnel(e.target.checked)}
+                          aria-label="Lange Verbindungen"
+                        />
+                        <span className="toggle-slider" />
+                      </label>
+                    </div>
+                  </div>
+                )}
+              </section>
+              )}
+
               {/* Die Meldung der Validierung steht am Fuß des Formulars, wo der
                   Blick beim Ausfüllen ohnehin endet. Hier standen einmal eine
                   Konfigurations-Übersicht und eine Checkliste — beide haben
                   wiederholt, was in den Feldern darüber schon steht. */}
-              {inputError && serviceId && (
+              {/* Erst, wenn eine Domain dasteht: ein leeres Formular ist nicht
+                  falsch ausgefüllt, sondern noch gar nicht. */}
+              {inputError && domainList.length > 0 && (
                 <div className="alert alert-warning">{inputError}</div>
+              )}
+              {!inputError && surfaceError && (
+                <div className="alert alert-warning">{surfaceError}</div>
               )}
             </div>
           </div>
@@ -1665,7 +2006,11 @@ export default function ServiceFormModal({
           >
             Abbrechen
           </button>
-          <button type="submit" className="btn btn-primary" disabled={saving || !!inputError}>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={saving || !!inputError || !!surfaceError || !!accessError}
+          >
             {saving && <Loader2 size={16} className="spin" />}
             {editingId ? 'Speichern' : 'Anlegen'}
           </button>

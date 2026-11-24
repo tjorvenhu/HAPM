@@ -5,12 +5,15 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { ArrowLeft, KeyRound, LogIn } from 'lucide-react';
 import { AuthCard } from '@/ui/auth/AuthCard';
+import { msgid } from '@/lib/i18n/translate';
+import { useT } from '@/lib/i18n/react';
 
-const TITLE = 'Passwort festlegen';
+const TITLE = msgid('Passwort festlegen');
 
 export default function ResetPasswordPage() {
+  const { t } = useT();
   return (
-    <Suspense fallback={<AuthCard standalone title={TITLE} />}>
+    <Suspense fallback={<AuthCard standalone title={t(TITLE)} />}>
       <ResetPasswordContent />
     </Suspense>
   );
@@ -19,6 +22,7 @@ export default function ResetPasswordPage() {
 /** Das Ziel des Links aus der Mail: `/reset-password?token=…`. */
 function ResetPasswordContent() {
   const token = useSearchParams().get('token') ?? '';
+  const { t } = useT();
 
   const [password, setPassword] = useState('');
   const [repeat, setRepeat] = useState('');
@@ -30,7 +34,7 @@ function ResetPasswordContent() {
     e.preventDefault();
     setError('');
     if (password !== repeat) {
-      setError('Die Passwörter stimmen nicht überein.');
+      setError(t('Die Passwörter stimmen nicht überein.'));
       return;
     }
 
@@ -42,10 +46,10 @@ function ResetPasswordContent() {
         body: JSON.stringify({ token, newPassword: password }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Das Passwort ließ sich nicht speichern.');
+      if (!res.ok) throw new Error(data.error || t('Das Passwort ließ sich nicht speichern.'));
       setDone(true);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Das Passwort ließ sich nicht speichern.');
+      setError(err instanceof Error ? err.message : t('Das Passwort ließ sich nicht speichern.'));
     } finally {
       setLoading(false);
     }
@@ -53,11 +57,11 @@ function ResetPasswordContent() {
 
   if (!token) {
     return (
-      <AuthCard standalone title={TITLE}>
+      <AuthCard standalone title={t(TITLE)}>
         <div className="auth-form">
-          <div className="auth-error">Der Link ist unvollständig. Bitte fordern Sie einen neuen an.</div>
+          <div className="auth-error">{t('Der Link ist unvollständig. Bitte fordern Sie einen neuen an.')}</div>
           <Link href="/forgot-password" className="auth-submit">
-            <KeyRound size={15} /> Neuen Link anfordern
+            <KeyRound size={15} /> {t('Neuen Link anfordern')}
           </Link>
         </div>
       </AuthCard>
@@ -66,13 +70,13 @@ function ResetPasswordContent() {
 
   if (done) {
     return (
-      <AuthCard standalone title={TITLE}>
+      <AuthCard standalone title={t(TITLE)}>
         <div className="auth-form">
           <div className="auth-success">
-            Ihr Passwort ist gespeichert. Alle Sitzungen dieses Kontos sind beendet.
+            {t('Ihr Passwort ist gespeichert. Alle Sitzungen dieses Kontos sind beendet.')}
           </div>
           <Link href="/login" className="auth-submit">
-            <LogIn size={15} /> Zur Anmeldung
+            <LogIn size={15} /> {t('Zur Anmeldung')}
           </Link>
         </div>
       </AuthCard>
@@ -80,10 +84,10 @@ function ResetPasswordContent() {
   }
 
   return (
-    <AuthCard standalone title={TITLE} subtitle="Geben Sie Ihr neues Passwort ein.">
+    <AuthCard standalone title={t(TITLE)} subtitle={t('Geben Sie Ihr neues Passwort ein.')}>
       <form className="auth-form" onSubmit={handleSubmit}>
         <div className="auth-field">
-          <label htmlFor="newPassword">Neues Passwort</label>
+          <label htmlFor="newPassword">{t('Neues Passwort')}</label>
           <input
             id="newPassword"
             type="password"
@@ -97,7 +101,7 @@ function ResetPasswordContent() {
           />
         </div>
         <div className="auth-field">
-          <label htmlFor="repeatPassword">Passwort wiederholen</label>
+          <label htmlFor="repeatPassword">{t('Passwort wiederholen')}</label>
           <input
             id="repeatPassword"
             type="password"
@@ -109,15 +113,15 @@ function ResetPasswordContent() {
             autoComplete="new-password"
           />
         </div>
-        <p className="auth-hint">Mindestens 10 Zeichen mit Groß- und Kleinbuchstaben und einer Zahl.</p>
+        <p className="auth-hint">{t('Mindestens 10 Zeichen mit Groß- und Kleinbuchstaben und einer Zahl.')}</p>
         {error && <div className="auth-error">{error}</div>}
         <button className="auth-submit" type="submit" disabled={loading || !password || !repeat}>
           {loading ? <span className="btn-spinner" aria-hidden="true" /> : <KeyRound size={15} />}
-          {loading ? 'Speichern…' : 'Passwort speichern'}
+          {loading ? t('Speichern…') : t('Passwort speichern')}
         </button>
       </form>
       <Link href="/login" className="two-factor-btn two-factor-btn--ghost auth-link">
-        <ArrowLeft size={15} /> Zurück zur Anmeldung
+        <ArrowLeft size={15} /> {t('Zurück zur Anmeldung')}
       </Link>
     </AuthCard>
   );

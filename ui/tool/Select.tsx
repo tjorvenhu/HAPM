@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, type ReactNode } from 'react';
+import { useT } from '@/lib/i18n/react';
 import { ChevronDown } from 'lucide-react';
 import { usePresence } from '../shell/usePresence';
 
@@ -38,11 +39,12 @@ export default function Select<T extends string>({
   value,
   onChange,
   options,
-  placeholder = 'Bitte auswählen...',
-  emptyText = 'Keine Einträge vorhanden',
+  placeholder,
+  emptyText,
   disabled = false,
   id,
 }: SelectProps<T>) {
+  const { t } = useT();
   const [open, setOpen] = useState(false);
   // Die Liste bleibt beim Schließen noch so lange im Baum, wie sie ausblendet.
   const { mounted, closing } = usePresence(open);
@@ -85,7 +87,7 @@ export default function Select<T extends string>({
             </span>
           </>
         ) : (
-          <span className="placeholder">{placeholder}</span>
+          <span className="placeholder">{placeholder ?? t('Bitte auswählen...')}</span>
         )}
         <ChevronDown size={16} className="chevron" />
       </button>
@@ -98,7 +100,7 @@ export default function Select<T extends string>({
         >
           {options.length === 0 ? (
             <div className="custom-select-empty">
-              {emptyText}
+              {emptyText ?? t('Keine Einträge vorhanden')}
             </div>
           ) : (
             options.map((option) => (

@@ -23,6 +23,7 @@
 
 import { isAPIError } from 'better-auth/api';
 import { ApiError } from '../api';
+import { msg } from '../i18n';
 import { mailConfigured } from '../mail';
 import { getSettings } from '../settings';
 import { auth } from './config';
@@ -39,16 +40,21 @@ export async function passkeyStatus(): Promise<PasskeyAvailability> {
   return passkeyAvailability({ publicUrl: settings.publicUrl, mailConfigured: mail });
 }
 
-const MISSING_LABELS = { publicUrl: 'die Adresse von HAPM', mail: 'ein SMTP-Konto' } as const;
+/** Die Absage je nachdem, was fehlt. Ganze Sätze, damit jeder einen Eintrag im Wörterbuch hat. */
+function missingMessage(missing: PasskeyAvailability['missing']) {
+  if (missing.includes('publicUrl') && missing.includes('mail')) {
+    return msg('Passkeys stehen erst zur Verfügung, wenn die Adresse von HAPM und ein SMTP-Konto eingerichtet sind.');
+  }
+  if (missing.includes('publicUrl')) {
+    return msg('Passkeys stehen erst zur Verfügung, wenn die Adresse von HAPM eingerichtet ist.');
+  }
+  return msg('Passkeys stehen erst zur Verfügung, wenn ein SMTP-Konto eingerichtet ist.');
+}
 
 /** Die Passkey-Endpunkte, oder eine Absage, die sagt, was fehlt. */
 export async function requirePasskeys(): Promise<PasskeyApi> {
   const status = await passkeyStatus();
-  if (!status.available) {
-    const missing = status.missing.map((item) => MISSING_LABELS[item]).join(' und ');
-    const verb = status.missing.length > 1 ? 'sind' : 'ist';
-    throw new ApiError(`Passkeys stehen erst zur Verfügung, wenn ${missing} eingerichtet ${verb}.`, 409);
-  }
+  if (!status.available) throw new ApiError(missingMessage(status.missing), 409);
   return passkeyApi(await auth());
 }
 
@@ -59,9 +65,9 @@ export async function requirePasskeys(): Promise<PasskeyApi> {
 export interface PasskeyView {
   id: string;
   name: string;
-  /** Wo er liegt, als fertiger Satz. */
+  /** Wo er liegt, als fertiger Satz: ein deutscher Schlüssel, die Oberfläche übersetzt ihn. */
   storage: string;
-  /** ISO 8601, die Anzeige formatiert nach de-DE. */
+  /** ISO 8601, die Anzeige formatiert in der Sprache der Oberfläche. */
   createdAt: string | null;
 }
 

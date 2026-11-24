@@ -12,10 +12,20 @@
  * die eine ist.
  */
 
+import { germanText, msg, type Message } from '../i18n/translate';
+
+/**
+ * `message` ist der Satz auf Deutsch (Logs, Tests), `detail` derselbe Satz zum
+ * Übersetzen: die Route wirft ihn als `ApiError`, die Seite zeigt ihn mit `t()`.
+ */
 export type TokenCheck =
   | { result: 'accepted' }
-  | { result: 'rejected'; message: string }
-  | { result: 'unknown'; message: string };
+  | { result: 'rejected'; message: string; detail: Message }
+  | { result: 'unknown'; message: string; detail: Message };
+
+function withDetail<R extends 'rejected' | 'unknown'>(result: R, detail: Message) {
+  return { result, message: germanText(detail), detail };
+}
 
 interface Probe {
   label: string;
@@ -41,22 +51,26 @@ const PROBES: Record<string, Probe> = {
 export function judgeTokenResponse(label: string, status: number): TokenCheck {
   if (status >= 200 && status < 300) return { result: 'accepted' };
   if (status === 400 || status === 401 || status === 403) {
-    return {
-      result: 'rejected',
-      message:
-        `${label} hat den Token abgelehnt (HTTP ${status}). Bitte prüfen Sie, ob er vollständig kopiert ist ` +
-        'und die nötigen Rechte hat. Es wurde nichts gespeichert.',
-    };
+    return withDetail(
+      'rejected',
+      msg(
+        '{provider} hat den Token abgelehnt (HTTP {status}). Bitte prüfen Sie, ob er vollständig kopiert ist und die nötigen Rechte hat. Es wurde nichts gespeichert.',
+        { provider: label, status }
+      )
+    );
   }
-  return {
-    result: 'unknown',
-    message: `${label} antwortete mit HTTP ${status}. Ob der Token gilt, zeigt sich beim Ausstellen des Zertifikats.`,
-  };
+  return withDetail(
+    'unknown',
+    msg('{provider} antwortete mit HTTP {status}. Ob der Token gilt, zeigt sich beim Ausstellen des Zertifikats.', {
+      provider: label,
+      status,
+    })
+  );
 }
 
 export async function checkDnsToken(hook: string, values: Record<string, string>): Promise<TokenCheck> {
   const probe = PROBES[hook];
-  if (!probe) return { result: 'unknown', message: 'Für diesen Anbieter gibt es keine Vorabprüfung.' };
+  if (!probe) return withDetail('unknown', msg('Für diesen Anbieter gibt es keine Vorabprüfung.'));
 
   try {
     const res = await fetch(probe.url, {
@@ -68,9 +82,11 @@ export async function checkDnsToken(hook: string, values: Record<string, string>
     });
     return judgeTokenResponse(probe.label, res.status);
   } catch {
-    return {
-      result: 'unknown',
-      message: `${probe.label} war nicht erreichbar. Ob der Token gilt, zeigt sich beim Ausstellen des Zertifikats.`,
-    };
+    return withDetail(
+      'unknown',
+      msg('{provider} war nicht erreichbar. Ob der Token gilt, zeigt sich beim Ausstellen des Zertifikats.', {
+        provider: probe.label,
+      })
+    );
   }
 }

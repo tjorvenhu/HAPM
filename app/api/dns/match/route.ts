@@ -1,11 +1,12 @@
 import { requireSession } from '@/lib/session';
 import { ok, handleError } from '@/lib/api';
-import { listRecords } from '@/lib/dns/cloudflare';
+import { providerFor } from '@/lib/dns/provider';
 import { listZoneRows, withZone } from '@/lib/dns/store';
 import {
   isProxyRecord,
   matchZone,
   normalizeDomain,
+  providerOf,
   proxyRecordPlan,
   type DomainMatch,
 } from '@/lib/dns/zones';
@@ -17,12 +18,15 @@ import type { DnsZone } from '@/lib/types';
  *
  * Die Frage stellt der Dienst-Dialog des Reverse-Proxys, während jemand tippt.
  * Sie hier zu beantworten und nicht im Browser hat zwei Gründe: der API-Token
- * verlässt den Server nicht, und die Antwort soll den ECHTEN Bestand bei
- * Cloudflare kennen — nicht nur, ob wir die Zone eingerichtet haben.
+ * verlässt den Server nicht, und die Antwort soll den ECHTEN Bestand beim
+ * Anbieter kennen — nicht nur, ob wir die Zone eingerichtet haben.
  *
  * Ein Haken, der gesetzt ist, weil der Eintrag schon steht, ist eine Aussage
  * über die Zone. Wäre sie geraten, stünde sie genau dann falsch da, wenn jemand
- * den Eintrag im Dashboard gerade gelöscht hat.
+ * den Eintrag beim Anbieter gerade gelöscht hat.
+ *
+ * Der Anbieter der Zone geht mit zurück (`zone.provider`): der Dialog nennt ihn
+ * und sagt nur bei Cloudflare etwas über den Proxy.
  */
 
 export async function GET(request: Request) {
@@ -46,7 +50,7 @@ export async function GET(request: Request) {
     const recordsOf = (zone: DnsZone) => {
       const running = cache.get(zone.$id);
       if (running) return running;
-      const started = withZone(zone, (token, zoneId) => listRecords(token, zoneId));
+      const started = withZone(zone, (token, ref) => providerFor(zone).listRecords(token, ref));
       cache.set(zone.$id, started);
       return started;
     };
@@ -59,7 +63,10 @@ export async function GET(request: Request) {
         }
 
         const plan = proxyRecordPlan(domain, zone.name);
-        const head = { domain, zone: { id: zone.$id, name: zone.name } };
+        const head = {
+          domain,
+          zone: { id: zone.$id, name: zone.name, provider: providerOf(zone) },
+        };
         if (!plan) {
           return {
             ...head,

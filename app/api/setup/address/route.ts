@@ -1,5 +1,6 @@
 import { requireCsrf, requireSession } from '@/lib/session';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
+import { msg } from '@/lib/i18n';
 import { logAudit, getClientIP } from '@/lib/audit';
 import { updateSettings } from '@/lib/settings';
 import { readSetupView } from '@/lib/setup';
@@ -9,7 +10,9 @@ import {
   validateSetupDomain,
   validateWildcardBase,
 } from '@/lib/setup/rules';
-import { getSetupState, updateSetupState } from '@/lib/setup/store';
+import { getDnsAccess, getSetupState, setDnsAccess, updateSetupState } from '@/lib/setup/store';
+import { connectZone } from '@/lib/dns/connect';
+import { dnsProviderForHook } from '@/lib/dns/zones';
 
 /**
  * Schritt 4 der Einrichtung: die Domain, unter der die Oberfläche stehen soll.
@@ -43,15 +46,16 @@ export async function PUT(request: Request) {
     }>(request);
 
     const state = await getSetupState();
-    if (!state.exposure) throw new ApiError('Bitte wählen Sie zuerst die Erreichbarkeit.');
+    if (!state.exposure) throw new ApiError(msg('Bitte wählen Sie zuerst die Erreichbarkeit.'));
 
     if (body.skip === true) {
       if (state.exposure === 'internal') {
-        throw new ApiError('Eine interne Installation braucht die Adresse der Oberfläche.');
+        throw new ApiError(msg('Eine interne Installation braucht die Adresse der Oberfläche.'));
       }
       await updateSetupState({ address: 'skipped', domain: null, wildcard: false, wildcardBase: null, execution: null });
       // Ohne Adresse gibt es nichts auszuführen: die Einrichtung ist damit zu Ende.
       await updateSettings({ setupStatus: 'done' });
+      await setDnsAccess(null);
       await logAudit({
         userId: session.userId,
         userEmail: session.email,
@@ -71,7 +75,9 @@ export async function PUT(request: Request) {
     let wildcardBase: string | null = null;
     if (wildcard) {
       if (state.dns !== 'configured') {
-        throw new ApiError('Ein Wildcard-Zertifikat braucht einen DNS-Anbieter. Er wird im Schritt davor eingerichtet.');
+        throw new ApiError(
+          msg('Ein Wildcard-Zertifikat braucht einen DNS-Anbieter. Er wird im Schritt davor eingerichtet.')
+        );
       }
       wildcardBase = normalizeSetupDomain(String(body.wildcardBase ?? ''));
       const badBase = validateWildcardBase(domain, wildcardBase);
@@ -80,6 +86,27 @@ export async function PUT(request: Request) {
 
     // Ein früheres Ausführen gehört zu den früheren Eingaben.
     await updateSetupState({ address: 'set', domain, wildcard, wildcardBase, execution: null });
+
+    // Mit der Domain steht die Zone fest: sie erscheint ab jetzt unter „DNS".
+    // Gelingt das nicht (das Token sieht die Zone nicht), hält es den Schritt
+    // nicht auf. Ob es gelungen ist, sagt `dnsZone` in der Antwort.
+    const access = await getDnsAccess();
+    const dnsProvider = access && access.hook === state.dnsHook ? dnsProviderForHook(access.hook) : null;
+    if (access && dnsProvider) {
+      const connected = await connectZone({ provider: dnsProvider, domain, token: access.token }).catch(() => null);
+      if (connected?.created) {
+        await logAudit({
+          userId: session.userId,
+          userEmail: session.email,
+          action: 'dns_zone_created',
+          resource: 'dns_zone',
+          resourceId: connected.zone.$id,
+          details: `${connected.zone.name} (Einrichtung)`,
+          ip: getClientIP(request),
+        });
+      }
+    }
+
     await logAudit({
       userId: session.userId,
       userEmail: session.email,

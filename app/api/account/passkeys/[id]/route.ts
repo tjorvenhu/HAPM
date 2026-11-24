@@ -6,6 +6,7 @@ import { notifyPasskeyChange } from '@/lib/auth/mail';
 import type { PasskeyApi } from '@/lib/auth/core';
 import { logAudit, getClientIP } from '@/lib/audit';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
+import { msg } from '@/lib/i18n';
 
 /**
  * Ein Passkey des eigenen Kontos: umbenennen und entfernen.
@@ -19,7 +20,7 @@ type Params = { params: Promise<{ id: string }> };
 
 async function loadOwnPasskey(passkeys: PasskeyApi, requestHeaders: Headers, id: string) {
   const passkey = (await listOwnPasskeys(passkeys, requestHeaders)).find((p) => p.id === id);
-  if (!passkey) throw new ApiError('Diesen Passkey gibt es nicht mehr.', 404);
+  if (!passkey) throw new ApiError(msg('Diesen Passkey gibt es nicht mehr.'), 404);
   return passkey;
 }
 

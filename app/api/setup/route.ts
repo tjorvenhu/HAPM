@@ -10,7 +10,8 @@ import { ensureAcme } from '@/lib/acme';
 import { validateEmail } from '@/lib/validation';
 import { logAudit, getClientIP } from '@/lib/audit';
 import { rateLimit } from '@/lib/rate-limit';
-import { ok, fail, handleError, jsonBody, ApiError } from '@/lib/api';
+import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
+import { msg } from '@/lib/i18n';
 
 /**
  * Die Ersteinrichtung: das erste Konto und die Adresse für Let's Encrypt.
@@ -26,7 +27,7 @@ import { ok, fail, handleError, jsonBody, ApiError } from '@/lib/api';
  * Kennung, und die zweite Anfrage läuft in den Primärschlüssel.
  */
 
-const ALREADY_DONE = 'Die Ersteinrichtung ist bereits abgeschlossen.';
+const ALREADY_DONE = msg('Die Ersteinrichtung ist bereits abgeschlossen.');
 const BOOTSTRAP_ID = 'bootstrap';
 
 /**
@@ -52,23 +53,23 @@ export async function POST(request: Request) {
     const ip = getClientIP(request);
     if (ip !== 'unknown') {
       const rl = rateLimit(`setup:${ip}`, 5, 15 * 60 * 1000);
-      if (!rl.success) return fail('Zu viele Versuche. Bitte warten Sie 15 Minuten.', 429);
+      if (!rl.success) throw new ApiError(msg('Zu viele Versuche. Bitte warten Sie 15 Minuten.'), 429);
     }
 
     const body = await jsonBody<{ name?: unknown; email?: unknown; password?: unknown; acmeEmail?: unknown }>(request);
     const { name, email, password } = body;
     if (typeof name !== 'string' || typeof email !== 'string' || typeof password !== 'string') {
-      return fail('Name, E-Mail und Passwort sind erforderlich.');
+      throw new ApiError(msg('Name, E-Mail und Passwort sind erforderlich.'));
     }
 
     // Vor dem Anlegen prüfen: scheiterte die Adresse erst danach, gäbe es das
     // Konto schon und die Einrichtung ließe sich nicht wiederholen.
     const acmeEmail = typeof body.acmeEmail === 'string' ? body.acmeEmail.trim() : '';
     if (acmeEmail && !validateEmail(acmeEmail)) {
-      return fail("Die E-Mail-Adresse für Let's Encrypt ist ungültig.");
+      throw new ApiError(msg("Die E-Mail-Adresse für Let's Encrypt ist ungültig."));
     }
 
-    if ((await countUsers()) > 0) return fail(ALREADY_DONE, 409);
+    if ((await countUsers()) > 0) throw new ApiError(ALREADY_DONE, 409);
     const user = await createUser({ id: BOOTSTRAP_ID, name, email, password }).catch((err: unknown) => {
       // Die feste Kennung war schon vergeben: jemand war gleichzeitig schneller.
       if (err instanceof ApiError && err.status === 409) throw new ApiError(ALREADY_DONE, 409);
@@ -77,7 +78,13 @@ export async function POST(request: Request) {
 
     // Ab hier ist die Einrichtung offen: die Übersicht erinnert daran, bis sie
     // abgeschlossen oder ausdrücklich übersprungen ist.
-    const settings = await updateSettings({ acmeEmail: acmeEmail || user.email, setupStatus: 'open' });
+    // Das erste Konto bekommt die Benachrichtigungen, bis jemand die Empfänger
+    // ändert. Verschickt wird erst, wenn ein SMTP-Konto eingerichtet ist.
+    const settings = await updateSettings({
+      acmeEmail: acmeEmail || user.email,
+      setupStatus: 'open',
+      notifyRecipients: [user.email],
+    });
 
     let acme: { ok: boolean; detail: string };
     try {

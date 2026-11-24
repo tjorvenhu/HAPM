@@ -24,6 +24,7 @@
  */
 
 import { ApiError } from '../api';
+import { msg, msgid } from '../i18n/translate';
 import { logAudit } from '../audit';
 import { localServer } from '../helpers';
 import { getSettings, updateSettings } from '../settings';
@@ -43,6 +44,7 @@ import {
   probeProxy,
   readCertificates,
 } from '../haproxy/provision';
+import { WITHOUT_SURFACE_PROTECTION } from '../haproxy/protected';
 import { parseSteps, startHaproxyRun, waitForRun, type HaproxyActor } from '../haproxy/runner';
 import type { HaproxyRun, SetupExecution, SetupStageKey } from '../types';
 import {
@@ -56,7 +58,7 @@ import {
   resumeStep,
   type SetupChoices,
 } from './rules';
-import { getSetupState, updateSetupState } from './store';
+import { getSetupState, setDnsAccess, updateSetupState } from './store';
 
 /** Ein Zertifikat darf fünf Minuten brauchen, dazu Prüfung und Neuladen. */
 const RUN_TIMEOUT_MS = 8 * 60_000;
@@ -76,12 +78,20 @@ interface StageContext {
   attachRun: (runId: string) => Promise<void>;
 }
 
-/** Was ein gescheiterter Lauf als Grund nennt. */
+/**
+ * Was ein gescheiterter Lauf als Grund nennt.
+ *
+ * Was ein Schritt zurückgibt oder wirft, steht als `detail` in der Zeile, auf
+ * Deutsch. Die Seite schlägt es mit `t()` nach: ein Satz ohne eingesetzte Werte
+ * (`msgid`) wird übersetzt, einer mit Domain oder Grund aus dem Lauf bleibt deutsch.
+ */
 function failureOf(run: HaproxyRun): string {
-  if (run.status === 'running') return 'Der Vorgang lief nach acht Minuten noch. Sein Ergebnis steht im Protokoll des Reverse-Proxys.';
+  if (run.status === 'running') {
+    return msgid('Der Vorgang lief nach acht Minuten noch. Sein Ergebnis steht im Protokoll des Reverse-Proxys.');
+  }
   if (run.error) return run.error;
   const failed = parseSteps(run.steps).find((step) => !step.ok);
-  return failed ? [failed.label, failed.detail].filter(Boolean).join(': ') : 'Der Vorgang nennt keinen Grund.';
+  return failed ? [failed.label, failed.detail].filter(Boolean).join(': ') : msgid('Der Vorgang nennt keinen Grund.');
 }
 
 async function finished(run: HaproxyRun, context: StageContext): Promise<void> {
@@ -105,16 +115,16 @@ const STAGES: Record<SetupStageKey, (context: StageContext) => Promise<string>> 
     const probe = await probeProxy(localServer());
     const plan = planChallenge(certificateDomains(state), challenge, probe.dnsHooks);
     if (plan.method === 'unavailable') throw new ApiError(plan.message);
-    return plan.method === 'dns' ? `${plan.hook} ist bei acme.sh eingerichtet.` : 'Nicht nötig.';
+    return plan.method === 'dns' ? `${plan.hook} ist bei acme.sh eingerichtet.` : msgid('Nicht nötig.');
   },
 
   async scope(context) {
     const server = localServer();
     const probe = await probeProxy(server);
     if (!probe.configReadable) {
-      throw new ApiError('Die HAProxy-Konfiguration ist nicht lesbar. Der Grund steht in der Übersicht.');
+      throw new ApiError(msg('Die HAProxy-Konfiguration ist nicht lesbar. Der Grund steht in der Übersicht.'));
     }
-    if (findScope(parseScopes(probe.raw), SETUP_SCOPE)?.complete) return 'Die Gruppe besteht schon.';
+    if (findScope(parseScopes(probe.raw), SETUP_SCOPE)?.complete) return msgid('Die Gruppe besteht schon.');
 
     await prechecked(() => precheckScope(server, SETUP_SCOPE, 'add'));
     const run = await startHaproxyRun({
@@ -124,7 +134,7 @@ const STAGES: Record<SetupStageKey, (context: StageContext) => Promise<string>> 
       actor: context.actor,
     });
     await finished(run, context);
-    return 'Angelegt.';
+    return msgid('Angelegt.');
   },
 
   async certificate(context) {
@@ -165,13 +175,17 @@ const STAGES: Record<SetupStageKey, (context: StageContext) => Promise<string>> 
       if (same) return `Das Ziel besteht schon: ${input.domains[0]} → ${target}.`;
 
       // Eine geänderte Domain nach einem früheren Durchlauf: derselbe Eintrag, neu geschrieben.
-      await prechecked(() => precheckUpdate(server, SETUP_SERVICE_ID, input, context.challenge));
+      // Ohne den Schutz des Ziels der Oberfläche: die Einrichtung verlegt sie, und die
+      // Adresse in den Einstellungen folgt erst im letzten Schritt.
+      const protection = WITHOUT_SURFACE_PROTECTION;
+      await prechecked(() => precheckUpdate(server, SETUP_SERVICE_ID, input, context.challenge, protection));
       const run = await startHaproxyRun({
         server,
         action: 'update',
         serviceId: SETUP_SERVICE_ID,
         input,
         challenge: context.challenge,
+        protection,
         actor: context.actor,
       });
       await finished(run, context);
@@ -194,6 +208,8 @@ const STAGES: Record<SetupStageKey, (context: StageContext) => Promise<string>> 
   async publicUrl({ state }) {
     // Zusammen mit dem Abschluss: sonst gäbe es eine fertige Einrichtung, an die die Übersicht weiter erinnert.
     const settings = await updateSettings({ publicUrl: `https://${state.domain}`, setupStatus: 'done' });
+    // Das Token des DNS-Anbieters lag nur für die Einrichtung beim Assistenten.
+    await setDnsAccess(null);
     return `${settings.publicUrl}`;
   },
 };
@@ -203,12 +219,12 @@ const STAGES: Record<SetupStageKey, (context: StageContext) => Promise<string>> 
  * Einrichtung fertig ist: die Seite pollt `/api/setup`.
  */
 export async function startSetupExecution(actor: HaproxyActor): Promise<SetupExecution> {
-  if (setupExecutionAlive()) throw new ApiError('Die Einrichtung läuft bereits.', 409);
+  if (setupExecutionAlive()) throw new ApiError(msg('Die Einrichtung läuft bereits.'), 409);
 
   const state = await getSetupState();
   // Die Hooks prüft der erste Schritt an der Maschine, hier zählt nur, ob alles beantwortet ist.
   if (resumeStep(state, { hasAccount: true, dnsHooks: null }) !== 'run') {
-    throw new ApiError('Die Einrichtung ist noch nicht vollständig beantwortet.');
+    throw new ApiError(msg('Die Einrichtung ist noch nicht vollständig beantwortet.'));
   }
 
   const settings = await getSettings();
@@ -246,7 +262,7 @@ export async function startSetupExecution(actor: HaproxyActor): Promise<SetupExe
         });
         await save(index, { status: 'ok', detail });
       } catch (err) {
-        failure = err instanceof Error ? err.message : 'Der Schritt ist fehlgeschlagen.';
+        failure = err instanceof Error ? err.message : msgid('Der Schritt ist fehlgeschlagen.');
         await save(index, { status: 'error', detail: failure });
         break;
       }

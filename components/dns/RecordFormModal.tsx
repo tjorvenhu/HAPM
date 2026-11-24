@@ -6,14 +6,16 @@ import { useApp } from '@/components/AppShell';
 import Select from '@/components/Select';
 import {
   EDITABLE_TYPES,
+  PROVIDER_RULES,
   PROXYABLE_TYPES,
-  TTL_AUTO,
+  formatTtl,
   validateRecordInput,
   type DnsRecord,
   type EditableRecordType,
   type RecordInput,
 } from '@/lib/dns/records';
-import { recordFqdn, recordName } from '@/lib/dns/zones';
+import { recordFqdn, recordName, type DnsProviderId } from '@/lib/dns/zones';
+import { dnsProviderInfo } from '@/lib/dns/provider-info';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 
 /**
@@ -21,7 +23,11 @@ import { InfoHint } from '@/ui/primitives/InfoHint';
  *
  * Geprüft wird mit `validateRecordInput` — derselben Funktion, die die Route
  * aufruft. Ein Dialog mit eigener Prüfung wäre einer, der etwas durchlässt, was
- * Cloudflare danach auf Englisch ablehnt.
+ * der Anbieter danach auf Englisch ablehnt.
+ *
+ * Was je Anbieter anders ist, kommt aus `PROVIDER_RULES`: der Abschnitt zum
+ * Proxy erscheint nur bei Cloudflare, und „keine eigene TTL" heißt dort
+ * „Automatisch", bei Hetzner „Vorgabe der Zone".
  *
  * Der Zustand entsteht beim Einhängen aus `edit` und lebt nur, solange der
  * Dialog offen ist; die Seite rendert ihn gar nicht erst, wenn er zu ist.
@@ -38,8 +44,10 @@ const CONTENT_PLACEHOLDER: Record<EditableRecordType, string> = {
   NS: 'ns1.example.net',
 };
 
-const TTL_OPTIONS = [
-  { value: String(TTL_AUTO), label: 'Automatisch' },
+/** Steht im Auswahlfeld für „keine eigene TTL", ob das beim Anbieter 1 oder `null` ist. */
+const TTL_DEFAULT = 'default';
+
+const TTL_CHOICES = [
   { value: '60', label: '1 Minute' },
   { value: '300', label: '5 Minuten' },
   { value: '1800', label: '30 Minuten' },
@@ -48,7 +56,7 @@ const TTL_OPTIONS = [
 ];
 
 interface Props {
-  zone: { $id: string; name: string };
+  zone: { $id: string; name: string; provider: DnsProviderId };
   /** Gesetzt heißt bearbeiten. */
   edit: DnsRecord | null;
   onClose: () => void;
@@ -57,6 +65,8 @@ interface Props {
 
 export default function RecordFormModal({ zone, edit, onClose, onSaved }: Props) {
   const { apiFetch } = useApp();
+  const rules = PROVIDER_RULES[zone.provider];
+  const providerLabel = dnsProviderInfo(zone.provider).label;
 
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
@@ -64,34 +74,53 @@ export default function RecordFormModal({ zone, edit, onClose, onSaved }: Props)
   const [type, setType] = useState<EditableRecordType>(
     (edit?.type as EditableRecordType) ?? 'A'
   );
-  // Cloudflare gibt den vollen Namen zurück, eingegeben wird der Teil davor.
+  // Geführt wird der volle Name, eingegeben der Teil davor.
   const [name, setName] = useState(edit ? recordName(edit.name, zone.name) : '');
   const [content, setContent] = useState(edit?.content ?? '');
-  const [ttl, setTtl] = useState(String(edit?.ttl ?? TTL_AUTO));
+  const [ttl, setTtl] = useState(
+    !edit || edit.ttl === rules.defaultTtl || edit.ttl === null ? TTL_DEFAULT : String(edit.ttl)
+  );
   const [proxied, setProxied] = useState(edit?.proxied ?? false);
   const [priority, setPriority] = useState(edit?.priority === null ? '10' : String(edit?.priority ?? '10'));
   const [comment, setComment] = useState(edit?.comment ?? '');
 
-  const proxyable = PROXYABLE_TYPES.includes(type);
+  const proxyable = rules.proxy && PROXYABLE_TYPES.includes(type);
+
+  const ttlOptions = [
+    {
+      value: TTL_DEFAULT,
+      label: rules.defaultTtl === null ? 'Vorgabe der Zone' : 'Automatisch',
+    },
+    ...TTL_CHOICES,
+    // Eine TTL, die jemand beim Anbieter gesetzt hat und die hier nicht zur
+    // Auswahl steht (acme.sh schreibt 120), bleibt wählbar. Sonst stünde das
+    // Feld leer da, und Speichern änderte sie, ohne dass jemand es wollte.
+    ...(edit &&
+    edit.ttl !== null &&
+    edit.ttl !== rules.defaultTtl &&
+    !TTL_CHOICES.some((choice) => choice.value === String(edit.ttl))
+      ? [{ value: String(edit.ttl), label: formatTtl(edit.ttl) }]
+      : []),
+  ];
 
   const input: RecordInput = {
     type,
     name: name.trim().toLowerCase(),
     content: content.trim(),
-    ttl: Number(ttl),
+    ttl: ttl === TTL_DEFAULT ? rules.defaultTtl : Number(ttl),
     proxied: proxied && proxyable,
     priority: type === 'MX' ? Number(priority) : null,
     comment: comment.trim() || null,
   };
   const inputError = name.trim() === '' && content.trim() === ''
     ? null
-    : validateRecordInput(input, zone.name);
+    : validateRecordInput(input, zone.name, zone.provider);
 
   const fqdn = name.trim() === '' ? zone.name : recordFqdn(name, zone.name);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    const invalid = validateRecordInput(input, zone.name);
+    const invalid = validateRecordInput(input, zone.name, zone.provider);
     if (invalid) {
       setFormError(invalid);
       return;
@@ -185,9 +214,11 @@ export default function RecordFormModal({ zone, edit, onClose, onSaved }: Props)
             <div className="form-pair">
               <div className="form-group">
                 <label className="form-label">TTL</label>
-                <Select value={ttl} onChange={setTtl} options={TTL_OPTIONS} />
+                <Select value={ttl} onChange={setTtl} options={ttlOptions} />
                 <span className="form-hint">
-                  „Automatisch“ lässt Cloudflare entscheiden. Das ist der Normalfall.
+                  {rules.ttlPerName
+                    ? 'Gilt für alle Einträge mit diesem Namen und Typ.'
+                    : `„Automatisch“ lässt ${providerLabel} entscheiden. Das ist der Normalfall.`}
                 </span>
               </div>
               {type === 'MX' && (
@@ -239,7 +270,9 @@ export default function RecordFormModal({ zone, edit, onClose, onSaved }: Props)
             <div className="form-group">
               <label className="form-label">
                 Notiz
-                <InfoHint text="Steht bei Cloudflare am Eintrag. Von HAPM gesetzte Einträge tragen hier „HAPM“." />
+                <InfoHint
+                  text={`Steht bei ${providerLabel} am Eintrag. Von HAPM gesetzte Einträge tragen hier „HAPM“.`}
+                />
               </label>
               <input
                 className="form-input"

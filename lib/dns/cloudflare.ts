@@ -1,6 +1,7 @@
 /**
  * Der Zugang zu Cloudflare. Die EINE Stelle, an der eine Anfrage dorthin
- * entsteht — Routen und Vorgänge rufen diese Funktionen und bauen keine URL.
+ * entsteht — Routen und Vorgänge rufen den Anbieter über `provider.ts` und
+ * bauen keine URL.
  *
  * ── Warum der Fehler übersetzt wird und nicht durchgereicht ──
  *
@@ -21,7 +22,8 @@
  */
 
 import { ApiError } from '../api';
-import type { DnsRecord } from './records';
+import { TTL_AUTO, type DnsRecord } from './records';
+import type { DnsProvider, ProviderZone, RecordWrite } from './provider';
 
 const API = 'https://api.cloudflare.com/client/v4';
 
@@ -52,7 +54,6 @@ interface RawZone {
   id: string;
   name: string;
   status: string;
-  account?: { name?: string };
 }
 
 function message(body: CloudflareEnvelope<unknown> | null, fallback: string): string {
@@ -137,44 +138,34 @@ function toRecord(raw: RawRecord): DnsRecord {
   };
 }
 
-export interface CloudflareZone {
-  id: string;
-  name: string;
-  /** `active`, solange die Nameserver auf Cloudflare zeigen. */
-  status: string;
-  accountName: string | null;
-}
-
 /**
- * Die Zone zu einem Namen — der Vorgang beim Einrichten einer Domain.
+ * Die Zonen, die dieser Token sieht, bis zur letzten Seite.
  *
- * Gesucht wird über den Namen und nicht über die volle Liste: ein Token kann
- * über hundert Zonen tragen, und die richtige davon kennt der Benutzer schon.
- * `null` heißt: der Token sieht diese Zone nicht. Das ist kein Fehler, sondern
- * die häufigste Fehleingabe — ein Token, der für eine andere Domain erzeugt
- * wurde.
+ * Die Zone zu einer Domain sucht `connect.ts` in dieser Liste (längster
+ * Suffix) und nicht über `?name=`: eingegeben wird oft `app.kunde.example`, und
+ * die Zone dazu heißt `kunde.example`. Dieselbe Liste nennt die Meldung, wenn
+ * keine passt.
+ *
+ * `delegated` folgt dem Status: `active` ist eine Zone, solange die Nameserver
+ * der Domain auf Cloudflare zeigen.
  */
-export async function findZone(token: string, name: string): Promise<CloudflareZone | null> {
-  const body = await call<RawZone[]>(token, `/zones?name=${encodeURIComponent(name)}`);
-  const zone = body.result[0];
-  if (!zone) return null;
-  return {
-    id: zone.id,
-    name: zone.name,
-    status: zone.status,
-    accountName: zone.account?.name ?? null,
-  };
-}
-
-/** Die Zonen, die dieser Token überhaupt sieht. Für den Hinweis im Dialog. */
-export async function listZones(token: string): Promise<CloudflareZone[]> {
-  const body = await call<RawZone[]>(token, '/zones?per_page=50');
-  return body.result.map((zone) => ({
-    id: zone.id,
-    name: zone.name,
-    status: zone.status,
-    accountName: zone.account?.name ?? null,
-  }));
+async function listZones(token: string): Promise<ProviderZone[]> {
+  const zones: ProviderZone[] = [];
+  let page = 1;
+  while (page <= 20) {
+    const body = await call<RawZone[]>(token, `/zones?per_page=50&page=${page}`);
+    zones.push(
+      ...body.result.map((zone) => ({
+        id: zone.id,
+        name: zone.name,
+        delegated: zone.status === 'active',
+      }))
+    );
+    const total = body.result_info?.total_pages ?? 1;
+    if (page >= total) break;
+    page += 1;
+  }
+  return zones;
 }
 
 /**
@@ -185,7 +176,7 @@ export async function listZones(token: string): Promise<CloudflareZone[]> {
  * ersten Seite aufhört, zeigt eine Zone als leer, die es nicht ist — dieselbe
  * Überlegung wie bei `listAll` in lib/db.
  */
-export async function listRecords(token: string, zoneId: string): Promise<DnsRecord[]> {
+async function listRecords(token: string, zoneId: string): Promise<DnsRecord[]> {
   const records: DnsRecord[] = [];
   let page = 1;
   // Der Deckel ist ein Riegel gegen eine Endlosschleife, falls Cloudflare
@@ -203,23 +194,14 @@ export async function listRecords(token: string, zoneId: string): Promise<DnsRec
   return records;
 }
 
-export interface RecordPayload {
-  type: string;
-  /** Der volle Name. Cloudflare nimmt auch den relativen an, gibt aber immer den vollen zurück. */
-  name: string;
-  content: string;
-  ttl: number;
-  proxied?: boolean;
-  priority?: number;
-  comment?: string;
-}
-
-function payload(input: RecordPayload): string {
+function payload(input: RecordWrite): string {
   return JSON.stringify({
     type: input.type,
+    // Der volle Name. Cloudflare nimmt auch den relativen an, gibt aber immer
+    // den vollen zurück.
     name: input.name,
     content: input.content,
-    ttl: input.ttl,
+    ttl: input.ttl ?? TTL_AUTO,
     // Nur mitschicken, wo es etwas bedeutet: ein `proxied: false` an einem
     // TXT-Eintrag lehnt Cloudflare ab.
     ...(input.proxied === undefined ? {} : { proxied: input.proxied }),
@@ -228,10 +210,10 @@ function payload(input: RecordPayload): string {
   });
 }
 
-export async function createRecord(
+async function createRecord(
   token: string,
   zoneId: string,
-  input: RecordPayload
+  input: RecordWrite
 ): Promise<DnsRecord> {
   const body = await call<RawRecord>(token, `/zones/${zoneId}/dns_records`, {
     method: 'POST',
@@ -240,11 +222,11 @@ export async function createRecord(
   return toRecord(body.result);
 }
 
-export async function updateRecord(
+async function updateRecord(
   token: string,
   zoneId: string,
   recordId: string,
-  input: RecordPayload
+  input: RecordWrite
 ): Promise<DnsRecord> {
   // PUT und nicht PATCH: der Rumpf beschreibt den Eintrag vollständig, und ein
   // PATCH ließe ein weggelassenes Feld stehen — beim Wechsel von MX auf A wäre
@@ -256,7 +238,7 @@ export async function updateRecord(
   return toRecord(body.result);
 }
 
-export async function deleteRecord(
+async function deleteRecord(
   token: string,
   zoneId: string,
   recordId: string
@@ -265,3 +247,12 @@ export async function deleteRecord(
     method: 'DELETE',
   });
 }
+
+export const cloudflare: DnsProvider = {
+  id: 'cloudflare',
+  listZones,
+  listRecords: (token, zone) => listRecords(token, zone.id),
+  createRecord: (token, zone, input) => createRecord(token, zone.id, input),
+  updateRecord: (token, zone, current, input) => updateRecord(token, zone.id, current.id, input),
+  deleteRecord: (token, zone, current) => deleteRecord(token, zone.id, current.id),
+};

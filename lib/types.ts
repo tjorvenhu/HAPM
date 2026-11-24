@@ -15,6 +15,8 @@ export interface SessionData {
    *  `ToolShell` (`ui/tool/ToolShell.tsx`) es in der Sitzung erwartet. */
   twoFactorSetupRequired: boolean;
   csrfToken: string;
+  /** Die gewählte Sprache der Oberfläche, `null` ohne Wahl. Nur in `/api/auth/me`. */
+  locale?: 'de' | 'en' | null;
 }
 
 /* ── Konten ──
@@ -36,6 +38,8 @@ export interface TwoFactorConfig extends DbDoc {
 /** Eine Zeile je Konto, Kennung ist die des Kontos. */
 export interface UserState extends DbDoc {
   lastLoginAt: string | null;
+  /** Die Sprache der Oberfläche. Fehlt sie, gilt der Browser (`lib/i18n/locale.ts`). */
+  locale?: 'de' | 'en' | null;
 }
 
 /* ── Die Maschine ──
@@ -66,7 +70,9 @@ export type HaproxyAction =
   | 'stream-update'
   | 'stream-delete'
   /** Ein Zertifikat ohne Ziel, etwa die Wildcard aus der Einrichtung. */
-  | 'certificate';
+  | 'certificate'
+  /** Mehrere Einträge aus einer fremden Konfiguration (`import-run.ts`). */
+  | 'import';
 
 export type HaproxyPhase =
   | 'dns'
@@ -158,7 +164,13 @@ export interface HaproxyMetric extends DbDoc {
 export type DnsZoneStatus = 'ok' | 'error';
 
 export interface DnsZone extends DbDoc {
+  /**
+   * Fehlt an Zeilen aus der Zeit, in der es nur Cloudflare gab. Gelesen wird
+   * deshalb über `providerOf` (`lib/dns/zones.ts`), nie über das Feld.
+   */
+  provider?: 'cloudflare' | 'hetzner';
   name: string;
+  /** Die Kennung der Zone beim Anbieter. */
   zoneId: string;
   apiToken: string;
   status: DnsZoneStatus;
@@ -259,6 +271,15 @@ export interface SetupState extends DbDoc {
   /** Die Basis der Wildcard: `example.org` für `*.example.org`. */
   wildcardBase: string | null;
   execution: SetupExecution | null;
+  /**
+   * Das Token des gewählten DNS-Anbieters, verschlüsselt, und nur solange die
+   * Einrichtung offen ist. Zwischen Schritt 3 (Token) und Schritt 4 (Domain)
+   * muss es irgendwo liegen: erst mit der Domain steht fest, welche Zone unter
+   * „DNS" eingerichtet und wo der Eintrag gesetzt wird. Geht nie an den Browser
+   * (`getSetupState` liest das Feld nicht) und wird mit dem Ende der
+   * Einrichtung gelöscht.
+   */
+  dnsAccess?: { hook: string; token: string } | null;
 }
 
 export const SETUP_ID = 'main';
@@ -356,6 +377,7 @@ export const COLLECTIONS = {
   HAPROXY_RUNS: 'haproxy_runs',
   HAPROXY_METRICS: 'haproxy_metrics',
   GEOIP_TABLE: 'geoip_table',
+  PAGE_DESIGN: 'page_design',
   DNS_ZONES: 'dns_zones',
   SERVICE_TOKENS: 'service_tokens',
   UPDATE_STATE: 'update_state',

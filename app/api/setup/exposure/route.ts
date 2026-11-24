@@ -1,5 +1,6 @@
 import { requireCsrf, requireSession } from '@/lib/session';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
+import { msg } from '@/lib/i18n';
 import { logAudit, getClientIP } from '@/lib/audit';
 import { EXPOSURES, updateSettings } from '@/lib/settings';
 import { readSetupView } from '@/lib/setup';
@@ -21,7 +22,9 @@ export async function PUT(request: Request) {
 
     const exposure = body.exposure as Exposure;
     if (!EXPOSURES.includes(exposure)) {
-      throw new ApiError('Bitte wählen Sie, ob der Server nur im eigenen Netz oder aus dem Internet erreichbar ist.');
+      throw new ApiError(
+        msg('Bitte wählen Sie, ob der Server nur im eigenen Netz oder aus dem Internet erreichbar ist.')
+      );
     }
 
     const state = await getSetupState();

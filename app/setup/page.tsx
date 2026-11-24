@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -22,9 +23,12 @@ import { AuthCard } from '@/ui/auth/AuthCard';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import { LONG_TEXT } from '@/ui/primitives/hint-text';
 import { usePolling } from '@/components/usePolling';
+import { useT } from '@/lib/i18n/react';
+import { msgid, type Translatable } from '@/lib/i18n/translate';
 import { DNS_PROVIDERS, findDnsProvider, validateDnsCredentials } from '@/lib/haproxy/dns-credentials';
 import { needsDnsChallenge } from '@/lib/haproxy/challenge';
 import {
+  SETUP_SCOPE,
   SETUP_STEPS,
   STAGE_LABELS,
   certificateDomains,
@@ -56,30 +60,35 @@ type Shown = Exclude<SetupStep, 'done'>;
 const POLL_MS = 3000;
 
 const TITLES: Record<Shown, string> = {
-  account: 'HAPM einrichten',
-  exposure: 'Erreichbarkeit',
-  dns: 'DNS-Anbieter',
-  address: 'Adresse der Oberfläche',
-  run: 'Einrichten',
+  account: msgid('HAPM einrichten'),
+  exposure: msgid('Erreichbarkeit'),
+  dns: msgid('DNS-Anbieter'),
+  address: msgid('Adresse der Oberfläche'),
+  run: msgid('Einrichten'),
 };
 
-/** `fetch` mit CSRF-Token. Die Seite steht außerhalb des Rahmens, `useApp()` gibt es hier nicht. */
+/**
+ * `fetch` mit CSRF-Token. Die Seite steht außerhalb des Rahmens, `useApp()` gibt es hier nicht.
+ * Die Meldung der Route kommt schon in der Sprache der Anfrage, der Rückfall bleibt ein Schlüssel.
+ */
 async function call<T>(csrf: string, url: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   if (csrf) headers.set('X-CSRF-Token', csrf);
   if (init?.body) headers.set('Content-Type', 'application/json');
   const res = await fetch(url, { ...init, headers, cache: 'no-store' });
   const body = await res.json().catch(() => null);
-  if (!res.ok || !body?.success) throw new Error(body?.error || 'Die Anfrage ist fehlgeschlagen.');
+  if (!res.ok || !body?.success) throw new Error(body?.error || msgid('Die Anfrage ist fehlgeschlagen.'));
   return body.data as T;
 }
 
-function message(err: unknown, fallback: string): string {
-  return err instanceof Error ? err.message : fallback;
+/** Die Meldung eines Fehlers, übersetzt nachgeschlagen: eine Meldung der Route ist es schon. */
+function message(err: unknown, fallback: string, t: (text: Translatable) => string): string {
+  return t(err instanceof Error ? err.message : fallback);
 }
 
 export default function SetupPage() {
   const router = useRouter();
+  const { t } = useT();
   const [shown, setShown] = useState<Shown | null>(null);
   const [setup, setSetup] = useState<SetupView | null>(null);
   const [csrf, setCsrf] = useState('');
@@ -136,7 +145,7 @@ export default function SetupPage() {
 
   if (shown === null) {
     return (
-      <AuthCard standalone className="hapm-setup" title="HAPM einrichten">
+      <AuthCard standalone className="hapm-setup" title={t('HAPM einrichten')}>
         <div className="skeleton shell-skeleton--row" />
         <div className="skeleton shell-skeleton--row" />
       </AuthCard>
@@ -146,9 +155,7 @@ export default function SetupPage() {
   const index = SETUP_STEPS.indexOf(shown);
   const progress = (
     <div className="hapm-setup-progress">
-      <span>
-        Schritt {index + 1} von {SETUP_STEPS.length}
-      </span>
+      <span>{t('Schritt {step} von {total}', { step: index + 1, total: SETUP_STEPS.length })}</span>
       <div className="hapm-setup-bar">
         <i style={{ width: `${((index + 1) / SETUP_STEPS.length) * 100}%` }} />
       </div>
@@ -158,26 +165,25 @@ export default function SetupPage() {
   const back = (to: Shown) => (
     <button className="btn btn-ghost" type="button" onClick={() => setShown(to)}>
       <ArrowLeft size={15} />
-      Zurück
+      {t('Zurück')}
     </button>
   );
 
   const later = (
     <p className="auth-footer">
-      <Link href="/dashboard">Später fertig machen</Link>
+      <Link href="/dashboard">{t('Später fertig machen')}</Link>
     </p>
   );
 
   const acmeWarning = setup?.acmeReady === false && (
     <div className="alert alert-warning">
-      acme.sh ist nicht eingerichtet. Solange das so ist, lassen sich keine Zertifikate ausstellen.
-      Der Grund steht in der Übersicht.
+      {t('acme.sh ist nicht eingerichtet. Solange das so ist, lassen sich keine Zertifikate ausstellen. Der Grund steht in der Übersicht.')}
     </div>
   );
 
   if (shown === 'account') {
     return (
-      <Frame step={shown} progress={progress} subtitle="Legen Sie zuerst das Konto an, mit dem Sie HAPM verwalten.">
+      <Frame step={shown} progress={progress} subtitle={t('Legen Sie zuerst das Konto an, mit dem Sie HAPM verwalten.')}>
         <AccountStep
           onCreated={(token) => {
             setCsrf(token);
@@ -195,7 +201,7 @@ export default function SetupPage() {
 
   if (shown === 'exposure') {
     return (
-      <Frame step={shown} progress={progress} subtitle="Davon hängt ab, wie HAPM Zertifikate ausstellt.">
+      <Frame step={shown} progress={progress} subtitle={t('Davon hängt ab, wie HAPM Zertifikate ausstellt.')}>
         {acmeWarning}
         <ExposureStep setup={setup} csrf={csrf} onSaved={advance} />
         {later}
@@ -210,8 +216,8 @@ export default function SetupPage() {
         progress={progress}
         subtitle={
           setup.exposure === 'internal'
-            ? 'Über ihn stellt HAPM jedes Zertifikat aus.'
-            : 'Nur nötig für Wildcard-Zertifikate.'
+            ? t('Über ihn stellt HAPM jedes Zertifikat aus.')
+            : t('Nur nötig für Wildcard-Zertifikate.')
         }
       >
         {acmeWarning}
@@ -223,7 +229,7 @@ export default function SetupPage() {
 
   if (shown === 'address') {
     return (
-      <Frame step={shown} progress={progress} subtitle="Unter dieser Domain ist HAPM danach per HTTPS erreichbar.">
+      <Frame step={shown} progress={progress} subtitle={t('Unter dieser Domain ist HAPM danach per HTTPS erreichbar.')}>
         <AddressStep setup={setup} csrf={csrf} onSaved={advance} back={back('dns')} />
         {later}
       </Frame>
@@ -256,8 +262,9 @@ function Frame({
   progress: ReactNode;
   children: ReactNode;
 }) {
+  const { t } = useT();
   return (
-    <AuthCard standalone className="hapm-setup" title={title ?? TITLES[step]} subtitle={subtitle}>
+    <AuthCard standalone className="hapm-setup" title={title ?? t(TITLES[step])} subtitle={subtitle}>
       {progress}
       <div className="auth-form">{children}</div>
     </AuthCard>
@@ -273,6 +280,7 @@ function AccountStep({
   onCreated: (csrfToken: string) => void;
   onNoSession: () => void;
 }) {
+  const { t } = useT();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -286,7 +294,7 @@ function AccountStep({
     e.preventDefault();
     setError('');
     if (password !== confirmPassword) {
-      setError('Die Passwörter stimmen nicht überein.');
+      setError(t('Die Passwörter stimmen nicht überein.'));
       return;
     }
     setLoading(true);
@@ -299,7 +307,7 @@ function AccountStep({
       if (data.csrfToken) onCreated(data.csrfToken);
       else onNoSession();
     } catch (err: unknown) {
-      setError(message(err, 'Die Einrichtung ist fehlgeschlagen.'));
+      setError(message(err, msgid('Die Einrichtung ist fehlgeschlagen.'), t));
       setLoading(false);
     }
   }
@@ -307,7 +315,7 @@ function AccountStep({
   return (
     <form className="auth-form" onSubmit={handleSubmit}>
       <div className="auth-field">
-        <label htmlFor="name">Name</label>
+        <label htmlFor="name">{t('Name')}</label>
         <input
           id="name"
           type="text"
@@ -315,13 +323,13 @@ function AccountStep({
           maxLength={100}
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Max Mustermann"
+          placeholder={t('Max Mustermann')}
           autoComplete="name"
           autoFocus
         />
       </div>
       <div className="auth-field">
-        <label htmlFor="email">E-Mail-Adresse</label>
+        <label htmlFor="email">{t('E-Mail-Adresse')}</label>
         <input
           id="email"
           type="email"
@@ -333,7 +341,7 @@ function AccountStep({
         />
       </div>
       <div className="auth-field">
-        <label htmlFor="password">Passwort</label>
+        <label htmlFor="password">{t('Passwort')}</label>
         <input
           id="password"
           type="password"
@@ -346,7 +354,7 @@ function AccountStep({
         />
       </div>
       <div className="auth-field">
-        <label htmlFor="confirmPassword">Passwort wiederholen</label>
+        <label htmlFor="confirmPassword">{t('Passwort wiederholen')}</label>
         <input
           id="confirmPassword"
           type="password"
@@ -358,11 +366,15 @@ function AccountStep({
           autoComplete="new-password"
         />
       </div>
-      <p className="auth-hint">Mindestens 10 Zeichen mit Groß- und Kleinbuchstaben und einer Zahl.</p>
+      <p className="auth-hint">{t('Mindestens 10 Zeichen mit Groß- und Kleinbuchstaben und einer Zahl.')}</p>
       <div className="auth-field">
         <label htmlFor="acmeEmail">
-          E-Mail für Let&apos;s Encrypt
-          <InfoHint text="Mit dieser Adresse meldet acme.sh das Konto bei Let's Encrypt an, über das die Zertifikate ausgestellt werden. Vorgabe ist die Adresse Ihres Kontos." />
+          {t("E-Mail für Let's Encrypt")}
+          <InfoHint
+            text={t(
+              "Mit dieser Adresse meldet acme.sh das Konto bei Let's Encrypt an, über das die Zertifikate ausgestellt werden. Vorgabe ist die Adresse Ihres Kontos."
+            )}
+          />
         </label>
         <input
           id="acmeEmail"
@@ -377,7 +389,7 @@ function AccountStep({
       {error && <div className="auth-error">{error}</div>}
       <button className="auth-submit" type="submit" disabled={loading}>
         {loading ? <span className="btn-spinner" aria-hidden="true" /> : <UserPlus size={15} />}
-        {loading ? 'Konto wird angelegt…' : 'Konto anlegen'}
+        {loading ? t('Konto wird angelegt…') : t('Konto anlegen')}
       </button>
     </form>
   );
@@ -388,14 +400,16 @@ function AccountStep({
 const EXPOSURE_CHOICES: { value: Exposure; title: string; text: string; icon: ReactNode }[] = [
   {
     value: 'internal',
-    title: 'Nur im eigenen Netz',
-    text: "Let's Encrypt erreicht den Server nicht. Zertifikate kommen deshalb über Ihren DNS-Anbieter.",
+    title: msgid('Nur im eigenen Netz'),
+    text: msgid("Let's Encrypt erreicht den Server nicht. Zertifikate kommen deshalb über Ihren DNS-Anbieter."),
     icon: <Home size={18} strokeWidth={1.5} />,
   },
   {
     value: 'public',
-    title: 'Aus dem Internet erreichbar',
-    text: "Der Server muss auf Port 80 und 443 von außen erreichbar sein. Let's Encrypt prüft jede Domain über Port 80.",
+    title: msgid('Aus dem Internet erreichbar'),
+    text: msgid(
+      "Der Server muss auf Port 80 und 443 von außen erreichbar sein. Let's Encrypt prüft jede Domain über Port 80."
+    ),
     icon: <Globe size={18} strokeWidth={1.5} />,
   },
 ];
@@ -409,13 +423,14 @@ function ExposureStep({
   csrf: string;
   onSaved: (next: SetupView) => void;
 }) {
+  const { t } = useT();
   const [choice, setChoice] = useState<Exposure | null>(setup.exposure);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
   async function save() {
     if (!choice) {
-      setError('Bitte wählen Sie eine der beiden Möglichkeiten.');
+      setError(t('Bitte wählen Sie eine der beiden Möglichkeiten.'));
       return;
     }
     setError('');
@@ -427,7 +442,7 @@ function ExposureStep({
       });
       onSaved(data.setup);
     } catch (err: unknown) {
-      setError(message(err, 'Die Auswahl ließ sich nicht speichern.'));
+      setError(message(err, msgid('Die Auswahl ließ sich nicht speichern.'), t));
       setSaving(false);
     }
   }
@@ -446,8 +461,8 @@ function ExposureStep({
           >
             {option.icon}
             <span className="hapm-choice-text">
-              <strong>{option.title}</strong>
-              <span>{option.text}</span>
+              <strong>{t(option.title)}</strong>
+              <span>{t(option.text)}</span>
             </span>
           </button>
         ))}
@@ -455,7 +470,7 @@ function ExposureStep({
       {error && <div className="auth-error">{error}</div>}
       <button className="auth-submit" type="button" disabled={saving || !choice} onClick={save}>
         {saving ? <span className="btn-spinner" aria-hidden="true" /> : <ArrowRight size={15} />}
-        Weiter
+        {t('Weiter')}
       </button>
     </>
   );
@@ -474,6 +489,7 @@ function DnsStep({
   onSaved: (next: SetupView) => void;
   back: ReactNode;
 }) {
+  const { t } = useT();
   const configured = setup.dnsHooks ?? [];
   const [hook, setHook] = useState<string>(
     setup.dnsHook && findDnsProvider(setup.dnsHook) ? setup.dnsHook : ''
@@ -494,7 +510,7 @@ function DnsStep({
       });
       onSaved(data.setup);
     } catch (err: unknown) {
-      setError(message(err, fallback));
+      setError(message(err, fallback, t));
       setSaving(false);
     }
   }
@@ -502,7 +518,7 @@ function DnsStep({
   function save(e: FormEvent) {
     e.preventDefault();
     if (!provider) {
-      setError('Bitte wählen Sie einen DNS-Anbieter.');
+      setError(t('Bitte wählen Sie einen DNS-Anbieter.'));
       return;
     }
     const trimmed = Object.fromEntries(
@@ -511,17 +527,21 @@ function DnsStep({
     // Dieselbe Prüfung wie in der Route.
     const invalid = validateDnsCredentials({ hook: provider.hook, values: trimmed, remove: false });
     if (invalid) {
-      setError(invalid);
+      setError(t(invalid));
       return;
     }
-    void send({ hook: provider.hook, values: trimmed }, 'Die Zugangsdaten ließen sich nicht speichern.');
+    void send({ hook: provider.hook, values: trimmed }, msgid('Die Zugangsdaten ließen sich nicht speichern.'));
   }
 
   return (
     <form className="auth-form" onSubmit={save}>
       {configured.length > 0 && (
         <div className="hapm-setup-note">
-          <span>Schon eingerichtet: {configured.map((name) => findDnsProvider(name)?.label ?? name).join(', ')}.</span>
+          <span>
+            {t('Schon eingerichtet: {providers}.', {
+              providers: configured.map((name) => findDnsProvider(name)?.label ?? name).join(', '),
+            })}
+          </span>
           <div className="hapm-form-actions">
             {configured.map((name) => (
               <button
@@ -529,9 +549,9 @@ function DnsStep({
                 type="button"
                 className="btn btn-secondary btn-sm"
                 disabled={saving}
-                onClick={() => void send({ keep: name }, 'Der Anbieter ließ sich nicht übernehmen.')}
+                onClick={() => void send({ keep: name }, msgid('Der Anbieter ließ sich nicht übernehmen.'))}
               >
-                Mit {findDnsProvider(name)?.label ?? name} weiter
+                {t('Mit {provider} weiter', { provider: findDnsProvider(name)?.label ?? name })}
               </button>
             ))}
           </div>
@@ -552,9 +572,10 @@ function DnsStep({
               setError('');
             }}
           >
+            <ProviderLogo hook={option.hook} size={32} />
             <span className="hapm-choice-text">
               <strong>{option.label}</strong>
-              {option.note && <span>{option.note}</span>}
+              {option.note && <span>{t(option.note)}</span>}
             </span>
           </button>
         ))}
@@ -565,9 +586,9 @@ function DnsStep({
           {provider.fields.map((field) => (
             <div className="auth-field" key={field.name}>
               <label htmlFor={`dns-${field.name}`}>
-                {field.label}
-                {!field.required && ' (freiwillig)'}
-                {field.hint && field.hint.length > LONG_TEXT && <InfoHint text={field.hint} />}
+                {t(field.label)}
+                {!field.required && ` ${t('(freiwillig)')}`}
+                {field.hint && field.hint.length > LONG_TEXT && <InfoHint text={t(field.hint)} />}
               </label>
               <input
                 id={`dns-${field.name}`}
@@ -578,13 +599,15 @@ function DnsStep({
                 autoComplete="off"
                 spellCheck={false}
               />
-              {field.hint && field.hint.length <= LONG_TEXT && <p className="auth-hint">{field.hint}</p>}
+              {field.hint && field.hint.length <= LONG_TEXT && <p className="auth-hint">{t(field.hint)}</p>}
             </div>
           ))}
           <p className="auth-hint">
-            Der Token geht an acme.sh und wird in HAPM nicht gespeichert.{' '}
+            {provider.apiTokenField
+              ? t('Mit dem Token stellt acme.sh Zertifikate aus. HAPM richtet damit auch die Zone unter „DNS" ein und speichert es dafür verschlüsselt.')
+              : t('Der Token geht an acme.sh und wird in HAPM nicht gespeichert.')}{' '}
             <a href={provider.consoleUrl} target="_blank" rel="noreferrer">
-              Token bei {provider.label} anlegen
+              {t('Token bei {provider} anlegen', { provider: provider.label })}
             </a>
           </p>
         </>
@@ -594,7 +617,7 @@ function DnsStep({
 
       <button className="auth-submit" type="submit" disabled={saving || !provider}>
         {saving ? <span className="btn-spinner" aria-hidden="true" /> : <ArrowRight size={15} />}
-        {saving ? 'Wird geprüft…' : 'Speichern und weiter'}
+        {saving ? t('Wird geprüft…') : t('Speichern und weiter')}
       </button>
       <div className="hapm-setup-actions">
         {back}
@@ -603,9 +626,9 @@ function DnsStep({
             className="btn btn-ghost"
             type="button"
             disabled={saving}
-            onClick={() => void send({ skip: true }, 'Der Schritt ließ sich nicht überspringen.')}
+            onClick={() => void send({ skip: true }, msgid('Der Schritt ließ sich nicht überspringen.'))}
           >
-            Überspringen
+            {t('Überspringen')}
           </button>
         )}
       </div>
@@ -613,34 +636,49 @@ function DnsStep({
   );
 }
 
+/** Das Zeichen des Anbieters. Ein Hook ohne Datei (von Hand eingerichtet) bekommt keines. */
+function ProviderLogo({ hook, size }: { hook: string; size: number }) {
+  const logo = findDnsProvider(hook)?.logo;
+  if (!logo) return null;
+  return <Image src={logo} alt="" width={size} height={size} className="hapm-provider-logo" unoptimized />;
+}
+
 /* ── Schritt 4: Adresse der Oberfläche ── */
 
 function verdictText(
   check: AddressCheck,
-  exposure: Exposure | null
+  exposure: Exposure | null,
+  t: (text: Translatable, params?: Record<string, string | number>) => string
 ): { tone: 'alert-success' | 'alert-warning' | 'alert-info'; text: string } {
   const where = check.resolved?.join(', ') ?? '';
+  const domain = check.domain;
   switch (check.verdict) {
     case 'matches':
-      return { tone: 'alert-success', text: `${check.domain} zeigt auf diesen Server (${where}).` };
+      return { tone: 'alert-success', text: t('{domain} zeigt auf diesen Server ({where}).', { domain, where }) };
     case 'elsewhere':
       return {
         tone: 'alert-warning',
-        text:
-          `${check.domain} zeigt auf ${where}. Das ist keine Adresse, die dieser Server selbst trägt. ` +
-          'Hinter einer Adressumsetzung (NAT) kann das trotzdem stimmen.',
+        text: t(
+          '{domain} zeigt auf {where}. Das ist keine Adresse, die dieser Server selbst trägt. Hinter einer Adressumsetzung (NAT) kann das trotzdem stimmen.',
+          { domain, where }
+        ),
       };
     case 'unresolved':
       return {
         tone: 'alert-warning',
         text:
-          `Für ${check.domain} sieht dieser Server keinen DNS-Eintrag. ` +
-          (exposure === 'internal'
-            ? 'Das Zertifikat entsteht trotzdem, es wird über den DNS-Anbieter ausgestellt. Erreichbar ist die Oberfläche erst mit dem Eintrag.'
-            : "Ohne den Eintrag scheitert das Zertifikat: Let's Encrypt ruft die Domain auf."),
+          exposure === 'internal'
+            ? t(
+                'Für {domain} sieht dieser Server keinen DNS-Eintrag. Das Zertifikat entsteht trotzdem, es wird über den DNS-Anbieter ausgestellt. Erreichbar ist die Oberfläche erst mit dem Eintrag.',
+                { domain }
+              )
+            : t(
+                "Für {domain} sieht dieser Server keinen DNS-Eintrag. Ohne den Eintrag scheitert das Zertifikat: Let's Encrypt ruft die Domain auf.",
+                { domain }
+              ),
       };
     default:
-      return { tone: 'alert-info', text: 'Die DNS-Abfrage ist gescheitert. Ob der Eintrag stimmt, ließ sich nicht prüfen.' };
+      return { tone: 'alert-info', text: t('Die DNS-Abfrage ist gescheitert. Ob der Eintrag stimmt, ließ sich nicht prüfen.') };
   }
 }
 
@@ -655,6 +693,7 @@ function AddressStep({
   onSaved: (next: SetupView) => void;
   back: ReactNode;
 }) {
+  const { t } = useT();
   const internal = setup.exposure === 'internal';
   const dnsReady = setup.dns === 'configured';
 
@@ -667,17 +706,72 @@ function AddressStep({
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  /** Nur was getippt wurde. Sonst gilt die erste Adresse des Servers. */
+  const [addressDraft, setAddressDraft] = useState<string | null>(null);
+  const [settingRecord, setSettingRecord] = useState(false);
+  const [recordNote, setRecordNote] = useState('');
+  /** Gesetzt, wenn die Zone beim Anbieter liegt, die Domain aber woanders verwaltet wird. */
+  const [recordUnused, setRecordUnused] = useState('');
 
   const domain = normalizeSetupDomain(domainDraft);
   const suggestedBase = wildcardBaseOf(domain);
   const base = normalizeSetupDomain(baseDraft ?? suggestedBase ?? '');
   const wildcardOn = dnsReady && wildcard;
   const addresses = setup.serverAddresses;
+  const recordAddress = (addressDraft ?? addresses[0] ?? '').trim();
+  const dnsProvider = setup.dnsHook ? findDnsProvider(setup.dnsHook) : null;
+  /** Der Anbieter, bei dem die Einrichtung den Eintrag selbst setzen kann. */
+  const recordProvider = setup.dnsApi ? dnsProvider : null;
+
+  async function setRecord() {
+    const invalid = validateSetupDomain(domain);
+    if (invalid) {
+      setError(t(invalid));
+      return;
+    }
+    setError('');
+    setRecordNote('');
+    setRecordUnused('');
+    setSettingRecord(true);
+    try {
+      const data = await call<{
+        outcome: 'created' | 'updated' | 'unchanged';
+        type: string;
+        zone: string;
+        delegated: boolean | null;
+      }>(
+        csrf,
+        '/api/setup/dns-record',
+        { method: 'PUT', body: JSON.stringify({ domain, address: recordAddress }) }
+      );
+      const record = { type: data.type, domain, address: recordAddress, zone: data.zone };
+      setRecordNote(
+        data.outcome === 'created'
+          ? t('Der Eintrag {type} {domain} → {address} ist angelegt. Die Zone {zone} steht jetzt auch unter DNS.', record)
+          : data.outcome === 'updated'
+            ? t('Der Eintrag {type} {domain} → {address} ist geändert. Die Zone {zone} steht jetzt auch unter DNS.', record)
+            : t('Der Eintrag {type} {domain} → {address} stand schon so da. Die Zone {zone} steht jetzt auch unter DNS.', record)
+      );
+      setRecordUnused(
+        data.delegated === false
+          ? t(
+              'Die Nameserver von {zone} zeigen nicht auf {provider}. Solange das so ist, wirkt der Eintrag nicht, und ein Zertifikat über DNS scheitert.',
+              { zone: data.zone, provider: recordProvider?.label ?? t('diesen Anbieter') }
+            )
+          : ''
+      );
+      setCheck(null);
+    } catch (err: unknown) {
+      setError(message(err, msgid('Der Eintrag ließ sich nicht anlegen.'), t));
+    } finally {
+      setSettingRecord(false);
+    }
+  }
 
   async function runCheck() {
     const invalid = validateSetupDomain(domain);
     if (invalid) {
-      setError(invalid);
+      setError(t(invalid));
       return;
     }
     setError('');
@@ -685,7 +779,7 @@ function AddressStep({
     try {
       setCheck(await call<AddressCheck>(csrf, `/api/setup/address?domain=${encodeURIComponent(domain)}`));
     } catch (err: unknown) {
-      setError(message(err, 'Die Prüfung ist fehlgeschlagen.'));
+      setError(message(err, msgid('Die Prüfung ist fehlgeschlagen.'), t));
     } finally {
       setChecking(false);
     }
@@ -701,7 +795,7 @@ function AddressStep({
       });
       onSaved(data.setup);
     } catch (err: unknown) {
-      setError(message(err, 'Die Adresse ließ sich nicht speichern.'));
+      setError(message(err, msgid('Die Adresse ließ sich nicht speichern.'), t));
       setSaving(false);
     }
   }
@@ -710,19 +804,19 @@ function AddressStep({
     e.preventDefault();
     const invalid = validateSetupDomain(domain) ?? (wildcardOn ? validateWildcardBase(domain, base) : null);
     if (invalid) {
-      setError(invalid);
+      setError(t(invalid));
       return;
     }
     void send({ domain, wildcard: wildcardOn, wildcardBase: wildcardOn ? base : null });
   }
 
-  const verdict = check && check.domain === domain ? verdictText(check, setup.exposure) : null;
+  const verdict = check && check.domain === domain ? verdictText(check, setup.exposure, t) : null;
   const shownDomain = domain || 'hapm.example.org';
 
   return (
     <form className="auth-form" onSubmit={save}>
       <div className="auth-field">
-        <label htmlFor="setup-domain">Domain</label>
+        <label htmlFor="setup-domain">{t('Domain')}</label>
         <input
           id="setup-domain"
           type="text"
@@ -739,7 +833,7 @@ function AddressStep({
 
       {setup.publicUrl && domain && setup.publicUrl !== `https://${domain}` && (
         <div className="alert alert-warning">
-          Bisher gilt {setup.publicUrl}. Eine andere Domain entwertet alle hinterlegten Passkeys.
+          {t('Bisher gilt {url}. Eine andere Domain entwertet alle hinterlegten Passkeys.', { url: setup.publicUrl })}
         </div>
       )}
 
@@ -747,8 +841,12 @@ function AddressStep({
         <label className="hapm-switch-row">
           <span className="hapm-switch-text">
             <span>
-              Wildcard-Zertifikat für *.{base || 'example.org'} ausstellen
-              <InfoHint text="Weitere Ziele unter dieser Basis finden das Zertifikat dann vor und brauchen kein eigenes. Ausgestellt wird es über Ihren DNS-Anbieter." />
+              {t('Wildcard-Zertifikat für *.{base} ausstellen', { base: base || 'example.org' })}
+              <InfoHint
+                text={t(
+                  'Weitere Ziele unter dieser Basis finden das Zertifikat dann vor und brauchen kein eigenes. Ausgestellt wird es über Ihren DNS-Anbieter.'
+                )}
+              />
             </span>
           </span>
           <span className="toggle-switch">
@@ -765,7 +863,7 @@ function AddressStep({
 
       {wildcardOn && (
         <div className="auth-field">
-          <label htmlFor="setup-base">Basis der Wildcard</label>
+          <label htmlFor="setup-base">{t('Basis der Wildcard')}</label>
           <input
             id="setup-base"
             type="text"
@@ -780,43 +878,119 @@ function AddressStep({
       )}
 
       <div className="hapm-setup-note">
-        <strong>Diesen DNS-Eintrag legen Sie selbst an:</strong>
-        {addresses.length > 0 ? (
-          <code>
-            {shownDomain} → {addresses[0]}
-          </code>
-        ) : (
-          <span>Die Adresse dieses Servers ließ sich nicht ermitteln. Der Eintrag zeigt auf sie.</span>
-        )}
-        {addresses.length > 1 && (
-          <span>Weitere Adressen dieses Servers: {addresses.slice(1).join(', ')}.</span>
-        )}
-        {!internal && <span>Es muss die öffentliche Adresse dieses Servers sein.</span>}
+        <div className="hapm-setup-note-head">
+          <strong>{recordProvider ? t('Der DNS-Eintrag der Oberfläche') : t('Diesen DNS-Eintrag legen Sie selbst an')}</strong>
+        </div>
+        <dl className="detail-grid">
+          <dt>{t('Name')}</dt>
+          <dd>{shownDomain}</dd>
+          <dt>{t('Typ')}</dt>
+          <dd>{recordAddress.includes(':') ? 'AAAA' : 'A'}</dd>
+          <dt>{t('Wert')}</dt>
+          <dd>
+            {recordProvider ? (
+              <div className="auth-field">
+                <input
+                  type="text"
+                  value={addressDraft ?? addresses[0] ?? ''}
+                  onChange={(e) => setAddressDraft(e.target.value)}
+                  placeholder="192.0.2.10"
+                  aria-label={t('Adresse, auf die der Eintrag zeigt')}
+                  disabled={saving || settingRecord}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </div>
+            ) : (
+              (addresses[0] ?? t('Die Adresse dieses Servers'))
+            )}
+            {addresses.length === 0 && <div className="detail-sub">{t('Sie ließ sich nicht ermitteln.')}</div>}
+            {addresses.length > 1 && (
+              <div className="detail-sub">
+                {t('Weitere Adressen dieses Servers: {addresses}', { addresses: addresses.slice(1).join(', ') })}
+              </div>
+            )}
+          </dd>
+          <dt>{t('Wo')}</dt>
+          {internal ? (
+            <dd>
+              {t('Im DNS-Server Ihres Netzes, etwa im Router, in Pi-hole oder AdGuard Home.')}
+              <div className="detail-sub">
+                {t('Nur dann erreichen Geräte in Ihrem Netz die Oberfläche unter dieser Adresse.')}
+              </div>
+              {recordProvider && (
+                <div className="detail-sub">
+                  {t(
+                    'Oder bei {provider}: die Domain zeigt dann überall auf diese interne Adresse. Manche Router verwerfen solche Antworten (Rebind-Schutz).',
+                    { provider: recordProvider.label }
+                  )}
+                </div>
+              )}
+              {wildcardOn && base && (
+                <div className="detail-sub">
+                  {t(
+                    'Mit dem Wildcard-Zertifikat lohnt sich auch ein Eintrag für *.{base}: weitere Ziele sind dann ohne neuen Eintrag erreichbar.',
+                    { base }
+                  )}
+                </div>
+              )}
+            </dd>
+          ) : (
+            <dd>
+              {recordProvider
+                ? t('Bei {provider}, über den Knopf oder von Hand.', { provider: recordProvider.label })
+                : t('Bei Ihrem DNS-Anbieter.')}
+              <div className="detail-sub">{t('Es muss die öffentliche Adresse dieses Servers sein.')}</div>
+            </dd>
+          )}
+        </dl>
         <div className="hapm-form-actions">
-          <button className="btn btn-secondary btn-sm" type="button" disabled={checking || saving || !domain} onClick={runCheck}>
+          {recordProvider && (
+            <button
+              className="btn btn-secondary btn-sm"
+              type="button"
+              disabled={saving || settingRecord || !domain || !recordAddress}
+              onClick={setRecord}
+            >
+              {settingRecord ? (
+                <Loader2 size={14} className="spin" />
+              ) : (
+                <ProviderLogo hook={recordProvider.hook} size={16} />
+              )}
+              {t('Bei {provider} anlegen', { provider: recordProvider.label })}
+            </button>
+          )}
+          <button
+            className="btn btn-ghost btn-sm"
+            type="button"
+            disabled={checking || saving || !domain}
+            onClick={runCheck}
+          >
             {checking ? <Loader2 size={14} className="spin" /> : <Search size={14} />}
-            Eintrag prüfen
+            {t('Eintrag prüfen')}
           </button>
         </div>
       </div>
 
+      {recordNote && <div className="alert alert-success">{recordNote}</div>}
+      {recordUnused && <div className="alert alert-warning">{recordUnused}</div>}
       {verdict && <div className={`alert ${verdict.tone}`}>{verdict.text}</div>}
       {error && <div className="auth-error">{error}</div>}
 
       <button className="auth-submit" type="submit" disabled={saving}>
         {saving ? <span className="btn-spinner" aria-hidden="true" /> : <ArrowRight size={15} />}
-        Weiter
+        {t('Weiter')}
       </button>
       {!internal && (
         <p className="auth-hint">
-          Ohne Adresse bleibt die Oberfläche unverschlüsselt auf Port {setup.listenPort}.
+          {t('Ohne Adresse bleibt die Oberfläche unverschlüsselt auf Port {port}.', { port: setup.listenPort })}
         </p>
       )}
       <div className="hapm-setup-actions">
         {back}
         {!internal && (
           <button className="btn btn-ghost" type="button" disabled={saving} onClick={() => void send({ skip: true })}>
-            Später
+            {t('Später')}
           </button>
         )}
       </div>
@@ -843,6 +1017,7 @@ function RunStep({
   later: ReactNode;
   acmeWarning: ReactNode;
 }) {
+  const { t } = useT();
   const [error, setError] = useState('');
   const [starting, setStarting] = useState(false);
   const [check, setCheck] = useState<AddressCheck | null>(null);
@@ -852,6 +1027,8 @@ function RunStep({
   const exposure = setup.exposure ?? 'public';
   const domains = certificateDomains(setup);
   const overDns = needsDnsChallenge(domains, exposure);
+  const providerLabel =
+    (setup.dnsHook && findDnsProvider(setup.dnsHook)?.label) || setup.dnsHook || t('Ihrem DNS-Anbieter');
 
   // Vor dem Ausführen noch einmal sagen, worauf die Domain zeigt.
   useEffect(() => {
@@ -874,7 +1051,7 @@ function RunStep({
       const data = await call<{ setup: SetupView }>(csrf, '/api/setup/run', { method: 'POST' });
       onChanged(data.setup);
     } catch (err: unknown) {
-      setError(message(err, 'Die Einrichtung ließ sich nicht starten.'));
+      setError(message(err, msgid('Die Einrichtung ließ sich nicht starten.'), t));
     } finally {
       setStarting(false);
     }
@@ -884,31 +1061,36 @@ function RunStep({
     return (
       <Frame
         step="run"
-        title="HAPM ist eingerichtet"
-        subtitle="Unter der neuen Adresse melden Sie sich einmal neu an."
+        title={t('HAPM ist eingerichtet')}
+        subtitle={t('Unter der neuen Adresse melden Sie sich einmal neu an.')}
         progress={progress}
       >
         <Stages setup={setup} />
         <a className="auth-submit" href={`https://${domain}`}>
           <ExternalLink size={15} />
-          HAPM unter https://{domain} öffnen
+          {t('HAPM unter {url} öffnen', { url: `https://${domain}` })}
         </a>
+        {exposure === 'internal' && (
+          <p className="auth-hint">
+            {t('Öffnet sich die Adresse nicht, fehlt der Eintrag für {domain} im DNS-Server Ihres Netzes.', { domain })}
+          </p>
+        )}
         <p className="auth-footer">
-          <Link href="/dashboard">Weiter mit der bisherigen Adresse</Link>
+          <Link href="/dashboard">{t('Weiter mit der bisherigen Adresse')}</Link>
         </p>
       </Frame>
     );
   }
 
-  const verdict = check && check.domain === domain ? verdictText(check, setup.exposure) : null;
+  const verdict = check && check.domain === domain ? verdictText(check, setup.exposure, t) : null;
 
   return (
     <Frame
       step="run"
       subtitle={
         outcome === 'running'
-          ? 'Das dauert einige Minuten. Die Seite dürfen Sie neu laden.'
-          : 'HAPM legt jetzt an, was Sie gewählt haben.'
+          ? t('Das dauert einige Minuten. Die Seite dürfen Sie neu laden.')
+          : t('HAPM legt jetzt an, was Sie gewählt haben.')
       }
       progress={progress}
     >
@@ -916,13 +1098,43 @@ function RunStep({
         <>
           {acmeWarning}
           <div className="hapm-setup-note">
-            <span>
-              Zertifikat für <code>{domains.join(', ')}</code>,{' '}
-              {overDns ? `über DNS (${setup.dnsHook ?? 'DNS-Anbieter'})` : 'über HTTP auf Port 80'}.
-            </span>
-            <span>
-              Ziel in der Gruppe HAPM: <code>{domain} → 127.0.0.1:{setup.listenPort}</code>
-            </span>
+            <dl className="detail-grid">
+              <dt>{t('Zertifikat')}</dt>
+              <dd>
+                {domains.map((name) => (
+                  <div key={name}>{name}</div>
+                ))}
+              </dd>
+              <dt>{t('Ausstellung')}</dt>
+              <dd>
+                {overDns ? (
+                  <span className="hapm-provider">
+                    {setup.dnsHook && <ProviderLogo hook={setup.dnsHook} size={18} />}
+                    {t('über DNS bei {provider}', { provider: providerLabel })}
+                  </span>
+                ) : (
+                  t("über HTTP auf Port 80, Let's Encrypt ruft die Domain auf")
+                )}
+              </dd>
+              {setup.dnsZone && (
+                <>
+                  <dt>{t('DNS-Zone')}</dt>
+                  <dd>
+                    {setup.dnsZone}
+                    <div className="detail-sub">{t('steht unter „DNS“ und lässt sich dort verwalten')}</div>
+                  </dd>
+                </>
+              )}
+              <dt>{t('Gruppe')}</dt>
+              <dd>{SETUP_SCOPE}</dd>
+              <dt>{t('Ziel')}</dt>
+              <dd>
+                {domain}
+                <div className="detail-sub">
+                  {t('leitet an {target}, die Oberfläche von HAPM', { target: `127.0.0.1:${setup.listenPort}` })}
+                </div>
+              </dd>
+            </dl>
           </div>
           {verdict && verdict.tone !== 'alert-success' && (
             <div className={`alert ${verdict.tone}`}>{verdict.text}</div>
@@ -934,8 +1146,9 @@ function RunStep({
 
       {outcome === 'failed' && (
         <div className="auth-error">
-          Die Einrichtung ist nicht durchgelaufen. Ihr Konto und alles, was oben einen Haken trägt,
-          bleiben bestehen. Sie können die Eingaben ändern und es erneut versuchen.
+          {t(
+            'Die Einrichtung ist nicht durchgelaufen. Ihr Konto und alles, was oben einen Haken trägt, bleiben bestehen. Sie können die Eingaben ändern und es erneut versuchen.'
+          )}
         </div>
       )}
       {error && <div className="auth-error">{error}</div>}
@@ -950,7 +1163,7 @@ function RunStep({
             ) : (
               <Play size={15} />
             )}
-            {outcome === 'failed' ? 'Erneut versuchen' : 'Jetzt einrichten'}
+            {outcome === 'failed' ? t('Erneut versuchen') : t('Jetzt einrichten')}
           </button>
           <div className="hapm-setup-actions">{back}</div>
         </>
@@ -961,6 +1174,7 @@ function RunStep({
 }
 
 function Stages({ setup }: { setup: SetupView }) {
+  const { t } = useT();
   const stages = setup.execution?.stages ?? [];
   return (
     <ul className="hapm-steps">
@@ -985,8 +1199,9 @@ function Stages({ setup }: { setup: SetupView }) {
               <Circle size={14} strokeWidth={1.5} />
             )}
             <span className="hapm-step-text">
-              <span className="hapm-step-label">{STAGE_LABELS[stage.key]}</span>
-              {stage.detail && <span className="hapm-step-detail">{stage.detail}</span>}
+              <span className="hapm-step-label">{t(STAGE_LABELS[stage.key], { scope: SETUP_SCOPE })}</span>
+              {/* Gespeichert auf Deutsch: ein Satz ohne eingesetzte Werte wird hier nachgeschlagen. */}
+              {stage.detail && <span className="hapm-step-detail">{t(stage.detail)}</span>}
             </span>
           </li>
         );

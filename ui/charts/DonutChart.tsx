@@ -2,6 +2,7 @@
 
 import type { ReactElement, ReactNode } from "react"
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts"
+import { useT } from "@/lib/i18n/react"
 import { ChartEmpty } from "./ChartCard"
 import { ChartLegend, ChartTooltipBox, type ChartTooltipRow } from "./ChartTooltip"
 import { formatNumber, formatShare, seriesColor } from "./palette"
@@ -25,12 +26,12 @@ export interface DonutSlice {
  */
 export function DonutChart({
   slices,
-  format = (value) => formatNumber(value),
-  valueName = "Wert",
+  format: formatProp,
+  valueName,
   center,
   size = 150,
   tooltipExtra,
-  emptyText = "Noch keine Daten.",
+  emptyText,
 }: {
   slices: DonutSlice[]
   /** Wie ein absoluter Wert im Tooltip steht. */
@@ -43,8 +44,10 @@ export function DonutChart({
   tooltipExtra?: (slice: DonutSlice) => ChartTooltipRow[]
   emptyText?: ReactNode
 }): ReactElement {
+  const { t, locale } = useT()
+  const format = formatProp ?? ((value: number) => formatNumber(value, 0, locale))
   const total = slices.reduce((sum, slice) => sum + Math.max(0, slice.value), 0)
-  if (total === 0) return <ChartEmpty height={size}>{emptyText}</ChartEmpty>
+  if (total === 0) return <ChartEmpty height={size}>{emptyText ?? t("Noch keine Daten.")}</ChartEmpty>
 
   const colored = slices.map((slice, i) => ({ ...slice, color: slice.color ?? seriesColor(i), share: slice.value / total }))
   const drawn = colored.filter((slice) => slice.value > 0)
@@ -83,8 +86,8 @@ export function DonutChart({
                   <ChartTooltipBox
                     title={slice.label}
                     rows={[
-                      { key: "share", name: "Anteil", value: formatShare(slice.share), color: slice.color },
-                      { key: "value", name: valueName, value: format(slice.value) },
+                      { key: "share", name: t("Anteil"), value: formatShare(slice.share, locale), color: slice.color },
+                      { key: "value", name: valueName ?? t("Wert"), value: format(slice.value) },
                       ...(tooltipExtra?.(slice) ?? []),
                     ]}
                   />
@@ -107,7 +110,7 @@ export function DonutChart({
           name: slice.label,
           color: slice.color,
           detail: slice.detail,
-          value: formatShare(slice.share),
+          value: formatShare(slice.share, locale),
         }))}
       />
     </div>

@@ -1,16 +1,20 @@
 import { requireSession, requireCsrf } from '@/lib/session';
 import { ok, handleError, jsonBody } from '@/lib/api';
 import { logAudit, getClientIP } from '@/lib/audit';
-import { getProxyServer, readErrorPages, updateErrorPages } from '@/lib/haproxy/provision';
+import { getProxyServer, readErrorPages } from '@/lib/haproxy/provision';
+import { applyPageDesign } from '@/lib/haproxy/page-design-apply';
+import { loadPageDesign } from '@/lib/haproxy/page-design-store';
 import type { ErrorPageEntry } from '@/lib/haproxy/error-pages';
 import { LOCAL_SERVER_ID, localServer } from '@/lib/helpers';
 
 /**
  * Die Fehlerseiten von HAProxy: welche Dateien `haproxy.cfg` nennt, was darin
- * steht, und der Vorgang, der sie ins Aussehen von HAPM bringt.
+ * steht, und der Vorgang, der sie auf den Stand des gespeicherten Designs
+ * bringt. Das Design selbst hat seine eigene Route (`./design`).
  *
- * Wie überall am Reverse-Proxy steht keine Collection dahinter. Gelesen wird
- * von der Maschine, bei jedem Aufruf.
+ * Hinter den Dateien steht keine Collection. Gelesen wird von der Maschine, bei
+ * jedem Aufruf, und verglichen mit dem, was aus dem gespeicherten Design jetzt
+ * entstünde.
  *
  * ── Warum synchron ──
  *
@@ -30,6 +34,8 @@ export async function GET() {
   try {
     await requireSession();
 
+    // Der Zustand einer Datei ist ein Vergleich mit dem gespeicherten Design.
+    await loadPageDesign();
     const servers = [localServer()];
 
     // Einzeln scheitern lassen: ein Proxy, der gerade nicht antwortet, ist eine
@@ -57,7 +63,8 @@ export async function GET() {
 }
 
 /**
- * Die Fehlerdateien einer Maschine neu schreiben.
+ * Die Fehlerdateien und die Seiten der Passwortabfrage neu schreiben, im
+ * gespeicherten Design.
  *
  * Der Rumpf nennt nur die Maschine. WELCHE Dateien geschrieben werden und mit
  * welchem Status, liest der Vorgang selbst und innerhalb des Locks: eine Liste
@@ -72,13 +79,14 @@ export async function POST(request: Request) {
 
     const server = await getProxyServer(body.serverId || LOCAL_SERVER_ID);
 
-    const result = await updateErrorPages(server);
+    await loadPageDesign();
+    const result = await applyPageDesign(server);
     const failed = result.steps.find((step) => !step.ok);
 
     await logAudit({
       userId: session.userId,
       userEmail: session.email,
-      action: failed ? 'haproxy_settings_failed' : 'haproxy_settings_updated',
+      action: failed ? 'haproxy_error_pages_failed' : 'haproxy_error_pages_updated',
       resource: 'server',
       resourceId: server.$id,
       details:

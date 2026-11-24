@@ -20,6 +20,7 @@ const ACTIONS: HaproxyAction[] = [
   'stream-update',
   'stream-delete',
   'certificate',
+  'import',
 ];
 
 /**

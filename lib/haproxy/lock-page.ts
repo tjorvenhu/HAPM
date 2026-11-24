@@ -11,9 +11,14 @@
  * Texte, der Name des Feldes, den die Regel liest, und wie die Seiten auf die
  * Maschine kommen.
  *
- * Geschrieben werden die Seiten mit dem nächsten Schreibvorgang am
- * Reverse-Proxy (`ensureLockPages` in `provision.ts`): ein geändertes Aussehen
- * wirkt also nach einem neuen Abbild von HAPM und dem nächsten Vorgang.
+ * Farben, Logo und die drei Texte der Abfrage (Überschrift, Text, Knopf)
+ * kommen aus dem gespeicherten Design (`page-design.ts`).
+ *
+ * Geschrieben werden die Seiten beim Speichern des Designs
+ * (`page-design-apply.ts`) und vor jedem Schreibvorgang am Reverse-Proxy
+ * (`ensureLockPages` in `provision.ts`): dort über die Prüfsumme, also nur bei
+ * einer Abweichung. So kommt auch eine neue Fassung der Vorlage an, nach einem
+ * neuen Abbild von HAPM mit dem nächsten Vorgang.
  */
 
 import {
@@ -24,45 +29,58 @@ import {
 } from '@/ui/static/page';
 import { buildCommand, withStdin } from '../shell';
 import { LOCK_FIELD, LOCK_PAGE_FILES, LOCK_PASSWORD_MAX } from './config';
+import { activeDesign, designTheme, PAGE_MAX_BYTES, type PageDesign } from './page-design';
 
-/** Was eine Seite höchstens wiegen darf. HAProxys Puffer fasst 16384 Bytes,
- *  davon gehen 1024 Reserve und die Kopfzeilen der Antwort ab. */
-export const LOCK_PAGE_MAX_BYTES = 12_000;
+/** Was eine Seite höchstens wiegen darf. Woher die Zahl kommt, steht in
+ *  `page-design.ts`: über dieser Grenze antwortet HAProxy mit 500, und
+ *  `haproxy -c` merkt es nicht. */
+export const LOCK_PAGE_MAX_BYTES = PAGE_MAX_BYTES;
 
 export type LockPageKind = keyof typeof LOCK_PAGE_FILES;
 
-const FORM = staticPasswordForm({
-  field: LOCK_FIELD,
-  label: 'Passwort',
+/** Die Texte, wie HAPM sie ohne eigenes Design schreibt. */
+export const LOCK_PAGE_DEFAULTS = {
+  title: 'Geschützter Bereich',
+  subtitle: 'Diese Seite ist mit einem Passwort geschützt.',
   submit: 'Öffnen',
-  maxLength: LOCK_PASSWORD_MAX,
-});
+} as const;
 
-const BODY: Record<LockPageKind, string> = {
-  ask: FORM,
-  wrong: staticNote('Das Passwort stimmt nicht.', 'error') + FORM,
+function body(kind: LockPageKind, submit: string): string {
+  const form = staticPasswordForm({
+    field: LOCK_FIELD,
+    label: 'Passwort',
+    submit,
+    maxLength: LOCK_PASSWORD_MAX,
+  });
+  if (kind === 'ask') return form;
+  if (kind === 'wrong') return staticNote('Das Passwort stimmt nicht.', 'error') + form;
   /* Ohne Formular: jede weitere Eingabe zählte wieder mit und verlängerte die
      Wartezeit. Der Link lädt dieselbe Adresse neu und zeigt danach wieder die
      Abfrage. */
-  throttled:
+  return (
     staticNote('Zu viele Versuche. Bitte in zehn Minuten erneut versuchen.', 'warning') +
-    staticButton('Zur Abfrage', ''),
-};
+    staticButton('Zur Abfrage', '')
+  );
+}
 
-/** Eine der drei Seiten als vollständiges Dokument. */
-export function renderLockPage(kind: LockPageKind): string {
-  return renderStaticPage({
-    title: 'Geschützter Bereich',
-    subtitle: 'Diese Seite ist mit einem Passwort geschützt.',
-    body: BODY[kind],
-  });
+/** Eine der drei Seiten als vollständiges Dokument. Ohne `design` gilt das
+ *  gespeicherte. */
+export function renderLockPage(kind: LockPageKind, design: PageDesign = activeDesign()): string {
+  return renderStaticPage(
+    {
+      title: design.lock.title ?? LOCK_PAGE_DEFAULTS.title,
+      subtitle: design.lock.subtitle ?? LOCK_PAGE_DEFAULTS.subtitle,
+      body: body(kind, design.lock.submit ?? LOCK_PAGE_DEFAULTS.submit),
+    },
+    designTheme(design)
+  );
 }
 
 /** Alle drei, mit dem Dateinamen, unter dem die Regeln sie erwarten. */
-export function lockPages(): { file: string; html: string }[] {
+export function lockPages(design: PageDesign = activeDesign()): { file: string; html: string }[] {
   return (Object.keys(LOCK_PAGE_FILES) as LockPageKind[]).map((kind) => ({
     file: LOCK_PAGE_FILES[kind],
-    html: renderLockPage(kind),
+    html: renderLockPage(kind, design),
   }));
 }
 

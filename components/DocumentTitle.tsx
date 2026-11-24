@@ -1,15 +1,19 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
+import { useT } from '@/lib/i18n/react';
 import { activeArea } from './Sidebar';
 
 /** Der Produktname, wie er im Tab steht. */
 export const APP_SHORT_NAME = 'HAPM';
 
-/** Der Browsertitel zu einer Adresse: „Zertifikate · HAPM". Die Seite kommt aus der Navigation. */
-export function documentTitle(pathname: string): string {
+/**
+ * Der Browsertitel zu einer Adresse: „Zertifikate · HAPM". Die Seite kommt aus
+ * der Navigation, `translate` übersetzt ihren Namen (ohne Angabe bleibt er deutsch).
+ */
+export function documentTitle(pathname: string, translate: (text: string) => string = (text) => text): string {
   const page = activeArea(pathname);
-  return page ? `${page} · ${APP_SHORT_NAME}` : APP_SHORT_NAME;
+  return page ? `${translate(page)} · ${APP_SHORT_NAME}` : APP_SHORT_NAME;
 }
 
 /**
@@ -20,9 +24,10 @@ export function documentTitle(pathname: string): string {
  * Werkzeugs nach vorn, hier steht die Seite vorn.
  *
  * Das Wurzel-Layout nennt deshalb keinen Titel. Anmeldung und Einrichtung
- * liegen außerhalb von `app/(app)` und setzen ihren über `metadata`.
+ * liegen außerhalb von `app/(app)` und setzen ihren über `generateMetadata`.
  */
 export default function DocumentTitle() {
   const pathname = usePathname();
-  return <title>{documentTitle(pathname)}</title>;
+  const { t } = useT();
+  return <title>{documentTitle(pathname, t)}</title>;
 }

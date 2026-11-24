@@ -11,7 +11,8 @@ import {
 import { cleanPasskeyName, MAX_PASSKEYS_PER_USER } from '@/lib/auth/passkey-rules';
 import { notifyPasskeyChange } from '@/lib/auth/mail';
 import { logAudit, getClientIP } from '@/lib/audit';
-import { ok, fail, handleError, jsonBody } from '@/lib/api';
+import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
+import { msg } from '@/lib/i18n';
 
 /**
  * Die Passkeys des eigenen Kontos: auflisten und hinterlegen.
@@ -60,7 +61,7 @@ export async function POST(request: Request) {
 
     const { response: attestation, name } = await jsonBody<{ response?: unknown; name?: unknown }>(request);
     if (!attestation || typeof attestation !== 'object' || Array.isArray(attestation)) {
-      return fail('Die Antwort des Geräts war unvollständig.');
+      throw new ApiError(msg('Die Antwort des Geräts war unvollständig.'));
     }
     const label = cleanPasskeyName(typeof name === 'string' ? name : null);
     const requestHeaders = await headers();
@@ -69,8 +70,10 @@ export async function POST(request: Request) {
     // kann in einem anderen Fenster ein Passkey dazugekommen sein.
     const existing = await listOwnPasskeys(passkeys, requestHeaders);
     if (existing.length >= MAX_PASSKEYS_PER_USER) {
-      return fail(
-        `Mehr als ${MAX_PASSKEYS_PER_USER} Passkeys je Konto sind nicht möglich. Bitte entfernen Sie zuerst einen.`,
+      throw new ApiError(
+        msg('Mehr als {max} Passkeys je Konto sind nicht möglich. Bitte entfernen Sie zuerst einen.', {
+          max: MAX_PASSKEYS_PER_USER,
+        }),
         409
       );
     }
@@ -88,18 +91,17 @@ export async function POST(request: Request) {
     if (!created || 'rejected' in created) {
       const rejected = created && 'rejected' in created ? created.rejected : null;
       if (rejected && isMissingUserVerification(rejected)) {
-        return fail(
-          'Dieses Gerät hat Sie nicht per Fingerabdruck, Gesicht oder PIN bestätigt. ' +
-            'Ein solcher Passkey ersetzt keinen zweiten Faktor und wird nicht gespeichert.'
+        throw new ApiError(
+          msg('Dieses Gerät hat Sie nicht per Fingerabdruck, Gesicht oder PIN bestätigt. Ein solcher Passkey ersetzt keinen zweiten Faktor und wird nicht gespeichert.')
         );
       }
       if (authErrorCode(rejected) === 'SESSION_NOT_FRESH') {
-        return fail(
-          'Zu Ihrer Sicherheit melden Sie sich bitte einmal neu an. Danach können Sie den Passkey hinterlegen.',
+        throw new ApiError(
+          msg('Zu Ihrer Sicherheit melden Sie sich bitte einmal neu an. Danach können Sie den Passkey hinterlegen.'),
           403
         );
       }
-      return fail('Der Passkey konnte nicht hinterlegt werden. Bitte versuchen Sie es noch einmal.');
+      throw new ApiError(msg('Der Passkey konnte nicht hinterlegt werden. Bitte versuchen Sie es noch einmal.'));
     }
 
     await logAudit({

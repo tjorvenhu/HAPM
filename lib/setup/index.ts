@@ -5,7 +5,9 @@ import type { Exposure, SetupExecution, SetupStatus } from '../types';
 import { serverAddresses } from './address';
 import { listenPort, resumeStep, settleExecution, type SetupChoices, type SetupStep } from './rules';
 import { setupExecutionAlive } from './run';
-import { getSetupState } from './store';
+import { getDnsAccess, getSetupState } from './store';
+import { zoneForDomain } from '../dns/store';
+import { dnsProviderForHook } from '../dns/zones';
 
 /**
  * Was die Seite der Einrichtung und der Hinweis in der Übersicht lesen. Nur für
@@ -26,6 +28,13 @@ export interface SetupView extends Omit<SetupChoices, 'execution'> {
   publicUrl: string | null;
   listenPort: number;
   serverAddresses: string[];
+  /**
+   * Ob die Einrichtung den Eintrag der Oberfläche beim Anbieter selbst setzen
+   * kann: das Token liegt noch vor, und der Anbieter hat eine Anbindung.
+   */
+  dnsApi: boolean;
+  /** Die unter „DNS" eingerichtete Zone, in der die Domain liegt. */
+  dnsZone: string | null;
 }
 
 export async function readSetupView(): Promise<SetupView> {
@@ -34,6 +43,9 @@ export async function readSetupView(): Promise<SetupView> {
   // HAProxy, das gerade nicht antwortet, ist eine Auskunft und kein Fehler der Seite.
   const probe = await probeProxy(localServer()).catch(() => null);
   const dnsHooks = probe ? probe.dnsHooks : null;
+
+  const access = await getDnsAccess();
+  const zone = state.domain ? await zoneForDomain(state.domain).catch(() => null) : null;
 
   const { execution, ...choices } = state;
   return {
@@ -47,5 +59,7 @@ export async function readSetupView(): Promise<SetupView> {
     publicUrl: publicOrigin(settings),
     listenPort: listenPort(process.env.PORT),
     serverAddresses: serverAddresses(),
+    dnsApi: Boolean(access && access.hook === state.dnsHook && dnsProviderForHook(access.hook)),
+    dnsZone: zone?.name ?? null,
   };
 }

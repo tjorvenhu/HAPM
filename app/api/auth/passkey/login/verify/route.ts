@@ -6,11 +6,13 @@ import {
   isAuthRejection,
   isMissingUserVerification,
 } from '@/lib/auth/passkeys';
-import { recordLogin } from '@/lib/auth/users';
+import { getUserLocale, recordLogin } from '@/lib/auth/users';
 import { set2FACookie } from '@/lib/two-factor';
 import { logAudit, getClientIP } from '@/lib/audit';
 import { rateLimit } from '@/lib/rate-limit';
-import { ok, fail, handleError, jsonBody } from '@/lib/api';
+import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
+import { msg } from '@/lib/i18n';
+import { setLocaleCookie } from '@/lib/i18n/server';
 
 /**
  * Schritt 2 der Anmeldung mit Passkey: die Antwort des Geräts prüfen.
@@ -38,14 +40,14 @@ export async function POST(request: Request) {
     const ip = getClientIP(request);
     if (ip !== 'unknown') {
       const rl = rateLimit(`passkey-login:${ip}`, 5, 15 * 60 * 1000);
-      if (!rl.success) return fail('Zu viele Anmeldeversuche. Bitte warten Sie 15 Minuten.', 429);
+      if (!rl.success) throw new ApiError(msg('Zu viele Anmeldeversuche. Bitte warten Sie 15 Minuten.'), 429);
     }
 
     const passkeys = await requirePasskeys();
 
     const { response: assertion } = await jsonBody<{ response?: unknown }>(request);
     if (!assertion || typeof assertion !== 'object' || Array.isArray(assertion)) {
-      return fail('Die Antwort des Geräts war unvollständig.');
+      throw new ApiError(msg('Die Antwort des Geräts war unvollständig.'));
     }
 
     const signIn = await passkeys
@@ -73,14 +75,14 @@ export async function POST(request: Request) {
           : `Passkey abgelehnt (${authErrorCode(signIn.rejected) ?? 'ohne Code'})`,
       });
       if (noUserVerification) {
-        return fail(
-          'Dieser Passkey bestätigt Sie nicht per Fingerabdruck, Gesicht oder PIN und wird deshalb nicht angenommen.',
+        throw new ApiError(
+          msg('Dieser Passkey bestätigt Sie nicht per Fingerabdruck, Gesicht oder PIN und wird deshalb nicht angenommen.'),
           401
         );
       }
       // Ob es den Passkey nicht (mehr) gibt, die Aufgabe abgelaufen ist oder die
       // Prüfung scheiterte, wird nach außen nicht unterschieden.
-      return fail('Die Anmeldung mit diesem Passkey war nicht möglich.', 401);
+      throw new ApiError(msg('Die Anmeldung mit diesem Passkey war nicht möglich.'), 401);
     }
 
     const { user, session } = signIn.response;
@@ -103,6 +105,7 @@ export async function POST(request: Request) {
 
     const response = ok();
     forwardAuthCookies(signIn.headers, response);
+    setLocaleCookie(response, await getUserLocale(user.id));
     return response;
   } catch (err) {
     return handleError(err);

@@ -60,6 +60,8 @@ import {
   supportsPasswordLock,
   LOCK_PAGE_DIR,
   INHERIT_LOCK,
+  HaproxyConfigError,
+  assignServiceId,
   type GlobalSettings,
   type GlobalSettingsInput,
 } from './config';
@@ -86,6 +88,7 @@ import {
   parseBindPorts,
   parseListeningPorts,
   bindConflict,
+  assignStreamId,
   type CreateStreamInput,
   type HaproxyStream,
 } from './streams';
@@ -111,6 +114,13 @@ import {
   type ChallengeChoice,
   type ChallengePlan,
 } from './challenge';
+import {
+  surfaceTarget,
+  refuseSurfaceDelete,
+  refuseSurfaceUpdate,
+  refuseSurfaceScopeRemoval,
+  type SurfaceProtection,
+} from './protected';
 import type { Server, HaproxyPhase } from '../types';
 
 /**
@@ -216,6 +226,53 @@ async function withProxyLock<T>(serverId: string, fn: () => Promise<T>): Promise
     return await fn();
   } finally {
     release();
+  }
+}
+
+/* ── Vergebene, noch nicht geschriebene IDs ──
+ *
+ * Die ID eines neuen Eintrags ergibt sich aus seiner Domain und wird in der
+ * Vorabprüfung vergeben (`assignServiceId`): die Antwort der Route nennt sie,
+ * und die Zeile der Historie trägt sie. Geschrieben wird sie erst im Lauf, und
+ * dazwischen liegt die Zertifikatsausstellung. Zwei Dialoge in dieser Zeit
+ * läsen dieselbe Datei und bekämen dieselbe ID. Deshalb merkt sich der Prozess,
+ * was er vergeben hat, bis der Lauf durch ist.
+ *
+ * Im Prozess und nicht in der Datenbank, aus demselben Grund wie der Lock: es
+ * läuft genau eine Instanz. Mit Ablaufzeit, weil ein Lauf, der gar nicht erst
+ * startet (die Zeile der Historie ließ sich nicht anlegen), sonst eine ID für
+ * immer belegte. Nach der Frist steht entweder der Eintrag in der Datei, oder
+ * es gab ihn nie. */
+
+const RESERVATION_MS = 30 * 60_000;
+
+const reservedGlobal = globalThis as typeof globalThis & {
+  __hapm_haproxy_reserved_ids?: Map<string, number>;
+};
+if (!reservedGlobal.__hapm_haproxy_reserved_ids) {
+  reservedGlobal.__hapm_haproxy_reserved_ids = new Map();
+}
+const reservedIds = reservedGlobal.__hapm_haproxy_reserved_ids;
+
+function currentlyReserved(): string[] {
+  const now = Date.now();
+  for (const [id, until] of reservedIds) {
+    if (until <= now) reservedIds.delete(id);
+  }
+  return [...reservedIds.keys()];
+}
+
+function reserveId(id: string): void {
+  reservedIds.set(id, Date.now() + RESERVATION_MS);
+}
+
+/** Eine mitgegebene ID, die ein laufendes Anlegen gerade bekommen hat: sie
+ *  steht noch nicht in der Datei, ist aber vergeben. */
+function assertNotReserved(id: string): void {
+  if (id !== '' && currentlyReserved().includes(id)) {
+    throw new HaproxyConfigError(
+      `Der Name "${id}" wird gerade von einem laufenden Vorgang angelegt. Die Dienst-ID ist vergeben.`
+    );
   }
 }
 
@@ -968,7 +1025,10 @@ export async function createService(
     await steps.phase('installing');
     await installAndReload(ssh, probe.digest, steps);
     return { steps: steps.steps };
-  });
+    // Erst am Ende und nicht nach dem Lesen: eine Vorabprüfung nimmt den Lock
+    // nicht, und solange das Zertifikat ausgestellt wird, steht die ID noch
+    // nicht in der Datei.
+  }).finally(() => reservedIds.delete(input.id));
 }
 
 /**
@@ -984,6 +1044,7 @@ export async function createService(
 export async function deleteService(
   server: Server,
   id: string,
+  protection: SurfaceProtection,
   reporter?: ProvisionReporter
 ): Promise<ProvisionResult> {
   return withProxyLock(server.$id, async () => {
@@ -999,6 +1060,7 @@ export async function deleteService(
 
     const service = probe.services.find((s) => s.id === id);
     if (!service) throw new ApiError(`Der Dienst "${id}" steht nicht in ${HAPROXY_CFG}.`, 404);
+    assertSurfaceKept(refuseSurfaceDelete(surfaceTarget(probe.services, protection), id));
     if (!service.removable) {
       throw new ApiError(
         `"${id}" wurde nicht über HAPM angelegt und lässt sich hier nicht entfernen. ` +
@@ -1087,7 +1149,7 @@ export async function deleteService(
 }
 
 /**
- * Einen Dienst ändern: Domains, Ziele, Namen, Healthcheck, Preset, Bereich.
+ * Einen Dienst ändern: Domains, Ziele, Namen, Healthcheck, Zusätze, Bereich.
  *
  * ── Warum nicht einfach löschen und neu anlegen ──
  *
@@ -1110,6 +1172,7 @@ export async function updateService(
   oldId: string,
   input: CreateServiceInput,
   challenge: ChallengeChoice,
+  protection: SurfaceProtection,
   reporter?: ProvisionReporter
 ): Promise<ProvisionResult> {
   return withProxyLock(server.$id, async () => {
@@ -1125,6 +1188,9 @@ export async function updateService(
 
     const current = probe.services.find((s) => s.id === oldId);
     if (!current) throw new ApiError(`Der Dienst "${oldId}" steht nicht in ${HAPROXY_CFG}.`, 404);
+    assertSurfaceKept(
+      refuseSurfaceUpdate(surfaceTarget(probe.services, protection), oldId, input.domains)
+    );
     if (!current.editable) {
       throw new ApiError(
         `"${oldId}" lässt sich nicht bearbeiten. ` +
@@ -1242,16 +1308,40 @@ async function readableProbe(server: Server): Promise<ProxyProbe> {
   return probe;
 }
 
+/**
+ * Das Ziel, über das die Oberfläche von HAPM läuft, bleibt stehen
+ * (`protected.ts`). 409 und nicht 400: an der Eingabe ist nichts falsch, der
+ * Stand der Installation steht ihr entgegen.
+ */
+function assertSurfaceKept(refusal: string | null): void {
+  if (refusal) throw new ApiError(refusal, 409);
+}
+
+/**
+ * Gibt die Eingabe zurück, wie sie geschrieben wird: kam sie ohne ID, trägt
+ * sie jetzt die vergebene (`assignServiceId`). Mit ihr startet der Aufrufer
+ * den Lauf.
+ */
 export async function precheckCreate(
   server: Server,
   input: CreateServiceInput,
   challenge: ChallengeChoice
-): Promise<void> {
+): Promise<CreateServiceInput> {
   const probe = await readableProbe(server);
   assertIssuable(probe, input.domains, challenge);
   assertLockSupported(server, probe, input);
+
+  // Vergeben und vormerken ohne ein `await` dazwischen: sonst läse ein zweiter
+  // Aufruf die Liste, bevor dieser sich eingetragen hat.
+  const assigned =
+    input.id === ''
+      ? { ...input, id: assignServiceId(probe.raw, input, currentlyReserved()) }
+      : input;
+  assertNotReserved(input.id);
   // Wirft als HaproxyConfigError bei doppelter ID oder belegter Domain.
-  addService(probe.raw, input);
+  addService(probe.raw, assigned);
+  if (input.id === '') reserveId(assigned.id);
+  return assigned;
 }
 
 /**
@@ -1265,11 +1355,15 @@ export async function precheckUpdate(
   server: Server,
   oldId: string,
   input: CreateServiceInput,
-  challenge: ChallengeChoice
+  challenge: ChallengeChoice,
+  protection: SurfaceProtection
 ): Promise<HaproxyService> {
   const probe = await readableProbe(server);
   const current = probe.services.find((s) => s.id === oldId);
   if (!current) throw new ApiError(`Der Dienst "${oldId}" steht nicht in ${HAPROXY_CFG}.`, 404);
+  assertSurfaceKept(
+    refuseSurfaceUpdate(surfaceTarget(probe.services, protection), oldId, input.domains)
+  );
   if (!current.editable) {
     throw new ApiError(
       `"${oldId}" lässt sich nicht bearbeiten. ` +
@@ -1408,7 +1502,7 @@ export async function createStream(
     });
 
     return writeStreamConfig(nextConfig, probe.digest, ssh, steps);
-  });
+  }).finally(() => reservedIds.delete(input.id));
 }
 
 export async function updateStream(
@@ -1488,14 +1582,28 @@ function notRemovable(stream: HaproxyStream): string {
   );
 }
 
+/** Wie `precheckCreate`: ohne Kennung gekommen, trägt die Eingabe danach die
+ *  vergebene (`assignStreamId`). */
 export async function precheckStreamCreate(
   server: Server,
   input: CreateStreamInput
-): Promise<void> {
+): Promise<CreateStreamInput> {
   const probe = await readableProbe(server);
+  const assigned =
+    input.id === ''
+      ? { ...input, id: assignStreamId(probe.raw, input.port, currentlyReserved()) }
+      : input;
+  assertNotReserved(input.id);
   // Wirft als HaproxyConfigError bei belegtem Namen oder belegtem Port.
-  addStream(probe.raw, input);
-  await assertPortFree(await getSSHConfig(server), probe.raw, input.port, server.name);
+  addStream(probe.raw, assigned);
+  if (input.id === '') reserveId(assigned.id);
+  try {
+    await assertPortFree(await getSSHConfig(server), probe.raw, input.port, server.name);
+  } catch (err) {
+    if (input.id === '') reservedIds.delete(assigned.id);
+    throw err;
+  }
+  return assigned;
 }
 
 /** Gibt die Weiterleitung zurück, wie sie JETZT dasteht — der Aufrufer braucht
@@ -1646,14 +1754,45 @@ export async function updateGlobalSettings(
  * und die Datei, in die er schreibt, ist dieselbe.
  */
 
+/**
+ * Was mit einer Gruppe geschieht. Das Entfernen trägt die Adresse von HAPM mit:
+ * die Gruppe mit dem Ziel der Oberfläche bleibt stehen (`protected.ts`).
+ */
+export type ScopeChange =
+  | { action: 'add' }
+  | { action: 'remove'; protection: SurfaceProtection };
+
+/** Die neue Konfiguration. Wirft, wenn es sie nicht geben darf. */
+function scopeConfig(probe: ProxyProbe, name: string, change: ScopeChange): string {
+  if (change.action === 'add') return addScope(probe.raw, name);
+  // Vor `removeScope`: dessen Meldung „es stehen noch Einträge darin, erst dort
+  // aufräumen" schickte einen sonst dazu, das Ziel der Oberfläche zu entfernen.
+  assertSurfaceKept(
+    refuseSurfaceScopeRemoval(surfaceTarget(probe.services, change.protection), name)
+  );
+  return removeScope(probe.raw, name, streamsInScope(probe, name));
+}
+
+export async function precheckScope(server: Server, name: string, action: 'add'): Promise<void>;
 export async function precheckScope(
   server: Server,
   name: string,
-  action: 'add' | 'remove'
+  action: 'remove',
+  protection: SurfaceProtection
+): Promise<void>;
+export async function precheckScope(
+  server: Server,
+  name: string,
+  action: 'add' | 'remove',
+  protection?: SurfaceProtection
 ): Promise<void> {
   const probe = await readableProbe(server);
-  if (action === 'add') addScope(probe.raw, name);
-  else removeScope(probe.raw, name, streamsInScope(probe, name));
+  if (action === 'add') {
+    scopeConfig(probe, name, { action });
+    return;
+  }
+  if (!protection) throw new Error('Das Entfernen einer Gruppe braucht die Adresse von HAPM.');
+  scopeConfig(probe, name, { action, protection });
 }
 
 /**
@@ -1675,7 +1814,7 @@ function streamsInScope(probe: ProxyProbe, name: string): string[] {
 export async function updateScopes(
   server: Server,
   name: string,
-  action: 'add' | 'remove',
+  change: ScopeChange,
   reporter?: ProvisionReporter
 ): Promise<ProvisionResult> {
   return withProxyLock(server.$id, async () => {
@@ -1688,10 +1827,7 @@ export async function updateScopes(
       throw new ApiError(`${HAPROXY_CFG} ist nicht lesbar.`);
     }
 
-    const nextConfig =
-      action === 'add'
-        ? addScope(probe.raw, name)
-        : removeScope(probe.raw, name, streamsInScope(probe, name));
+    const nextConfig = scopeConfig(probe, name, change);
 
     await steps.phase('checking');
     const staged = await stageAndCheck(ssh, nextConfig);
@@ -1713,10 +1849,15 @@ export async function updateScopes(
 
 /** Gibt den Dienst zurück, wie er JETZT dasteht: Domains und Ziele gehen
  *  denormalisiert in die Historie, nach dem Löschen gibt es sie nirgends mehr. */
-export async function precheckDelete(server: Server, id: string): Promise<HaproxyService> {
+export async function precheckDelete(
+  server: Server,
+  id: string,
+  protection: SurfaceProtection
+): Promise<HaproxyService> {
   const probe = await readableProbe(server);
   const service = probe.services.find((s) => s.id === id);
   if (!service) throw new ApiError(`Der Dienst "${id}" steht nicht in ${HAPROXY_CFG}.`, 404);
+  assertSurfaceKept(refuseSurfaceDelete(surfaceTarget(probe.services, protection), id));
   if (!service.removable) {
     throw new ApiError(
       `"${id}" wurde nicht über HAPM angelegt und lässt sich hier nicht entfernen. ` +

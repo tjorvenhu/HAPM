@@ -1,4 +1,7 @@
+"use client"
+
 import type { ReactElement, ReactNode } from "react"
+import { useT } from "@/lib/i18n/react"
 import { formatNumber, formatShare } from "./palette"
 
 export interface BarListItem {
@@ -25,12 +28,12 @@ export interface BarListItem {
  */
 export function BarList({
   items,
-  format = (value) => formatNumber(value),
+  format: formatProp,
   max,
   share = false,
   limit,
   onSelect,
-  emptyText = "Keine Daten.",
+  emptyText,
 }: {
   items: BarListItem[]
   format?: (value: number) => string
@@ -43,7 +46,9 @@ export function BarList({
   onSelect?: (key: string) => void
   emptyText?: ReactNode
 }): ReactElement {
-  if (items.length === 0) return <div className="viz-empty is-compact">{emptyText}</div>
+  const { t, locale } = useT()
+  const format = formatProp ?? ((value: number) => formatNumber(value, 0, locale))
+  if (items.length === 0) return <div className="viz-empty is-compact">{emptyText ?? t("Keine Daten.")}</div>
 
   const shown = limit ? items.slice(0, limit) : items
   const top = max ?? Math.max(...items.map((item) => item.value), 0)
@@ -62,7 +67,7 @@ export function BarList({
               </span>
               <span className="viz-bars__value">
                 {format(item.value)}
-                {share && total > 0 && <span className="viz-bars__share">{formatShare(item.value / total)}</span>}
+                {share && total > 0 && <span className="viz-bars__share">{formatShare(item.value / total, locale)}</span>}
               </span>
             </span>
             {item.detail && <span className="viz-bars__detail">{item.detail}</span>}

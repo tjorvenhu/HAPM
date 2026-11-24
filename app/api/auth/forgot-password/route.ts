@@ -4,7 +4,8 @@ import { getSettings } from '@/lib/settings';
 import { logAudit, getClientIP } from '@/lib/audit';
 import { rateLimit } from '@/lib/rate-limit';
 import { validateEmail } from '@/lib/validation';
-import { ok, fail, handleError, jsonBody } from '@/lib/api';
+import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
+import { msg } from '@/lib/i18n';
 
 /**
  * Passwort vergessen: durchgereicht an `requestPasswordReset`.
@@ -25,30 +26,29 @@ import { ok, fail, handleError, jsonBody } from '@/lib/api';
  *    ein Konto. Der Weg ist dann `hapm-admin reset-password` auf dem Server.
  */
 const WINDOW_MS = 15 * 60 * 1000;
-const TOO_MANY = 'Zu viele Anfragen. Bitte warten Sie 15 Minuten.';
+const TOO_MANY = msg('Zu viele Anfragen. Bitte warten Sie 15 Minuten.');
 
 export async function POST(request: Request) {
   try {
     const ip = getClientIP(request);
     if (ip !== 'unknown') {
       const rl = rateLimit(`forgot-password:${ip}`, 3, WINDOW_MS);
-      if (!rl.success) return fail(TOO_MANY, 429);
+      if (!rl.success) throw new ApiError(TOO_MANY, 429);
     }
 
     const { email } = await jsonBody<{ email?: unknown }>(request);
     if (typeof email !== 'string' || !validateEmail(email.trim())) {
-      return fail('Bitte geben Sie eine gültige E-Mail-Adresse ein.');
+      throw new ApiError(msg('Bitte geben Sie eine gültige E-Mail-Adresse ein.'));
     }
     const address = email.trim().toLowerCase();
 
     const perAccount = rateLimit(`forgot-password-account:${address.slice(0, 254)}`, 3, WINDOW_MS);
-    if (!perAccount.success) return fail(TOO_MANY, 429);
+    if (!perAccount.success) throw new ApiError(TOO_MANY, 429);
 
     const [settings, mail] = await Promise.all([getSettings(), mailConfigured()]);
     if (!settings.publicUrl || !mail) {
-      return fail(
-        'Das Zurücksetzen per E-Mail ist auf dieser Installation nicht eingerichtet. ' +
-          'Ein neues Passwort setzt auf dem Server: docker exec -it hapm hapm-admin reset-password <e-mail>',
+      throw new ApiError(
+        msg('Das Zurücksetzen per E-Mail ist auf dieser Installation nicht eingerichtet. Ein neues Passwort setzt auf dem Server: docker exec -it hapm hapm-admin reset-password <e-mail>'),
         409
       );
     }

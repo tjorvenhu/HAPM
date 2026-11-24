@@ -49,6 +49,12 @@ Next.js (App Router) mit TypeScript strict, pnpm. Drei Container: HAPM, HAProxy
   ausgestellt werden: `internal` heißt DNS-01 für jedes, `public` HTTP-01 und
   DNS-01 nur für Wildcards. Die eine Regel dafür steht in
   `lib/haproxy/challenge.ts`, die Routen geben die Art an den Vorgang mit.
+- **DNS bei zwei Anbietern** (`lib/dns/`): Cloudflare und Hetzner hinter einer
+  Schnittstelle (`provider.ts`). Die Tokens der Zonen liegen verschlüsselt in
+  der Datenbank, die Einträge werden bei jedem Aufruf vom Anbieter gelesen.
+  Hetzner rechnet in RRSets, die Abbildung auf einzelne Einträge steht in
+  `hetzner-rrsets.ts`. Einen Zugang richtet nur `connectZone` ein
+  (`connect.ts`), auch der Assistent.
 - **Postgres als Dokumentenspeicher** (`lib/db/postgres-driver.ts`,
   `lib/db/sql.ts`). Je Collection eine Tabelle mit dem Dokument als `jsonb`, ein
   neues Feld braucht keine Migration. Wonach gefiltert wird, gehört in

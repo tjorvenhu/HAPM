@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react"
 import { KeyRound } from "lucide-react"
 import { browserSupportsWebAuthn, startAuthentication } from "@simplewebauthn/browser"
+import { useT } from "@/lib/i18n/react"
 
 type AuthenticationOptions = Parameters<typeof startAuthentication>[0]["optionsJSON"]
 type AuthenticationResponse = Awaited<ReturnType<typeof startAuthentication>>
@@ -38,6 +39,7 @@ export interface PasskeyLoginButtonProps {
  * `.auth-divider`) in `css/tool-vocabulary.css`.
  */
 export default function PasskeyLoginButton({ requestOptions, verify, describeBrowserError, onSuccess, onError }: PasskeyLoginButtonProps) {
+  const { t } = useT()
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
   // Nach dem Erfolg bleibt der Knopf gesperrt, bis die Seite gewechselt hat.
@@ -51,7 +53,7 @@ export default function PasskeyLoginButton({ requestOptions, verify, describeBro
   function login() {
     report("")
     if (!browserSupportsWebAuthn()) {
-      report("Dieser Browser unterstützt keine Passkeys. Bitte melden Sie sich mit E-Mail und Passwort an.")
+      report(t("Dieser Browser unterstützt keine Passkeys. Bitte melden Sie sich mit E-Mail und Passwort an."))
       return
     }
     startTransition(async () => {
@@ -60,7 +62,7 @@ export default function PasskeyLoginButton({ requestOptions, verify, describeBro
       // die selbst abruft, fängt ihre Netzfehler in `requestOptions` und `verify`.
       const prepared = await requestOptions()
       if (prepared.error || !prepared.options) {
-        report(prepared.error ?? "Die Anmeldung mit Passkey ist gerade nicht möglich.")
+        report(prepared.error ?? t("Die Anmeldung mit Passkey ist gerade nicht möglich."))
         return
       }
 
@@ -92,11 +94,11 @@ export default function PasskeyLoginButton({ requestOptions, verify, describeBro
   return (
     <div className="auth-passkey">
       <div className="auth-divider" role="separator">
-        <span>oder</span>
+        <span>{t("oder")}</span>
       </div>
       <button type="button" className="btn-secondary auth-passkey__btn" onClick={login} disabled={busy} aria-busy={busy}>
         {busy ? <span className="btn-spinner" aria-hidden="true" /> : <KeyRound size={15} strokeWidth={1.5} aria-hidden="true" />}
-        Mit Passkey anmelden
+        {t("Mit Passkey anmelden")}
       </button>
       {error && (
         <div className="auth-error" role="alert">

@@ -7,8 +7,9 @@ import { getSettings } from '@/lib/settings';
 import { selectedDnsDomains } from '@/lib/dns/zones';
 import { readServiceRequest } from '@/lib/haproxy/password-lock';
 import {
-  validateCreateInput,
+  validateNewService,
   withoutLockSecret,
+  parseGlobalHeaders,
   parseGlobalSettings,
   parseScopes,
   serviceHealth,
@@ -17,7 +18,9 @@ import {
   type HaproxyScopeInfo,
   type ServiceHealth,
 } from '@/lib/haproxy/config';
+import type { HeaderDirection } from '@/lib/haproxy/config';
 import type { HaproxyStream } from '@/lib/haproxy/streams';
+import { surfaceTarget, type SurfaceTarget } from '@/lib/haproxy/protected';
 import { LOCAL_SERVER_ID, localServer } from '@/lib/helpers';
 import type { Exposure } from '@/lib/types';
 
@@ -49,12 +52,23 @@ interface ProxyRow {
    *  und das Formular zeigt die Auswahl des Hooks auch ohne Wildcard. */
   exposure: Exposure;
   services: HaproxyService[];
+  /**
+   * Das Ziel, über das die Adresse von HAPM läuft, und seine Gruppe. Beide
+   * lassen sich nicht entfernen (`lib/haproxy/protected.ts`), und die Seite
+   * zeigt das, statt einen Knopf anzubieten, der dann scheitert. `null`: es
+   * gibt keins, oder die Adresse ist nicht eingerichtet.
+   */
+  surface: SurfaceTarget | null;
   /** Die Gruppen: die Marker-Paare der Konfiguration. */
   scopes: HaproxyScopeInfo[];
   /** Die Adressen aus `acl admin_ips src …`. Sie stehen hier mit, weil das
    *  Formular sie braucht: ohne mindestens eine lässt sich kein Eintrag sperren,
    *  und der Schalter soll das sagen, statt es beim Speichern zu melden. */
   adminIps: string[];
+  /** Die Header, die das Frontend schon für alle Ziele setzt. Das Formular
+   *  sagt damit, ob ein Header am Ziel den globalen ersetzt (Anfrage) oder
+   *  von ihm überschrieben wird (Antwort), siehe `parseGlobalHeaders`. */
+  globalHeaders: Record<HeaderDirection, string[]>;
   /**
    * Die TCP-Weiterleitungen derselben Datei.
    *
@@ -78,7 +92,7 @@ export async function GET() {
     await requireSession();
 
     const servers = [localServer()];
-    const { exposure } = await getSettings();
+    const { exposure, publicUrl } = await getSettings();
 
     // Ein Fehler steht in der Zeile und wirft nicht: HAProxy, das gerade nicht
     // antwortet, ist eine Auskunft.
@@ -94,9 +108,11 @@ export async function GET() {
               acmeReady: probe.acmeReady,
               dnsHooks: probe.dnsHooks,
               services: [],
+              surface: null,
               streams: [],
               scopes: [],
               adminIps: [],
+              globalHeaders: { request: [], response: [] },
               health: {},
               error: 'Die HAProxy-Konfiguration ist nicht lesbar.',
             };
@@ -109,9 +125,11 @@ export async function GET() {
             // Ohne Hash und Cookie-Wert der Passwortsperre: der Cookie-Wert
             // ist der Durchlass selbst und gehört nicht in den Browser.
             services: probe.services.map(withoutLockSecret),
+            surface: surfaceTarget(probe.services, { publicUrl }),
             streams: probe.streams,
             scopes: parseScopes(probe.raw),
             adminIps: parseGlobalSettings(probe.raw).adminIps,
+            globalHeaders: parseGlobalHeaders(probe.raw),
             health: Object.fromEntries([
               ...probe.services.map((service) => [
                 service.id,
@@ -133,9 +151,11 @@ export async function GET() {
             acmeReady: false,
             dnsHooks: [],
             services: [],
+            surface: null,
             streams: [],
             scopes: [],
             adminIps: [],
+            globalHeaders: { request: [], response: [] },
             health: {},
             error: err instanceof Error ? err.message : 'HAProxy ist nicht erreichbar.',
           };
@@ -153,10 +173,15 @@ export async function GET() {
 /**
  * Ein Ziel anlegen.
  *
- * Die Antwort trägt nur die ID des Laufs. Alles, was Zeit kostet — Zertifikat,
- * Prüfung, Reload — läuft abgekoppelt weiter (lib/haproxy/runner.ts), sichtbar
- * in der Pille unten rechts. Vorher blockierte diese Route bis zum Reload, also
- * bis zu fünf Minuten, und der Dialog stand so lange offen.
+ * Die Antwort trägt die ID des Laufs und die Dienst-ID. Alles, was Zeit kostet
+ * — Zertifikat, Prüfung, Reload — läuft abgekoppelt weiter
+ * (lib/haproxy/runner.ts), sichtbar in der Pille unten rechts. Vorher
+ * blockierte diese Route bis zum Reload, also bis zu fünf Minuten, und der
+ * Dialog stand so lange offen.
+ *
+ * Die Dienst-ID schickt das Formular nicht mit: sie ergibt sich aus der
+ * Hauptdomain und wird in der Vorabprüfung vergeben, wo die Datei vorliegt
+ * (`precheckCreate`).
  *
  * Was sich ohne Schreibvorgang beantworten lässt, bleibt trotzdem synchron: ein
  * belegter Name oder eine fremde Domain gehört ins Formular zurück und nicht in
@@ -175,10 +200,10 @@ export async function POST(request: Request) {
     const server = await getProxyServer(body.serverId || LOCAL_SERVER_ID);
 
     // Mit dem Passwort der Sperre, falls eins mitkam (lib/haproxy/password-lock.ts).
-    const input = readServiceRequest(body);
+    const draft = readServiceRequest(body);
     // Dieselbe Funktion wie im Formular. Ein Dialog, der etwas durchlässt, was
     // die Route danach ablehnt, ist schlimmer als gar keine Vorabprüfung.
-    const invalid = validateCreateInput(input);
+    const invalid = validateNewService(draft);
     if (invalid) throw new ApiError(invalid);
 
     // Nicht Teil der Eingabe: der Hook steht in keiner Zeile der Konfiguration,
@@ -187,8 +212,9 @@ export async function POST(request: Request) {
     // Intern oder öffentlich: davon hängt ab, ob HTTP-01 überhaupt geht (`challenge.ts`).
     const challenge = { exposure: (await getSettings()).exposure, dnsHook };
 
+    let input;
     try {
-      await precheckCreate(server, input, challenge);
+      input = await precheckCreate(server, draft, challenge);
     } catch (err) {
       // Ein Namens- oder Domainkonflikt ist eine Auskunft an den Benutzer und
       // kein 500er.
@@ -206,7 +232,7 @@ export async function POST(request: Request) {
       actor: { userId: session.userId, email: session.email, ip: getClientIP(request) },
     });
 
-    return ok({ runId: run.$id });
+    return ok({ runId: run.$id, serviceId: input.id });
   } catch (err) {
     return handleError(err);
   }

@@ -28,14 +28,22 @@
  * sie kaputt, lehnt es die ganze Konfiguration ab: deshalb wird nach dem
  * Schreiben geprüft und bei einem Fehlschlag zurückgestellt (`provision.ts`).
  *
- * Rein: außer dem Baustein `ui/static/page.ts` und `lib/shell.ts` kein Import.
- * `scripts/verify-proxy-pages.ts` lässt ein echtes HAProxy eine so erzeugte
- * Datei ausliefern.
+ * ── Das Design ──
+ *
+ * Farben, Logo und Texte lassen sich unter „Reverse-Proxy → Fehlerseiten"
+ * einstellen (`page-design.ts`). Hier ändert das nur, WAS in einer Datei steht:
+ * `renderErrorFile` nimmt das Design, das gerade gilt. Welche Dateien es gibt,
+ * wie geschrieben und wie zurückgestellt wird, bleibt davon unberührt.
+ *
+ * Rein: außer dem Baustein `ui/static/page.ts`, `page-design.ts` und
+ * `lib/shell.ts` kein Import. `scripts/verify-proxy-pages.ts` lässt ein echtes
+ * HAProxy eine so erzeugte Datei ausliefern.
  */
 
 import { ERROR_PAGE_STATUSES, ERROR_PAGE_TEXTS, renderErrorPage } from '@/ui/static/page';
 import { buildCommand, withStdin } from '../shell';
 import { clean, HAPROXY_CFG } from './config';
+import { activeDesign, designTheme, PAGE_MAX_BYTES, type PageDesign } from './page-design';
 
 /** Eine `errorfile`-Zeile der Konfiguration. */
 export interface ErrorFileRef {
@@ -130,6 +138,18 @@ const PROXY_TEXTS: Partial<Record<number, { title?: string; text?: string; actio
   },
 };
 
+/** Überschrift und Text, wie HAPM sie ohne eigenes Design schreibt. */
+export function defaultErrorPageText(status: number): { title: string; text: string } {
+  const base = ERROR_PAGE_TEXTS[status];
+  const proxy = PROXY_TEXTS[status];
+  return { title: proxy?.title ?? base?.title ?? '', text: proxy?.text ?? base?.text ?? '' };
+}
+
+/** Die Codes, für die HAPM eine Datei schreiben kann, aufsteigend. */
+export function errorPageStatuses(): number[] {
+  return ERROR_PAGE_STATUSES.filter(hasErrorPage);
+}
+
 /**
  * Die Fehlerdatei zu einem Status, als rohe HTTP-Antwort.
  *
@@ -137,8 +157,11 @@ const PROXY_TEXTS: Partial<Record<number, { title?: string; text?: string; actio
  * Dateien, die HAProxy selbst mitbringt. Ohne `Content-Length`: HAProxy rechnet
  * sie beim Laden aus, und eine hingeschriebene Zahl wäre die eine Stelle, an
  * der die Datei nach der nächsten Textänderung nicht mehr stimmt.
+ *
+ * Ohne `design` gilt das gespeicherte (`activeDesign`): so vergleicht
+ * `planErrorPages` die Datei auf der Platte mit dem, was jetzt entstünde.
  */
-export function renderErrorFile(status: number): string {
+export function renderErrorFile(status: number, design: PageDesign = activeDesign()): string {
   if (!hasErrorPage(status)) throw new Error(`Für den Status ${status} gibt es keine Fehlerseite.`);
   return (
     `HTTP/1.1 ${status} ${REASONS[status]}\r\n` +
@@ -146,22 +169,26 @@ export function renderErrorFile(status: number): string {
     'Connection: close\r\n' +
     'Content-Type: text/html; charset=utf-8\r\n' +
     '\r\n' +
-    renderErrorPage(status, PROXY_TEXTS[status] ?? {})
+    renderErrorPage(
+      status,
+      { ...(PROXY_TEXTS[status] ?? {}), ...(design.errors[status] ?? {}) },
+      designTheme(design)
+    )
   );
 }
 
-/** Alle Fehlerdateien, die HAPM schreiben kann. Für Tests und für
- *  die Prüfung gegen ein echtes HAProxy. */
-export function errorFiles(): { status: number; content: string }[] {
-  return ERROR_PAGE_STATUSES.filter(hasErrorPage).map((status) => ({
+/** Alle Fehlerdateien, die HAPM schreiben kann. Für den ersten Start, für
+ *  Tests und für die Prüfung gegen ein echtes HAProxy. */
+export function errorFiles(design: PageDesign = activeDesign()): { status: number; content: string }[] {
+  return errorPageStatuses().map((status) => ({
     status,
-    content: renderErrorFile(status),
+    content: renderErrorFile(status, design),
   }));
 }
 
-/** Was eine Fehlerdatei höchstens wiegen darf: HAProxys Puffer fasst 16384
- *  Bytes, davon gehen 1024 Reserve ab. */
-export const ERROR_FILE_MAX_BYTES = 12_000;
+/** Was eine Fehlerdatei höchstens wiegen darf. Woher die Zahl kommt, steht in
+ *  `page-design.ts`. */
+export const ERROR_FILE_MAX_BYTES = PAGE_MAX_BYTES;
 
 /* ── Was auf der Maschine steht ── */
 

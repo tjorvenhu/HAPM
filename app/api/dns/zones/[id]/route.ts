@@ -1,11 +1,13 @@
 import { requireSession, requireCsrf } from '@/lib/session';
-import { updateDocument, deleteDocument } from '@/lib/db';
-import { COLLECTIONS, type DnsZone } from '@/lib/types';
-import { encrypt } from '@/lib/crypto';
-import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
+import { deleteDocument } from '@/lib/db';
+import { COLLECTIONS } from '@/lib/types';
+import { ok, handleError, jsonBody } from '@/lib/api';
 import { logAudit, getClientIP } from '@/lib/audit';
-import { findZone, listRecords } from '@/lib/dns/cloudflare';
+import { replaceZoneToken } from '@/lib/dns/connect';
+import { providerFor } from '@/lib/dns/provider';
+import { dnsProviderLabel } from '@/lib/dns/provider-info';
 import { forClient, getZoneRow, withZone } from '@/lib/dns/store';
+import { providerOf } from '@/lib/dns/zones';
 
 interface Params {
   params: Promise<{ id: string }>;
@@ -14,9 +16,9 @@ interface Params {
 /**
  * Eine Zone mit ihren Einträgen.
  *
- * Die Einträge kommen bei JEDEM Aufruf von Cloudflare. Es gibt keine Collection
+ * Die Einträge kommen bei JEDEM Aufruf vom Anbieter. Es gibt keine Collection
  * dafür, und das ist dieselbe Entscheidung wie beim Reverse-Proxy: eine
- * Spiegelung wäre genau in dem Moment falsch, in dem jemand im Dashboard etwas
+ * Spiegelung wäre genau in dem Moment falsch, in dem jemand beim Anbieter etwas
  * geändert hat — also in dem Moment, in dem man sie am dringendsten braucht.
  */
 export async function GET(_request: Request, { params }: Params) {
@@ -26,7 +28,9 @@ export async function GET(_request: Request, { params }: Params) {
     const zone = await getZoneRow(id);
 
     try {
-      const records = await withZone(zone, (token, zoneId) => listRecords(token, zoneId));
+      const records = await withZone(zone, (token, ref) =>
+        providerFor(zone).listRecords(token, ref)
+      );
       return ok({ zone: { ...forClient(zone), status: 'ok' as const, lastError: null }, records });
     } catch (err) {
       // Die Seite soll trotzdem etwas zeigen können: den Namen der Zone und den
@@ -55,32 +59,19 @@ interface PatchBody {
  * Domain ist eine andere Zone — dafür gibt es Anlegen und Entfernen.
  *
  * Geprüft wird gegen den gespeicherten Namen, und die Zone-ID wird dabei neu
- * gelesen: ein Token für eine andere Domain käme sonst als „gespeichert" zurück
- * und schlüge erst beim nächsten Eintrag fehl.
+ * gelesen (`replaceZoneToken`): ein Token für eine andere Domain käme sonst als
+ * „gespeichert" zurück und schlüge erst beim nächsten Eintrag fehl. Der
+ * Anbieter bleibt der der Zeile. Wer die Domain umgezogen hat, richtet sie
+ * unter „Domain hinzufügen" beim neuen Anbieter ein.
  */
 export async function PATCH(request: Request, { params }: Params) {
   try {
     await requireCsrf(request);
     const session = await requireSession();
     const { id } = await params;
-    const zone = await getZoneRow(id);
     const body = await jsonBody<PatchBody>(request);
 
-    const token = String(body.apiToken ?? '').trim();
-    if (!token) throw new ApiError('Bitte den Cloudflare-API-Token angeben.');
-
-    const found = await findZone(token, zone.name);
-    if (!found) {
-      throw new ApiError(`Dieser Token sieht die Zone "${zone.name}" nicht.`, 404);
-    }
-
-    const updated = await updateDocument<DnsZone>(COLLECTIONS.DNS_ZONES, id, {
-      apiToken: encrypt(token),
-      zoneId: found.id,
-      status: 'ok',
-      lastCheckedAt: new Date().toISOString(),
-      lastError: null,
-    });
+    const updated = await replaceZoneToken(id, String(body.apiToken ?? ''));
 
     await logAudit({
       userId: session.userId,
@@ -89,11 +80,11 @@ export async function PATCH(request: Request, { params }: Params) {
       resource: 'dns_zone',
       resourceId: id,
       // Der Token steht nie im Protokoll, auch nicht gekürzt.
-      details: `API-Token für ${zone.name} ausgetauscht`,
+      details: `API-Token für ${updated.name} ausgetauscht`,
       ip: getClientIP(request) ?? undefined,
     });
 
-    return ok(forClient(updated));
+    return ok(updated);
   } catch (err) {
     return handleError(err);
   }
@@ -102,7 +93,7 @@ export async function PATCH(request: Request, { params }: Params) {
 /**
  * Eine Domain aus der Verwaltung nehmen.
  *
- * Bei Cloudflare passiert dabei nichts: die Einträge bleiben, die Zone bleibt,
+ * Beim Anbieter passiert dabei nichts: die Einträge bleiben, die Zone bleibt,
  * nur der Zugang von hier ist weg. Alles andere wäre ein Löschknopf, der eine
  * ganze Domain offline nimmt, während er aussieht wie „aus der Liste entfernen".
  * Der Bestätigungsdialog sagt genau das.
@@ -122,7 +113,7 @@ export async function DELETE(request: Request, { params }: Params) {
       action: 'dns_zone_deleted',
       resource: 'dns_zone',
       resourceId: id,
-      details: `${zone.name} aus der Verwaltung genommen. Bei Cloudflare wurde nichts geändert.`,
+      details: `${zone.name} aus der Verwaltung genommen. Bei ${dnsProviderLabel(providerOf(zone))} wurde nichts geändert.`,
       ip: getClientIP(request) ?? undefined,
     });
 

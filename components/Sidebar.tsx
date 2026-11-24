@@ -3,12 +3,14 @@
 import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard, Network, BarChart3, ShieldCheck, ScrollText, Globe, SlidersHorizontal,
-  Plug, PackageCheck, DatabaseBackup, Bell, Settings, Users, UserCog, type LucideIcon,
+  Plug, PackageCheck, DatabaseBackup, Bell, Settings, Users, UserCog, FileWarning, type LucideIcon,
 } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { ShellSidebar, type ShellNavArea, type ShellNavGroup } from '@/ui/shell/ShellSidebar';
 import { ShellProfileMenu } from '@/ui/shell/ShellProfileMenu';
 import { Logo } from '@/ui/primitives/Logo';
+import { msgid } from '@/lib/i18n/translate';
+import { useT } from '@/lib/i18n/react';
 
 /** Die Zähler aus `/api/nav-counts`. */
 type NavCount = 'updates';
@@ -29,33 +31,37 @@ interface NavSection {
  * Die Gliederung der Leiste. Aus ihr kommen auch der Titel im Browser
  * (`activeArea`) und die Seiten der globalen Suche (`NAV_PAGES`): ein neuer
  * Eintrag bringt beides mit.
+ *
+ * Die Namen bleiben deutsch (`msgid`) und werden erst beim Zeigen übersetzt,
+ * damit Titel, Suche und Leiste denselben Schlüssel benutzen.
  */
 const NAV_SECTIONS: NavSection[] = [
   {
-    title: 'Übersicht',
-    items: [{ label: 'Übersicht', href: '/dashboard', icon: LayoutDashboard }],
+    title: msgid('Übersicht'),
+    items: [{ label: msgid('Übersicht'), href: '/dashboard', icon: LayoutDashboard }],
   },
   {
-    title: 'Reverse-Proxy',
+    title: msgid('Reverse-Proxy'),
     items: [
-      { label: 'Ziele', href: '/reverse-proxy', icon: Network },
-      { label: 'Statistik', href: '/reverse-proxy/statistiken', icon: BarChart3 },
-      { label: 'Zertifikate', href: '/reverse-proxy/zertifikate', icon: ShieldCheck },
-      { label: 'Logs', href: '/reverse-proxy/logs', icon: ScrollText },
-      { label: 'DNS', href: '/dns', icon: Globe },
-      { label: 'API', href: '/reverse-proxy/api', icon: Plug },
-      { label: 'Einstellungen', href: '/reverse-proxy/einstellungen', icon: SlidersHorizontal },
+      { label: msgid('Ziele'), href: '/reverse-proxy', icon: Network },
+      { label: msgid('Statistik'), href: '/reverse-proxy/statistiken', icon: BarChart3 },
+      { label: msgid('Zertifikate'), href: '/reverse-proxy/zertifikate', icon: ShieldCheck },
+      { label: msgid('Logs'), href: '/reverse-proxy/logs', icon: ScrollText },
+      { label: msgid('DNS'), href: '/dns', icon: Globe },
+      { label: msgid('API'), href: '/reverse-proxy/api', icon: Plug },
+      { label: msgid('Fehlerseiten'), href: '/reverse-proxy/fehlerseiten', icon: FileWarning },
+      { label: msgid('Einstellungen'), href: '/reverse-proxy/einstellungen', icon: SlidersHorizontal },
     ],
   },
   {
-    title: 'System',
+    title: msgid('System'),
     items: [
-      { label: 'Updates', href: '/updates', icon: PackageCheck, badge: 'updates' },
-      { label: 'Sicherung', href: '/backup', icon: DatabaseBackup },
-      { label: 'Benachrichtigungen', href: '/notifications', icon: Bell },
-      { label: 'Allgemein', href: '/system', icon: Settings },
-      { label: 'Benutzer', href: '/users', icon: Users },
-      { label: 'Konto', href: '/konto', icon: UserCog },
+      { label: msgid('Updates'), href: '/updates', icon: PackageCheck, badge: 'updates' },
+      { label: msgid('Sicherung'), href: '/backup', icon: DatabaseBackup },
+      { label: msgid('Benachrichtigungen'), href: '/notifications', icon: Bell },
+      { label: msgid('Allgemein'), href: '/system', icon: Settings },
+      { label: msgid('Benutzer'), href: '/users', icon: Users },
+      { label: msgid('Konto'), href: '/konto', icon: UserCog },
     ],
   },
 ];
@@ -99,7 +105,7 @@ function slug(value: string): string {
 }
 
 /** Aus den Bereichen wird die Gliederung für `ShellSidebar`: je Bereich eine Gruppe mit Überschrift. */
-function buildNavigation(): { groups: ShellNavGroup[]; areas: ShellNavArea[] } {
+function buildNavigation(t: (text: string) => string): { groups: ShellNavGroup[]; areas: ShellNavArea[] } {
   const groups: ShellNavGroup[] = [];
   const areas: ShellNavArea[] = [];
 
@@ -108,14 +114,14 @@ function buildNavigation(): { groups: ShellNavGroup[]; areas: ShellNavArea[] } {
     groups.push({
       key: group,
       // Über der einzelnen „Übersicht" ordnet eine Überschrift nichts.
-      heading: groups.length === 0 ? undefined : section.title,
-      label: section.title,
+      heading: groups.length === 0 ? undefined : t(section.title),
+      label: t(section.title),
     });
     for (const item of section.items) {
       areas.push({
         key: `seite${slug(item.href)}`,
         href: item.href,
-        label: item.label,
+        label: t(item.label),
         icon: item.icon,
         group,
         ...(item.badge ? { counts: [item.badge] } : {}),
@@ -124,8 +130,6 @@ function buildNavigation(): { groups: ShellNavGroup[]; areas: ShellNavArea[] } {
   }
   return { groups, areas };
 }
-
-const NAVIGATION = buildNavigation();
 
 interface SidebarProps {
   userName: string;
@@ -144,6 +148,8 @@ interface SidebarProps {
 export default function Sidebar({ userName, userEmail, apiFetch, onSearch }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const { t } = useT();
+  const navigation = useMemo(() => buildNavigation(t), [t]);
   const [counts, setCounts] = useState<Partial<Record<NavCount, number>>>({});
 
   useEffect(() => {
@@ -167,8 +173,8 @@ export default function Sidebar({ userName, userEmail, apiFetch, onSearch }: Sid
   return (
     <ShellSidebar
       root="/dashboard"
-      areas={NAVIGATION.areas}
-      groups={NAVIGATION.groups}
+      areas={navigation.areas}
+      groups={navigation.groups}
       logo={<Logo width={132} />}
       counts={Object.entries(counts).map(([key, count]) => ({ key, count: count ?? 0 }))}
       onSearch={onSearch}

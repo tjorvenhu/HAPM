@@ -1,10 +1,11 @@
 import { requireCsrf, requireSession } from '@/lib/session';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
+import { msg } from '@/lib/i18n';
 import { logAudit, getClientIP } from '@/lib/audit';
 import { updateSettings } from '@/lib/settings';
 import { readSetupView } from '@/lib/setup';
 import { setupExecutionAlive } from '@/lib/setup/run';
-import { getSetupState, updateSetupState } from '@/lib/setup/store';
+import { getSetupState, setDnsAccess, updateSetupState } from '@/lib/setup/store';
 
 /**
  * Die Einrichtung ausdrücklich überspringen (`skipped`) oder erneut öffnen
@@ -21,9 +22,9 @@ export async function POST(request: Request) {
     const body = await jsonBody<{ status?: unknown }>(request);
 
     if (body.status !== 'skipped' && body.status !== 'open') {
-      throw new ApiError('Die Einrichtung lässt sich überspringen oder erneut öffnen.');
+      throw new ApiError(msg('Die Einrichtung lässt sich überspringen oder erneut öffnen.'));
     }
-    if (setupExecutionAlive()) throw new ApiError('Die Einrichtung läuft gerade.', 409);
+    if (setupExecutionAlive()) throw new ApiError(msg('Die Einrichtung läuft gerade.'), 409);
 
     if (body.status === 'open') {
       // „Später" bei der Adresse und das letzte Ausführen gehören zum letzten Durchlauf.
@@ -34,6 +35,7 @@ export async function POST(request: Request) {
       });
     }
     await updateSettings({ setupStatus: body.status });
+    if (body.status !== 'open') await setDnsAccess(null);
 
     await logAudit({
       userId: session.userId,

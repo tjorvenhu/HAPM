@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Loader2, RefreshCw, ChevronUp, Network } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { useNow } from '@/components/useNow';
+import { useT } from '@/lib/i18n/react';
 import UpdateRunOverlay from '@/components/UpdateRunOverlay';
 import { HAPROXY_PHASES, HAPROXY_PHASE_LABELS } from '@/components/runPhases';
 import type { ActivityJob } from '@/app/api/activity/route';
@@ -26,6 +27,7 @@ function elapsedLabel(startedAt: string, now: number): string {
  */
 export default function ActivityIndicator() {
   const { apiFetch } = useApp();
+  const { t, plural } = useT();
   const [jobs, setJobs] = useState<ActivityJob[]>([]);
   const [open, setOpen] = useState(false);
   const now = useNow();
@@ -78,13 +80,13 @@ export default function ActivityIndicator() {
     return overlay;
   }
 
-  const label = jobs.length === 1 ? '1 Vorgang' : `${jobs.length} Vorgänge`;
+  const label = plural(jobs.length, { one: '{count} Vorgang', other: '{count} Vorgänge' });
 
   return (
     <div className="activity-indicator" ref={rootRef}>
       {open && (
         <div className="activity-panel" role="menu">
-          <div className="activity-panel-head">Laufende Vorgänge</div>
+          <div className="activity-panel-head">{t('Laufende Vorgänge')}</div>
           {jobs.map((job) => {
             const key = `${job.kind}-${job.id}`;
             const time = <span className="activity-row-time">{elapsedLabel(job.startedAt, now)}</span>;
@@ -101,7 +103,7 @@ export default function ActivityIndicator() {
                   <RefreshCw size={15} className="spin" />
                   <div className="activity-row-text">
                     <span className="activity-row-name">{job.name}</span>
-                    <span className="activity-row-sub">Update</span>
+                    <span className="activity-row-sub">{t('Update')}</span>
                   </div>
                   {time}
                 </Link>
@@ -136,7 +138,7 @@ export default function ActivityIndicator() {
         className="activity-pill"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        aria-label="Laufende Vorgänge anzeigen"
+        aria-label={t('Laufende Vorgänge anzeigen')}
       >
         <Loader2 size={15} className="spin" />
         <span>{label}</span>

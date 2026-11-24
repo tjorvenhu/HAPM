@@ -4,6 +4,7 @@ import { useEffect, useState, type MouseEvent } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { Menu, Search, X } from "lucide-react"
+import { useT } from "@/lib/i18n/react"
 import { ShellSidebarPanel, type ShellSidebarPanelProps } from "./ShellSidebarPanel"
 
 export type { ShellNavArea, ShellNavGroup, ShellNavSection, ShellCount } from "./ShellSidebarPanel"
@@ -21,6 +22,7 @@ type Props = Omit<ShellSidebarPanelProps, "headerEnd" | "search" | "badge"> & {
  * Aufrufer gibt nur die Gliederung herein.
  */
 export function ShellSidebar({ onSearch, ...panel }: Props) {
+  const { t } = useT()
   const [open, setOpen] = useState(false)
 
   useEffect(() => {
@@ -48,7 +50,7 @@ export function ShellSidebar({ onSearch, ...panel }: Props) {
         <button
           type="button"
           className="shell-icon-btn"
-          aria-label={open ? "Navigation schließen" : "Navigation öffnen"}
+          aria-label={open ? t("Navigation schließen") : t("Navigation öffnen")}
           aria-expanded={open}
           onClick={() => setOpen((prev) => !prev)}
         >
@@ -58,7 +60,7 @@ export function ShellSidebar({ onSearch, ...panel }: Props) {
           {panel.logo ?? <Image src="/hapm-logo.svg" alt="HAPM" width={132} height={26} />}
         </Link>
         {onSearch && (
-          <button type="button" className="shell-icon-btn shell-topbar__search" aria-label="Suche öffnen" onClick={onSearch}>
+          <button type="button" className="shell-icon-btn shell-topbar__search" aria-label={t("Suche öffnen")} onClick={onSearch}>
             <Search size={18} strokeWidth={1.5} />
           </button>
         )}
@@ -72,7 +74,7 @@ export function ShellSidebar({ onSearch, ...panel }: Props) {
 
       <aside
         className={open ? "app-shell__sidebar app-shell__sidebar--open" : "app-shell__sidebar"}
-        aria-label="Seitenleiste"
+        aria-label={t("Seitenleiste")}
         onClick={closeOnLink}
       >
         <ShellSidebarPanel

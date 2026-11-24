@@ -1,21 +1,26 @@
 /**
  * Die Zonen aus der Datenbank holen, den Token entschlüsseln und das Ergebnis
- * eines Cloudflare-Aufrufs an der Zeile vermerken.
+ * eines Aufrufs beim Anbieter an der Zeile vermerken.
  *
- * Die Trennung zu `cloudflare.ts` ist keine Zeremonie: dort steht der Anbieter,
- * hier die eigene Datenbank. Eine Datei, die beides täte, wäre die einzige im
- * Baum, die man weder ohne Netz noch ohne Datenbank aufrufen kann.
+ * Die Trennung zu `cloudflare.ts` und `hetzner.ts` ist keine Zeremonie: dort
+ * steht der Anbieter, hier die eigene Datenbank. Eine Datei, die beides täte,
+ * wäre die einzige im Baum, die man weder ohne Netz noch ohne Datenbank
+ * aufrufen kann. Deshalb bekommt `withZone` die Arbeit hereingereicht und kennt
+ * selbst keinen Anbieter.
  */
 
 import { listAll, getDocument, updateDocument, Query } from '../db';
 import { COLLECTIONS, type DnsZone } from '../types';
 import { decrypt } from '../crypto';
 import { ApiError } from '../api';
-import { matchZone, normalizeDomain } from './zones';
+import { matchZone, normalizeDomain, providerOf, type DnsProviderId } from './zones';
+import type { ZoneRef } from './provider';
 
 /** Die Zone, wie sie an den Browser geht: alles außer dem Token. */
 export interface ZoneForClient {
   $id: string;
+  /** Immer gesetzt, auch bei einer Zeile aus der Zeit vor dem Feld (`providerOf`). */
+  provider: DnsProviderId;
   name: string;
   zoneId: string;
   status: DnsZone['status'];
@@ -34,6 +39,7 @@ export interface ZoneForClient {
 export function forClient(zone: DnsZone): ZoneForClient {
   return {
     $id: zone.$id,
+    provider: providerOf(zone),
     name: zone.name,
     zoneId: zone.zoneId,
     status: zone.status,
@@ -58,12 +64,18 @@ export async function zoneForDomain(domain: string): Promise<DnsZone | null> {
   return matchZone(domain, await listZoneRows());
 }
 
-/** Steht diese Domain schon als Zone? Der Riegel gegen zwei Zeilen, zwei Tokens. */
-export async function zoneExists(name: string): Promise<boolean> {
+/**
+ * Die Zeile zu genau diesem Zonennamen, oder `null`.
+ *
+ * Der Riegel gegen zwei Zeilen und zwei Tokens für dieselbe Domain: eine Domain
+ * ist bei einem Anbieter delegiert, und mit zwei Zeilen wüsste `matchZone`
+ * nicht, in welche geschrieben wird.
+ */
+export async function findZoneRow(name: string): Promise<DnsZone | null> {
   const rows = await listAll<DnsZone>(COLLECTIONS.DNS_ZONES, [
     Query.equal('name', normalizeDomain(name)),
   ]);
-  return rows.length > 0;
+  return rows[0] ?? null;
 }
 
 export function tokenOf(zone: DnsZone): string {
@@ -80,7 +92,7 @@ export function tokenOf(zone: DnsZone): string {
 }
 
 /**
- * Was Cloudflare gerade gesagt hat, an der Zeile vermerken.
+ * Was der Anbieter gerade gesagt hat, an der Zeile vermerken.
  *
  * Der Grund ist die Liste: eine Domain, deren Token seit drei Wochen abgelaufen
  * ist, sieht dort sonst aus wie jede andere — auffallen würde es beim nächsten
@@ -98,17 +110,20 @@ export async function markZone(zone: DnsZone, error: string | null): Promise<voi
 }
 
 /**
- * Einen Cloudflare-Aufruf ausführen und sein Ergebnis an der Zone vermerken.
+ * Einen Aufruf beim Anbieter ausführen und sein Ergebnis an der Zone vermerken.
  *
  * Zwei Zeilen, die sonst an jeder Aufrufstelle stünden — und an der einen, an
  * der sie fehlten, bliebe eine tote Zone für immer grün.
+ *
+ * Die Arbeit bekommt den Token und die Zone, wie der Anbieter sie kennt
+ * (`ZoneRef`), und ruft damit `providerFor(zone)` aus `provider.ts`.
  */
 export async function withZone<T>(
   zone: DnsZone,
-  work: (token: string, zoneId: string) => Promise<T>
+  work: (token: string, ref: ZoneRef) => Promise<T>
 ): Promise<T> {
   try {
-    const result = await work(tokenOf(zone), zone.zoneId);
+    const result = await work(tokenOf(zone), { id: zone.zoneId, name: zone.name });
     await markZone(zone, null);
     return result;
   } catch (err) {

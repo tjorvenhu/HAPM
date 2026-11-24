@@ -43,7 +43,9 @@ const INPUT: CreateServiceInput = {
   sticky: false,
   lockedDomains: [],
   passwordLock: null,
-  preset: 'default',
+  responseHeaders: [],
+  requestHeaders: [],
+  tunnel: false,
   healthcheck: false,
 };
 
@@ -152,7 +154,12 @@ backend mix
         routes: [{ name: 'api', paths: ['/api'], servers: [], check: true }],
       })
     ).toMatch(/Pfad-Regeln/);
-    expect(validateCreateInput({ ...INPUT, preset: 'coolify' })).toMatch(/Preset/);
+    // Die Weiterleitung beantwortet HAProxy selbst: Header und Timeout hätten
+    // kein Backend, in dem sie wirken.
+    expect(validateCreateInput({ ...INPUT, tunnel: true })).toMatch(/Weiterleitung hat keine/);
+    expect(
+      validateCreateInput({ ...INPUT, responseHeaders: [{ name: 'X-Frame-Options', value: 'DENY' }] })
+    ).toMatch(/Weiterleitung hat keine/);
   });
 });
 

@@ -59,17 +59,23 @@ export async function PATCH(request: Request, { params }: Params) {
     const server = await getProxyServer(body.serverId || LOCAL_SERVER_ID);
 
     // Mit dem Passwort der Sperre, falls eins mitkam (lib/haproxy/password-lock.ts).
-    const input = readServiceRequest(body);
+    // Ohne `id` im Rumpf behält der Eintrag seine: sie ergibt sich nur beim
+    // Anlegen aus der Domain und ändert sich danach nicht von selbst.
+    const sent = readServiceRequest(body);
+    const input = sent.id === '' ? { ...sent, id } : sent;
     const invalid = validateCreateInput(input);
     if (invalid) throw new ApiError(invalid);
 
     const dnsHook = String(body.dnsHook ?? '').trim() || null;
     // Intern oder öffentlich: davon hängt ab, ob HTTP-01 überhaupt geht (`challenge.ts`).
-    const challenge = { exposure: (await getSettings()).exposure, dnsHook };
+    const settings = await getSettings();
+    const challenge = { exposure: settings.exposure, dnsHook };
+    // Das Ziel, über das die Oberfläche läuft, behält deren Domain (`protected.ts`).
+    const protection = { publicUrl: settings.publicUrl };
 
     let current;
     try {
-      current = await precheckUpdate(server, id, input, challenge);
+      current = await precheckUpdate(server, id, input, challenge, protection);
     } catch (err) {
       if (err instanceof HaproxyConfigError) throw new ApiError(err.message, 409);
       throw err;
@@ -87,6 +93,7 @@ export async function PATCH(request: Request, { params }: Params) {
       serviceId: id,
       input,
       challenge,
+      protection,
       dns: {
         ensure: selectedDnsDomains(body.dnsDomains, input.domains),
         remove: dropped,
@@ -117,12 +124,14 @@ export async function DELETE(request: Request, { params }: Params) {
     const body = await jsonBody<DeleteBody>(request).catch(() => ({}) as DeleteBody);
 
     const server = await getProxyServer(body.serverId || LOCAL_SERVER_ID);
+    // Das Ziel, über das die Oberfläche läuft, bleibt stehen (`protected.ts`).
+    const protection = { publicUrl: (await getSettings()).publicUrl };
 
     // Liest den Dienst, wie er JETZT dasteht: Domains und Ziele gehen
     // denormalisiert in die Historie, danach gibt es sie nirgends mehr.
     let service;
     try {
-      service = await precheckDelete(server, id);
+      service = await precheckDelete(server, id, protection);
     } catch (err) {
       if (err instanceof HaproxyConfigError) throw new ApiError(err.message, 409);
       throw err;
@@ -133,6 +142,7 @@ export async function DELETE(request: Request, { params }: Params) {
       action: 'delete',
       serviceId: id,
       service,
+      protection,
       // Alle Domains des Dienstes: entfernt wird davon nur, was dieses Werkzeug
       // selbst gesetzt hat — ein A-Eintrag von Hand bleibt stehen und sagt das
       // als Schritt (lib/dns/sync.ts).

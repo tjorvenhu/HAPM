@@ -15,6 +15,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
+import { useT } from "@/lib/i18n/react"
 import { ChartEmpty } from "./ChartCard"
 import { ChartLegend, ChartTooltipBox, type ChartTooltipRow } from "./ChartTooltip"
 import {
@@ -140,7 +141,7 @@ function TimeSeriesChartImpl<T extends Row>({
   xType = "time",
   xFormat,
   rangeMs,
-  format = formatNumber,
+  format: formatProp,
   yFormat,
   variant = "line",
   stacked = false,
@@ -160,15 +161,17 @@ function TimeSeriesChartImpl<T extends Row>({
   legend = true,
   minPoints = 1,
   emptyIfZero = false,
-  emptyText = "Für diesen Zeitraum liegen keine Messwerte vor.",
+  emptyText,
 }: TimeSeriesChartProps<T>): ReactElement {
+  const { t, locale } = useT()
+  const format = formatProp ?? ((value: number) => formatNumber(value, 0, locale))
   const gradientBase = `viz-fill-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`
 
   const measured = data.filter((row) => series.some((s) => typeof field(row, s.key) === "number")).length
   const allZero =
     emptyIfZero && data.every((row) => series.every((s) => !field(row, s.key)))
   if (allZero || measured < Math.max(1, minPoints)) {
-    return <ChartEmpty height={height}>{emptyText}</ChartEmpty>
+    return <ChartEmpty height={height}>{emptyText ?? t("Für diesen Zeitraum liegen keine Messwerte vor.")}</ChartEmpty>
   }
 
   const single = series.length === 1
@@ -185,7 +188,7 @@ function TimeSeriesChartImpl<T extends Row>({
       : 0)
   const formatX = (value: unknown): string => {
     if (xFormat) return (xFormat as (v: unknown) => string)(value)
-    if (xType === "time" && typeof value === "number") return formatAxisTime(value, timeRange)
+    if (xType === "time" && typeof value === "number") return formatAxisTime(value, timeRange, locale)
     return String(value ?? "")
   }
 
@@ -223,12 +226,12 @@ function TimeSeriesChartImpl<T extends Row>({
         }
         const values = series.map((s) => field(row, s.key)).filter((v): v is number => typeof v === "number")
         // Die Summe nur unter einem Stapel: dort ist sie die Höhe der Fläche.
-        const total = stacked && values.length > 1 ? { name: "Summe", value: format(values.reduce((a, b) => a + b, 0)) } : undefined
+        const total = stacked && values.length > 1 ? { name: t("Summe"), value: format(values.reduce((a, b) => a + b, 0)) } : undefined
         const xValue = field(row, x)
         const title = tooltipTitle
           ? tooltipTitle(row)
           : xType === "time" && typeof xValue === "number"
-            ? formatTooltipTime(xValue)
+            ? formatTooltipTime(xValue, locale)
             : formatX(xValue)
         return (
           <ChartTooltipBox

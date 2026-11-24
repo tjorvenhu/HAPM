@@ -4,7 +4,7 @@ import { getClientIP } from '@/lib/audit';
 import { getProxyServer, precheckStreamCreate, checkStreamPort } from '@/lib/haproxy/provision';
 import { startHaproxyRun } from '@/lib/haproxy/runner';
 import { HaproxyConfigError } from '@/lib/haproxy/config';
-import { readStreamInput, validateStreamInput } from '@/lib/haproxy/streams';
+import { readStreamInput, validateNewStream } from '@/lib/haproxy/streams';
 import { LOCAL_SERVER_ID } from '@/lib/helpers';
 
 /**
@@ -70,14 +70,17 @@ export async function POST(request: Request) {
 
     const server = await getProxyServer(body.serverId || LOCAL_SERVER_ID);
 
-    const input = readStreamInput(body);
+    const draft = readStreamInput(body);
     // Dieselbe Funktion wie im Formular. Zwei Regelwerke wären ein Dialog, der
     // etwas durchlässt, was die Route danach ablehnt.
-    const invalid = validateStreamInput(input);
+    const invalid = validateNewStream(draft);
     if (invalid) throw new ApiError(invalid);
 
+    // Die Kennung schickt das Formular nicht mit: sie ergibt sich aus dem Port
+    // und wird hier vergeben, wo die Datei vorliegt.
+    let input;
     try {
-      await precheckStreamCreate(server, input);
+      input = await precheckStreamCreate(server, draft);
     } catch (err) {
       if (err instanceof HaproxyConfigError) throw new ApiError(err.message, 409);
       throw err;
@@ -91,7 +94,7 @@ export async function POST(request: Request) {
       actor: { userId: session.userId, email: session.email, ip: getClientIP(request) },
     });
 
-    return ok({ runId: run.$id });
+    return ok({ runId: run.$id, serviceId: input.id });
   } catch (err) {
     return handleError(err);
   }

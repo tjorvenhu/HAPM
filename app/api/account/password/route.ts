@@ -2,7 +2,8 @@ import { requireCsrf, requireSession, revokeOtherSessions } from '@/lib/session'
 import { changePassword } from '@/lib/auth/users';
 import { logAudit, getClientIP } from '@/lib/audit';
 import { rateLimit } from '@/lib/rate-limit';
-import { ok, fail, handleError, jsonBody } from '@/lib/api';
+import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
+import { msg } from '@/lib/i18n';
 
 export async function POST(request: Request) {
   try {
@@ -11,11 +12,11 @@ export async function POST(request: Request) {
 
     // Eine offene Sitzung soll kein Weg sein, das aktuelle Passwort durchzuprobieren.
     const rl = rateLimit(`password:${session.userId}`, 5, 15 * 60 * 1000);
-    if (!rl.success) return fail('Zu viele Versuche. Bitte warten Sie 15 Minuten.', 429);
+    if (!rl.success) throw new ApiError(msg('Zu viele Versuche. Bitte warten Sie 15 Minuten.'), 429);
 
     const { current, next } = await jsonBody<{ current?: unknown; next?: unknown }>(request);
     if (typeof current !== 'string' || typeof next !== 'string' || !current || !next) {
-      return fail('Das aktuelle und das neue Passwort sind erforderlich.');
+      throw new ApiError(msg('Das aktuelle und das neue Passwort sind erforderlich.'));
     }
 
     await changePassword(session.userId, current, next);

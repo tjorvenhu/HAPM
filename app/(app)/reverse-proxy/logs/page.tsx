@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import {
   ScrollText, Eye, RefreshCw, Loader2, ArrowLeft, Plus, Pencil, Trash2, Settings2, FolderPlus,
-  FolderMinus, Cable, ShieldCheck,
+  FolderMinus, Cable, ShieldCheck, FileInput,
 } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { usePolling } from '@/components/usePolling';
@@ -61,6 +61,7 @@ const ACTION_LABELS: Record<HaproxyAction, string> = {
   'stream-update': 'TCP geändert',
   'stream-delete': 'TCP gelöscht',
   certificate: 'Zertifikat',
+  import: 'Import',
 };
 
 const ACTION_ICONS: Record<HaproxyAction, React.ReactNode> = {
@@ -74,6 +75,7 @@ const ACTION_ICONS: Record<HaproxyAction, React.ReactNode> = {
   'stream-update': <Cable size={14} />,
   'stream-delete': <Cable size={14} />,
   certificate: <ShieldCheck size={14} />,
+  import: <FileInput size={14} />,
 };
 
 const STATUS_LABELS: Record<RunStatus, string> = {

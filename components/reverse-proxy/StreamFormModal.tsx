@@ -13,6 +13,7 @@ import {
   STREAM_BALANCE_HINTS,
   STREAM_PORT_MAX,
   STREAM_PORT_MIN,
+  validateNewStream,
   validateStreamInput,
   type CreateStreamInput,
   type HaproxyStream,
@@ -25,7 +26,7 @@ import type { ProxyRow } from './types';
  *
  * Ein eigener Dialog und nicht ein Zweig in `ServiceFormModal`: von dessen
  * dreißig Feldern gälten hier vier. Es gibt keine Domain, kein Zertifikat,
- * keinen DNS-Eintrag, kein Preset, keine Pfad-Regeln und keine Sperre über die
+ * keinen DNS-Eintrag, keine Header, keine Pfad-Regeln und keine Sperre über die
  * Admin-IPs — dafür einen Port der Maschine, der danach offen ist.
  *
  * ── Der Port ist die Entscheidung ──
@@ -106,6 +107,9 @@ export default function StreamFormModal({
    * TCP-Weiterleitung braucht kein Zertifikat. Ohne acme.sh lässt sich ein
    * Port trotzdem durchreichen. */
   const usable = proxies.filter((p) => !p.error);
+  /** Die Kennung, beim Bearbeiten. Eine neue Weiterleitung hat noch keine: sie
+   *  ergibt sich aus dem Port (`tcp_5432`) und wird beim Anlegen auf dem Server
+   *  vergeben. Danach bleibt sie, auch wenn sich der Port ändert. */
   const editingId = edit?.stream.id ?? null;
 
   const [saving, setSaving] = useState(false);
@@ -114,7 +118,6 @@ export default function StreamFormModal({
    *  die Routen und die Historie sie tragen. */
   const serverId = edit?.proxy.$id ?? usable[0]?.$id ?? '';
   const [scope, setScope] = useState<HaproxyScope>(edit?.stream.scope ?? defaultScope);
-  const [streamId, setStreamId] = useState(edit?.stream.id ?? '');
   const [port, setPort] = useState(edit?.stream.port ? String(edit.stream.port) : '');
   const [servers, setServers] = useState<ServerRow[]>(
     edit && edit.stream.servers.length > 0
@@ -144,7 +147,8 @@ export default function StreamFormModal({
 
   const input: CreateStreamInput = {
     scope,
-    id: streamId.trim().toLowerCase(),
+    // Leer heißt beim Anlegen: der Server vergibt sie.
+    id: editingId ?? '',
     port: Number(port.trim()),
     servers: servers
       .map((s) => ({
@@ -162,7 +166,7 @@ export default function StreamFormModal({
     allowedSources: allowedSources.map((s) => s.trim()).filter(Boolean),
   };
   // Dieselbe Funktion, die die Route aufruft.
-  const inputError = validateStreamInput(input);
+  const inputError = editingId ? validateStreamInput(input) : validateNewStream(input);
 
   /* ── Der Port, geprüft auf der Maschine ──
    *
@@ -234,12 +238,12 @@ export default function StreamFormModal({
       );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `${verb} fehlgeschlagen`);
+      // Die Kennung einer neuen Weiterleitung steht in der Antwort.
+      const startedId: string = editingId ?? data.data.serviceId;
       onStarted({
         id: data.data.runId,
-        label: `TCP-Weiterleitung „${input.id}" ${editingId ? 'ändern' : 'anlegen'}`,
-        // Beim Umbenennen läuft der Vorgang auf dem ALTEN Namen: so heißt der
-        // Abschnitt, solange er noch dasteht.
-        serviceId: editingId ?? input.id,
+        label: `TCP-Weiterleitung „${startedId}" ${editingId ? 'ändern' : 'anlegen'}`,
+        serviceId: startedId,
         title: `Port ${input.port}`,
         isNew: !editingId,
       });
@@ -291,35 +295,26 @@ export default function StreamFormModal({
                     </div>
                   </div>
 
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label className="form-label">Gruppe</label>
-                      <Select
-                        value={scope}
-                        onChange={setScope}
-                        options={scopeOptions.map((s) => ({ value: s.name, label: s.label }))}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">
-                        Kennung
-                        <InfoHint text="Sie wird der Name des listen-Abschnitts und teilt sich den Namensraum mit den Backends der Dienste." />
-                      </label>
-                      <input
-                        className="form-input"
-                        value={streamId}
-                        onChange={(e) => setStreamId(e.target.value)}
-                        placeholder="pg_kunde"
-                        autoComplete="off"
-                        spellCheck={false}
-                        required
-                      />
-                      <span className="form-hint">a-z, 0-9 und _.</span>
-                    </div>
+                  <div className="form-group">
+                    <label className="form-label">Gruppe</label>
+                    <Select
+                      value={scope}
+                      onChange={setScope}
+                      options={scopeOptions.map((s) => ({ value: s.name, label: s.label }))}
+                    />
                   </div>
 
                   <div className="form-group">
-                    <label className="form-label">Port auf diesem Server</label>
+                    <label className="form-label">
+                      Port auf diesem Server
+                      <InfoHint
+                        text={
+                          editingId
+                            ? 'Die Kennung des listen-Abschnitts bleibt, auch wenn sich der Port ändert.'
+                            : 'Aus dem Port ergibt sich die Kennung des listen-Abschnitts, zum Beispiel tcp_5432.'
+                        }
+                      />
+                    </label>
                     <input
                       className="form-input"
                       type="number"
@@ -350,6 +345,11 @@ export default function StreamFormModal({
                         <>Belegt: {portCheck.reason}</>
                       )}
                     </span>
+                    {editingId && (
+                      <span className="form-hint">
+                        Kennung: <code>{editingId}</code>
+                      </span>
+                    )}
                   </div>
 
                   {/* ── Was HAPM NICHT tut ──

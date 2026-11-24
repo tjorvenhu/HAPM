@@ -15,6 +15,7 @@
 import { isValidDomain, isWildcardDomain, type CreateServiceInput } from '../haproxy/config';
 import { certCovers } from '../haproxy/certs';
 import { needsDnsChallenge } from '../haproxy/challenge';
+import { msg, msgid, type Message } from '../i18n/translate';
 import type {
   Exposure,
   SetupExecution,
@@ -109,15 +110,18 @@ export function normalizeSetupDomain(input: string): string {
     .replace(/\.$/, '');
 }
 
-/** Die Meldung für den Benutzer oder `null`. Erwartet die normalisierte Form. */
-export function validateSetupDomain(domain: string): string | null {
-  if (!domain) return 'Bitte geben Sie die Domain ein, unter der HAPM erreichbar sein soll.';
-  if (isWildcardDomain(domain)) return 'Die Oberfläche braucht eine einzelne Domain, keine Wildcard.';
+/**
+ * Die Meldung für den Benutzer oder `null`. Erwartet die normalisierte Form.
+ * Eine `Message`: die Seite übersetzt sie mit `t()`, die Route wirft sie als `ApiError`.
+ */
+export function validateSetupDomain(domain: string): Message | null {
+  if (!domain) return msg('Bitte geben Sie die Domain ein, unter der HAPM erreichbar sein soll.');
+  if (isWildcardDomain(domain)) return msg('Die Oberfläche braucht eine einzelne Domain, keine Wildcard.');
   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(domain) || domain.includes(':')) {
-    return 'Für eine IP-Adresse gibt es kein Zertifikat. Bitte geben Sie einen Domainnamen ein.';
+    return msg('Für eine IP-Adresse gibt es kein Zertifikat. Bitte geben Sie einen Domainnamen ein.');
   }
   if (!isValidDomain(domain) || !domain.includes('.')) {
-    return `"${domain}" ist kein gültiger Domainname. Erwartet wird etwas wie hapm.example.org.`;
+    return msg('"{domain}" ist kein gültiger Domainname. Erwartet wird etwas wie hapm.example.org.', { domain });
   }
   return null;
 }
@@ -139,13 +143,16 @@ export function wildcardBaseOf(domain: string): string | null {
  * abdecken, also genau eine Ebene darüber liegen: sonst entstünde neben der
  * Wildcard noch ein zweites Zertifikat für die Oberfläche.
  */
-export function validateWildcardBase(domain: string, base: string): string | null {
-  if (!base) return 'Bitte geben Sie die Basis der Wildcard ein, zum Beispiel example.org.';
+export function validateWildcardBase(domain: string, base: string): Message | null {
+  if (!base) return msg('Bitte geben Sie die Basis der Wildcard ein, zum Beispiel example.org.');
   if (isWildcardDomain(base) || !isValidDomain(base) || !base.includes('.')) {
-    return `"${base}" ist keine gültige Basis. Erwartet wird etwas wie example.org, ohne Stern davor.`;
+    return msg('"{base}" ist keine gültige Basis. Erwartet wird etwas wie example.org, ohne Stern davor.', { base });
   }
   if (!certCovers(`*.${base}`, domain)) {
-    return `*.${base} deckt ${domain} nicht ab. Eine Wildcard gilt für genau eine Ebene unter ihrer Basis.`;
+    return msg('*.{base} deckt {domain} nicht ab. Eine Wildcard gilt für genau eine Ebene unter ihrer Basis.', {
+      base,
+      domain,
+    });
   }
   return null;
 }
@@ -170,7 +177,9 @@ export function hapmServiceInput(domain: string, listenPort: number): CreateServ
     sticky: false,
     lockedDomains: [],
     passwordLock: null,
-    preset: 'default',
+    responseHeaders: [],
+    requestHeaders: [],
+    tunnel: false,
     // Der Check ruft `GET /` mit dem Host der Domain auf und erwartet 200 bis
     // 399. HAPM antwortet dort mit einer Weiterleitung auf die Übersicht.
     healthcheck: true,
@@ -233,12 +242,13 @@ export function judgeAddresses(resolved: string[] | null, own: string[]): Addres
 
 /* ── Das Ausführen ── */
 
+/** Deutsche Schlüssel (`msgid`), die Seite übersetzt sie beim Zeigen. */
 export const STAGE_LABELS: Record<SetupStageKey, string> = {
-  dns: 'DNS-Zugangsdaten prüfen',
-  scope: `Gruppe ${SETUP_SCOPE} anlegen`,
-  certificate: 'Zertifikat ausstellen',
-  service: 'Ziel für die Oberfläche anlegen',
-  publicUrl: 'Adresse von HAPM eintragen',
+  dns: msgid('DNS-Zugangsdaten prüfen'),
+  scope: msgid('Gruppe {scope} anlegen'),
+  certificate: msgid('Zertifikat ausstellen'),
+  service: msgid('Ziel für die Oberfläche anlegen'),
+  publicUrl: msgid('Adresse von HAPM eintragen'),
 };
 
 /** Die Schritte des Ausführens. Die DNS-Zugangsdaten nur, wenn das Zertifikat über DNS-01 geht. */
@@ -258,9 +268,10 @@ export function newExecution(stages: SetupStageKey[], startedAt: string): SetupE
   };
 }
 
-export const INTERRUPTED =
-  'HAPM wurde neu gestartet, während die Einrichtung lief. Bitte führen Sie sie erneut aus. ' +
-  'Was schon eingerichtet ist, wird dabei nicht wiederholt.';
+/** Gespeichert als deutscher Schlüssel, die Seite übersetzt ihn beim Zeigen. */
+export const INTERRUPTED = msgid(
+  'HAPM wurde neu gestartet, während die Einrichtung lief. Bitte führen Sie sie erneut aus. Was schon eingerichtet ist, wird dabei nicht wiederholt.'
+);
 
 /**
  * Ein gespeichertes Ausführen so lesen, wie es wirklich steht.

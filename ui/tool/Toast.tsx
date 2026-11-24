@@ -4,6 +4,7 @@ import {
   createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode,
 } from 'react';
 import { AlertTriangle, CheckCircle2, Info, X, XCircle } from 'lucide-react';
+import { useT } from '@/lib/i18n/react';
 
 /**
  * Die Meldungen nach einer Handlung — unten rechts, mit ablaufender Zeit.
@@ -108,6 +109,7 @@ export function useToast(): ToastContextValue {
 const MAX_VISIBLE = 4;
 
 export function ToastProvider({ children }: { children: ReactNode }) {
+  const { t } = useT();
   const [toasts, setToasts] = useState<Toast[]>([]);
   const nextId = useRef(1);
 
@@ -131,7 +133,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       {/* `aria-live="polite"`: ein Screenreader liest die Meldung vor, ohne den
           Benutzer mitten im Satz zu unterbrechen. */}
-      <div className="toast-stack" role="region" aria-live="polite" aria-label="Meldungen">
+      <div className="toast-stack" role="region" aria-live="polite" aria-label={t('Meldungen')}>
         {toasts.map((toast) => (
           <ToastCard key={toast.id} toast={toast} onDismiss={() => dismiss(toast.id)} />
         ))}
@@ -141,6 +143,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 }
 
 function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }) {
+  const { t } = useT();
   const [paused, setPaused] = useState(false);
   /** Was von der Zeit übrig ist. Ohne das fangen die Sekunden nach jedem
    *  Anhalten von vorne an, und ein Toast, über dem der Zeiger liegen bleibt,
@@ -190,7 +193,7 @@ function ToastCard({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
         type="button"
         className="toast-close"
         onClick={onDismiss}
-        aria-label="Meldung schließen"
+        aria-label={t('Meldung schließen')}
       >
         <X size={15} />
       </button>

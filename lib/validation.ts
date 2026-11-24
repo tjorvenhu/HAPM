@@ -7,6 +7,8 @@
  * control.
  */
 
+import { msgid } from './i18n/translate';
+
 /** Validate a hostname or IP address. */
 export function validateHostname(host: string): boolean {
   if (!host || host.length > 253) return false;
@@ -30,14 +32,17 @@ export function validateEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-/** Validate password complexity. Returns a German error message, or null if valid. */
+/**
+ * Validate password complexity. Returns a German error message, or null if valid.
+ * Der Text ist ein Schlüssel (`msgid`): `handleError` übersetzt ihn, wenn er als `ApiError` hinausgeht.
+ */
 export function validatePassword(password: string): string | null {
   if (!password || password.length < 10) {
-    return 'Das Passwort muss mindestens 10 Zeichen lang sein.';
+    return msgid('Das Passwort muss mindestens 10 Zeichen lang sein.');
   }
-  if (!/[A-Z]/.test(password)) return 'Das Passwort muss mindestens einen Großbuchstaben enthalten.';
-  if (!/[a-z]/.test(password)) return 'Das Passwort muss mindestens einen Kleinbuchstaben enthalten.';
-  if (!/[0-9]/.test(password)) return 'Das Passwort muss mindestens eine Zahl enthalten.';
+  if (!/[A-Z]/.test(password)) return msgid('Das Passwort muss mindestens einen Großbuchstaben enthalten.');
+  if (!/[a-z]/.test(password)) return msgid('Das Passwort muss mindestens einen Kleinbuchstaben enthalten.');
+  if (!/[0-9]/.test(password)) return msgid('Das Passwort muss mindestens eine Zahl enthalten.');
   return null;
 }
 

@@ -27,11 +27,16 @@
  * ob es sie annimmt und mit dem Status ausliefert, der in ihr steht, sagt nur
  * HAProxy.
  *
- * Wer `passwordLockRules` oder `renderErrorFile` ändert, lässt dieses Skript
- * laufen.
+ * Dazu ein Durchgang mit dem größten Design, das HAPM speichern lässt: ein
+ * Logo genau bis zur Grenze (`PAGE_MAX_BYTES`). Knapp darüber nimmt
+ * `haproxy -c` die Passwortabfrage noch an, und HAProxy beantwortet sie mit 500
+ * (`lib/haproxy/page-design.ts`). Hier zeigt sich, ob die Grenze trägt.
+ *
+ * Wer `passwordLockRules`, `renderErrorFile` oder das Design der Seiten
+ * ändert, lässt dieses Skript laufen.
  */
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { request } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -43,10 +48,19 @@ import {
   LOCK_MAX_ATTEMPTS,
   LOCK_PAGE_DIR,
   type CreateServiceInput,
+  type PasswordLock,
 } from '../lib/haproxy/config';
 import { createPasswordLock } from '../lib/haproxy/password-lock';
 import { lockPages } from '../lib/haproxy/lock-page';
 import { renderErrorFile } from '../lib/haproxy/error-pages';
+import {
+  bytesToBase64,
+  defaultPageDesign,
+  parsePageDesign,
+  PAGE_MAX_BYTES,
+  type PageDesign,
+} from '../lib/haproxy/page-design';
+import { designPageSizes, logoByteBudget } from '../lib/haproxy/design-pages';
 
 const VERSIONS = process.argv.slice(2).length > 0 ? process.argv.slice(2) : ['2.4', '2.8', '3.0'];
 const PORT = 18480;
@@ -107,7 +121,9 @@ const service = (over: Partial<CreateServiceInput>): CreateServiceInput => ({
   sticky: false,
   lockedDomains: ['ganz.test'],
   passwordLock: null,
-  preset: 'default',
+  responseHeaders: [],
+  requestHeaders: [],
+  tunnel: false,
   healthcheck: false,
   ...over,
 });
@@ -172,32 +188,9 @@ async function verify(version: string): Promise<void> {
 
   const full = createPasswordLock(PASSWORD);
   const partial = createPasswordLock('nur für eine Domain');
-  let config = addService(BASE, service({ passwordLock: full }));
-  config = addService(
-    config,
-    service({
-      id: 'teil',
-      domains: ['offen.test', 'zu.test'],
-      lockedDomains: ['zu.test'],
-      passwordLock: partial,
-    })
-  );
-  // Die Seiten liegen im Container dort, wo sie auf der Maschine liegen.
-  const dir = mkdtempSync(join(tmpdir(), 'hapm-lock-'));
-  mkdirSync(join(dir, 'pages'));
-  writeFileSync(join(dir, 'haproxy.cfg'), config);
-  for (const page of lockPages()) writeFileSync(join(dir, 'pages', page.file), page.html);
-  mkdirSync(join(dir, 'errors'));
-  for (const status of [403, 404, 503]) {
-    writeFileSync(join(dir, 'errors', `${status}.http`), renderErrorFile(status));
-  }
+  const { dir, mounts } = stage(full, partial, defaultPageDesign());
 
   const name = `hapm-lock-verify-${version.replace(/\W/g, '-')}`;
-  const mounts = [
-    '-v', `${join(dir, 'haproxy.cfg')}:/usr/local/etc/haproxy/haproxy.cfg:ro`,
-    '-v', `${join(dir, 'pages')}:${LOCK_PAGE_DIR}:ro`,
-    '-v', `${join(dir, 'errors')}:/etc/haproxy/errors:ro`,
-  ];
   try {
     docker(['rm', '-f', name]);
   } catch {
@@ -293,6 +286,120 @@ async function verify(version: string): Promise<void> {
   }
 }
 
+/**
+ * Konfiguration, Seiten der Passwortsperre und Fehlerdateien in ein frisches
+ * Verzeichnis, eingehängt dort, wo sie auf der Maschine liegen.
+ */
+function stage(full: PasswordLock, partial: PasswordLock, design: PageDesign): { dir: string; mounts: string[] } {
+  let config = addService(BASE, service({ passwordLock: full }));
+  config = addService(
+    config,
+    service({
+      id: 'teil',
+      domains: ['offen.test', 'zu.test'],
+      lockedDomains: ['zu.test'],
+      passwordLock: partial,
+    })
+  );
+  const dir = mkdtempSync(join(tmpdir(), 'hapm-lock-'));
+  mkdirSync(join(dir, 'pages'));
+  writeFileSync(join(dir, 'haproxy.cfg'), config);
+  for (const page of lockPages(design)) writeFileSync(join(dir, 'pages', page.file), page.html);
+  mkdirSync(join(dir, 'errors'));
+  for (const status of [403, 404, 503]) {
+    writeFileSync(join(dir, 'errors', `${status}.http`), renderErrorFile(status, design));
+  }
+  const mounts = [
+    '-v', `${join(dir, 'haproxy.cfg')}:/usr/local/etc/haproxy/haproxy.cfg:ro`,
+    '-v', `${join(dir, 'pages')}:${LOCK_PAGE_DIR}:ro`,
+    '-v', `${join(dir, 'errors')}:/etc/haproxy/errors:ro`,
+  ];
+  return { dir, mounts };
+}
+
+/**
+ * Das größte Design, das die Route annimmt: ein langer Text und ein Logo genau
+ * bis zur Grenze. Ein PNG, weil seine Data-URI immer Base64 ist und die Grenze
+ * deshalb aufs Byte trifft. Einmal ist die Passwortabfrage die größte Seite,
+ * einmal die 503: die beiden liefert HAProxy auf verschiedenen Wegen aus.
+ */
+function largestDesign(largest: 'lock' | 'error'): PageDesign {
+  const long = 'ü'.repeat(300);
+  const raw = {
+    colors: { accent: '#7a1f3d', background: '#101418', text: '#eef1f4' },
+    brand: 'Beispiel',
+    footer: 'Kontakt: it@example.org',
+    lock: { title: 'Geschützte Vorschau', subtitle: largest === 'lock' ? long : null, submit: 'Weiter' },
+    errors: largest === 'error' ? { 503: { text: long } } : {},
+  };
+  const png = (size: number) => {
+    const bytes = new Uint8Array(size);
+    bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    for (let i = 8; i < size; i++) bytes[i] = (i * 31) % 256;
+    return bytesToBase64(bytes);
+  };
+  const probe = parsePageDesign({ ...raw, logo: { kind: 'custom', data: png(8) } });
+  if (!probe.ok) throw new Error(probe.error);
+  const parsed = parsePageDesign({ ...raw, logo: { kind: 'custom', data: png(logoByteBudget(probe.design)) } });
+  if (!parsed.ok) throw new Error(parsed.error);
+  return parsed.design;
+}
+
+async function verifyLargest(version: string, kind: 'lock' | 'error'): Promise<void> {
+  const design = largestDesign(kind);
+  const [largest] = designPageSizes(design);
+  console.log(`\nHAProxy ${version}, größtes Design („${largest.page.label}“: ${largest.bytes} von ${PAGE_MAX_BYTES} Bytes)`);
+
+  const { dir, mounts } = stage(createPasswordLock(PASSWORD), createPasswordLock('zweites'), design);
+  const name = `hapm-lock-verify-gross-${version.replace(/\W/g, '-')}`;
+  try {
+    docker(['rm', '-f', name]);
+  } catch {
+    // Es gab keinen.
+  }
+
+  try {
+    // `spawnSync` statt `docker()`: Warnungen stehen auf stderr, auch wenn die
+    // Prüfung besteht.
+    const checked = spawnSync(
+      'docker',
+      ['run', '--rm', ...mounts, `haproxy:${version}`, 'haproxy', '-c', '-f', '/usr/local/etc/haproxy/haproxy.cfg'],
+      { encoding: 'utf8' }
+    );
+    const output = `${checked.stdout}${checked.stderr}`.trim();
+    check('haproxy -c nimmt die Konfiguration an', checked.status === 0, output.slice(-400));
+    if (checked.status !== 0) return;
+    // Die Warnung von HAProxy vor einer zu großen Seite. Andere Warnungen gehören
+    // zur Testkonfiguration und nicht hierher.
+    check('und warnt nicht vor der Größe einer Seite', !/payload|buffer space/i.test(output), output.slice(-400));
+
+    docker(['run', '-d', '--name', name, '-p', `127.0.0.1:${PORT}:8080`, ...mounts, `haproxy:${version}`]);
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+
+    // Die Fassung mit dem Hinweis ist die größte der drei.
+    const page = lockPages(design).find((entry) => entry.file === 'lock-wrong.html')!.html;
+    const wrong = await call({ host: 'ganz.test', form: { [LOCK_FIELD]: 'falsch' } });
+    check('die Passwortabfrage kommt mit 401, nicht mit 500', wrong.status === 401, `Status ${wrong.status}`);
+    check('und vollständig, Byte für Byte', wrong.body === page, `${Buffer.byteLength(wrong.body)} Bytes`);
+
+    const file = renderErrorFile(503, design);
+    const down = await call({ host: 'aus.test' });
+    check('die 503-Seite kommt mit ihrem Status', down.status === 503, `Status ${down.status}`);
+    check(
+      'und vollständig, Byte für Byte',
+      down.body === file.slice(file.indexOf('\r\n\r\n') + 4),
+      `${Buffer.byteLength(down.body)} Bytes`
+    );
+  } finally {
+    try {
+      docker(['rm', '-f', name]);
+    } catch {
+      // Schon weg.
+    }
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 async function main(): Promise<void> {
   try {
     docker(['version', '--format', '{{.Server.Version}}']);
@@ -300,7 +407,11 @@ async function main(): Promise<void> {
     console.error('Docker ist nicht erreichbar. Dieses Skript startet HAProxy in einem Container.');
     process.exit(2);
   }
-  for (const version of VERSIONS) await verify(version);
+  for (const version of VERSIONS) {
+    await verify(version);
+    await verifyLargest(version, 'lock');
+    await verifyLargest(version, 'error');
+  }
   console.log(failures === 0 ? '\nAlles in Ordnung.' : `\n${failures} Prüfung(en) fehlgeschlagen.`);
   process.exit(failures === 0 ? 0 : 1);
 }

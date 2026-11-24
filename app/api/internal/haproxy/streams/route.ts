@@ -11,14 +11,14 @@ import {
   type StreamView,
 } from '@/lib/haproxy/internal';
 import { HaproxyConfigError } from '@/lib/haproxy/config';
-import { readStreamInput, validateStreamInput } from '@/lib/haproxy/streams';
+import { readStreamInput, validateNewStream } from '@/lib/haproxy/streams';
 
 /**
  * Die TCP-Weiterleitungen für einen anderen Dienst: lesen und anlegen.
  *
  * Das Gegenstück zu `/api/haproxy/streams`, nur mit Token statt Sitzung. Was
  * dort gilt, gilt hier unverändert — derselbe Rumpf (`readStreamInput`),
- * dieselbe Prüfung (`validateStreamInput`), dieselbe Vorabprüfung und derselbe
+ * dieselbe Prüfung (`validateNewStream`), dieselbe Vorabprüfung und derselbe
  * abgekoppelte Lauf. Siehe `lib/haproxy/internal.ts` für den Grund, warum kein
  * zweiter Schreibweg daneben entsteht.
  *
@@ -117,7 +117,10 @@ export async function GET(request: Request) {
 /**
  * Eine TCP-Weiterleitung anlegen.
  *
- * Die Antwort trägt nur die ID des Laufs; geprüft, eingesetzt und neu geladen
+ * `id` ist freiwillig. Fehlt sie, ergibt sie sich aus dem Port (`tcp_5432`,
+ * `assignStreamId`), und die Antwort nennt sie als `streamId`.
+ *
+ * Die Antwort trägt sonst nur die ID des Laufs; geprüft, eingesetzt und neu geladen
  * wird abgekoppelt. Der Aufrufer pollt `/api/internal/haproxy/runs/<id>`.
  *
  * Was sich ohne Schreibvorgang beantworten lässt, kommt synchron als Fehler
@@ -139,12 +142,13 @@ export async function POST(request: Request) {
     const body = await jsonBody<{ serverId?: string }>(request);
     const server = await resolveProxy(body.serverId);
 
-    const input = readStreamInput(body);
-    const invalid = validateStreamInput(input);
+    const draft = readStreamInput(body);
+    const invalid = validateNewStream(draft);
     if (invalid) throw new ApiError(invalid);
 
+    let input;
     try {
-      await precheckStreamCreate(server, input);
+      input = await precheckStreamCreate(server, draft);
     } catch (err) {
       if (err instanceof HaproxyConfigError) throw new ApiError(err.message, 409);
       throw err;

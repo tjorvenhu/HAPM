@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation';
 import { LogIn, ShieldCheck, ArrowLeft } from 'lucide-react';
 import { AuthCard } from '@/ui/auth/AuthCard';
 import PasskeyLoginButton from '@/components/PasskeyLoginButton';
+import { msgid } from '@/lib/i18n/translate';
+import { useT } from '@/lib/i18n/react';
 
 type LoginStep = 'checking' | 'credentials' | 'twoFactor';
 
@@ -13,11 +15,12 @@ type LoginStep = 'checking' | 'credentials' | 'twoFactor';
 const HEADING: Record<LoginStep, { title: string; subtitle: string }> = {
   checking: { title: '', subtitle: '' },
   credentials: { title: '', subtitle: '' },
-  twoFactor: { title: 'Anmeldung bestätigen', subtitle: 'Code aus der Authenticator-App' },
+  twoFactor: { title: msgid('Anmeldung bestätigen'), subtitle: msgid('Code aus der Authenticator-App') },
 };
 
 export default function LoginPage() {
   const router = useRouter();
+  const { t } = useT();
   const [step, setStep] = useState<LoginStep>('checking');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -86,7 +89,7 @@ export default function LoginPage() {
         body: JSON.stringify({ email, password }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Die Anmeldung ist fehlgeschlagen.');
+      if (!res.ok) throw new Error(data.error || t('Die Anmeldung ist fehlgeschlagen.'));
 
       if (data.data?.requiresTwoFactor) {
         setCsrfToken(data.data.csrfToken ?? '');
@@ -96,7 +99,7 @@ export default function LoginPage() {
         router.push('/dashboard');
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Die Anmeldung ist fehlgeschlagen.');
+      setError(err instanceof Error ? err.message : t('Die Anmeldung ist fehlgeschlagen.'));
     } finally {
       setLoading(false);
     }
@@ -113,10 +116,10 @@ export default function LoginPage() {
         body: JSON.stringify({ code }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Der Code ließ sich nicht prüfen.');
+      if (!res.ok) throw new Error(data.error || t('Der Code ließ sich nicht prüfen.'));
       router.push('/dashboard');
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Der Code ließ sich nicht prüfen.');
+      setError(err instanceof Error ? err.message : t('Der Code ließ sich nicht prüfen.'));
       setCode('');
     } finally {
       setLoading(false);
@@ -137,7 +140,11 @@ export default function LoginPage() {
   }
 
   return (
-    <AuthCard standalone title={HEADING[step].title} subtitle={HEADING[step].subtitle}>
+    <AuthCard
+      standalone
+      title={HEADING[step].title && t(HEADING[step].title)}
+      subtitle={HEADING[step].subtitle && t(HEADING[step].subtitle)}
+    >
       {step === 'checking' && (
         <>
           <div className="skeleton shell-skeleton--row" />
@@ -149,7 +156,7 @@ export default function LoginPage() {
         <>
           <form className="auth-form" onSubmit={handleCredentials}>
             <div className="auth-field">
-              <label htmlFor="email">E-Mail-Adresse</label>
+              <label htmlFor="email">{t('E-Mail-Adresse')}</label>
               <input
                 id="email"
                 type="email"
@@ -162,7 +169,7 @@ export default function LoginPage() {
               />
             </div>
             <div className="auth-field">
-              <label htmlFor="password">Passwort</label>
+              <label htmlFor="password">{t('Passwort')}</label>
               <input
                 id="password"
                 type="password"
@@ -174,12 +181,12 @@ export default function LoginPage() {
               />
             </div>
             <div className="auth-forgot">
-              <Link href="/forgot-password">Passwort vergessen?</Link>
+              <Link href="/forgot-password">{t('Passwort vergessen?')}</Link>
             </div>
             {error && <div className="auth-error">{error}</div>}
             <button className="auth-submit" type="submit" disabled={loading}>
               {loading ? <span className="btn-spinner" aria-hidden="true" /> : <LogIn size={15} />}
-              {loading ? 'Anmelden…' : 'Anmelden'}
+              {loading ? t('Anmelden…') : t('Anmelden')}
             </button>
           </form>
           {/* Ersetzt Passwort und Code in einem Schritt. */}
@@ -192,10 +199,10 @@ export default function LoginPage() {
           <form className="auth-form" onSubmit={handleTwoFactor}>
             <div className="auth-intro">
               <ShieldCheck />
-              <p>Geben Sie den 6-stelligen Code aus Ihrer Authenticator-App ein.</p>
+              <p>{t('Geben Sie den 6-stelligen Code aus Ihrer Authenticator-App ein.')}</p>
             </div>
             <div className="auth-field">
-              <label htmlFor="twoFactorCode">Code</label>
+              <label htmlFor="twoFactorCode">{t('Code')}</label>
               <input
                 ref={codeInputRef}
                 id="twoFactorCode"
@@ -214,7 +221,7 @@ export default function LoginPage() {
             {error && <div className="auth-error">{error}</div>}
             <button className="auth-submit" type="submit" disabled={loading || code.length !== 6}>
               {loading ? <span className="btn-spinner" aria-hidden="true" /> : <ShieldCheck size={16} />}
-              {loading ? 'Prüfen…' : 'Bestätigen'}
+              {loading ? t('Prüfen…') : t('Bestätigen')}
             </button>
           </form>
           <button
@@ -223,7 +230,7 @@ export default function LoginPage() {
             onClick={backToCredentials}
             disabled={loading}
           >
-            <ArrowLeft size={15} /> Zurück zur Anmeldung
+            <ArrowLeft size={15} /> {t('Zurück zur Anmeldung')}
           </button>
         </>
       )}

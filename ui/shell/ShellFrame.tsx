@@ -1,4 +1,7 @@
+"use client"
+
 import type { ReactNode } from "react"
+import { useT } from "@/lib/i18n/react"
 import { ShellContent } from "./ShellContent"
 
 interface ShellFrameProps {
@@ -21,10 +24,11 @@ interface ShellFrameProps {
  * Position je Seite.
  */
 export function ShellFrame({ className, sidebar, banner, after, children }: ShellFrameProps) {
+  const { t } = useT()
   return (
     <div className={className ? `${className} app-shell` : "app-shell"}>
       <a href="#main" className="app-shell__skip">
-        Zum Inhalt springen
+        {t("Zum Inhalt springen")}
       </a>
       {sidebar}
       <div className="app-shell__panel">
@@ -61,8 +65,9 @@ export function ShellSidebarSkeleton({ rows = 5, badge = false }: { rows?: numbe
 
 /** Platzhalter für die Inhaltsfläche: Titel und drei Flächen. Für den ersten Aufbau, solange die Sitzung lädt. */
 export function ShellPageSkeleton() {
+  const { t } = useT()
   return (
-    <div className="shell-skeleton__page" aria-busy="true" aria-label="Wird geladen">
+    <div className="shell-skeleton__page" aria-busy="true" aria-label={t("Wird geladen")}>
       <div className="skeleton shell-skeleton shell-skeleton--title" />
       <div className="skeleton shell-skeleton shell-skeleton--lead" />
       <div className="skeleton shell-skeleton shell-skeleton--block" />

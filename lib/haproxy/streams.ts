@@ -44,6 +44,7 @@ import {
   SECTION_KEYWORDS,
   clean,
   escapeRegExp,
+  firstFreeId,
   insertBeforeScopeMarker,
   isValidBackendName,
   isValidBackendTarget,
@@ -203,8 +204,20 @@ export const STREAM_PORT_MAX = 65535;
  * Konfiguration, und die liegt erst in `addStream` vor.
  */
 export function validateStreamInput(input: CreateStreamInput): string | null {
+  return validateStream(input, true);
+}
+
+/**
+ * Dasselbe für eine Weiterleitung, die es noch nicht gibt: eine leere Kennung
+ * heißt dort „wird beim Anlegen vergeben" (`assignStreamId`).
+ */
+export function validateNewStream(input: CreateStreamInput): string | null {
+  return validateStream(input, input.id !== '');
+}
+
+function validateStream(input: CreateStreamInput, idGiven: boolean): string | null {
   if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(input.scope)) return 'Es wurde keine Gruppe ausgewählt.';
-  if (!isValidServiceId(input.id)) {
+  if (idGiven && !isValidServiceId(input.id)) {
     return 'Die Kennung darf nur a-z, 0-9 und _ enthalten und muss mit einem Buchstaben oder einer Ziffer beginnen.';
   }
 
@@ -574,12 +587,7 @@ export function addStream(text: string, input: CreateStreamInput): string {
 
   const lines = text.split('\n');
 
-  // Ein Name gilt in HAProxy über `frontend`, `backend` und `listen` hinweg.
-  // Nur gegen `listen` zu prüfen ließe einen Abschnitt entstehen, der so heißt
-  // wie ein bestehendes Backend — und die Datei wird als Ganzes abgelehnt.
-  const taken = lines.find((line) =>
-    new RegExp(`^\\s*(frontend|backend|listen)\\s+${escapeRegExp(input.id)}\\s*$`).test(clean(line))
-  );
+  const taken = sectionNamed(lines, input.id);
   if (taken) {
     throw new HaproxyConfigError(
       `Der Name "${input.id}" ist in der Konfiguration bereits vergeben (${clean(taken)}).`
@@ -603,6 +611,49 @@ export function addStream(text: string, input: CreateStreamInput): string {
   }
 
   return insertBeforeScopeMarker(lines, scope, 'backends', renderStreamBlock(input)).join('\n');
+}
+
+/**
+ * Der Abschnitt, der diesen Namen schon trägt, oder `undefined`.
+ *
+ * Ein Name gilt in HAProxy über `frontend`, `backend` und `listen` hinweg.
+ * Nur gegen `listen` zu prüfen ließe einen Abschnitt entstehen, der so heißt
+ * wie ein bestehendes Backend, und die Datei wird als Ganzes abgelehnt.
+ */
+function sectionNamed(lines: string[], id: string): string | undefined {
+  return lines.find((line) =>
+    new RegExp(`^\\s*(frontend|backend|listen)\\s+${escapeRegExp(id)}\\s*$`).test(clean(line))
+  );
+}
+
+/**
+ * Die Kennung zu einem Port: `tcp_5432`, und ist sie vergeben, mit Zähler.
+ *
+ * Der Port ist, was eine TCP-Weiterleitung eindeutig macht: zwei auf demselben
+ * lehnt `addStream` ab. Ein Feld für den Namen war eine Frage, auf die der
+ * Port schon die Antwort ist.
+ */
+export function streamIdFor(port: number, taken: Iterable<string> = []): string {
+  const used = new Set([...taken].map((id) => id.toLowerCase()));
+  return firstFreeId(`tcp_${port}`, (id) => used.has(id));
+}
+
+/**
+ * Die Kennung für eine neue Weiterleitung, frei in DIESER Konfiguration.
+ * `reserved` wie bei `assignServiceId`: vergeben, aber noch nicht
+ * geschrieben.
+ */
+export function assignStreamId(
+  text: string,
+  port: number,
+  reserved: Iterable<string> = []
+): string {
+  const lines = text.split('\n');
+  const held = new Set(reserved);
+  return firstFreeId(
+    `tcp_${port}`,
+    (id) => held.has(id) || sectionNamed(lines, id) !== undefined
+  );
 }
 
 /** Der Name der Gruppe, wie er im Marker steht — die Schreibweise aus dem

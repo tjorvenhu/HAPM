@@ -83,7 +83,9 @@ export async function PATCH(request: Request, { params }: Params) {
     const body = await jsonBody<{ serverId?: string }>(request);
     const server = await resolveProxy(wantedServer(request, body));
 
-    const input = readStreamInput(body);
+    // Ohne `id` im Rumpf behält der Abschnitt seine Kennung.
+    const sent = readStreamInput(body);
+    const input = sent.id === '' ? { ...sent, id } : sent;
     const invalid = validateStreamInput(input);
     if (invalid) throw new ApiError(invalid);
 

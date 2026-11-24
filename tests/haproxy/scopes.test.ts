@@ -57,7 +57,9 @@ const INPUT: CreateServiceInput = {
   sticky: false,
   lockedDomains: [],
   passwordLock: null,
-  preset: 'default',
+  responseHeaders: [],
+  requestHeaders: [],
+  tunnel: false,
   healthcheck: true,
 };
 
@@ -71,13 +73,28 @@ describe('parseScopes', () => {
   it('leitet Beschriftung und Adressteil aus dem Namen im Marker ab, auch mit Trennzeichen', () => {
     // Der Name im Marker ist die einzige Quelle. Eine Tabelle mit eigenen
     // Schreibweisen daneben gibt es nicht: eine Gruppe heißt so, wie sie im
-    // Marker steht, und eine neue braucht keine Änderung am Code.
+    // Marker steht, und eine neue braucht keine Änderung am Code. Die eine
+    // Ausnahme ist der Name des Produkts, siehe den nächsten Test.
     expect(scopeLabel('TESTKUNDEN')).toBe('Testkunden');
     expect(scopeSlug('TESTKUNDEN')).toBe('testkunden');
     expect(scopeLabel('INTERNE-TOOLS')).toBe('Interne Tools');
     expect(scopeSlug('INTERNE-TOOLS')).toBe('interne-tools');
     expect(scopeLabel('alte_seiten')).toBe('Alte Seiten');
     expect(scopeSlug('Alte_Seiten')).toBe('alte_seiten');
+  });
+
+  it('schreibt HAPM groß, in jeder Schreibweise des Markers und nur als ganzes Wort', () => {
+    // Die Gruppe der Einrichtung heißt wie das Produkt, nicht „Hapm".
+    expect(scopeLabel('HAPM')).toBe('HAPM');
+    expect(scopeLabel('hapm')).toBe('HAPM');
+    expect(scopeLabel('Hapm')).toBe('HAPM');
+    expect(scopeLabel('HAPM-INTERN')).toBe('HAPM Intern');
+    expect(scopeLabel('interne_hapm_tools')).toBe('Interne HAPM Tools');
+    // Ein Wort, das nur so anfängt, folgt der allgemeinen Regel.
+    expect(scopeLabel('HAPMS')).toBe('Hapms');
+    // Der Adressteil bleibt klein: er steht in Links und in der Historie.
+    expect(scopeSlug('HAPM')).toBe('hapm');
+    expect(parseScopes(CONFIG.replace(/KUNDEN/g, 'HAPM'))[1].label).toBe('HAPM');
   });
 
   it('kommt mit einem Bindestrich im Markernamen zurecht', () => {
@@ -177,6 +194,14 @@ describe('addScope', () => {
     expect(validateScopeName('mit leerzeichen')).toMatch(/nur a-z/);
     expect(validateScopeName('9anfang')).toMatch(/nur a-z/);
     expect(validateScopeName('testkunden')).toBeNull();
+  });
+
+  it('lehnt den Namen einer festen Seite ab, auch groß geschrieben', () => {
+    // Die Gruppe stünde unter /reverse-proxy/<slug> und wäre hinter der Seite verborgen.
+    for (const name of ['fehlerseiten', 'ZERTIFIKATE', 'Einstellungen', 'import']) {
+      expect(validateScopeName(name)).toMatch(/Name einer Seite/);
+    }
+    expect(validateScopeName('zertifikate-alt')).toBeNull();
   });
 });
 

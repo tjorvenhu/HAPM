@@ -35,7 +35,10 @@ export async function PATCH(request: Request, { params }: Params) {
 
     const server = await getProxyServer(body.serverId || LOCAL_SERVER_ID);
 
-    const input = readStreamInput(body);
+    // Ohne `id` im Rumpf behält der Abschnitt seine Kennung, auch wenn der
+    // Port sich ändert: abgeleitet wird sie nur beim Anlegen.
+    const sent = readStreamInput(body);
+    const input = sent.id === '' ? { ...sent, id } : sent;
     const invalid = validateStreamInput(input);
     if (invalid) throw new ApiError(invalid);
 

@@ -1,5 +1,6 @@
 import { requireSession } from '@/lib/session';
 import { ok, handleError } from '@/lib/api';
+import { getT } from '@/lib/i18n/server';
 import { localServer } from '@/lib/helpers';
 import { probeProxy } from '@/lib/haproxy/provision';
 import { findScope, parseScopes, type HaproxyScopeInfo } from '@/lib/haproxy/config';
@@ -76,9 +77,10 @@ export async function GET(request: Request) {
       }
     );
 
+    const { t } = await getT();
     const found: SearchGroup[] = [
-      { label: 'Ziele', items: services },
-      { label: 'TCP-Weiterleitungen', items: streams },
+      { label: t('Ziele'), items: services },
+      { label: t('TCP-Weiterleitungen'), items: streams },
     ];
 
     return ok({ groups: found.filter((group) => group.items.length > 0) });

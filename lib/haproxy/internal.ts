@@ -41,11 +41,13 @@ import {
   parseScopes,
   scopeSlug,
   serviceHealth,
+  type HeaderRule,
   type HaproxyService,
   type HaproxyScopeInfo,
   type ServiceHealth,
 } from './config';
 import type { HaproxyStream } from './streams';
+import { surfaceTarget, type SurfaceProtection, type SurfaceTarget } from './protected';
 import type { HaproxyActor } from './runner';
 import type { Server } from '../types';
 import { localServer } from '../helpers';
@@ -182,10 +184,21 @@ export interface ServiceView {
   balance: string | null;
   /** Sitzungsbindung über einen Cookie. */
   sticky: boolean;
-  preset: string;
+  /** Feste Header an den Besucher und an das Ziel, und ob offene Verbindungen
+   *  lange bleiben (`timeout tunnel 1h`). Was früher `preset` hieß, steht hier
+   *  als das, was es in der Datei immer war: zwei Header bzw. das Timeout. */
+  responseHeaders: HeaderRule[];
+  requestHeaders: HeaderRule[];
+  tunnel: boolean;
   healthcheck: boolean;
   editable: boolean;
   removable: boolean;
+  /**
+   * Über dieses Ziel läuft die Adresse von HAPM (`protected.ts`). Dann wird ein
+   * DELETE abgelehnt, auch bei `removable: true`, und ein PATCH, nach dem das
+   * Ziel die Domain der Oberfläche nicht mehr trägt.
+   */
+  surface: boolean;
   /** Die ID des Eintrags, dessen Weiche diesem den Verkehr wegnimmt. */
   shadowedBy: string | null;
   /** Was der Bearbeiten-Weg nicht abbilden kann. Leer ist der Normalfall. */
@@ -198,7 +211,8 @@ export interface ServiceView {
 export function serviceView(
   server: Server,
   service: HaproxyService,
-  health: ServiceHealth
+  health: ServiceHealth,
+  surface: SurfaceTarget | null
 ): ServiceView {
   return {
     serverId: server.$id,
@@ -220,10 +234,13 @@ export function serviceView(
     })),
     balance: service.balance,
     sticky: service.sticky,
-    preset: service.preset,
+    responseHeaders: service.responseHeaders,
+    requestHeaders: service.requestHeaders,
+    tunnel: service.tunnel,
     healthcheck: service.healthcheck,
     editable: service.editable,
     removable: service.removable,
+    surface: surface?.serviceId === service.id,
     shadowedBy: service.shadowedBy,
     extras: service.extras,
     health,
@@ -231,9 +248,14 @@ export function serviceView(
 }
 
 /** Die Dienste einer Maschine aus einer bereits gelesenen Probe. */
-export function servicesOf(server: Server, probe: ProxyProbe): ServiceView[] {
+export function servicesOf(
+  server: Server,
+  probe: ProxyProbe,
+  protection: SurfaceProtection
+): ServiceView[] {
+  const surface = surfaceTarget(probe.services, protection);
   return probe.services.map((service) =>
-    serviceView(server, service, serviceHealth(service, probe.serverStates))
+    serviceView(server, service, serviceHealth(service, probe.serverStates), surface)
   );
 }
 

@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useCallback, useRef, type ReactNode } from 'react';
 import { AlertTriangle, Check, Copy, Loader2 } from 'lucide-react';
+import { useT } from '@/lib/i18n/react';
 
 interface ConfirmOptions {
   title?: string;
@@ -49,6 +50,7 @@ export function useConfirm() {
 }
 
 export function ConfirmProvider({ children }: { children: ReactNode }) {
+  const { t } = useT();
   const [dialog, setDialog] = useState<ConfirmOptions | null>(null);
   const [loading, setLoading] = useState(false);
   const [checked, setChecked] = useState(false);
@@ -159,20 +161,20 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
                     innerhalb eines `label` löst beim Klick zusätzlich dessen
                     Fokuswechsel ins Eingabefeld aus. */}
                 <label className="form-label is-small">
-                  {dialog.requireTextLabel || 'Zum Bestätigen abtippen:'}
+                  {dialog.requireTextLabel || t('Zum Bestätigen abtippen:')}
                 </label>
                 <div className="confirm-require-row">
                   <code className="confirm-require-text">{dialog.requireText}</code>
                   <button
                     type="button"
                     className="btn btn-ghost btn-icon btn-sm"
-                    data-tooltip={copied ? 'Kopiert' : 'Kopieren'}
+                    data-tooltip={copied ? t('Kopiert') : t('Kopieren')}
                     disabled={loading}
                     onClick={() => {
                       void navigator.clipboard.writeText(dialog.requireText ?? '');
                       setCopied(true);
                     }}
-                    aria-label="Kennung kopieren"
+                    aria-label={t('Kennung kopieren')}
                   >
                     {copied ? <Check size={14} /> : <Copy size={14} />}
                   </button>
@@ -190,7 +192,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
             )}
             <div className="confirm-dialog-actions">
               <button className="btn btn-secondary" onClick={() => handleClose(false)} disabled={loading}>
-                {dialog.cancelLabel || 'Abbrechen'}
+                {dialog.cancelLabel || t('Abbrechen')}
               </button>
               <button
                 className={`btn ${dialog.variant === 'danger' ? 'btn-danger' : dialog.variant === 'warning' ? 'btn-warning' : 'btn-primary'}`}
@@ -200,7 +202,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
                 disabled={loading || !textSatisfied}
               >
                 {loading && <Loader2 size={16} className="spin" />}
-                {dialog.confirmLabel || 'Bestätigen'}
+                {dialog.confirmLabel || t('Bestätigen')}
               </button>
             </div>
           </div>

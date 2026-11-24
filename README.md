@@ -15,6 +15,9 @@ Zertifikate von Let's Encrypt richtet HAPM selbst ein.
   dahinter, auf Wunsch nur für bestimmte Absender.
 - **Gruppen:** Ziele stehen in Gruppen, etwa „Websites" und „Intern". Jede
   Gruppe hat ihre eigene Seite.
+- **Import:** eine bestehende haproxy.cfg einlesen, in einer Vorschau
+  auswählen und die Einträge übernehmen. Was sich nicht genauso abbilden lässt,
+  steht mit Zeile und Grund daneben.
 - **Einrichtung mit Assistent:** Konto, Art der Installation, DNS-Anbieter und
   die Adresse der Oberfläche. Am Ende ist HAPM selbst per HTTPS erreichbar.
 - **Zertifikate:** Let's Encrypt über acme.sh, automatisch erneuert. Wildcards
@@ -22,8 +25,11 @@ Zertifikate von Let's Encrypt richtet HAPM selbst ein.
   stehen, läuft jedes Zertifikat über DNS-01.
 - **Sperren:** einzelne Domains nur für bestimmte Adressen oder hinter einer
   Passwortabfrage, die HAProxy selbst ausliefert.
-- **DNS:** Zonen bei Cloudflare anbinden und den Eintrag zu einem Ziel gleich
-  mit anlegen.
+- **Fehlerseiten:** Farben, Logo, Name, Fußzeile und Texte der Fehlerseiten und
+  der Passwortabfrage einstellen, mit Vorschau der Seite, wie HAProxy sie
+  ausliefert.
+- **DNS:** Zonen bei Cloudflare und Hetzner anbinden und den Eintrag zu einem
+  Ziel gleich mit anlegen.
 - **Statistik:** Anfragen, Statusklassen, Antwortzeiten und Datenmenge aus
   HAProxy selbst, Herkunft und Pfade aus dem Zugriffsprotokoll. Die Länder
   werden auf dem Server bestimmt, keine Adresse geht an einen Dritten.
@@ -145,10 +151,12 @@ Schritten durch die Einrichtung:
    Netz ist der Schritt Pflicht. Bei einem Server im Internet lässt er sich
    überspringen: er wird nur für Wildcard-Zertifikate gebraucht.
 4. **Adresse der Oberfläche.** Die Domain, unter der HAPM erreichbar sein soll,
-   etwa `hapm.example.org`. Den DNS-Eintrag dafür legt man selbst an, HAPM zeigt,
-   welchen. Mit einem DNS-Anbieter gibt es auf Wunsch gleich ein
-   Wildcard-Zertifikat für `*.example.org`: weitere Ziele unter dieser Domain
-   brauchen dann kein eigenes.
+   etwa `hapm.example.org`. HAPM zeigt den DNS-Eintrag dafür und legt ihn auf
+   Knopfdruck beim DNS-Anbieter an. Die Zone erscheint danach auch unter „DNS".
+   Steht der Server nur im eigenen Netz, gehört der Eintrag in den DNS-Server
+   dieses Netzes (Router, Pi-hole, AdGuard Home). Mit einem DNS-Anbieter gibt es
+   auf Wunsch gleich ein Wildcard-Zertifikat für `*.example.org`: weitere Ziele
+   unter dieser Domain brauchen dann kein eigenes.
 5. **Einrichten.** HAPM legt die Gruppe „HAPM" an, stellt das Zertifikat aus und
    trägt sich selbst als Ziel ein. Danach ist die Oberfläche per HTTPS
    erreichbar.
@@ -203,8 +211,9 @@ Alle Angaben sind freiwillig, siehe [`.env.example`](.env.example).
 - **Eine Firewall öffnet HAPM nicht.** Eine TCP-Weiterleitung auf Port 5432 ist
   von außen erst erreichbar, wenn die Firewall des Servers und die des Anbieters
   den Port durchlassen.
-- **Gesichert wird erst, wenn ein Ordner eingestellt ist** (unter „Sicherung").
-  Das Archiv enthält private Schlüssel und ist nicht verschlüsselt.
+- **Gesichert wird erst, wenn ein Ordner eingestellt ist** (unter „Sicherung"),
+  täglich oder von Hand über „Jetzt sichern". Das Archiv enthält private
+  Schlüssel und ist nicht verschlüsselt.
 - **Passwort vergessen:** Sind die Adresse von HAPM und ein SMTP-Konto
   eingerichtet, schickt die Anmeldeseite einen Link per Mail. Sonst, und wenn
   der zweite Faktor verloren ist, setzt auf dem Server
@@ -340,3 +349,6 @@ nicht.
   („IP to Country Lite", CC BY 4.0). Neue Stände holt HAPM selbst von dort.
 - Die Flaggen stammen aus [`flag-icons`](https://github.com/lipis/flag-icons)
   (MIT).
+- Die Zeichen von Hetzner und Cloudflare stammen aus
+  [Simple Icons](https://simpleicons.org) (CC0). Die Marken gehören ihren
+  Inhabern, HAPM steht mit keinem der beiden in Verbindung.

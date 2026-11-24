@@ -87,7 +87,7 @@ export default function GeneralSettingsPage() {
       const confirmed = await confirm({
         title: next ? 'Adresse von HAPM ändern?' : 'Adresse von HAPM entfernen?',
         message:
-          'Passkeys sind an die Domain gebunden. Mit den bisher hinterlegten ist danach keine Anmeldung mehr möglich. Links in schon verschickten Mails zeigen weiter auf die alte Adresse.',
+          'Passkeys sind an die Domain gebunden. Mit den bisher hinterlegten ist danach keine Anmeldung mehr möglich. Links in schon verschickten Mails zeigen weiter auf die alte Adresse. Das Ziel, über das die bisherige Adresse läuft, lässt sich danach wieder entfernen: geschützt ist immer das Ziel der aktuellen Adresse.',
         confirmLabel: next ? 'Adresse ändern' : 'Adresse entfernen',
         variant: 'danger',
       });

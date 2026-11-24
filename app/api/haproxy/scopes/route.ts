@@ -3,6 +3,7 @@ import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
 import { getClientIP } from '@/lib/audit';
 import { precheckScope } from '@/lib/haproxy/provision';
 import { startHaproxyRun } from '@/lib/haproxy/runner';
+import { getSettings } from '@/lib/settings';
 import { validateScopeName, HaproxyConfigError } from '@/lib/haproxy/config';
 import type { Server } from '@/lib/types';
 import { localServer } from '@/lib/helpers';
@@ -30,10 +31,13 @@ async function run(
 ): Promise<Response> {
   const session = await requireSession();
   const servers = proxyServers();
+  // Die Gruppe mit dem Ziel der Oberfläche bleibt stehen (`protected.ts`).
+  const protection = { publicUrl: (await getSettings()).publicUrl };
 
   for (const server of servers) {
     try {
-      await precheckScope(server, name, action === 'scope-add' ? 'add' : 'remove');
+      if (action === 'scope-add') await precheckScope(server, name, 'add');
+      else await precheckScope(server, name, 'remove', protection);
     } catch (err) {
       if (err instanceof HaproxyConfigError) {
         throw new ApiError(err.message, 409);
@@ -45,7 +49,7 @@ async function run(
   const actor = { userId: session.userId, email: session.email, ip: getClientIP(request) };
   const runs = [];
   for (const server of servers) {
-    const started = await startHaproxyRun({ server, action, serviceId: name, actor });
+    const started = await startHaproxyRun({ server, action, serviceId: name, protection, actor });
     runs.push({ runId: started.$id, serverName: server.name });
   }
 

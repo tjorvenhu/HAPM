@@ -11,6 +11,7 @@ import {
 import { createPortal } from "react-dom"
 import { useRouter } from "next/navigation"
 import { Search } from "lucide-react"
+import { useT } from "@/lib/i18n/react"
 
 export interface GlobalSearchItem {
   href: string
@@ -69,6 +70,7 @@ export function openGlobalSearch() {
  */
 export default function GlobalSearch({ placeholder, search, localGroups, minLength = 2, lockScroll = false }: GlobalSearchProps) {
   const router = useRouter()
+  const { t, rich } = useT()
   const mounted = useMounted()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
@@ -202,7 +204,7 @@ export default function GlobalSearch({ placeholder, search, localGroups, minLeng
         if (event.target === event.currentTarget) close()
       }}
     >
-      <div className="global-search-modal" role="dialog" aria-modal="true" aria-label="Globale Suche">
+      <div className="global-search-modal" role="dialog" aria-modal="true" aria-label={t("Globale Suche")}>
         <div className="global-search__input-row">
           <Search size={16} className="global-search__input-icon" aria-hidden="true" />
           <input
@@ -227,9 +229,9 @@ export default function GlobalSearch({ placeholder, search, localGroups, minLeng
 
         <div className="global-search__results" id="global-search-results" role="listbox" ref={listRef}>
           {!searching ? (
-            <p className="global-search__empty">Mindestens {minLength} Zeichen eingeben.</p>
+            <p className="global-search__empty">{t("Mindestens {count} Zeichen eingeben.", { count: minLength })}</p>
           ) : flatItems.length === 0 ? (
-            <p className="global-search__empty">{pending ? "Suche läuft …" : `Keine Treffer für „${trimmed}“.`}</p>
+            <p className="global-search__empty">{pending ? t("Suche läuft …") : t("Keine Treffer für „{query}“.", { query: trimmed })}</p>
           ) : (
             groups.map((group) => {
               const groupOffset = offset
@@ -264,11 +266,17 @@ export default function GlobalSearch({ placeholder, search, localGroups, minLeng
 
         <div className="global-search__footer">
           <span>
-            <kbd className="global-search__kbd">Strg</kbd>+<kbd className="global-search__kbd">K</kbd> zum Öffnen
+            {rich("{keys} zum Öffnen", {
+              keys: (
+                <>
+                  <kbd className="global-search__kbd">{t("Strg")}</kbd>+<kbd className="global-search__kbd">K</kbd>
+                </>
+              ),
+            })}
           </span>
           <span>·</span>
           <span>
-            <kbd className="global-search__kbd">Esc</kbd> zum Schließen
+            {rich("{key} zum Schließen", { key: <kbd className="global-search__kbd">Esc</kbd> })}
           </span>
         </div>
       </div>

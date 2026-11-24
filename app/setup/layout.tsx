@@ -1,9 +1,13 @@
 import type { Metadata } from 'next';
+import { getT } from '@/lib/i18n/server';
 
 // Wie bei /login: außerhalb der App-Hülle, also eigener Titel.
-export const metadata: Metadata = {
-  title: 'Einrichtung · HAPM',
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getT();
+  return {
+    title: `${t('Einrichtung')} · HAPM`,
+  };
+}
 
 export default function SetupLayout({ children }: { children: React.ReactNode }) {
   return <>{children}</>;

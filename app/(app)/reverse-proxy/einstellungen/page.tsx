@@ -22,7 +22,6 @@ import { HAPROXY_PHASES, HAPROXY_PHASE_LABELS } from '@/components/runPhases';
 import { HTTPS_MARKER, type GlobalSettings } from '@/lib/haproxy/config';
 import { SkeletonRows } from '@/components/Skeleton';
 import GeoipPanel from '@/components/reverse-proxy/GeoipPanel';
-import ErrorPagesPanel from '@/components/reverse-proxy/ErrorPagesPanel';
 
 /**
  * Die globalen Einstellungen eines Reverse-Proxys.
@@ -387,9 +386,6 @@ export default function ReverseProxySettingsPage() {
 
       {/* Ganz oben: die Tabelle gehört nicht zu `haproxy.cfg`, sondern zu HAPM. */}
       <GeoipPanel />
-
-      {/* Die Karte lädt für sich: die Fehlerdateien sind eine eigene Leserunde. */}
-      <ErrorPagesPanel />
 
       {/* Ein laufender Vorgang steht in der Pille unten rechts, nicht hier. */}
 

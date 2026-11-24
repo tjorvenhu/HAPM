@@ -13,7 +13,7 @@ import {
   type ServiceView,
 } from '@/lib/haproxy/internal';
 import { readServiceRequest } from '@/lib/haproxy/password-lock';
-import { HaproxyConfigError, validateCreateInput } from '@/lib/haproxy/config';
+import { HaproxyConfigError, validateNewService } from '@/lib/haproxy/config';
 
 /**
  * Die Reverse-Proxy-Ziele für einen anderen Dienst: lesen und anlegen.
@@ -62,6 +62,8 @@ export async function GET(request: Request) {
       : await proxyServers();
 
     const response: ListResponse = { services: [], unreachable: [] };
+    // Für `surface` am Eintrag: über welches Ziel die Adresse von HAPM läuft.
+    const protection = { publicUrl: (await getSettings()).publicUrl };
 
     await Promise.all(
       servers.map(async (server) => {
@@ -75,7 +77,7 @@ export async function GET(request: Request) {
             });
             return;
           }
-          response.services.push(...servicesOf(server, probe));
+          response.services.push(...servicesOf(server, probe, protection));
         } catch (err) {
           response.unreachable.push({
             serverId: server.$id,
@@ -107,10 +109,13 @@ export async function GET(request: Request) {
 }
 
 /**
- * Ein Ziel anlegen — Dienst-ID, Gruppe, Domains, Ziele, Pfad-Regeln, Preset,
+ * Ein Ziel anlegen — Gruppe, Domains, Ziele, Pfad-Regeln, Header,
  * Healthcheck, Sperrliste und der DNS-Eintrag dazu.
  *
- * Die Antwort trägt nur die ID des Laufs. Alles, was Zeit kostet — DNS,
+ * `id` ist freiwillig. Fehlt sie, ergibt sie sich aus der Hauptdomain, wie im
+ * Dialog (`assignServiceId`), und die Antwort nennt sie als `serviceId`.
+ *
+ * Die Antwort trägt sonst nur die ID des Laufs. Alles, was Zeit kostet — DNS,
  * Zertifikat, `haproxy -c`, Reload — läuft danach weiter und dauert Minuten;
  * eine Route, die darauf wartet, wäre eine Anfrage, die in jedes vernünftige
  * Timeout läuft. Der Aufrufer pollt `/api/internal/haproxy/runs/<id>`, bis
@@ -137,8 +142,8 @@ export async function POST(request: Request) {
     const server = await resolveProxy(body.serverId);
 
     // Mit dem Passwort der Sperre, falls eins mitkam (lib/haproxy/password-lock.ts).
-    const input = readServiceRequest(body);
-    const invalid = validateCreateInput(input);
+    const draft = readServiceRequest(body);
+    const invalid = validateNewService(draft);
     if (invalid) throw new ApiError(invalid);
 
     // Nicht Teil der Eingabe: der Hook steht in keiner Zeile der Konfiguration.
@@ -146,8 +151,9 @@ export async function POST(request: Request) {
     // Intern oder öffentlich: davon hängt ab, ob HTTP-01 überhaupt geht (`challenge.ts`).
     const challenge = { exposure: (await getSettings()).exposure, dnsHook };
 
+    let input;
     try {
-      await precheckCreate(server, input, challenge);
+      input = await precheckCreate(server, draft, challenge);
     } catch (err) {
       if (err instanceof HaproxyConfigError) throw new ApiError(err.message, 409);
       throw err;

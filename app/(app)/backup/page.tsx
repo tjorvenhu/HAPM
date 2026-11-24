@@ -240,9 +240,9 @@ export default function BackupPage() {
     }
   }
 
-  async function save(event: FormEvent) {
-    event.preventDefault();
-    if (!draft) return;
+  /** Speichert den Entwurf. Gibt den neuen Stand zurück, oder `null`, wenn es nicht ging. */
+  async function persist(): Promise<BackupData | null> {
+    if (!draft) return data;
     setFormError('');
     setSaving(true);
     try {
@@ -259,23 +259,43 @@ export default function BackupPage() {
       const body = await res.json();
       if (!body.success) {
         setFormError(body.error || 'Die Einstellungen ließen sich nicht speichern.');
-        return;
+        return null;
       }
       const next = body.data as BackupData;
       setData(next);
       setDraft(null);
-      notify({
-        variant: 'success',
-        message:
-          next.settings.enabled && next.settings.hostPath
-            ? `Gesichert wird täglich um ${next.settings.time} Uhr nach ${next.settings.hostPath}.`
-            : 'Gespeichert. Täglich gesichert wird nicht.',
-      });
+      return next;
     } catch {
       setFormError('Die Einstellungen ließen sich nicht speichern.');
+      return null;
     } finally {
       setSaving(false);
     }
+  }
+
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    if (!draft) return;
+    const next = await persist();
+    if (!next) return;
+    notify({
+      variant: 'success',
+      message:
+        next.settings.enabled && next.settings.hostPath
+          ? `Gesichert wird täglich um ${next.settings.time} Uhr nach ${next.settings.hostPath}.`
+          : 'Gespeichert. Täglich gesichert wird nicht. Von Hand geht es mit „Jetzt sichern".',
+    });
+  }
+
+  /** Der Knopf im Formular: ein geänderter Ordner gilt schon für diesen Lauf. */
+  async function saveAndStart() {
+    const next = await persist();
+    if (!next) return;
+    if (!next.settings.hostPath) {
+      setFormError('Bitte zuerst einen Ordner auf dem Server eintragen.');
+      return;
+    }
+    await start();
   }
 
   function toggleRun(id: string) {
@@ -450,12 +470,24 @@ export default function BackupPage() {
             </div>
           </div>
 
-          <div>
+          <div className="hapm-form-actions">
             <button className="btn btn-primary" type="submit" disabled={saving || !draft}>
               {saving ? <Loader2 size={16} strokeWidth={1.5} className="spin" /> : <Save size={16} strokeWidth={1.5} />}
               Speichern
             </button>
+            <button
+              className="btn btn-secondary"
+              type="button"
+              disabled={saving || locked || !data.available || !form.hostPath.trim()}
+              onClick={() => void saveAndStart()}
+            >
+              <Archive size={16} strokeWidth={1.5} />
+              {draft ? 'Speichern und jetzt sichern' : 'Jetzt sichern'}
+            </button>
           </div>
+          <p className="form-hint">
+            Eine Sicherung von Hand braucht nur den Ordner. Der Schalter „Täglich sichern“ kann aus bleiben.
+          </p>
         </form>
       </div>
 

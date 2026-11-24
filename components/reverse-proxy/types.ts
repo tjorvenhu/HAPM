@@ -2,9 +2,11 @@ import type {
   HaproxyScope,
   HaproxyScopeInfo,
   HaproxyService,
+  HeaderDirection,
   ServiceHealth,
 } from '@/lib/haproxy/config';
 import type { HaproxyStream } from '@/lib/haproxy/streams';
+import type { SurfaceTarget } from '@/lib/haproxy/protected';
 import type { Exposure } from '@/lib/types';
 
 /**
@@ -26,6 +28,9 @@ export interface ProxyRow {
   /** Intern oder öffentlich. Bei `internal` geht jedes Zertifikat über DNS-01. */
   exposure: Exposure;
   services: HaproxyService[];
+  /** Das Ziel, über das die Adresse von HAPM läuft. Es und seine Gruppe lassen
+   *  sich nicht entfernen (`lib/haproxy/protected.ts`). `null`: es gibt keins. */
+  surface: SurfaceTarget | null;
   /** Die TCP-Weiterleitungen derselben Datei: `listen`-Abschnitte in `mode tcp`.
    *  Sie stehen in denselben Marker-Blöcken und deshalb auf denselben
    *  Gruppenseiten wie die Dienste. */
@@ -35,6 +40,8 @@ export interface ProxyRow {
   /** Die Adressen aus `acl admin_ips src …`. Ohne mindestens eine lässt sich
    *  kein Eintrag auf sie sperren. */
   adminIps: string[];
+  /** Die Header, die das Frontend schon für alle Ziele setzt, je Richtung. */
+  globalHeaders: Record<HeaderDirection, string[]>;
   /** Was HAProxy über die Ziele weiß, je Dienst-ID. Ein fehlender Eintrag heißt
    *  „nicht bekannt" und nicht „in Ordnung". */
   health: Record<string, ServiceHealth>;
@@ -66,6 +73,8 @@ export interface ScopePage {
   title: string;
   /** Ob sie sich wieder entfernen ließe. */
   removable: boolean;
+  /** Gesetzt, wenn in ihr das Ziel der Oberfläche liegt: dann bleibt sie stehen. */
+  surface: SurfaceTarget | null;
 }
 
 /** Die Gruppen: die Marker-Blöcke der Konfiguration. */
@@ -74,9 +83,11 @@ export function scopePages(proxies: ProxyRow[]): ScopePage[] {
   for (const proxy of proxies) {
     for (const scope of proxy.scopes) {
       const key = scope.name.toUpperCase();
+      const surface = proxy.surface?.scope?.toUpperCase() === key ? proxy.surface : null;
       const existing = pages.get(key);
       if (existing) {
         existing.removable = existing.removable && scope.removable;
+        existing.surface = existing.surface ?? surface;
         continue;
       }
       pages.set(key, {
@@ -84,6 +95,7 @@ export function scopePages(proxies: ProxyRow[]): ScopePage[] {
         scope: scope.name,
         title: scope.label,
         removable: scope.removable,
+        surface,
       });
     }
   }

@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react"
 import { EllipsisVertical, LogOut } from "lucide-react"
+import { useT } from "@/lib/i18n/react"
 import { ShellMenu } from "./ShellMenu"
 
 interface Props {
@@ -33,11 +34,12 @@ function initials(value: string): string {
  * steht immer darin, die übrigen Einträge gibt der Bereich herein.
  */
 export function ShellProfileMenu({ name, email, children, logoutAction, onLogout }: Props) {
+  const { t } = useT()
   const displayName = name || email
   const logoutButton = (
     <button type={logoutAction ? "submit" : "button"} role="menuitem" className="shell-menu__item" onClick={logoutAction ? undefined : onLogout}>
       <LogOut size={16} strokeWidth={1.5} aria-hidden="true" />
-      Abmelden
+      {t("Abmelden")}
     </button>
   )
 

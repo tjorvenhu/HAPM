@@ -1,18 +1,17 @@
 import { requireSession, requireCsrf } from '@/lib/session';
-import { createDocument } from '@/lib/db';
-import { COLLECTIONS, type DnsZone } from '@/lib/types';
-import { encrypt } from '@/lib/crypto';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
 import { logAudit, getClientIP } from '@/lib/audit';
-import { findZone, listRecords, listZones } from '@/lib/dns/cloudflare';
-import { forClient, listZoneRows, markZone, tokenOf, zoneExists } from '@/lib/dns/store';
-import { normalizeDomain, validateZoneName } from '@/lib/dns/zones';
+import { connectZone } from '@/lib/dns/connect';
+import { providerFor } from '@/lib/dns/provider';
+import { dnsProviderLabel } from '@/lib/dns/provider-info';
+import { forClient, listZoneRows, withZone } from '@/lib/dns/store';
+import { isDnsProviderId, normalizeDomain, validateZoneName } from '@/lib/dns/zones';
 
 /**
  * Die verwalteten Domains.
  *
- * Die Zeilen kommen aus der Datenbank, die ZAHL der Einträge von Cloudflare —
- * eine Abfrage je Zone und Aufruf. Das ist derselbe Handel wie bei den
+ * Die Zeilen kommen aus der Datenbank, die ZAHL der Einträge vom Anbieter —
+ * eine Abfrage je Zone und Aufruf (bei Hetzner eine je 50 Namen). Das ist derselbe Handel wie bei den
  * Reverse-Proxy-Zielen: die Wahrheit liegt beim Anbieter, und eine gespiegelte
  * Zahl wäre genau dann falsch, wenn jemand im Dashboard etwas angelegt hat.
  *
@@ -29,8 +28,9 @@ export async function GET() {
     const rows = await Promise.all(
       zones.map(async (zone) => {
         try {
-          const records = await listRecords(tokenOf(zone), zone.zoneId);
-          await markZone(zone, null);
+          const records = await withZone(zone, (token, ref) =>
+            providerFor(zone).listRecords(token, ref)
+          );
           return {
             ...forClient(zone),
             status: 'ok' as const,
@@ -39,7 +39,6 @@ export async function GET() {
           };
         } catch (err) {
           const error = err instanceof Error ? err.message : 'Unbekannter Fehler';
-          await markZone(zone, error);
           return { ...forClient(zone), status: 'error' as const, lastError: error, records: null };
         }
       })
@@ -52,6 +51,7 @@ export async function GET() {
 }
 
 interface CreateBody {
+  provider?: string;
   name?: string;
   apiToken?: string;
 }
@@ -59,14 +59,11 @@ interface CreateBody {
 /**
  * Eine Domain einrichten.
  *
- * Der Token wird nicht geglaubt, sondern benutzt: die Zone-ID kommt aus der
- * Antwort von Cloudflare und nicht aus dem Formular. Ohne diesen Schritt stünde
- * hier eine Zeile, die erst beim ersten echten Eintrag auffliegt — und das wäre
- * mitten in einem Proxy-Vorgang.
- *
- * Findet der Token die Zone nicht, nennt die Meldung die Zonen, die er sieht.
- * Der häufigste Fehler ist ein Token, der für eine andere Domain erzeugt wurde,
- * und „nicht gefunden" schickt einen dabei in die falsche Richtung.
+ * Der Weg ist `connectZone` (`lib/dns/connect.ts`), derselbe wie im
+ * Einrichtungsassistenten: der Token wird benutzt und nicht geglaubt, gesucht
+ * wird die Zone, in der die Domain liegt, und eine schon eingerichtete Zone
+ * bekommt den neuen Zugang statt einer zweiten Zeile. Hier bleibt, was zur
+ * Route gehört: die Eingabe prüfen und den Vorgang protokollieren.
  */
 export async function POST(request: Request) {
   try {
@@ -78,48 +75,33 @@ export async function POST(request: Request) {
     const invalid = validateZoneName(name);
     if (invalid) throw new ApiError(invalid);
 
-    const token = String(body.apiToken ?? '').trim();
-    if (!token) throw new ApiError('Bitte den Cloudflare-API-Token angeben.');
+    if (!isDnsProviderId(body.provider)) throw new ApiError('Bitte den Anbieter wählen.');
+    const provider = body.provider;
 
-    if (await zoneExists(name)) {
-      throw new ApiError(`${name} ist hier bereits eingerichtet.`, 409);
-    }
-
-    const zone = await findZone(token, name);
-    if (!zone) {
-      const visible = await listZones(token).catch(() => []);
-      const hint =
-        visible.length > 0
-          ? ` Der Token sieht: ${visible.slice(0, 8).map((z) => z.name).join(', ')}.`
-          : ' Der Token sieht überhaupt keine Zone.';
-      throw new ApiError(`Cloudflare kennt unter diesem Token keine Zone "${name}".${hint}`, 404);
-    }
-
-    const row = await createDocument<DnsZone>(COLLECTIONS.DNS_ZONES, {
-      name: zone.name.toLowerCase(),
-      zoneId: zone.id,
-      apiToken: encrypt(token),
-      // Der Token hat gerade funktioniert — das ist keine Annahme, sondern das
-      // Ergebnis des Aufrufs zwei Zeilen darüber.
-      status: 'ok',
-      lastCheckedAt: new Date().toISOString(),
-      lastError: null,
+    const { zone, created, delegated } = await connectZone({
+      provider,
+      domain: name,
+      token: String(body.apiToken ?? ''),
     });
 
     await logAudit({
       userId: session.userId,
       userEmail: session.email,
-      action: 'dns_zone_created',
+      action: created ? 'dns_zone_created' : 'dns_zone_updated',
       resource: 'dns_zone',
-      resourceId: row.$id,
-      details: `${zone.name} eingerichtet (Zone ${zone.id})`,
+      resourceId: zone.$id,
+      // Der Token steht nie im Protokoll, auch nicht gekürzt.
+      details: created
+        ? `${zone.name} bei ${dnsProviderLabel(provider)} eingerichtet (Zone ${zone.zoneId})`
+        : `Zugang zu ${zone.name} ersetzt (${dnsProviderLabel(provider)}, Zone ${zone.zoneId})`,
       ip: getClientIP(request) ?? undefined,
     });
 
-    // `status` ist bei Cloudflare `active`, solange die Nameserver dorthin
-    // zeigen. Es geht mit zurück, damit der Dialog eine Zone, die dort nur
-    // angelegt aber nicht delegiert ist, sofort benennen kann.
-    return ok({ ...forClient(row), zoneStatus: zone.status });
+    // `created` und `delegated` gehen mit zurück, damit die Seite sagen kann,
+    // was passiert ist: eine Zone, die schon dastand, und eine, deren
+    // Nameserver noch nicht auf den Anbieter zeigen, sind beide kein Fehler,
+    // aber auch nicht das, was „hinzugefügt" verspricht.
+    return ok({ ...zone, created, delegated });
   } catch (err) {
     return handleError(err);
   }

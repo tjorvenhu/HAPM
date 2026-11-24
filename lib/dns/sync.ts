@@ -3,7 +3,7 @@
  *
  * ── Warum das hier steht und nicht in lib/haproxy/ ──
  *
- * Ein CNAME bei Cloudflare hat mit `haproxy.cfg` nichts zu tun: keine Datei,
+ * Ein CNAME beim DNS-Anbieter hat mit `haproxy.cfg` nichts zu tun: keine Datei,
  * kein Lock. Umgekehrt kennt diese Datei kein HAProxy — sie bekommt
  * Domains und liefert Schritte. Der Lauf in `lib/haproxy/runner.ts` setzt beides
  * zusammen, und nur dort ist die Reihenfolge zu sehen, auf die es ankommt.
@@ -22,12 +22,21 @@
  * Werkzeug, das beim Anlegen eines Proxy-Ziels stillschweigend einen fremden
  * A-Eintrag ersetzt, nimmt etwas offline, wovon der Vorgang nichts weiß.
  * Dieselbe Regel wie beim HAProxy-Eintrag, der nicht dem Namensschema folgt.
+ *
+ * ── Derselbe Eintrag bei jedem Anbieter ──
+ *
+ * Ein CNAME auf die Zone selbst, bei Cloudflare wie bei Hetzner. Was abweicht,
+ * kommt aus `PROVIDER_RULES`: die TTL ist die Vorgabe des Anbieters, und
+ * `proxied: false` geht nur dorthin mit, wo es einen Proxy gibt. Wie der Wert
+ * beim Anbieter geschrieben wird (Hetzner: `example.org.` mit Punkt), ist
+ * dessen Sache und steht hinter `provider.ts`.
  */
 
-import { listRecords, createRecord, deleteRecord } from './cloudflare';
+import { providerFor } from './provider';
+import { dnsProviderLabel } from './provider-info';
 import { listZoneRows, withZone } from './store';
 import { isProxyRecord, matchZone, normalizeDomain, proxyRecordPlan } from './zones';
-import type { DnsRecord } from './records';
+import { PROVIDER_RULES, type DnsRecord } from './records';
 import type { DnsZone, HaproxyStep } from '../types';
 
 /**
@@ -49,7 +58,7 @@ class ZoneRecords {
   async of(zone: DnsZone): Promise<DnsRecord[]> {
     const cached = this.cache.get(zone.$id);
     if (cached) return cached;
-    const records = await withZone(zone, (token, zoneId) => listRecords(token, zoneId));
+    const records = await withZone(zone, (token, ref) => providerFor(zone).listRecords(token, ref));
     this.cache.set(zone.$id, records);
     return records;
   }
@@ -155,13 +164,15 @@ export async function ensureProxyRecords(domains: string[]): Promise<HaproxyStep
         continue;
       }
 
-      await withZone(zone, (token, zoneId) =>
-        createRecord(token, zoneId, {
+      const provider = providerFor(zone);
+      const rules = PROVIDER_RULES[provider.id];
+      await withZone(zone, (token, ref) =>
+        provider.createRecord(token, ref, {
           type: plan.type,
           name: plan.fqdn,
           content: plan.content,
-          ttl: plan.ttl,
-          proxied: plan.proxied,
+          ttl: rules.defaultTtl,
+          ...(rules.proxy ? { proxied: plan.proxied } : {}),
           comment: 'HAPM',
         })
       );
@@ -169,7 +180,9 @@ export async function ensureProxyRecords(domains: string[]): Promise<HaproxyStep
       steps.push({
         label: `DNS-Eintrag ${plan.fqdn}`,
         ok: true,
-        detail: `Angelegt: CNAME auf ${zone.name}, ohne Cloudflare-Proxy.`,
+        detail:
+          `Angelegt bei ${dnsProviderLabel(provider.id)}: CNAME auf ${zone.name}` +
+          (rules.proxy ? ', ohne Proxy.' : '.'),
       });
     } catch (err) {
       steps.push({
@@ -218,7 +231,7 @@ export async function removeProxyRecords(domains: string[]): Promise<HaproxyStep
         continue;
       }
 
-      await withZone(zone, (token, zoneId) => deleteRecord(token, zoneId, existing.id));
+      await withZone(zone, (token, ref) => providerFor(zone).deleteRecord(token, ref, existing));
       zones.forget(zone);
       steps.push({ label: `DNS-Eintrag ${plan.fqdn}`, ok: true, detail: 'Entfernt.' });
     } catch (err) {

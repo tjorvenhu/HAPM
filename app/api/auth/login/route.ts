@@ -1,12 +1,14 @@
 import { isAPIError } from 'better-auth/api';
 import { auth, sessionHeaders } from '@/lib/auth/config';
 import { forwardAuthCookies } from '@/lib/auth/passkeys';
-import { recordLogin } from '@/lib/auth/users';
+import { getUserLocale, recordLogin } from '@/lib/auth/users';
 import { csrfFor } from '@/lib/session';
 import { has2FAEnabled, clear2FACookie } from '@/lib/two-factor';
 import { logAudit, getClientIP } from '@/lib/audit';
 import { rateLimit } from '@/lib/rate-limit';
-import { ok, fail, handleError, jsonBody } from '@/lib/api';
+import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
+import { msg } from '@/lib/i18n';
+import { setLocaleCookie } from '@/lib/i18n/server';
 
 /**
  * Der Passwortschritt der Anmeldung, über den Anmeldedienst.
@@ -26,7 +28,7 @@ import { ok, fail, handleError, jsonBody } from '@/lib/api';
  * sie in die eigenen Antwortkopfzeilen, nicht in unsere.
  */
 const WINDOW_MS = 15 * 60 * 1000;
-const TOO_MANY = 'Zu viele Anmeldeversuche. Bitte warten Sie 15 Minuten.';
+const TOO_MANY = msg('Zu viele Anmeldeversuche. Bitte warten Sie 15 Minuten.');
 
 /**
  * Die Fehlercodes, die „Anmeldedaten stimmen nicht" heißen, und nur die. Eine
@@ -42,18 +44,18 @@ export async function POST(request: Request) {
     // unter „unknown" sperrte dann alle gemeinsam aus.
     if (ip !== 'unknown') {
       const rl = rateLimit(`login:${ip}`, 5, WINDOW_MS);
-      if (!rl.success) return fail(TOO_MANY, 429);
+      if (!rl.success) throw new ApiError(TOO_MANY, 429);
     }
 
     const { email, password } = await jsonBody<{ email?: unknown; password?: unknown }>(request);
     if (typeof email !== 'string' || typeof password !== 'string' || !email || !password) {
-      return fail('E-Mail und Passwort sind erforderlich.');
+      throw new ApiError(msg('E-Mail und Passwort sind erforderlich.'));
     }
 
     // Zusätzlich je Konto: wer über viele Adressen kommt, hat je Adresse fünf
     // Versuche, auf dasselbe Konto aber zusammen nur zehn.
     const perAccount = rateLimit(`login-account:${email.trim().toLowerCase().slice(0, 254)}`, 10, WINDOW_MS);
-    if (!perAccount.success) return fail(TOO_MANY, 429);
+    if (!perAccount.success) throw new ApiError(TOO_MANY, 429);
 
     const signIn = await (await auth())
       .api.signInEmail({
@@ -74,7 +76,7 @@ export async function POST(request: Request) {
         ip,
         details: 'Ungültige Anmeldedaten',
       });
-      return fail('Ungültige Anmeldedaten.', 401);
+      throw new ApiError(msg('Ungültige Anmeldedaten.'), 401);
     }
 
     const { token, user } = signIn.response;
@@ -94,6 +96,8 @@ export async function POST(request: Request) {
 
     const response = ok({ requiresTwoFactor: has2FA, csrfToken: csrfFor(token) });
     forwardAuthCookies(signIn.headers, response);
+    // Die Sprache am Konto gilt ab jetzt auch für die Seiten, die das Cookie lesen.
+    setLocaleCookie(response, await getUserLocale(user.id));
     return response;
   } catch (err) {
     return handleError(err);

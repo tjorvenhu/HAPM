@@ -3,9 +3,10 @@ import { auth } from '@/lib/auth/config';
 import { logAudit, getClientIP } from '@/lib/audit';
 import { rateLimit } from '@/lib/rate-limit';
 import { validatePassword } from '@/lib/validation';
-import { ok, fail, handleError, jsonBody } from '@/lib/api';
+import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
+import { msg } from '@/lib/i18n';
 
-const INVALID = 'Der Link ist ungültig oder abgelaufen. Bitte fordern Sie einen neuen an.';
+const INVALID = msg('Der Link ist ungültig oder abgelaufen. Bitte fordern Sie einen neuen an.');
 
 /**
  * Passwort neu setzen: durchgereicht an `resetPassword`.
@@ -26,16 +27,16 @@ export async function POST(request: Request) {
     const ip = getClientIP(request);
     if (ip !== 'unknown') {
       const rl = rateLimit(`reset-password:${ip}`, 5, 15 * 60 * 1000);
-      if (!rl.success) return fail('Zu viele Versuche. Bitte warten Sie 15 Minuten.', 429);
+      if (!rl.success) throw new ApiError(msg('Zu viele Versuche. Bitte warten Sie 15 Minuten.'), 429);
     }
 
     const { token, newPassword } = await jsonBody<{ token?: unknown; newPassword?: unknown }>(request);
     if (typeof token !== 'string' || typeof newPassword !== 'string' || !token || !newPassword) {
-      return fail('Der Link und das neue Passwort sind erforderlich.');
+      throw new ApiError(msg('Der Link und das neue Passwort sind erforderlich.'));
     }
 
     const passwordError = validatePassword(newPassword);
-    if (passwordError) return fail(passwordError);
+    if (passwordError) throw new ApiError(passwordError);
 
     const reset = await (await auth())
       .api.resetPassword({ body: { token, newPassword } })
@@ -46,7 +47,7 @@ export async function POST(request: Request) {
         throw err;
       });
 
-    if (!reset) return fail(INVALID);
+    if (!reset) throw new ApiError(INVALID);
 
     // Ohne Konto im Eintrag: `resetPassword` nennt es nicht, und der Token ist
     // an dieser Stelle schon verbraucht.

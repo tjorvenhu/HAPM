@@ -2,7 +2,8 @@ import { headers } from 'next/headers';
 import { requirePasskeys, forwardAuthCookies } from '@/lib/auth/passkeys';
 import { getClientIP } from '@/lib/audit';
 import { rateLimit } from '@/lib/rate-limit';
-import { ok, fail, handleError } from '@/lib/api';
+import { ok, handleError, ApiError } from '@/lib/api';
+import { msg } from '@/lib/i18n';
 
 /**
  * Schritt 1 der Anmeldung mit Passkey: die Aufgabe für das Gerät.
@@ -22,7 +23,7 @@ export async function POST(request: Request) {
     const ip = getClientIP(request);
     if (ip !== 'unknown') {
       const rl = rateLimit(`passkey-options:${ip}`, 5, 15 * 60 * 1000);
-      if (!rl.success) return fail('Zu viele Anmeldeversuche. Bitte warten Sie 15 Minuten.', 429);
+      if (!rl.success) throw new ApiError(msg('Zu viele Anmeldeversuche. Bitte warten Sie 15 Minuten.'), 429);
     }
 
     const passkeys = await requirePasskeys();

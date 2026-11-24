@@ -3,7 +3,8 @@ import { requireCsrf, requireVerifiedSession } from '@/lib/session';
 import { requirePasskeys, listOwnPasskeys, forwardAuthCookies, authErrorCode } from '@/lib/auth/passkeys';
 import { MAX_PASSKEYS_PER_USER } from '@/lib/auth/passkey-rules';
 import { rateLimit } from '@/lib/rate-limit';
-import { ok, fail, handleError } from '@/lib/api';
+import { ok, handleError, ApiError } from '@/lib/api';
+import { msg } from '@/lib/i18n';
 
 /**
  * Schritt 1 beim Hinterlegen eines Passkeys: die Aufgabe für das Gerät.
@@ -18,15 +19,17 @@ export async function POST(request: Request) {
     const session = await requireVerifiedSession();
 
     const rl = rateLimit(`passkey-register:${session.userId}`, 10, 15 * 60 * 1000);
-    if (!rl.success) return fail('Zu viele Versuche. Bitte warten Sie 15 Minuten.', 429);
+    if (!rl.success) throw new ApiError(msg('Zu viele Versuche. Bitte warten Sie 15 Minuten.'), 429);
 
     const passkeys = await requirePasskeys();
     const requestHeaders = await headers();
 
     const existing = await listOwnPasskeys(passkeys, requestHeaders);
     if (existing.length >= MAX_PASSKEYS_PER_USER) {
-      return fail(
-        `Mehr als ${MAX_PASSKEYS_PER_USER} Passkeys je Konto sind nicht möglich. Bitte entfernen Sie zuerst einen.`,
+      throw new ApiError(
+        msg('Mehr als {max} Passkeys je Konto sind nicht möglich. Bitte entfernen Sie zuerst einen.', {
+          max: MAX_PASSKEYS_PER_USER,
+        }),
         409
       );
     }
@@ -44,8 +47,8 @@ export async function POST(request: Request) {
       });
 
     if (!challenge) {
-      return fail(
-        'Zu Ihrer Sicherheit melden Sie sich bitte einmal neu an. Danach können Sie den Passkey hinterlegen.',
+      throw new ApiError(
+        msg('Zu Ihrer Sicherheit melden Sie sich bitte einmal neu an. Danach können Sie den Passkey hinterlegen.'),
         403
       );
     }

@@ -4,6 +4,7 @@ import { useCallback } from 'react';
 import SharedGlobalSearch, { type GlobalSearchGroup } from '@/ui/shell/GlobalSearch';
 import { useApp } from '@/components/AppShell';
 import { NAV_PAGES } from '@/components/Sidebar';
+import { useT } from '@/lib/i18n/react';
 import {
   SEARCH_MAX_PER_GROUP,
   SEARCH_MIN_LENGTH,
@@ -14,14 +15,20 @@ import {
 
 export { openGlobalSearch } from '@/ui/shell/GlobalSearch';
 
-/** Die Seiten aus der Navigation, im Browser gefiltert: sie stehen sofort da. */
-function pagesFor(query: string): GlobalSearchGroup[] {
+/**
+ * Die Seiten aus der Navigation, im Browser gefiltert: sie stehen sofort da.
+ * Gesucht wird in den Namen der gewählten Sprache, denn die stehen in der Leiste.
+ */
+function pagesFor(query: string, t: (text: string) => string): GlobalSearchGroup[] {
   const words = searchWords(query);
-  const pages = NAV_PAGES.filter((page) => matchesSearch([page.title, page.subtitle], words)).slice(
-    0,
-    SEARCH_MAX_PER_GROUP
-  );
-  return pages.length > 0 ? [{ label: 'Seiten', items: pages }] : [];
+  const pages = NAV_PAGES.map((page) => ({
+    ...page,
+    title: t(page.title),
+    subtitle: page.subtitle ? t(page.subtitle) : undefined,
+  }))
+    .filter((page) => matchesSearch([page.title, page.subtitle], words))
+    .slice(0, SEARCH_MAX_PER_GROUP);
+  return pages.length > 0 ? [{ label: t('Seiten'), items: pages }] : [];
 }
 
 /**
@@ -33,6 +40,8 @@ function pagesFor(query: string): GlobalSearchGroup[] {
  */
 export default function GlobalSearch() {
   const { apiFetch } = useApp();
+  const { t } = useT();
+  const localGroups = useCallback((query: string) => pagesFor(query, t), [t]);
 
   const search = useCallback(
     async (query: string): Promise<GlobalSearchGroup[]> => {
@@ -45,9 +54,9 @@ export default function GlobalSearch() {
 
   return (
     <SharedGlobalSearch
-      placeholder="Seiten, Domains, Dienste, Backend-Adressen"
+      placeholder={t('Seiten, Domains, Dienste, Backend-Adressen')}
       minLength={SEARCH_MIN_LENGTH}
-      localGroups={pagesFor}
+      localGroups={localGroups}
       search={search}
     />
   );

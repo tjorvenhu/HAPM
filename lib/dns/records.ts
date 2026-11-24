@@ -1,9 +1,16 @@
 /**
  * Was ein DNS-Eintrag ist und was als Eingabe durchgeht.
  *
- * Ohne Importe, wie `zones.ts`: der Dialog prüft mit derselben Funktion wie die
- * Route. Zwei Regelwerke wären ein Formular, das etwas annimmt, das Cloudflare
- * danach mit einer englischen Fehlermeldung ablehnt.
+ * Ohne Importe (bis auf einen Typ), wie `zones.ts`: der Dialog prüft mit
+ * derselben Funktion wie die Route. Zwei Regelwerke wären ein Formular, das
+ * etwas annimmt, das der Anbieter danach mit einer englischen Fehlermeldung
+ * ablehnt.
+ *
+ * ── Was je Anbieter anders ist ──
+ *
+ * Steht in `PROVIDER_RULES` und sonst nirgends: ob es einen Proxy gibt, was
+ * „keine eigene TTL" heißt und wo ihre Grenzen liegen. Prüfung, Formular und
+ * Tabelle fragen dort, statt den Anbieter beim Namen zu kennen.
  *
  * ── Warum die Liste der Arten kurz ist ──
  *
@@ -19,6 +26,8 @@
  * zusammenstreicht, ist schlimmer als eines, das ihn nur zeigt.
  */
 
+import type { DnsProviderId } from './zones';
+
 export const EDITABLE_TYPES = ['A', 'AAAA', 'CNAME', 'TXT', 'MX', 'NS'] as const;
 export type EditableRecordType = (typeof EDITABLE_TYPES)[number];
 
@@ -27,21 +36,47 @@ export const PROXYABLE_TYPES: readonly string[] = ['A', 'AAAA', 'CNAME'];
 
 /** Cloudflare: 1 heißt „automatisch", sonst mindestens 60 Sekunden. */
 export const TTL_AUTO = 1;
-const TTL_MIN = 60;
-const TTL_MAX = 86400;
 
-/** Ein Eintrag, wie Cloudflare ihn führt — auf das reduziert, was hier zählt. */
+export interface ProviderRules {
+  /** Ob der Anbieter Verkehr über eigene Server leiten kann. Nur Cloudflare. */
+  proxy: boolean;
+  /**
+   * Was „keine eigene TTL" heißt. Cloudflare: 1, der Anbieter entscheidet.
+   * Hetzner: `null`, es gilt die Vorgabe der Zone.
+   */
+  defaultTtl: number | null;
+  ttlMin: number;
+  ttlMax: number;
+  /**
+   * Die TTL gehört dem Namen samt Art und nicht dem einzelnen Wert. Bei Hetzner
+   * teilen sich zwei A-Einträge desselben Namens eine TTL (ein RRSet).
+   */
+  ttlPerName: boolean;
+}
+
+export const PROVIDER_RULES: Record<DnsProviderId, ProviderRules> = {
+  cloudflare: { proxy: true, defaultTtl: TTL_AUTO, ttlMin: 60, ttlMax: 86400, ttlPerName: false },
+  hetzner: { proxy: false, defaultTtl: null, ttlMin: 60, ttlMax: 2147483647, ttlPerName: true },
+};
+
+/** Ein Eintrag, wie die Oberfläche ihn führt, bei jedem Anbieter gleich. */
 export interface DnsRecord {
+  /**
+   * Die Kennung beim Anbieter. Bei Cloudflare seine eigene, bei Hetzner aus
+   * Name, Art und Wert gebildet (`hetzner-rrsets.ts`): dort gibt es keine.
+   */
   id: string;
   type: string;
-  /** Der volle Name, so wie Cloudflare ihn zurückgibt. */
+  /** Der volle Name. */
   name: string;
   content: string;
-  ttl: number;
+  /** `null`: keine eigene TTL, es gilt die Vorgabe der Zone (Hetzner). */
+  ttl: number | null;
+  /** Nur bei Cloudflare je wahr. */
   proxied: boolean;
   priority: number | null;
   comment: string | null;
-  /** Von Cloudflare gepflegte Einträge (z. B. der SOA) lassen sich nicht ändern. */
+  /** Vom Anbieter gepflegt oder dort geschützt (z. B. der SOA): nicht änderbar. */
   locked: boolean;
 }
 
@@ -50,7 +85,7 @@ export interface RecordInput {
   type: EditableRecordType;
   name: string;
   content: string;
-  ttl: number;
+  ttl: number | null;
   proxied: boolean;
   priority: number | null;
   comment: string | null;
@@ -66,7 +101,7 @@ export function isEditableRecord(record: Pick<DnsRecord, 'type' | 'locked'>): bo
 }
 
 const IPV4 = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
-/** Grob und mit Absicht: die genaue Form prüft Cloudflare, hier geht es um Tippfehler. */
+/** Grob und mit Absicht: die genaue Form prüft der Anbieter, hier geht es um Tippfehler. */
 const IPV6 = /^[0-9a-f:]+$/i;
 /** Ein Hostname als Ziel. Der Unterstrich ist erlaubt: `_acme-challenge` gibt es wirklich. */
 const HOSTNAME = /^[a-z0-9_]([a-z0-9_-]*[a-z0-9_])?(\.[a-z0-9_]([a-z0-9_-]*[a-z0-9_])?)*\.?$/i;
@@ -79,7 +114,12 @@ const RECORD_NAME = /^(@|\*|(\*\.)?[a-z0-9_]([a-z0-9_-]*[a-z0-9_])?(\.[a-z0-9_](
  * Deutsch und mit dem Grund daneben, wo es einen gibt: „Ungültig" schickt jemanden
  * in die Suche, „Ein CNAME zeigt auf einen Namen, nicht auf eine IP" nicht.
  */
-export function validateRecordInput(input: RecordInput, zoneName: string): string | null {
+export function validateRecordInput(
+  input: RecordInput,
+  zoneName: string,
+  provider: DnsProviderId = 'cloudflare'
+): string | null {
+  const rules = PROVIDER_RULES[provider];
   if (!isEditableType(input.type)) {
     return `Einträge vom Typ ${input.type} lassen sich hier nicht anlegen.`;
   }
@@ -124,8 +164,14 @@ export function validateRecordInput(input: RecordInput, zoneName: string): strin
     return 'Ein CNAME auf der Domain selbst verdeckt ihre NS- und MX-Einträge. Dort gehört ein A-Eintrag hin.';
   }
 
-  if (input.ttl !== TTL_AUTO && (input.ttl < TTL_MIN || input.ttl > TTL_MAX)) {
-    return `Die TTL liegt zwischen ${TTL_MIN} und ${TTL_MAX} Sekunden oder auf „automatisch".`;
+  if (input.ttl !== rules.defaultTtl) {
+    const ttl = input.ttl;
+    if (ttl === null || !Number.isInteger(ttl) || ttl < rules.ttlMin || ttl > rules.ttlMax) {
+      return (
+        `Die TTL liegt zwischen ${rules.ttlMin} und ${rules.ttlMax} Sekunden ` +
+        (rules.defaultTtl === null ? 'oder folgt der Vorgabe der Zone.' : 'oder auf „automatisch".')
+      );
+    }
   }
 
   if (input.type === 'MX') {
@@ -135,6 +181,9 @@ export function validateRecordInput(input: RecordInput, zoneName: string): strin
     }
   }
 
+  if (input.proxied && !rules.proxy) {
+    return 'Über die Server des Anbieters leiten lässt sich ein Eintrag nur bei Cloudflare.';
+  }
   if (input.proxied && !PROXYABLE_TYPES.includes(input.type)) {
     return `Einträge vom Typ ${input.type} kann Cloudflare nicht über seine Server schicken.`;
   }
@@ -154,27 +203,74 @@ export function validateRecordInput(input: RecordInput, zoneName: string): strin
  * die Route prüft, was sie bekommt — mit einem zweiten Leser wären das zwei
  * Normalisierungen, die sich in genau einem Randfall unterscheiden.
  */
-export function readRecordInput(raw: Record<string, unknown>): RecordInput {
+export function readRecordInput(
+  raw: Record<string, unknown>,
+  provider: DnsProviderId = 'cloudflare'
+): RecordInput {
+  const rules = PROVIDER_RULES[provider];
   const type = String(raw.type ?? '').toUpperCase();
   const priority = Number(raw.priority);
+  const ownTtl = raw.ttl !== null && raw.ttl !== undefined && raw.ttl !== '' && Number.isFinite(Number(raw.ttl));
   return {
     // Unbekannte Art bleibt stehen und wird nicht auf `A` zurechtgebogen:
     // `validateRecordInput` soll sie mit ihrem Namen ablehnen können.
     type: type as EditableRecordType,
     name: String(raw.name ?? '').trim().toLowerCase(),
     content: String(raw.content ?? '').trim(),
-    ttl: Number.isFinite(Number(raw.ttl)) ? Number(raw.ttl) : TTL_AUTO,
+    ttl: ownTtl ? Number(raw.ttl) : rules.defaultTtl,
     // Ein `proxied` an einem TXT-Eintrag ist keine Einstellung, sondern ein
     // Fehler — hier fällt es weg, statt später von Cloudflare abgelehnt zu werden.
-    proxied: raw.proxied === true && PROXYABLE_TYPES.includes(type),
+    proxied: rules.proxy && raw.proxied === true && PROXYABLE_TYPES.includes(type),
     priority: type === 'MX' && Number.isFinite(priority) ? priority : null,
     comment: String(raw.comment ?? '').trim() || null,
   };
 }
 
-/** Die TTL als Text. `1` ist bei Cloudflare „automatisch" und keine Sekunde. */
-export function formatTtl(ttl: number): string {
+/** Eine IPv6-Adresse in ihren acht Gruppen ohne führende Nullen, oder `null`. */
+function ipv6Groups(address: string): string | null {
+  let value = address;
+  const mapped = /^(.*:)(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(value);
+  if (mapped) {
+    const [, head, a, b, c, d] = mapped;
+    const high = ((Number(a) << 8) | Number(b)).toString(16);
+    const low = ((Number(c) << 8) | Number(d)).toString(16);
+    value = `${head}${high}:${low}`;
+  }
+  const halves = value.split('::');
+  if (halves.length > 2) return null;
+  const head = halves[0] ? halves[0].split(':') : [];
+  const tail = halves[1] ? halves[1].split(':') : [];
+  const gap = 8 - head.length - tail.length;
+  if (halves.length === 1 ? gap !== 0 : gap < 1) return null;
+  const groups = [...head, ...Array<string>(halves.length === 2 ? gap : 0).fill('0'), ...tail];
+  if (groups.some((group) => !/^[0-9a-f]{1,4}$/.test(group))) return null;
+  return groups.map((group) => parseInt(group, 16).toString(16)).join(':');
+}
+
+/**
+ * Ob zwei Schreibweisen dieselbe Adresse meinen.
+ *
+ * `2001:db8::1` und `2001:0db8:0:0:0:0:0:1` sind dieselbe, und ein Anbieter
+ * gibt nicht unbedingt die Form zurück, in der geschrieben wurde. Ohne diesen
+ * Vergleich sähe ein Eintrag, der längst stimmt, bei jedem Lauf wie ein
+ * falscher aus.
+ */
+export function sameAddress(a: string, b: string): boolean {
+  const left = a.trim().toLowerCase();
+  const right = b.trim().toLowerCase();
+  if (left === right) return true;
+  const groups = ipv6Groups(left);
+  return groups !== null && groups === ipv6Groups(right);
+}
+
+/**
+ * Die TTL als Text. `1` ist bei Cloudflare „automatisch" und keine Sekunde,
+ * `null` bei Hetzner die Vorgabe der Zone.
+ */
+export function formatTtl(ttl: number | null): string {
+  if (ttl === null) return 'Vorgabe';
   if (ttl === TTL_AUTO) return 'auto';
+  if (ttl % 86400 === 0) return ttl === 86400 ? '1 Tag' : `${ttl / 86400} Tage`;
   if (ttl % 3600 === 0) return `${ttl / 3600} h`;
   if (ttl % 60 === 0) return `${ttl / 60} min`;
   return `${ttl} s`;

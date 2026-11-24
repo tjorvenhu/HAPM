@@ -40,6 +40,7 @@ const ACTIONS: HaproxyAction[] = [
   'stream-update',
   'stream-delete',
   'certificate',
+  'import',
 ];
 
 export async function GET(request: Request) {

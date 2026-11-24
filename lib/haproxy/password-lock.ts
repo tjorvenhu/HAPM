@@ -13,6 +13,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { ApiError } from '../api';
 import {
   KEEP_PASSWORD,
+  legacyPresetError,
   readServiceInput,
   validateLockPassword,
   type CreateServiceInput,
@@ -58,6 +59,11 @@ export function createPasswordLock(password: string): PasswordLock {
  * ungeprüft durchließe.
  */
 export function readServiceRequest(body: unknown): CreateServiceInput {
+  // Ein `preset` aus der Zeit davor übersetzt `readServiceInput`. Eines, das es
+  // nie gab, wird hier abgelehnt und nicht als „keins" gelesen.
+  const unknownPreset = legacyPresetError(body);
+  if (unknownPreset) throw new ApiError(unknownPreset);
+
   const input = readServiceInput(body);
   const raw = (body ?? {}) as Record<string, unknown>;
   const password = typeof raw.lockPassword === 'string' ? raw.lockPassword : '';

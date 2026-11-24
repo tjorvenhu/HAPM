@@ -1,12 +1,13 @@
 import { requireCsrf, requireSession } from '@/lib/session';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
+import { msg } from '@/lib/i18n';
 import { logAudit, getClientIP } from '@/lib/audit';
 import { localServer } from '@/lib/helpers';
 import { probeProxy, writeDnsCredentials } from '@/lib/haproxy/provision';
 import { findDnsProvider, validateDnsCredentials } from '@/lib/haproxy/dns-credentials';
 import { readSetupView } from '@/lib/setup';
 import { checkDnsToken } from '@/lib/setup/token-check';
-import { getSetupState, updateSetupState } from '@/lib/setup/store';
+import { getSetupState, setDnsAccess, updateSetupState } from '@/lib/setup/store';
 
 /**
  * Schritt 3 der Einrichtung: der DNS-Anbieter.
@@ -16,10 +17,13 @@ import { getSetupState, updateSetupState } from '@/lib/setup/store';
  * (`skip`), was nur eine öffentliche Installation darf.
  *
  * Geschrieben wird über denselben Weg wie unter Reverse-Proxy, Einstellungen
- * (`writeDnsCredentials`): der Token geht durch nach `account.conf` und steht
- * danach weder in der Datenbank noch im Protokoll. Gemerkt wird nur, welcher
- * Hook gewählt ist. Über Erfolg entscheidet der Rückabgleich: was acme.sh
- * danach über seine Hooks sagt.
+ * (`writeDnsCredentials`): der Token geht nach `account.conf`. Über Erfolg
+ * entscheidet der Rückabgleich: was acme.sh danach über seine Hooks sagt.
+ *
+ * Kann der Anbieter auch Zonen verwalten (`apiTokenField`), hält der Assistent
+ * das Token verschlüsselt, bis die Einrichtung zu Ende ist: mit der Domain aus
+ * Schritt 4 richtet er die Zone unter „DNS" ein und setzt auf Wunsch den
+ * Eintrag der Oberfläche. Im Protokoll steht es nie.
  */
 export async function PUT(request: Request) {
   try {
@@ -33,7 +37,7 @@ export async function PUT(request: Request) {
     }>(request);
 
     const state = await getSetupState();
-    if (!state.exposure) throw new ApiError('Bitte wählen Sie zuerst die Erreichbarkeit.');
+    if (!state.exposure) throw new ApiError(msg('Bitte wählen Sie zuerst die Erreichbarkeit.'));
 
     const audit = (details: string) =>
       logAudit({
@@ -48,11 +52,12 @@ export async function PUT(request: Request) {
     if (body.skip === true) {
       if (state.exposure === 'internal') {
         throw new ApiError(
-          'Eine interne Installation braucht einen DNS-Anbieter: ohne ihn lässt sich kein Zertifikat ausstellen.'
+          msg('Eine interne Installation braucht einen DNS-Anbieter: ohne ihn lässt sich kein Zertifikat ausstellen.')
         );
       }
       // Ohne Anbieter gibt es keine Wildcard.
       await updateSetupState({ dns: 'skipped', dnsHook: null, wildcard: false, wildcardBase: null });
+      await setDnsAccess(null);
       await audit('DNS-Anbieter: übersprungen');
       return ok({ setup: await readSetupView(), tokenCheck: null });
     }
@@ -63,16 +68,18 @@ export async function PUT(request: Request) {
       const hook = body.keep.trim();
       const { dnsHooks } = await probeProxy(server);
       if (!dnsHooks.includes(hook)) {
-        throw new ApiError(`Der DNS-Hook "${hook}" ist bei acme.sh nicht eingerichtet.`);
+        throw new ApiError(msg('Der DNS-Hook "{hook}" ist bei acme.sh nicht eingerichtet.', { hook }));
       }
       await updateSetupState({ dns: 'configured', dnsHook: hook });
+      // Übernommen heißt: das Token kennt nur acme.sh.
+      await setDnsAccess(null);
       await audit(`DNS-Anbieter: ${hook} übernommen`);
       return ok({ setup: await readSetupView(), tokenCheck: null });
     }
 
     const hook = String(body.hook ?? '').trim();
     const provider = findDnsProvider(hook);
-    if (!provider) throw new ApiError('Bitte wählen Sie einen DNS-Anbieter.');
+    if (!provider) throw new ApiError(msg('Bitte wählen Sie einen DNS-Anbieter.'));
 
     const values: Record<string, string> = {};
     for (const field of provider.fields) {
@@ -83,17 +90,21 @@ export async function PUT(request: Request) {
 
     // Vor dem Ablegen: ein abgelehnter Token soll nichts hinterlassen.
     const tokenCheck = await checkDnsToken(hook, values);
-    if (tokenCheck.result === 'rejected') throw new ApiError(tokenCheck.message);
+    if (tokenCheck.result === 'rejected') throw new ApiError(tokenCheck.detail);
 
     const dnsHooks = await writeDnsCredentials(server, { hook, values, remove: false });
     if (!dnsHooks.includes(hook)) {
       throw new ApiError(
-        `Die Zugangsdaten sind abgelegt, acme.sh erkennt den Hook ${hook} aber nicht. ` +
-          'Ob acme.sh eingerichtet ist, steht in der Übersicht.'
+        msg(
+          'Die Zugangsdaten sind abgelegt, acme.sh erkennt den Hook {hook} aber nicht. Ob acme.sh eingerichtet ist, steht in der Übersicht.',
+          { hook }
+        )
       );
     }
 
     await updateSetupState({ dns: 'configured', dnsHook: hook });
+    const apiToken = provider.apiTokenField ? values[provider.apiTokenField] : '';
+    await setDnsAccess(apiToken ? { hook, token: apiToken } : null);
     await logAudit({
       userId: session.userId,
       userEmail: session.email,

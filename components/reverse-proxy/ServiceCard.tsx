@@ -4,10 +4,10 @@ import { useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import {
   Globe, Activity, GitBranch, Box, Server, Lock, LockOpen, Pencil, Trash2, Loader2, ArrowRight,
-  EyeOff, ChevronDown, ChevronRight, CornerUpRight, Scale, Cookie, BarChart3, KeyRound,
+  EyeOff, ChevronDown, ChevronRight, CornerUpRight, Scale, Cookie, BarChart3, KeyRound, ShieldCheck,
+  SlidersHorizontal,
 } from 'lucide-react';
 import {
-  PRESET_LABELS,
   BALANCE_LABELS,
   BALANCE_HINTS,
   shortTarget,
@@ -27,7 +27,7 @@ import type { ProxyRow } from './types';
  *
  * ── Zwei Regeln gegen wachsende Karten ──
  *
- * **Die Marken bleiben in einer Zeile.** Ein Eintrag kann Healthcheck, Preset,
+ * **Die Marken bleiben in einer Zeile.** Ein Eintrag kann Healthcheck, Zusätze,
  * Sperre, drei Alias-Domains und einen Maschinennamen tragen; als Wortwolke
  * gesetzt war die Kopfzeile höher als der Inhalt darunter, und die Karten einer
  * Reihe standen auf verschiedenen Höhen. Zwei stehen da, der Rest steht als
@@ -194,6 +194,18 @@ export default function ServiceCard({
    * WIE gesperrt ist (Admin-IPs oder Passwort), ändert an den drei Zuständen
    * nichts, nur an den Wörtern. Beim Sperren fragt die Seite danach
    * (`LockDialog`), beim Lösen nicht. */
+  /* Über dieses Ziel läuft die Adresse von HAPM (`lib/haproxy/protected.ts`).
+   * Die Route lehnt das Entfernen ab. Die Karte sagt es vorher, statt einen
+   * Knopf anzubieten, der dann scheitert. */
+  const surface = proxy.surface?.serviceId === service.id ? proxy.surface : null;
+
+  /** Die Zusätze in Worten, für die Marke: feste Header und das lange Timeout. */
+  const addons = [
+    ...service.responseHeaders.map((rule) => `Antwort: ${rule.name}`),
+    ...service.requestHeaders.map((rule) => `Anfrage: ${rule.name}`),
+    ...(service.tunnel ? ['Lange Verbindungen'] : []),
+  ];
+
   const lockedCount = service.lockedDomains.length;
   const fullyLocked = lockedCount > 0 && lockedCount === service.domains.length;
   const partlyLocked = lockedCount > 0 && !fullyLocked;
@@ -213,6 +225,17 @@ export default function ServiceCard({
    * steht ohnehin im Dialog. Die Anzahl der Routen fehlt hier bewusst — sie
    * steht als Überschrift über den Routen selbst. */
   const tags: Tag[] = [
+    // Ganz vorn, damit sie nie im „+1" verschwindet: sie erklärt den gesperrten
+    // Löschen-Knopf. Ein Schild und kein Schloss, das hier schon die Sperre meint.
+    ...(surface
+      ? [{
+          key: 'surface',
+          icon: <ShieldCheck size={14} />,
+          label: 'Oberfläche von HAPM',
+          tooltip: `HAPM ist über dieses Ziel erreichbar (${surface.url}). Es lässt sich nicht entfernen.`,
+          className: 'is-muted',
+        }]
+      : []),
     ...(lockedCount > 0
       ? [{
           key: 'locked',
@@ -273,7 +296,7 @@ export default function ServiceCard({
           className: HEALTH_TAG[health].className,
         }]
       : []),
-    /* Was den Eintrag zur Lastverteilung macht. Vor dem Preset, weil es die
+    /* Was den Eintrag zur Lastverteilung macht. Vor den Zusätzen, weil es die
      * Frage beantwortet, wonach die Karte aussieht: bei zwei Zielen will man
      * wissen, wie verteilt wird — und ob ein Besucher bei seinem Ziel bleibt.
      * Beide Marken stehen nur da, wenn die Zeile wirklich in der Datei steht:
@@ -297,17 +320,16 @@ export default function ServiceCard({
             'HAProxy setzt ihn selbst und nimmt ihn aus der Anfrage, bevor sie hinten ankommt.',
         }]
       : []),
-    /* Hinter dem Healthcheck, obwohl es die auffälligere Marke ist: das Preset
-     * ist eine Eigenschaft, die sich nicht ändert, und sie steht im Dialog.
-     * Der Healthcheck sagt, ob der Eintrag GERADE trägt. Als das Preset vorne
-     * stand, verschwand bei einem gesperrten Coolify-Eintrag genau die Marke
-     * ins „+1", wegen der man auf die Karte sieht. */
-    ...(service.preset !== 'default'
+    /* Hinter dem Healthcheck: die Zusätze sind eine Eigenschaft, die sich nicht
+     * ändert, und sie stehen im Dialog. Der Healthcheck sagt, ob der Eintrag
+     * GERADE trägt. EINE Marke für alle, die Zeilen selbst stehen im Tooltip. */
+    ...(addons.length > 0
       ? [{
-          key: 'preset',
-          icon: <Box size={14} />,
-          label: PRESET_LABELS[service.preset],
-          tooltip: 'Zusätzliche Zeilen aus dem Preset',
+          key: 'addons',
+          icon: <SlidersHorizontal size={14} />,
+          label: addons.length === 1 && service.tunnel ? 'Lange Verbindungen' : 'Header',
+          tooltip: addons.join(' · '),
+          className: 'is-muted',
         }]
       : []),
     // Der Tooltip trägt die Domain selbst und nicht ihre Beschreibung: sie ist
@@ -544,11 +566,13 @@ export default function ServiceCard({
           type="button"
           className="rp-action is-danger"
           data-tooltip={
-            service.removable
-              ? 'Löschen'
-              : 'Nicht über HAPM angelegt: ACL, Weiche oder Backend folgen nicht dem erwarteten Schema'
+            surface
+              ? 'Nicht entfernbar: Oberfläche von HAPM. Die Adresse steht unter Allgemein.'
+              : service.removable
+                ? 'Löschen'
+                : 'Nicht über HAPM angelegt: ACL, Weiche oder Backend folgen nicht dem erwarteten Schema'
           }
-          disabled={!service.removable || pending}
+          disabled={!service.removable || surface !== null || pending}
           onClick={onDelete}
           aria-label="Löschen"
         >

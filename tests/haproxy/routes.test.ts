@@ -70,7 +70,10 @@ const COOLIFY: CreateServiceInput = {
   sticky: false,
   lockedDomains: [],
   passwordLock: null,
-  preset: 'coolify',
+  responseHeaders: [],
+  requestHeaders: [],
+  // Früher das Preset „Coolify".
+  tunnel: true,
   healthcheck: false,
 };
 
@@ -111,7 +114,7 @@ describe('rendern', () => {
     expect(lines.indexOf('# AUTO: coolify')).toBeLessThan(lines.indexOf('backend coolify'));
   });
 
-  it('setzt „timeout tunnel" aus dem Preset in JEDEN Block', () => {
+  it('setzt „timeout tunnel" in JEDEN Block', () => {
     // Ohne das reißen Terminal und Live-Ansicht nach `timeout client` ab. Es
     // gehört deshalb in die Regel-Backends und nicht nur in das des Dienstes.
     const blocks = renderBackendBlock(COOLIFY)
@@ -122,9 +125,23 @@ describe('rendern', () => {
     for (const block of blocks) expect(block).toContain('timeout tunnel 1h');
   });
 
-  it('schreibt ohne Preset auch kein Timeout', () => {
-    const text = renderBackendBlock({ ...COOLIFY, preset: 'default' }).join('\n');
+  it('schreibt ohne den Schalter auch kein Timeout', () => {
+    const text = renderBackendBlock({ ...COOLIFY, tunnel: false }).join('\n');
     expect(text).not.toContain('timeout tunnel');
+  });
+
+  it('setzt auch die Header in JEDEN Block', () => {
+    const blocks = renderBackendBlock({
+      ...COOLIFY,
+      requestHeaders: [{ name: 'X-Forwarded-Port', value: '443' }],
+    })
+      .join('\n')
+      .split(/^backend /m)
+      .slice(1);
+    expect(blocks).toHaveLength(3);
+    for (const block of blocks) {
+      expect(block).toContain('http-request set-header X-Forwarded-Port "443"');
+    }
   });
 
   it('setzt auf einer Regel kein httpchk, nur `check`', () => {
@@ -152,7 +169,7 @@ describe('zurücklesen', () => {
   it('bleibt bearbeitbar und gibt dem Formular exakt die Eingabe zurück', () => {
     expect(service.extras).toEqual([]);
     expect(service.editable).toBe(true);
-    expect(service.preset).toBe('coolify');
+    expect(service.tunnel).toBe(true);
     expect(toCreateInput(service)).toEqual(COOLIFY);
   });
 
@@ -252,7 +269,9 @@ describe('löschen', () => {
       id: 'coolify_ui',
       domains: ['ui.example.org'],
       routes: [],
-      preset: 'default',
+      responseHeaders: [],
+      requestHeaders: [],
+      tunnel: false,
     });
 
     const zurueck = removeService(beides, 'coolify');
@@ -284,7 +303,9 @@ describe('anlegen weist ab', () => {
       id: 'coolify_terminal',
       domains: ['terminal.example.org'],
       routes: [],
-      preset: 'default',
+      responseHeaders: [],
+      requestHeaders: [],
+      tunnel: false,
     });
     expect(() => addService(belegt, COOLIFY)).toThrow(HaproxyConfigError);
     expect(() => addService(belegt, COOLIFY)).toThrow(/coolify_terminal/);

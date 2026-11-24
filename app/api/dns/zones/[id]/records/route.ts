@@ -1,10 +1,10 @@
 import { requireSession, requireCsrf } from '@/lib/session';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
 import { logAudit, getClientIP } from '@/lib/audit';
-import { createRecord, listRecords } from '@/lib/dns/cloudflare';
+import { providerFor } from '@/lib/dns/provider';
 import { getZoneRow, withZone } from '@/lib/dns/store';
 import { recordFqdn } from '@/lib/dns/zones';
-import { readRecordInput, validateRecordInput, TTL_AUTO } from '@/lib/dns/records';
+import { readRecordInput, validateRecordInput } from '@/lib/dns/records';
 
 interface Params {
   params: Promise<{ id: string }>;
@@ -16,7 +16,9 @@ export async function GET(_request: Request, { params }: Params) {
     await requireSession();
     const { id } = await params;
     const zone = await getZoneRow(id);
-    const records = await withZone(zone, (token, zoneId) => listRecords(token, zoneId));
+    const records = await withZone(zone, (token, ref) =>
+      providerFor(zone).listRecords(token, ref)
+    );
     return ok(records);
   } catch (err) {
     return handleError(err);
@@ -27,9 +29,11 @@ export async function GET(_request: Request, { params }: Params) {
  * Einen Eintrag anlegen.
  *
  * Der Name kommt relativ zur Zone aus dem Formular (`app`, `@`, `*`) und geht
- * voll an Cloudflare. Die Umrechnung steht in `recordFqdn` und nicht hier: das
- * Formular zeigt denselben Namen an, den es schickt, und beides muss dieselbe
- * Funktion sein.
+ * voll an den Anbieter. Die Umrechnung steht in `recordFqdn` und nicht hier:
+ * das Formular zeigt denselben Namen an, den es schickt, und beides muss
+ * dieselbe Funktion sein.
+ *
+ * Geprüft wird nach den Regeln des Anbieters der Zone (`PROVIDER_RULES`).
  */
 export async function POST(request: Request, { params }: Params) {
   try {
@@ -38,17 +42,18 @@ export async function POST(request: Request, { params }: Params) {
     const { id } = await params;
     const zone = await getZoneRow(id);
 
-    const input = readRecordInput(await jsonBody<Record<string, unknown>>(request));
-    const invalid = validateRecordInput(input, zone.name);
+    const provider = providerFor(zone);
+    const input = readRecordInput(await jsonBody<Record<string, unknown>>(request), provider.id);
+    const invalid = validateRecordInput(input, zone.name, provider.id);
     if (invalid) throw new ApiError(invalid);
 
     const fqdn = recordFqdn(input.name, zone.name);
-    const record = await withZone(zone, (token, zoneId) =>
-      createRecord(token, zoneId, {
+    const record = await withZone(zone, (token, ref) =>
+      provider.createRecord(token, ref, {
         type: input.type,
         name: fqdn,
         content: input.content,
-        ttl: input.ttl ?? TTL_AUTO,
+        ttl: input.ttl,
         proxied: input.proxied,
         ...(input.priority === null ? {} : { priority: input.priority }),
         ...(input.comment === null ? {} : { comment: input.comment }),

@@ -1,7 +1,7 @@
 /**
  * Passkeys: die Regeln ohne Datenbank und ohne Netz.
  *
- * Ohne einen einzigen Import, weil drei Stellen dieselbe Antwort brauchen:
+ * Ohne Import außer `lib/i18n` (ebenso rein), weil drei Stellen dieselbe Antwort brauchen:
  * `lib/auth/config.ts` (an welche Domain ein Passkey gebunden wird), die Routen
  * (wie ein Name aussehen darf) und die Oberfläche im Browser (Meldungen,
  * Vorschlag für den Namen). Eine Client-Komponente darf nichts importieren, was
@@ -10,7 +10,12 @@
  * Ein Passkey ist ein zusätzlicher Weg neben Passwort und zweitem Faktor. Das
  * Konto behält beides. Bei der Anmeldung zählt er als beide Faktoren zugleich:
  * das Gerät (Besitz) und Fingerabdruck, Gesicht oder PIN (Person).
+ *
+ * Die Sätze für die Oberfläche sind deutsche Schlüssel (`msgid`): wer sie zeigt,
+ * schickt sie durch `t()`.
  */
+
+import { msgid } from '../i18n/translate';
 
 /** So viele Passkeys je Konto. Mehr braucht niemand, und die Liste bleibt lesbar. */
 export const MAX_PASSKEYS_PER_USER = 10;
@@ -90,10 +95,10 @@ export function suggestPasskeyName(userAgent: string | null | undefined): string
   const ua = userAgent ?? '';
   if (/iPhone/.test(ua)) return 'iPhone';
   if (/iPad/.test(ua)) return 'iPad';
-  if (/Android/.test(ua)) return 'Android-Gerät';
+  if (/Android/.test(ua)) return msgid('Android-Gerät');
   if (/Macintosh|Mac OS X/.test(ua)) return 'Mac';
-  if (/Windows/.test(ua)) return 'Windows-PC';
-  if (/Linux/.test(ua)) return 'Linux-PC';
+  if (/Windows/.test(ua)) return msgid('Windows-PC');
+  if (/Linux/.test(ua)) return msgid('Linux-PC');
   return 'Passkey';
 }
 
@@ -105,10 +110,10 @@ export function suggestPasskeyName(userAgent: string | null | undefined): string
  * Ohne Abgleich lebt er nur auf dem einen Gerät oder Sicherheitsschlüssel.
  */
 export function passkeyStorageLabel(passkey: { deviceType: string; backedUp: boolean }): string {
-  if (passkey.backedUp) return 'Auf Ihren Geräten abgeglichen';
+  if (passkey.backedUp) return msgid('Auf Ihren Geräten abgeglichen');
   return passkey.deviceType === 'multiDevice'
-    ? 'Abgleich möglich, noch nicht gesichert'
-    : 'Nur auf einem Gerät';
+    ? msgid('Abgleich möglich, noch nicht gesichert')
+    : msgid('Nur auf einem Gerät');
 }
 
 /**
@@ -122,16 +127,16 @@ export function passkeyBrowserError(name: string | undefined, purpose: 'register
   switch (name) {
     case 'NotAllowedError':
     case 'AbortError':
-      return purpose === 'login' ? 'Die Anmeldung wurde abgebrochen.' : 'Das Anlegen wurde abgebrochen.';
+      return purpose === 'login' ? msgid('Die Anmeldung wurde abgebrochen.') : msgid('Das Anlegen wurde abgebrochen.');
     case 'InvalidStateError':
-      return 'Dieses Gerät hat für Ihr Konto schon einen Passkey.';
+      return msgid('Dieses Gerät hat für Ihr Konto schon einen Passkey.');
     case 'NotSupportedError':
-      return 'Dieses Gerät kann keinen Passkey anlegen, der Sie per Fingerabdruck, Gesicht oder PIN bestätigt.';
+      return msgid('Dieses Gerät kann keinen Passkey anlegen, der Sie per Fingerabdruck, Gesicht oder PIN bestätigt.');
     case 'SecurityError':
-      return 'Passkeys funktionieren nur unter der eingerichteten Adresse von HAPM und über eine sichere Verbindung.';
+      return msgid('Passkeys funktionieren nur unter der eingerichteten Adresse von HAPM und über eine sichere Verbindung.');
     default:
       return purpose === 'login'
-        ? 'Die Anmeldung mit Passkey ist fehlgeschlagen.'
-        : 'Der Passkey konnte nicht angelegt werden.';
+        ? msgid('Die Anmeldung mit Passkey ist fehlgeschlagen.')
+        : msgid('Der Passkey konnte nicht angelegt werden.');
   }
 }

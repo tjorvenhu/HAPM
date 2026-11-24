@@ -97,7 +97,9 @@ const INPUT: CreateServiceInput = {
   sticky: false,
   lockedDomains: [],
   passwordLock: null,
-  preset: 'default',
+  responseHeaders: [],
+  requestHeaders: [],
+  tunnel: false,
   healthcheck: true,
 };
 
@@ -233,10 +235,13 @@ describe('addService', () => {
     );
   });
 
-  it('hängt die Nextcloud-Header nur beim passenden Preset an', () => {
-    const mit = renderBackendBlock({ ...INPUT, preset: 'nextcloud' }).join('\n');
-    expect(mit).toContain('X-Permitted-Cross-Domain-Policies');
-    expect(renderBackendBlock(INPUT).join('\n')).not.toContain('X-Robots-Tag');
+  it('schreibt Header nur, wenn welche eingetragen sind', () => {
+    const mit = renderBackendBlock({
+      ...INPUT,
+      responseHeaders: [{ name: 'X-Permitted-Cross-Domain-Policies', value: 'none' }],
+    }).join('\n');
+    expect(mit).toContain('    http-response set-header X-Permitted-Cross-Domain-Policies "none"');
+    expect(renderBackendBlock(INPUT).join('\n')).not.toContain('set-header');
   });
 });
 
@@ -325,7 +330,9 @@ describe('validateCreateInput', () => {
       domains: ['*.kunde.example'],
       servers: [{ name: '', target: '10.0.0.1:80', weight: null }],
       healthcheck: true,
-      preset: 'default',
+      responseHeaders: [],
+      requestHeaders: [],
+      tunnel: false,
     });
     expect(normalised.healthcheck).toBe(false);
   });

@@ -12,6 +12,7 @@ import {
 } from '@/lib/haproxy/internal';
 import { readServiceRequest } from '@/lib/haproxy/password-lock';
 import { HaproxyConfigError, serviceHealth, validateCreateInput } from '@/lib/haproxy/config';
+import { surfaceTarget } from '@/lib/haproxy/protected';
 
 /**
  * Ein einzelnes Reverse-Proxy-Ziel: lesen, ändern, entfernen.
@@ -46,7 +47,8 @@ export async function GET(request: Request, { params }: Params) {
       throw new ApiError(`Auf "${server.name}" gibt es kein Ziel mit der ID "${id}".`, 404);
     }
 
-    return ok(serviceView(server, service, serviceHealth(service, probe.serverStates)));
+    const surface = surfaceTarget(probe.services, { publicUrl: (await getSettings()).publicUrl });
+    return ok(serviceView(server, service, serviceHealth(service, probe.serverStates), surface));
   } catch (err) {
     return handleError(err);
   }
@@ -81,17 +83,23 @@ export async function PATCH(request: Request, { params }: Params) {
     const server = await resolveProxy(wantedServer(request, body));
 
     // Mit dem Passwort der Sperre, falls eins mitkam (lib/haproxy/password-lock.ts).
-    const input = readServiceRequest(body);
+    // Ohne `id` im Rumpf behält der Eintrag seine. Abgeleitet wird sie nur
+    // beim Anlegen: hier hieße eine neue ID, ACL und Backend umzubenennen.
+    const sent = readServiceRequest(body);
+    const input = sent.id === '' ? { ...sent, id } : sent;
     const invalid = validateCreateInput(input);
     if (invalid) throw new ApiError(invalid);
 
     const dnsHook = String(body.dnsHook ?? '').trim() || null;
     // Intern oder öffentlich: davon hängt ab, ob HTTP-01 überhaupt geht (`challenge.ts`).
-    const challenge = { exposure: (await getSettings()).exposure, dnsHook };
+    const settings = await getSettings();
+    const challenge = { exposure: settings.exposure, dnsHook };
+    // Das Ziel, über das die Oberfläche läuft, behält deren Domain (`protected.ts`).
+    const protection = { publicUrl: settings.publicUrl };
 
     let current;
     try {
-      current = await precheckUpdate(server, id, input, challenge);
+      current = await precheckUpdate(server, id, input, challenge, protection);
     } catch (err) {
       if (err instanceof HaproxyConfigError) throw new ApiError(err.message, 409);
       throw err;
@@ -109,6 +117,7 @@ export async function PATCH(request: Request, { params }: Params) {
       serviceId: id,
       input,
       challenge,
+      protection,
       dns: {
         ensure: await readDnsDomains(body.dnsDomains, input.domains),
         remove: dropped,
@@ -144,12 +153,14 @@ export async function DELETE(request: Request, { params }: Params) {
     );
 
     const server = await resolveProxy(wantedServer(request, body));
+    // Das Ziel, über das die Oberfläche läuft, bleibt stehen (`protected.ts`).
+    const protection = { publicUrl: (await getSettings()).publicUrl };
 
     // Liest den Dienst, wie er JETZT dasteht: Domains und Ziele gehen
     // denormalisiert in die Historie, danach gibt es sie nirgends mehr.
     let current;
     try {
-      current = await precheckDelete(server, id);
+      current = await precheckDelete(server, id, protection);
     } catch (err) {
       if (err instanceof HaproxyConfigError) throw new ApiError(err.message, 409);
       throw err;
@@ -160,6 +171,7 @@ export async function DELETE(request: Request, { params }: Params) {
       action: 'delete',
       serviceId: id,
       service: current,
+      protection,
       dns: { remove: body.removeDns === true ? current.domains : [] },
       actor: haproxyActor(serviceActor(service), request),
     });

@@ -2,13 +2,16 @@
 
 import { useEffect, useState, useCallback, type FormEvent } from 'react';
 import Link from 'next/link';
-import { Globe, Plus, Loader2, Trash2, KeyRound, ListTree, Info } from 'lucide-react';
+import { Globe, Plus, Loader2, Trash2, KeyRound, ListTree, Info, ExternalLink } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { usePolling } from '@/components/usePolling';
 import { useNow } from '@/components/useNow';
 import { useConfirm } from '@/components/ConfirmDialog';
+import { useToast } from '@/components/Toast';
 import EntityCard, { EntityGrid, EntityField } from '@/components/EntityCard';
-import { validateZoneName, normalizeDomain } from '@/lib/dns/zones';
+import ProviderName, { ProviderLogo } from '@/components/dns/ProviderName';
+import { validateZoneName, normalizeDomain, type DnsProviderId } from '@/lib/dns/zones';
+import { DNS_PROVIDER_INFOS, dnsProviderInfo } from '@/lib/dns/provider-info';
 import { SkeletonCards } from '@/components/Skeleton';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 
@@ -18,11 +21,12 @@ import { InfoHint } from '@/ui/primitives/InfoHint';
  * Eine Karte je Zone, kein Tabellenblatt: es sind ein Dutzend Domains mit
  * Namen und zwei Attributen, und genau dafür gibt es `EntityCard`. Die Einträge
  * einer Zone sind die Detailseite — hier steht nur ihre Anzahl, und die kommt
- * live von Cloudflare.
+ * live vom Anbieter der Zone.
  */
 
 interface ZoneRow {
   $id: string;
+  provider: DnsProviderId;
   name: string;
   zoneId: string;
   status: 'ok' | 'error';
@@ -44,6 +48,7 @@ function relative(iso: string | null, now: number): string {
 export default function DnsZonesPage() {
   const { apiFetch } = useApp();
   const confirm = useConfirm();
+  const { notify } = useToast();
   const now = useNow(30_000);
 
   const [zones, setZones] = useState<ZoneRow[]>([]);
@@ -51,6 +56,8 @@ export default function DnsZonesPage() {
   const [error, setError] = useState('');
 
   const [modalOpen, setModalOpen] = useState(false);
+  /** `null`, bis jemand wählt: eine Vorgabe hier wäre ein Token beim falschen Anbieter. */
+  const [provider, setProvider] = useState<DnsProviderId | null>(null);
   const [name, setName] = useState('');
   const [apiToken, setApiToken] = useState('');
   const [saving, setSaving] = useState(false);
@@ -81,14 +88,24 @@ export default function DnsZonesPage() {
     load();
   }, [load]);
 
-  // Eine Cloudflare-Abfrage je Zone und Takt. Deshalb 60 Sekunden und nicht 30,
-  // dieselbe Rechnung wie bei der Reverse-Proxy-Übersicht.
+  // Eine Abfrage beim Anbieter je Zone und Takt. Deshalb 60 Sekunden und nicht
+  // 30, dieselbe Rechnung wie bei der Reverse-Proxy-Übersicht.
   usePolling(() => load(true), 60_000);
 
   const nameError = name.trim() === '' ? null : validateZoneName(name);
+  const chosen = provider ? dnsProviderInfo(provider) : null;
+
+  function openModal() {
+    setProvider(null);
+    setName('');
+    setApiToken('');
+    setFormError('');
+    setModalOpen(true);
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    if (!chosen) return;
     const invalid = validateZoneName(name);
     if (invalid) {
       setFormError(invalid);
@@ -100,13 +117,29 @@ export default function DnsZonesPage() {
       const res = await apiFetch('/api/dns/zones', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: normalizeDomain(name), apiToken }),
+        body: JSON.stringify({ provider: chosen.id, name: normalizeDomain(name), apiToken }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Anlegen fehlgeschlagen');
+      const added = data.data as { name: string; created: boolean; delegated: boolean | null };
       setModalOpen(false);
-      setName('');
       setApiToken('');
+      notify({
+        variant: 'success',
+        message: added.created
+          ? `${added.name} ist eingerichtet.`
+          : `${added.name} war schon eingerichtet. Der Zugang wurde ersetzt.`,
+      });
+      // Nur bei einem klaren Nein: `null` heißt, der Anbieter hat es noch nicht geprüft.
+      if (added.delegated === false) {
+        notify({
+          variant: 'warning',
+          title: 'Noch nicht delegiert',
+          message:
+            `Die Nameserver von ${added.name} zeigen nicht auf ${chosen.label}. ` +
+            'Einträge wirken erst, wenn die Domain dorthin delegiert ist.',
+        });
+      }
       await load(true);
     } catch (err: unknown) {
       setFormError(err instanceof Error ? err.message : 'Anlegen fehlgeschlagen');
@@ -128,6 +161,7 @@ export default function DnsZonesPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Speichern fehlgeschlagen');
+      notify({ variant: 'success', message: `Der Token für ${rotating.name} ist ausgetauscht.` });
       setRotating(null);
       setNewToken('');
       await load(true);
@@ -142,7 +176,7 @@ export default function DnsZonesPage() {
     await confirm({
       title: 'Domain aus der Verwaltung nehmen',
       message:
-        `Bei Cloudflare passiert dabei nichts: die Zone ${zone.name} bleibt bestehen, ihre ` +
+        `Bei ${dnsProviderInfo(zone.provider).label} passiert dabei nichts: die Zone ${zone.name} bleibt bestehen, ihre ` +
         `Einträge bleiben stehen, und alles, was darüber läuft, läuft weiter. Weg ist nur der ` +
         `Zugang von hier, auch der Haken im Reverse-Proxy-Dialog, der Einträge unter dieser ` +
         `Domain anlegt. Der API-Token wird dabei gelöscht.`,
@@ -156,6 +190,7 @@ export default function DnsZonesPage() {
           throw new Error(data.error);
         }
         setError('');
+        notify({ variant: 'success', message: `${zone.name} wird hier nicht mehr verwaltet.` });
         await load(true);
       },
     });
@@ -167,13 +202,13 @@ export default function DnsZonesPage() {
         <div>
           <h1 className="page-title">Domains</h1>
           <p className="page-subtitle">
-            Die Domains, deren DNS hier verwaltet wird. Die Einträge stehen bei Cloudflare und
-            werden bei jedem Aufruf von dort gelesen. Es gibt hier keine Kopie, die veralten
-            könnte.
+            Die Domains, deren DNS hier verwaltet wird, bei Hetzner oder Cloudflare. Die Einträge
+            stehen beim Anbieter und werden bei jedem Aufruf von dort gelesen. Es gibt hier keine
+            Kopie, die veralten könnte.
           </p>
         </div>
         <div className="page-actions">
-          <button className="btn btn-primary" onClick={() => setModalOpen(true)}>
+          <button className="btn btn-primary" onClick={openModal}>
             <Plus size={16} />
             Domain hinzufügen
           </button>
@@ -189,8 +224,8 @@ export default function DnsZonesPage() {
           <Globe size={40} />
           <h3>Noch keine Domain</h3>
           <p>
-            Zum Einrichten braucht es die Domain und einen Cloudflare-API-Token mit der
-            Berechtigung „Zone → DNS → Bearbeiten“ für diese Zone.
+            Zum Einrichten braucht es die Domain und einen API-Token ihres Anbieters, Hetzner oder
+            Cloudflare, der die Einträge der Zone bearbeiten darf.
           </p>
         </div>
       ) : (
@@ -237,6 +272,9 @@ export default function DnsZonesPage() {
                 </>
               }
             >
+              <EntityField label="Anbieter">
+                <ProviderName provider={zone.provider} />
+              </EntityField>
               <EntityField label="Einträge">
                 {/* „unbekannt" und nicht 0: eine Zone, deren Token abgelaufen
                     ist, hat keine null Einträge — sie ist gerade nicht lesbar. */}
@@ -266,47 +304,84 @@ export default function DnsZonesPage() {
                 {formError && <div className="alert alert-danger sys-block">{formError}</div>}
 
                 <div className="form-group">
-                  <label className="form-label">Domain</label>
-                  <input
-                    className="form-input"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="example.com"
-                    autoComplete="off"
-                    required
-                  />
-                  <span className="form-hint">
-                    Die Zone, wie sie bei Cloudflare steht: ohne Subdomain und ohne
-                    <code> https://</code>.
-                  </span>
-                  {nameError && <div className="alert alert-warning">{nameError}</div>}
+                  <span className="form-label">Anbieter</span>
+                  <div className="hapm-choices hapm-choices-row">
+                    {DNS_PROVIDER_INFOS.map((option) => (
+                      <button
+                        key={option.id}
+                        type="button"
+                        className={`hapm-choice${provider === option.id ? ' is-selected' : ''}`}
+                        aria-pressed={provider === option.id}
+                        disabled={saving}
+                        onClick={() => {
+                          setProvider(option.id);
+                          setFormError('');
+                        }}
+                      >
+                        <ProviderLogo provider={option.id} size={28} />
+                        <span className="hapm-choice-text">
+                          <strong>{option.label}</strong>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
-                <div className="form-group">
-                  <label className="form-label">
-                    Cloudflare-API-Token
-                    <InfoHint text="Er wird verschlüsselt gespeichert und verlässt den Server nicht." />
-                  </label>
-                  <input
-                    className="form-input"
-                    type="password"
-                    value={apiToken}
-                    onChange={(e) => setApiToken(e.target.value)}
-                    placeholder="Token mit Zone → DNS → Bearbeiten"
-                    autoComplete="off"
-                    required
-                  />
-                  <span className="form-hint">Ein API-Token, kein Global API Key.</span>
-                </div>
+                {chosen && (
+                  <>
+                    <div className="form-group">
+                      <label className="form-label">Domain</label>
+                      <input
+                        className="form-input"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        placeholder="example.org"
+                        autoComplete="off"
+                        required
+                      />
+                      <span className="form-hint">
+                        Ohne <code>https://</code>. Eingerichtet wird die Zone, in der sie liegt.
+                      </span>
+                      {nameError && <div className="alert alert-warning">{nameError}</div>}
+                    </div>
 
-                <div className="form-note">
-                  <Info size={14} />
-                  <span>
-                    Der Token wird sofort ausprobiert: die Zone-ID kommt aus der Antwort von
-                    Cloudflare. Findet er die Domain nicht, sagt die Meldung, welche Zonen er
-                    stattdessen sieht.
-                  </span>
-                </div>
+                    <div className="form-group">
+                      <label className="form-label">
+                        API-Token
+                        <InfoHint
+                          text={
+                            (chosen.tokenHint ? `${chosen.tokenHint} ` : '') +
+                            'Er wird verschlüsselt gespeichert und verlässt den Server nicht.'
+                          }
+                        />
+                      </label>
+                      <input
+                        className="form-input"
+                        type="password"
+                        value={apiToken}
+                        onChange={(e) => setApiToken(e.target.value)}
+                        autoComplete="off"
+                        required
+                      />
+                      {chosen.consoleUrl && (
+                        <span className="form-hint">
+                          <a href={chosen.consoleUrl} target="_blank" rel="noreferrer">
+                            Token bei {chosen.label} anlegen <ExternalLink size={12} />
+                          </a>
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="form-note">
+                      <Info size={14} />
+                      <span>
+                        Der Token wird sofort ausprobiert: die Kennung der Zone kommt aus der
+                        Antwort von {chosen.label}. Findet er die Domain nicht, sagt die Meldung,
+                        welche Zonen er stattdessen sieht.
+                      </span>
+                    </div>
+                  </>
+                )}
               </div>
               <div className="modal-footer">
                 <button
@@ -320,7 +395,7 @@ export default function DnsZonesPage() {
                 <button
                   type="submit"
                   className="btn btn-primary"
-                  disabled={saving || !!nameError || apiToken.trim() === ''}
+                  disabled={saving || !chosen || !!nameError || apiToken.trim() === ''}
                 >
                   {saving && <Loader2 size={16} className="spin" />}
                   Hinzufügen
@@ -344,7 +419,9 @@ export default function DnsZonesPage() {
               <div className="modal-body">
                 {formError && <div className="alert alert-danger sys-block">{formError}</div>}
                 <div className="form-group">
-                  <label className="form-label">Neuer Token</label>
+                  <label className="form-label">
+                    Neuer Token von {dnsProviderInfo(rotating.provider).label}
+                  </label>
                   <input
                     className="form-input"
                     type="password"

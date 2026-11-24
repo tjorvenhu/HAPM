@@ -43,6 +43,13 @@ export interface DnsProvider {
   label: string;
   /** Wo der Betreiber den Token herbekommt. Spart jedes Mal eine Suche. */
   consoleUrl: string;
+  /** Das Zeichen des Anbieters als Datei unter `public/providers/`. */
+  logo?: string;
+  /**
+   * Das Feld, dessen Wert auch die API des Anbieters öffnet. Damit richtet die
+   * Einrichtung die Zone unter „DNS" ein und setzt den Eintrag der Oberfläche.
+   */
+  apiTokenField?: string;
   fields: DnsCredentialField[];
   /**
    * Was der Hook beim ersten Antrag selbst daneben ablegt. Beim Entfernen geht
@@ -79,6 +86,8 @@ export const DNS_PROVIDERS: readonly DnsProvider[] = [
     hook: 'dns_hetznercloud',
     label: 'Hetzner',
     consoleUrl: 'https://console.hetzner.com/',
+    logo: '/providers/hetzner.svg',
+    apiTokenField: 'HETZNER_TOKEN',
     fields: [
       {
         name: 'HETZNER_TOKEN',
@@ -94,6 +103,8 @@ export const DNS_PROVIDERS: readonly DnsProvider[] = [
     hook: 'dns_cf',
     label: 'Cloudflare',
     consoleUrl: 'https://dash.cloudflare.com/profile/api-tokens',
+    logo: '/providers/cloudflare.svg',
+    apiTokenField: 'CF_Token',
     fields: [
       {
         name: 'CF_Token',

@@ -91,7 +91,7 @@ export default function LockDialog({ proxy, service, onPick, onClose }: Props) {
                   <ShieldCheck size={18} />
                 </span>
                 <span className="kind-card-text">
-                  <span className="kind-card-title">Auf Admin-IPs</span>
+                  <span className="kind-card-title">Nur Admin-IPs</span>
                   <span className="kind-card-sub">
                     {hasAdminIps
                       ? `Nur erreichbar von ${proxy.adminIps.join(', ')}. Alle anderen bekommen 403.`

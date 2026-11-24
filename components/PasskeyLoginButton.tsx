@@ -2,6 +2,7 @@
 
 import SharedPasskeyLoginButton from '@/ui/auth/PasskeyLoginButton';
 import { passkeyBrowserError } from '@/lib/auth/passkey-rules';
+import { useT } from '@/lib/i18n/react';
 
 interface Props {
   /** Nach der Anmeldung. Die Seite entscheidet, wohin es geht. */
@@ -19,16 +20,17 @@ interface Props {
  * und vor der Anmeldung gibt es weder Sitzung noch CSRF-Token.
  */
 export default function PasskeyLoginButton({ onSuccess, onError }: Props) {
+  const { t } = useT();
   async function requestOptions() {
     try {
       const prepared = await fetch('/api/auth/passkey/login/options', { method: 'POST' });
       const challenge = await prepared.json().catch(() => ({}));
       if (!prepared.ok || !challenge.data?.options) {
-        return { error: (challenge.error as string) || 'Die Anmeldung mit Passkey ist gerade nicht möglich.' };
+        return { error: (challenge.error as string) || t('Die Anmeldung mit Passkey ist gerade nicht möglich.') };
       }
       return { options: challenge.data.options as unknown };
     } catch (err: unknown) {
-      return { error: err instanceof Error ? err.message : 'Die Anmeldung mit Passkey ist fehlgeschlagen.' };
+      return { error: err instanceof Error ? err.message : t('Die Anmeldung mit Passkey ist fehlgeschlagen.') };
     }
   }
 
@@ -40,9 +42,9 @@ export default function PasskeyLoginButton({ onSuccess, onError }: Props) {
         body: JSON.stringify({ response }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) return { error: (data.error as string) || 'Die Anmeldung mit diesem Passkey war nicht möglich.' };
+      if (!res.ok) return { error: (data.error as string) || t('Die Anmeldung mit diesem Passkey war nicht möglich.') };
     } catch (err: unknown) {
-      return { error: err instanceof Error ? err.message : 'Die Anmeldung mit Passkey ist fehlgeschlagen.' };
+      return { error: err instanceof Error ? err.message : t('Die Anmeldung mit Passkey ist fehlgeschlagen.') };
     }
   }
 
@@ -50,7 +52,7 @@ export default function PasskeyLoginButton({ onSuccess, onError }: Props) {
     <SharedPasskeyLoginButton
       requestOptions={requestOptions}
       verify={verify}
-      describeBrowserError={(name) => passkeyBrowserError(name, 'login')}
+      describeBrowserError={(name) => t(passkeyBrowserError(name, 'login'))}
       onSuccess={onSuccess}
       onError={onError}
     />

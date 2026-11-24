@@ -4,7 +4,8 @@ import { has2FAEnabled, get2FASecret, set2FACookie } from '@/lib/two-factor';
 import { verifyTOTPCode } from '@/lib/totp';
 import { logAudit, getClientIP } from '@/lib/audit';
 import { rateLimit } from '@/lib/rate-limit';
-import { ok, fail, handleError, jsonBody } from '@/lib/api';
+import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
+import { msg } from '@/lib/i18n';
 
 /**
  * Der zweite Schritt der Anmeldung: der Code aus der Authenticator-App.
@@ -19,13 +20,13 @@ export async function POST(request: Request) {
     const session = await requirePartialSession();
 
     const rl = rateLimit(`2fa:${session.userId}`, 5, 5 * 60 * 1000);
-    if (!rl.success) return fail('Zu viele Versuche. Bitte warten Sie 5 Minuten.', 429);
+    if (!rl.success) throw new ApiError(msg('Zu viele Versuche. Bitte warten Sie 5 Minuten.'), 429);
 
-    if (session.twoFactorVerified) return fail('Der zweite Faktor ist in dieser Sitzung schon bestätigt.');
+    if (session.twoFactorVerified) throw new ApiError(msg('Der zweite Faktor ist in dieser Sitzung schon bestätigt.'));
 
     const { code } = await jsonBody<{ code?: unknown }>(request);
     if (typeof code !== 'string' || !/^\d{6}$/.test(code)) {
-      return fail('Bitte geben Sie den 6-stelligen Code ein.');
+      throw new ApiError(msg('Bitte geben Sie den 6-stelligen Code ein.'));
     }
 
     const ip = getClientIP(request);
@@ -39,7 +40,7 @@ export async function POST(request: Request) {
         ip,
         details: secret ? 'Ungültiger Code' : 'Geheimnis nicht lesbar',
       });
-      return fail('Der Code stimmt nicht. Bitte versuchen Sie es erneut.');
+      throw new ApiError(msg('Der Code stimmt nicht. Bitte versuchen Sie es erneut.'));
     }
 
     await set2FACookie(session.userId, await currentSessionToken());

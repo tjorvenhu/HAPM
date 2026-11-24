@@ -18,14 +18,15 @@
  * ── Was daneben liegt ──
  *
  * Konto und Passwort stehen in `auth_users` und `auth_accounts`. Der zweite
- * Faktor (`two_factor`) und die letzte Anmeldung (`user_state`) sind Zeilen von
+ * Faktor (`two_factor`), die letzte Anmeldung und die Sprache (`user_state`) sind Zeilen von
  * HAPM, gekoppelt über die Kennung des Kontos. Wer ein Konto löscht, nimmt sie
  * hier mit.
  */
 
-import { createDocument, deleteDocument, listAll, updateDocument, NotFoundError } from '../db';
+import { createDocument, deleteDocument, getDocument, listAll, updateDocument, NotFoundError } from '../db';
 import { countPasskeysByUser } from '../db/auth-tables';
 import { ApiError } from '../api';
+import { isLocale, msg, type Locale } from '../i18n';
 import { remove2FA } from '../two-factor';
 import { validateEmail, validatePassword } from '../validation';
 import { COLLECTIONS, type TwoFactorConfig, type UserState } from '../types';
@@ -154,12 +155,12 @@ export async function createUser(input: {
 }): Promise<PublicUser> {
   const email = normaliseEmail(input.email);
   const name = input.name.trim();
-  if (!validateEmail(email)) throw new ApiError('Die E-Mail-Adresse ist ungültig.');
-  if (!name || name.length > 100) throw new ApiError('Der Name fehlt oder ist zu lang.');
+  if (!validateEmail(email)) throw new ApiError(msg('Die E-Mail-Adresse ist ungültig.'));
+  if (!name || name.length > 100) throw new ApiError(msg('Der Name fehlt oder ist zu lang.'));
   const passwordError = validatePassword(input.password);
   if (passwordError) throw new ApiError(passwordError);
 
-  const duplicate = new ApiError('Für diese E-Mail-Adresse gibt es schon ein Konto.', 409);
+  const duplicate = new ApiError(msg('Für diese E-Mail-Adresse gibt es schon ein Konto.'), 409);
   if (await findUserByEmail(email)) throw duplicate;
 
   const ctx = await context();
@@ -214,7 +215,7 @@ export async function verifyPassword(userId: string, password: string): Promise<
  * ohne Zeile scheitert schon die Prüfung des aktuellen.
  */
 export async function changePassword(userId: string, current: string, next: string): Promise<void> {
-  if (!(await verifyPassword(userId, current))) throw new ApiError('Das aktuelle Passwort stimmt nicht.');
+  if (!(await verifyPassword(userId, current))) throw new ApiError(msg('Das aktuelle Passwort stimmt nicht.'));
   const passwordError = validatePassword(next);
   if (passwordError) throw new ApiError(passwordError);
 
@@ -222,19 +223,49 @@ export async function changePassword(userId: string, current: string, next: stri
   await ctx.internalAdapter.updatePassword(userId, await ctx.password.hash(next));
 }
 
-/** Eine abgeschlossene Anmeldung festhalten. Scheitert nie nach außen: die Anmeldung gilt auch ohne den Vermerk. */
-export async function recordLogin(userId: string): Promise<void> {
-  const lastLoginAt = new Date().toISOString();
+/**
+ * Eine Zeile in `user_state` ändern, und anlegen, wenn es sie noch nicht gibt.
+ * Scheitert nie nach außen: `what` steht im Log.
+ */
+async function patchUserState(userId: string, patch: Partial<UserState>, what: string): Promise<void> {
   try {
-    await updateDocument<UserState>(COLLECTIONS.USER_STATE, userId, { lastLoginAt });
+    await updateDocument<UserState>(COLLECTIONS.USER_STATE, userId, patch);
   } catch (err) {
     if (!(err instanceof NotFoundError)) {
-      console.error('[auth] Letzte Anmeldung nicht vermerkt:', err);
+      console.error(`[auth] ${what} nicht vermerkt:`, err);
       return;
     }
-    await createDocument<UserState>(COLLECTIONS.USER_STATE, { lastLoginAt }, userId).catch((createErr) => {
-      console.error('[auth] Letzte Anmeldung nicht vermerkt:', createErr);
-    });
+    await createDocument<UserState>(COLLECTIONS.USER_STATE, { lastLoginAt: null, ...patch }, userId).catch(
+      (createErr) => {
+        console.error(`[auth] ${what} nicht vermerkt:`, createErr);
+      }
+    );
+  }
+}
+
+/** Eine abgeschlossene Anmeldung festhalten. Die Anmeldung gilt auch ohne den Vermerk. */
+export async function recordLogin(userId: string): Promise<void> {
+  await patchUserState(userId, { lastLoginAt: new Date().toISOString() }, 'Letzte Anmeldung');
+}
+
+/** Die gewählte Sprache des Kontos, `null` ohne Wahl. */
+export async function getUserLocale(userId: string): Promise<Locale | null> {
+  try {
+    const state = await getDocument<UserState>(COLLECTIONS.USER_STATE, userId);
+    return isLocale(state.locale) ? state.locale : null;
+  } catch (err) {
+    if (err instanceof NotFoundError) return null;
+    throw err;
+  }
+}
+
+/** Die Sprache am Konto speichern. Anders als die letzte Anmeldung muss das klappen: es wirft. */
+export async function setUserLocale(userId: string, locale: Locale): Promise<void> {
+  try {
+    await updateDocument<UserState>(COLLECTIONS.USER_STATE, userId, { locale });
+  } catch (err) {
+    if (!(err instanceof NotFoundError)) throw err;
+    await createDocument<UserState>(COLLECTIONS.USER_STATE, { lastLoginAt: null, locale }, userId);
   }
 }
 
@@ -245,8 +276,8 @@ export async function recordLogin(userId: string): Promise<void> {
  * die Passkeys hängen am Fremdschlüssel: wer gelöscht wird, ist sofort draußen.
  */
 export async function deleteUser(userId: string, actingUserId: string): Promise<void> {
-  if (userId === actingUserId) throw new ApiError('Das eigene Konto lässt sich nicht löschen.');
-  if ((await countUsers()) <= 1) throw new ApiError('Das letzte Konto lässt sich nicht löschen.');
+  if (userId === actingUserId) throw new ApiError(msg('Das eigene Konto lässt sich nicht löschen.'));
+  if ((await countUsers()) <= 1) throw new ApiError(msg('Das letzte Konto lässt sich nicht löschen.'));
 
   await (await context()).internalAdapter.deleteUser(userId);
 

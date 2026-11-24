@@ -16,10 +16,52 @@
 /** Die Eintragsart, die dieses Werkzeug für ein Proxy-Ziel setzt. */
 export const PROXY_RECORD_TYPE = 'CNAME';
 
+/** Die Anbieter, bei denen HAPM Zonen verwaltet. */
+export type DnsProviderId = 'cloudflare' | 'hetzner';
+
+/**
+ * Der acme.sh-Hook, der mit demselben Token arbeitet wie der Bereich „DNS".
+ *
+ * Die Zuordnung steht hier und nicht bei den Zugangsdaten für acme.sh
+ * (`lib/haproxy/dns-credentials.ts`): dort ist der Hook der Schlüssel, hier der
+ * Anbieter, und beide Seiten fragen in ihre Richtung.
+ */
+const PROVIDER_HOOKS: Record<DnsProviderId, string> = {
+  hetzner: 'dns_hetznercloud',
+  cloudflare: 'dns_cf',
+};
+
+/** In der Reihenfolge, in der die Oberfläche sie anbietet. */
+export const DNS_PROVIDER_IDS = Object.keys(PROVIDER_HOOKS) as DnsProviderId[];
+
+export function isDnsProviderId(value: unknown): value is DnsProviderId {
+  return (DNS_PROVIDER_IDS as unknown[]).includes(value);
+}
+
+/** dns_cf → cloudflare, dns_hetznercloud → hetzner, sonst null. */
+export function dnsProviderForHook(hook: string): DnsProviderId | null {
+  return DNS_PROVIDER_IDS.find((id) => PROVIDER_HOOKS[id] === hook) ?? null;
+}
+
+export function hookForDnsProvider(provider: DnsProviderId): string {
+  return PROVIDER_HOOKS[provider];
+}
+
+/**
+ * Der Anbieter einer Zeile aus `dns_zones`.
+ *
+ * Eine Zeile ohne das Feld ist Cloudflare: sie stammt aus der Zeit, in der es
+ * nur diesen Anbieter gab. Deshalb braucht es keine Migration, und deshalb
+ * fragt jede Stelle über diese Funktion statt über das Feld.
+ */
+export function providerOf(zone: { provider?: string | null }): DnsProviderId {
+  return isDnsProviderId(zone.provider) ? zone.provider : 'cloudflare';
+}
+
 /**
  * Ein Domainname, wie er hier überall verglichen wird.
  *
- * Klein, ohne Rand-Leerzeichen und ohne den abschließenden Punkt: Cloudflare
+ * Klein, ohne Rand-Leerzeichen und ohne den abschließenden Punkt: ein Anbieter
  * gibt `kunde.example.` zurück, ein Formular liefert `Kunde.example `, und beides ist
  * dieselbe Domain. Ohne diese eine Stelle wären es drei Schreibweisen, die sich
  * gegenseitig nicht wiederfinden.
@@ -82,9 +124,10 @@ export function isZoneApex(domain: string, zoneName: string): boolean {
 /**
  * Der Name eines Eintrags innerhalb seiner Zone.
  *
- * Cloudflare führt Einträge unter ihrem vollen Namen; eingegeben und angezeigt
- * wird der Teil davor. `@` ist die Zone selbst, so schreibt es auch das
- * Cloudflare-Dashboard.
+ * Hier werden Einträge unter ihrem vollen Namen geführt (so liefert sie
+ * Cloudflare, Hetzner rechnet `lib/dns/hetzner-rrsets.ts` dahin um); eingegeben
+ * und angezeigt wird der Teil davor. `@` ist die Zone selbst, so schreiben es
+ * beide Anbieter.
  */
 export function recordName(domain: string, zoneName: string): string {
   const value = normalizeDomain(domain);
@@ -110,8 +153,13 @@ export interface ProxyRecordPlan {
   fqdn: string;
   /** Worauf er zeigt: die Zone selbst. */
   content: string;
+  /** Zählt nur bei Cloudflare. Ein anderer Anbieter kennt das Feld nicht. */
   proxied: boolean;
-  /** Cloudflare: 1 heißt „automatisch". */
+  /**
+   * Cloudflare: 1 heißt „automatisch". Wer den Eintrag schreibt, nimmt die
+   * Vorgabe seines Anbieters (`PROVIDER_RULES` in `records.ts`) und nicht
+   * diesen Wert.
+   */
   ttl: number;
 }
 
@@ -131,7 +179,7 @@ export interface ProxyRecordPlan {
  *
  * **Nicht proxied.** Der Verkehr geht direkt an HAProxy: Let's Encrypt kommt
  * sonst über HTTP-01 nicht durch, und die Client-IP in Log, Statistik und
- * Sperrlisten wäre die von Cloudflare.
+ * Sperrlisten wäre die von Cloudflare. Bei Hetzner gibt es die Frage nicht.
  */
 export function proxyRecordPlan(domain: string, zoneName: string): ProxyRecordPlan | null {
   const value = normalizeDomain(domain);
@@ -192,7 +240,7 @@ export function selectedDnsDomains(requested: unknown, domains: string[]): strin
  */
 export interface DomainMatch {
   domain: string;
-  zone: { id: string; name: string } | null;
+  zone: { id: string; name: string; provider: DnsProviderId } | null;
   /** Der Eintrag, der gesetzt würde. `null`, wenn hier keiner möglich ist. */
   plan: { fqdn: string; type: string; content: string } | null;
   /** Warum kein Eintrag möglich ist. Nur gesetzt, wenn `plan` fehlt und eine Zone da ist. */

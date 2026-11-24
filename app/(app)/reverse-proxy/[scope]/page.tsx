@@ -3,7 +3,9 @@
 import { useEffect, useState, useCallback, use, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Globe, Plus, Loader2, RefreshCw, X, Search, ArrowLeft, FolderMinus } from 'lucide-react';
+import {
+  Globe, Plus, Loader2, RefreshCw, X, Search, ArrowLeft, FolderMinus, ShieldCheck,
+} from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
 import { usePolling } from '@/components/usePolling';
@@ -31,13 +33,10 @@ import {
 } from '@/components/reverse-proxy/types';
 import { handOverScopeRun } from '@/components/reverse-proxy/scopeHandover';
 import {
-  HAPROXY_PRESETS,
   KEEP_PASSWORD,
-  PRESET_LABELS,
   matchesSearch,
   serviceKind,
   toCreateInput,
-  type HaproxyPreset,
   type HaproxyService,
   type ServiceKind,
 } from '@/lib/haproxy/config';
@@ -118,7 +117,6 @@ function ScopeView({ slug }: { slug: string }) {
   const [error, setError] = useState('');
 
   const [search, setSearch] = useState('');
-  const [presetFilter, setPresetFilter] = useState('');
   /**
    * Nach welcher der vier Sorten gefiltert wird. Leer heißt: alle.
    *
@@ -570,18 +568,16 @@ function ScopeView({ slug }: { slug: string }) {
       // `matchesSearch` ist rein und getestet, damit Suchfeld und spätere
       // Aufrufer dieselbe Vorstellung von „passt" haben.
       matchesSearch(service, search) &&
-      (!presetFilter || service.preset === presetFilter) &&
       // Die Sorte wird abgeleitet und nicht gespeichert — dieselbe Funktion,
       // die auch entscheidet, welches Formular beim Bearbeiten aufgeht.
       (!kindFilter || serviceKind(service) === kindFilter)
   );
-  /* Zwei Filter, die die TCP-Weiterleitungen nicht kennen können: ein Preset
-   * haben sie nicht, und `serviceKind` gilt für Dienste. Bei beiden fallen sie
-   * deshalb ganz WEG statt ungefiltert stehen zu bleiben — eine gefilterte
-   * Liste, in der ein Abschnitt ungefiltert bleibt, behauptet, es gebe dort
-   * nichts weiter zu sehen. */
+  /* `serviceKind` gilt für Dienste. Ist nach einer ihrer Sorten gefiltert,
+   * fallen die TCP-Weiterleitungen deshalb ganz WEG statt ungefiltert stehen zu
+   * bleiben — eine gefilterte Liste, in der ein Abschnitt ungefiltert bleibt,
+   * behauptet, es gebe dort nichts weiter zu sehen. */
   const streamMatches =
-    presetFilter || (kindFilter && kindFilter !== 'stream')
+    kindFilter && kindFilter !== 'stream'
       ? []
       : streamEntries.filter(({ stream }) => matchesStreamSearch(stream, search));
   const SECTIONS = [
@@ -688,6 +684,15 @@ function ScopeView({ slug }: { slug: string }) {
                 Übersicht
               </Link>
               <span>Gruppe</span>
+              {page?.surface && (
+                <span
+                  className="badge-status badge-neutral"
+                  data-tooltip={`HAPM ist über ein Ziel dieser Gruppe erreichbar (${page.surface.url})`}
+                >
+                  <ShieldCheck size={13} />
+                  Oberfläche von HAPM
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -714,25 +719,15 @@ function ScopeView({ slug }: { slug: string }) {
               </button>
             )}
           </div>
-          {/* Vor dem Preset-Filter: die Sorte ist die gröbere Frage, und die
-              stellt man zuerst. Die Wörter kommen aus derselben Karte wie die
-              Auswahl beim Anlegen — eine Liste, in der man einen Eintrag
-              anlegt, und eine, in der man ihn wiederfindet, dürfen nicht
-              verschieden heißen. */}
+          {/* Die Wörter kommen aus derselben Karte wie die Auswahl beim
+              Anlegen — eine Liste, in der man einen Eintrag anlegt, und eine,
+              in der man ihn wiederfindet, dürfen nicht verschieden heißen. */}
           <Select
             value={kindFilter}
             onChange={(v) => setKindFilter(v as TargetKind | '')}
             options={[
               { value: '', label: 'Alle Typen' },
               ...TARGET_KINDS.map((k) => ({ value: k, label: TARGET_KIND_LABELS[k] })),
-            ]}
-          />
-          <Select
-            value={presetFilter}
-            onChange={setPresetFilter}
-            options={[
-              { value: '', label: 'Alle Presets' },
-              ...HAPROXY_PRESETS.map((p) => ({ value: p, label: PRESET_LABELS[p] })),
             ]}
           />
           <button className="btn btn-secondary btn-icon" onClick={refresh} disabled={refreshing} data-tooltip="Aktualisieren">
@@ -746,6 +741,19 @@ function ScopeView({ slug }: { slug: string }) {
               data-tooltip="Gruppe entfernen"
             >
               {removing ? <Loader2 size={16} className="spin" /> : <FolderMinus size={16} />}
+            </button>
+          )}
+          {/* Sonst fehlt der Knopf einfach, solange etwas in der Gruppe steht.
+              Hier steht er gesperrt da: diese Gruppe wird auch durch Aufräumen
+              nicht entfernbar, und das soll man sehen, bevor man es versucht. */}
+          {page?.surface && (
+            <button
+              className="btn btn-danger btn-icon"
+              disabled
+              aria-label="Gruppe entfernen"
+              data-tooltip="Nicht entfernbar: hier liegt das Ziel der Oberfläche von HAPM"
+            >
+              <FolderMinus size={16} />
             </button>
           )}
           {canCreate && (
@@ -796,8 +804,7 @@ function ScopeView({ slug }: { slug: string }) {
               Grund schickt einen suchen, wo nichts zu suchen ist. */}
           <p>
             Kein Eintrag dieser Gruppe passt zur Suche
-            {kindFilter ? ` und zum Typ „${TARGET_KIND_LABELS[kindFilter]}"` : ''}
-            {presetFilter ? ` und zum Preset „${PRESET_LABELS[presetFilter as HaproxyPreset]}"` : ''}.
+            {kindFilter ? ` und zum Typ „${TARGET_KIND_LABELS[kindFilter]}"` : ''}.
           </p>
         </div>
       ) : (

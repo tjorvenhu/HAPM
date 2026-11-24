@@ -9,8 +9,104 @@
 # lässt sich wiederholen: ein zweiter Lauf holt die neuen Abbilder und startet
 # neu, ohne Daten anzufassen. `--uninstall` entfernt alles, was zu HAPM gehört.
 # Docker selbst und andere Container bleiben.
+#
+# Aufbau der Datei:
+#   1. Ausgabe        Farben, Überschriften, Schritte mit Fortschritt
+#   2. Angaben        Optionen, Umgebung, Prüfung der Pfade
+#   3. Docker         vorhanden oder aus der Paketquelle von Docker
+#   4. Entfernen      --uninstall
+#   5. Installieren   Ordner, Docker, Ports, Dateien, Umzug, Start
 
 set -eu
+
+SOURCE="${HAPM_SOURCE:-https://raw.githubusercontent.com/tjorvenhu/HAPM/main}"
+DEFAULT_DIR=/opt/hapm
+DEFAULT_PORT=7080
+PROJECT=hapm
+MARKER=.hapm-storage
+
+# ══ 1. Ausgabe ════════════════════════════════════════════════════════════════
+
+# Farben nur im Terminal. In einer Datei oder einem Protokoll stünden sonst
+# Steuerzeichen.
+BOLD="" DIM="" RED="" GREEN="" YELLOW="" BLUE="" RESET=""
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-dumb}" != dumb ]; then
+  BOLD="$(printf '\033[1m')"
+  DIM="$(printf '\033[2m')"
+  RED="$(printf '\033[31m')"
+  GREEN="$(printf '\033[32m')"
+  YELLOW="$(printf '\033[33m')"
+  BLUE="$(printf '\033[34m')"
+  RESET="$(printf '\033[0m')"
+fi
+
+# Überschrift des ganzen Laufs.
+title() {
+  printf '\n%s%s%s\n' "$BOLD" "$1" "$RESET"
+}
+
+# Überschrift eines Abschnitts.
+step() {
+  printf '\n%s==>%s %s%s%s\n' "$BLUE" "$RESET" "$BOLD" "$1" "$RESET"
+}
+
+# Eine Zeile unter einem Abschnitt.
+note() {
+  printf '    %s\n' "$1"
+}
+
+# Etwas, das der Leser wissen sollte, das den Lauf aber nicht aufhält.
+warn() {
+  printf '    %sHinweis:%s %s\n' "$YELLOW" "$RESET" "$1"
+}
+
+# Die erste Zeile ist die Meldung, jede weitere steht eingerückt darunter.
+fail() {
+  printf '\n%s%sFehler:%s %s\n' "$RED" "$BOLD" "$RESET" "$1" >&2
+  shift
+  for line in "$@"; do
+    printf '        %s\n' "$line" >&2
+  done
+  exit 1
+}
+
+# Eine Zeile je Eintrag, die Bezeichnung steht nur vor dem ersten:
+#     Container     hapm
+#                   hapm-haproxy
+rows() {
+  row_label="$1"
+  printf '%s\n' "$2" | while IFS= read -r row_item; do
+    [ -n "$row_item" ] || continue
+    printf '    %-14s%s\n' "$row_label" "$row_item"
+    row_label=""
+  done
+}
+
+# Führt ein Kommando aus, das eine Weile braucht, und zeigt statt seiner Ausgabe
+# einen Punkt je Sekunde. Die Ausgabe landet in $LOG und erscheint nur, wenn
+# der Aufrufer sie nach einem Fehlschlag zeigt (`show_log`).
+LOG=""
+progress() {
+  progress_label="$1"
+  shift
+  printf '    %s ' "$progress_label"
+  "$@" >"$LOG" 2>&1 &
+  progress_pid=$!
+  while kill -0 "$progress_pid" 2>/dev/null; do
+    printf '.'
+    sleep 1
+  done
+  if wait "$progress_pid"; then
+    printf ' %sfertig%s\n' "$GREEN" "$RESET"
+    return 0
+  fi
+  printf ' %sfehlgeschlagen%s\n' "$RED" "$RESET"
+  return 1
+}
+
+show_log() {
+  tail -n 30 "$LOG" | sed 's/^/      /' >&2
+}
 
 usage() {
   cat <<'EOF'
@@ -40,14 +136,7 @@ docker-compose.yml kommt (Vorgabe das Repository auf GitHub).
 EOF
 }
 
-say() { printf '\n==> %s\n' "$1"; }
-note() { printf '    %s\n' "$1"; }
-fail() { printf '\nFehler: %s\n' "$1" >&2; exit 1; }
-
-SOURCE="${HAPM_SOURCE:-https://raw.githubusercontent.com/tjorvenhu/HAPM/main}"
-DEFAULT_DIR=/opt/hapm
-PROJECT=hapm
-MARKER=.hapm-storage
+# ══ 2. Angaben ════════════════════════════════════════════════════════════════
 
 MODE=install
 DIR="${HAPM_DIR:-}"
@@ -63,42 +152,55 @@ while [ $# -gt 0 ]; do
     --dir | --storage | --port | --image)
       [ $# -ge 2 ] || fail "Nach $1 fehlt die Angabe."
       case "$1" in
-        --dir) DIR="$2" ;;
+        --dir)     DIR="$2" ;;
         --storage) STORAGE="$2" ;;
-        --port) PORT="$2" ;;
-        --image) IMAGE="$2" ;;
+        --port)    PORT="$2" ;;
+        --image)   IMAGE="$2" ;;
       esac
       shift 2
       ;;
-    --dir=*) DIR="${1#*=}"; shift ;;
+    --dir=*)     DIR="${1#*=}";     shift ;;
     --storage=*) STORAGE="${1#*=}"; shift ;;
-    --port=*) PORT="${1#*=}"; shift ;;
-    --image=*) IMAGE="${1#*=}"; shift ;;
-    --force) FORCE=1; shift ;;
-    --yes | -y) YES=1; shift ;;
-    --uninstall | --remove) MODE=uninstall; shift ;;
-    --keep-data) KEEP_DATA=1; shift ;;
-    --help | -h) usage; exit 0 ;;
-    *) fail "Unbekannte Angabe: $1 (sh install.sh --help zeigt alle)." ;;
+    --port=*)    PORT="${1#*=}";    shift ;;
+    --image=*)   IMAGE="${1#*=}";   shift ;;
+    --force)     FORCE=1;           shift ;;
+    --yes | -y)  YES=1;             shift ;;
+    --keep-data) KEEP_DATA=1;       shift ;;
+    --uninstall | --remove)
+      MODE=uninstall
+      shift
+      ;;
+    --help | -h)
+      usage
+      exit 0
+      ;;
+    *)
+      fail "Unbekannte Angabe: $1" "Alle Angaben zeigt: sh install.sh --help"
+      ;;
   esac
 done
 
 [ "$(id -u)" -eq 0 ] || fail "Bitte als root ausführen (oder mit sudo)."
 
-# ── Eingaben ──────────────────────────────────────────────────────────────────
+# Gefragt wird am Terminal, auch wenn das Skript über eine Pipe kommt
+# (`curl … | sh`): die Standardeingabe ist dann das Skript selbst.
 can_ask() {
   [ "$YES" != 1 ] && (: </dev/tty) 2>/dev/null
 }
 
+# Die Antwort steht danach in $ANSWER. Eine leere Eingabe nimmt die Vorgabe.
 ask() {
-  printf '%s [%s]: ' "$1" "$2" >/dev/tty
+  printf '%s%s%s [%s]: ' "$BOLD" "$1" "$RESET" "$2" >/dev/tty
   IFS= read -r ANSWER </dev/tty || ANSWER=""
   [ -n "$ANSWER" ] || ANSWER="$2"
 }
 
+# Das Ergebnis steht in $TRIMMED.
 trim_slashes() {
   TRIMMED="$1"
-  while [ "$TRIMMED" != / ] && [ "${TRIMMED%/}" != "$TRIMMED" ]; do TRIMMED="${TRIMMED%/}"; done
+  while [ "$TRIMMED" != / ] && [ "${TRIMMED%/}" != "$TRIMMED" ]; do
+    TRIMMED="${TRIMMED%/}"
+  done
 }
 
 # Der Pfad landet in .env und als Einbindung bei Docker, das den Doppelpunkt als
@@ -109,32 +211,51 @@ check_path() {
     /*) ;;
     *) fail "$1 muss ein Pfad sein, der mit / beginnt: $2" ;;
   esac
+
   case "$2" in
-    *[!A-Za-z0-9/_.-]*) fail "$1 darf nur Buchstaben, Ziffern und / _ . - enthalten: $2" ;;
+    *[!A-Za-z0-9/_.-]*)
+      fail "$1 darf nur Buchstaben, Ziffern und / _ . - enthalten: $2"
+      ;;
   esac
+
   case "$2/" in
-    */../* | */./* | *//*) fail "$1 darf kein . oder .. und keinen doppelten Schrägstrich enthalten: $2" ;;
+    */../* | */./* | *//*)
+      fail "$1 darf kein . oder .. und keinen doppelten Schrägstrich enthalten: $2"
+      ;;
   esac
+
   case "$2" in
-    / | /bin | /boot | /dev | /etc | /home | /lib | /lib64 | /media | /mnt | /opt | /proc | /root | /run | /sbin | /srv | /sys | /tmp | /usr | /var | /var/lib | /var/lib/docker | /var/log | /var/run | /dev/* | /proc/* | /sys/* | /run/* | /var/run/* | /var/lib/docker/*)
-      fail "$1 muss ein eigener Ordner sein, nicht $2. Zum Beispiel ${2%/}/hapm."
+    / | /bin | /boot | /dev | /etc | /home | /lib | /lib64 | /media | /mnt | \
+    /opt | /proc | /root | /run | /sbin | /srv | /sys | /tmp | /usr | /var | \
+    /var/lib | /var/lib/docker | /var/log | /var/run | \
+    /dev/* | /proc/* | /sys/* | /run/* | /var/run/* | /var/lib/docker/*)
+      fail "$1 muss ein eigener Ordner sein, nicht $2." "Zum Beispiel ${2%/}/hapm."
       ;;
   esac
 }
 
-# Was angegeben ist, wird geprüft, bevor irgendetwas installiert wird.
-if [ -n "$DIR" ]; then trim_slashes "$DIR"; DIR="$TRIMMED"; check_path "Der Ordner der Installation" "$DIR"; fi
-if [ -n "$STORAGE" ]; then trim_slashes "$STORAGE"; STORAGE="$TRIMMED"; check_path "Der Ordner der Daten" "$STORAGE"; fi
-
+# Der Wert einer Zeile `NAME=wert` aus einer .env-Datei, leer, wenn sie fehlt.
 env_value() {
   [ -f "$2" ] || return 0
   sed -n "s/^$1=//p" "$2" | tail -n 1
 }
 
-# ── Docker: vorhanden, sonst aus der Paketquelle von Docker ───────────────────
-have_docker() {
-  command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1
-}
+# Was angegeben ist, wird geprüft, bevor irgendetwas installiert wird.
+if [ -n "$DIR" ]; then
+  trim_slashes "$DIR"
+  DIR="$TRIMMED"
+  check_path "Der Ordner der Installation" "$DIR"
+fi
+if [ -n "$STORAGE" ]; then
+  trim_slashes "$STORAGE"
+  STORAGE="$TRIMMED"
+  check_path "Der Ordner der Daten" "$STORAGE"
+fi
+case "${PORT:-$DEFAULT_PORT}" in
+  *[!0-9]* | "") fail "Der Port muss eine Zahl sein: $PORT" ;;
+esac
+
+# ══ 3. Docker ═════════════════════════════════════════════════════════════════
 
 OS_ID=""
 OS_CODENAME=""
@@ -145,39 +266,65 @@ if [ -r /etc/os-release ]; then
   OS_CODENAME="${UBUNTU_CODENAME:-${VERSION_CODENAME:-}}"
 fi
 
+have_docker() {
+  command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1
+}
+
+# Die Schritte aus der Anleitung von Docker für Debian und Ubuntu.
+#
+# Jeder Schritt bricht ausdrücklich ab (`|| return 1`): die Funktion läuft
+# hinter `if ! progress …`, und dort gilt `set -e` nicht.
+docker_packages() {
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -qq || return 1
+  apt-get install -y -qq ca-certificates curl || return 1
+
+  install -m 0755 -d /etc/apt/keyrings || return 1
+  curl -fsSL "https://download.docker.com/linux/$OS_ID/gpg" -o /etc/apt/keyrings/docker.asc || return 1
+  chmod a+r /etc/apt/keyrings/docker.asc || return 1
+  printf 'deb [arch=%s signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/%s %s stable\n' \
+    "$(dpkg --print-architecture)" "$OS_ID" "$OS_CODENAME" \
+    >/etc/apt/sources.list.d/docker.list || return 1
+
+  apt-get update -qq || return 1
+  apt-get install -y -qq \
+    docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin || return 1
+
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl enable --now docker || true
+  fi
+}
+
 install_docker() {
   case "$OS_ID" in
     debian | ubuntu) ;;
     *)
-      fail "Docker fehlt, und dieses Skript installiert es nur unter Debian und Ubuntu. Bitte Docker samt Compose-Plugin von Hand installieren (https://docs.docker.com/engine/install/) und das Skript noch einmal starten."
+      fail "Docker fehlt, und dieses Skript installiert es nur unter Debian und Ubuntu." \
+        "Bitte Docker samt Compose-Plugin von Hand installieren:" \
+        "https://docs.docker.com/engine/install/" \
+        "Danach das Skript noch einmal starten."
       ;;
   esac
-  [ -n "$OS_CODENAME" ] || fail "Die Fassung des Betriebssystems ließ sich nicht bestimmen (/etc/os-release)."
+  [ -n "$OS_CODENAME" ] \
+    || fail "Die Fassung des Betriebssystems ließ sich nicht bestimmen (/etc/os-release)."
 
-  say "Docker wird installiert"
-  export DEBIAN_FRONTEND=noninteractive
-  apt-get update -qq
-  apt-get install -y -qq ca-certificates curl >/dev/null
-  install -m 0755 -d /etc/apt/keyrings
-  curl -fsSL "https://download.docker.com/linux/$OS_ID/gpg" -o /etc/apt/keyrings/docker.asc
-  chmod a+r /etc/apt/keyrings/docker.asc
-  printf 'deb [arch=%s signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/%s %s stable\n' \
-    "$(dpkg --print-architecture)" "$OS_ID" "$OS_CODENAME" >/etc/apt/sources.list.d/docker.list
-  apt-get update -qq
-  apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >/dev/null
-  if command -v systemctl >/dev/null 2>&1; then
-    systemctl enable --now docker >/dev/null 2>&1 || true
+  if ! progress "Docker wird installiert" docker_packages; then
+    show_log
+    fail "Docker ließ sich nicht installieren."
   fi
-  have_docker || fail "Docker ist installiert, antwortet aber nicht. Läuft der Dienst (systemctl status docker)?"
-  note "$(docker --version)"
+  have_docker \
+    || fail "Docker ist installiert, antwortet aber nicht." "Läuft der Dienst? systemctl status docker"
 }
 
 # Wo eine laufende Installation liegt, steht an ihrem Container.
 installed_dir() {
-  docker inspect -f '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}' hapm 2>/dev/null || true
+  docker inspect \
+    -f '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}' \
+    hapm 2>/dev/null || true
 }
 
-# ── Entfernen ─────────────────────────────────────────────────────────────────
+# ══ 4. Entfernen ══════════════════════════════════════════════════════════════
+
 project_containers() {
   {
     docker ps -aq --filter "label=com.docker.compose.project=$PROJECT"
@@ -185,6 +332,24 @@ project_containers() {
     docker ps -aq --filter 'name=^/?hapm-updater$'
     docker ps -aq --filter 'name=^/?hapm-(backup|check)-[0-9]+$'
   } 2>/dev/null | sort -u
+}
+
+container_names() {
+  # shellcheck disable=SC2086
+  docker inspect -f '{{.Name}}' $1 2>/dev/null | sed 's|^/||'
+}
+
+# Die Abbilder der Container, dazu die aus docker-compose.yml: ein Abbild kann
+# geholt sein, ohne dass sein Container noch steht.
+project_images() {
+  {
+    for id in $1; do
+      docker inspect -f '{{.Config.Image}}' "$id" 2>/dev/null || true
+    done
+    if [ -f "$DIR/docker-compose.yml" ]; then
+      (cd "$DIR" && docker compose config --images 2>/dev/null) || true
+    fi
+  } | sort -u
 }
 
 storage_is_ours() {
@@ -195,47 +360,56 @@ remove_dir_if_empty() {
   [ -d "$1" ] || return 0
   if rmdir "$1" 2>/dev/null; then
     note "$1 entfernt."
-  else
-    note "$1 bleibt liegen, dort liegt noch etwas anderes:"
-    # shellcheck disable=SC2012
-    ls -A "$1" | head -n 10 | sed 's/^/      /'
+    return 0
   fi
+  note "$1 bleibt liegen, dort liegt noch etwas anderes:"
+  # shellcheck disable=SC2012
+  ls -A "$1" | head -n 10 | sed 's/^/      /'
 }
 
 uninstall() {
-  DOCKER=0
-  if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then DOCKER=1; fi
+  title "HAPM entfernen"
 
-  if [ -z "$DIR" ] && [ "$DOCKER" = 1 ]; then DIR="$(installed_dir)"; fi
+  DOCKER=0
+  if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+    DOCKER=1
+  fi
+
+  # ── Wo liegt die Installation? ──
+  if [ -z "$DIR" ] && [ "$DOCKER" = 1 ]; then
+    DIR="$(installed_dir)"
+  fi
   DIR="${DIR:-$DEFAULT_DIR}"
-  trim_slashes "$DIR"; DIR="$TRIMMED"
+  trim_slashes "$DIR"
+  DIR="$TRIMMED"
   check_path "Der Ordner der Installation" "$DIR"
 
   [ -n "$STORAGE" ] || STORAGE="$(env_value HAPM_STORAGE "$DIR/.env")"
   STORAGE="${STORAGE:-$DIR/data}"
-  trim_slashes "$STORAGE"; STORAGE="$TRIMMED"
+  trim_slashes "$STORAGE"
+  STORAGE="$TRIMMED"
   check_path "Der Ordner der Daten" "$STORAGE"
 
+  # ── Was gehört dazu? ──
   CONTAINERS=""
   IMAGES=""
   VOLUMES=""
   NETWORKS=""
   if [ "$DOCKER" = 1 ]; then
     CONTAINERS="$(project_containers)"
-    IMAGES="$(
-      {
-        for id in $CONTAINERS; do docker inspect -f '{{.Config.Image}}' "$id" 2>/dev/null || true; done
-        if [ -f "$DIR/docker-compose.yml" ]; then (cd "$DIR" && docker compose config --images 2>/dev/null) || true; fi
-      } | sort -u
-    )"
+    IMAGES="$(project_images "$CONTAINERS")"
     VOLUMES="$(docker volume ls -q --filter "label=com.docker.compose.project=$PROJECT" 2>/dev/null || true)"
     NETWORKS="$(docker network ls -q --filter "label=com.docker.compose.project=$PROJECT" 2>/dev/null || true)"
   fi
 
   HAS_STORAGE=0
-  if [ -d "$STORAGE" ] && storage_is_ours "$STORAGE"; then HAS_STORAGE=1; fi
+  if [ -d "$STORAGE" ] && storage_is_ours "$STORAGE"; then
+    HAS_STORAGE=1
+  fi
   HAS_DIR=0
-  if [ -f "$DIR/docker-compose.yml" ] || [ -f "$DIR/.env" ]; then HAS_DIR=1; fi
+  if [ -f "$DIR/docker-compose.yml" ] || [ -f "$DIR/.env" ]; then
+    HAS_DIR=1
+  fi
 
   if [ -z "$CONTAINERS$VOLUMES" ] && [ "$HAS_STORAGE" = 0 ] && [ "$HAS_DIR" = 0 ]; then
     printf '\nVon HAPM ist auf diesem Server nichts zu finden (gesucht in %s).\n' "$DIR"
@@ -243,52 +417,73 @@ uninstall() {
     exit 0
   fi
 
-  printf '\nEntfernt wird:\n'
+  # ── Zeigen, was geschieht ──
+  printf '\n  %sEntfernt wird%s\n' "$BOLD" "$RESET"
   if [ -n "$CONTAINERS" ]; then
-    # shellcheck disable=SC2086
-    printf '  Container:    %s\n' "$(docker inspect -f '{{.Name}}' $CONTAINERS | sed 's|^/||' | tr '\n' ' ')"
+    rows "Container" "$(container_names "$CONTAINERS")"
   fi
   if [ -n "$IMAGES" ]; then
-    printf '  Abbilder:     %s\n' "$(printf '%s' "$IMAGES" | tr '\n' ' ')"
-    printf '                (nur die, die kein anderer Container braucht)\n'
+    rows "Abbilder" "$IMAGES"
+    printf '    %-14s%s(nur die, die kein anderer Container braucht)%s\n' "" "$DIM" "$RESET"
   fi
   if [ "$KEEP_DATA" != 1 ]; then
-    [ "$HAS_STORAGE" = 0 ] || printf '  Daten:        %s (Konfiguration, Zertifikate, Datenbank)\n' "$STORAGE"
-    [ -z "$VOLUMES" ] || printf '  Volumes:      %s\n' "$(printf '%s' "$VOLUMES" | tr '\n' ' ')"
+    if [ "$HAS_STORAGE" = 1 ]; then
+      rows "Daten" "$STORAGE"
+      printf '    %-14s%s(Konfiguration, Zertifikate, Datenbank)%s\n' "" "$DIM" "$RESET"
+    fi
+    if [ -n "$VOLUMES" ]; then
+      rows "Volumes" "$VOLUMES"
+    fi
   fi
-  [ "$HAS_DIR" = 0 ] || printf '  Installation: %s (docker-compose.yml, .env)\n' "$DIR"
+  if [ "$HAS_DIR" = 1 ]; then
+    rows "Installation" "$DIR"
+    printf '    %-14s%s(docker-compose.yml, .env)%s\n' "" "$DIM" "$RESET"
+  fi
 
-  printf '\nEs bleibt:\n'
-  printf '  Docker und alle anderen Container\n'
-  printf '  Sicherungen, die HAPM in einen eigenen Ordner geschrieben hat\n'
+  printf '\n  %sEs bleibt%s\n' "$BOLD" "$RESET"
+  note "Docker und alle anderen Container"
+  note "Sicherungen, die HAPM in einen eigenen Ordner geschrieben hat"
   if [ "$KEEP_DATA" = 1 ]; then
-    [ "$HAS_STORAGE" = 0 ] || printf '  Die Daten in %s (--keep-data)\n' "$STORAGE"
-    [ -z "$VOLUMES" ] || printf '  Die Volumes %s (--keep-data)\n' "$(printf '%s' "$VOLUMES" | tr '\n' ' ')"
+    if [ "$HAS_STORAGE" = 1 ]; then
+      note "Die Daten in $STORAGE (--keep-data)"
+    fi
+    if [ -n "$VOLUMES" ]; then
+      note "Die alten Docker-Volumes (--keep-data)"
+    fi
   elif [ -d "$STORAGE" ] && [ "$HAS_STORAGE" = 0 ]; then
-    printf '  %s: der Ordner trägt keine Kennung von HAPM. Bitte von Hand löschen.\n' "$STORAGE"
+    note "$STORAGE: der Ordner trägt keine Kennung von HAPM. Bitte von Hand löschen."
   fi
 
+  # ── Rückfrage ──
   if [ "$YES" != 1 ]; then
     can_ask || fail "Zum Entfernen ohne Rückfrage --yes angeben."
-    printf '\nZum Entfernen "ja" eingeben: ' >/dev/tty
+    printf '\n%sZum Entfernen "ja" eingeben:%s ' "$BOLD" "$RESET" >/dev/tty
     IFS= read -r ANSWER </dev/tty || ANSWER=""
     case "$ANSWER" in
       ja | Ja | JA) ;;
-      *) printf 'Abgebrochen. Es wurde nichts entfernt.\n'; exit 0 ;;
+      *)
+        printf 'Abgebrochen. Es wurde nichts entfernt.\n'
+        exit 0
+        ;;
     esac
   fi
 
+  # ── Entfernen ──
   if [ -n "$CONTAINERS" ]; then
-    say "Container werden entfernt"
+    step "Container"
+    # Erst anhalten, damit Postgres sauber schließt. Wichtig mit --keep-data.
     # shellcheck disable=SC2086
     docker stop $CONTAINERS >/dev/null 2>&1 || true
     # shellcheck disable=SC2086
     docker rm -f $CONTAINERS >/dev/null 2>&1 || true
+    note "Angehalten und entfernt."
   fi
-  for network in $NETWORKS; do docker network rm "$network" >/dev/null 2>&1 || true; done
+  for network in $NETWORKS; do
+    docker network rm "$network" >/dev/null 2>&1 || true
+  done
 
   if [ -n "$IMAGES" ]; then
-    say "Abbilder werden entfernt"
+    step "Abbilder"
     for image in $IMAGES; do
       docker image inspect "$image" >/dev/null 2>&1 || continue
       # Vorher fragen statt es darauf ankommen zu lassen: trägt das Abbild noch
@@ -304,151 +499,193 @@ uninstall() {
     done
   fi
 
-  if [ "$KEEP_DATA" != 1 ]; then
+  if [ "$KEEP_DATA" != 1 ] && { [ "$HAS_STORAGE" = 1 ] || [ -n "$VOLUMES" ]; }; then
+    step "Daten"
     if [ "$HAS_STORAGE" = 1 ]; then
-      say "Daten werden entfernt"
       # Nur die Ordner, die HAPM angelegt hat. Liegt daneben etwas anderes,
       # etwa ein Ordner mit Sicherungen, bleibt es liegen.
-      for part in hapm haproxy acme postgres log run; do rm -rf "${STORAGE:?}/$part"; done
+      for part in hapm haproxy acme postgres log run; do
+        rm -rf "${STORAGE:?}/$part"
+      done
       rm -f "$STORAGE/$MARKER"
       remove_dir_if_empty "$STORAGE"
     fi
     for volume in $VOLUMES; do
-      if docker volume rm "$volume" >/dev/null 2>&1; then note "Volume $volume entfernt."; fi
+      if docker volume rm "$volume" >/dev/null 2>&1; then
+        note "Volume $volume entfernt."
+      fi
     done
   fi
 
   if [ "$HAS_DIR" = 1 ]; then
-    say "Installation wird entfernt"
-    rm -f "$DIR/docker-compose.yml" "$DIR/docker-compose.yml.neu" "$DIR/.env" "$DIR/install.sh"
+    step "Installation"
+    rm -f \
+      "$DIR/docker-compose.yml" "$DIR/docker-compose.yml.neu" \
+      "$DIR/.env" "$DIR/install.sh"
     remove_dir_if_empty "$DIR"
   fi
 
-  printf '\nHAPM ist entfernt. Docker läuft weiter.\n'
+  printf '\n%s%sHAPM ist entfernt.%s Docker läuft weiter.\n\n' "$GREEN" "$BOLD" "$RESET"
   exit 0
 }
 
 [ "$MODE" = install ] || uninstall
 
-# ── Installieren: der Ordner ──────────────────────────────────────────────────
+# ══ 5. Installieren ═══════════════════════════════════════════════════════════
+
+title "HAPM installieren"
+
+LOG="$(mktemp)"
+trap 'rm -f "$LOG"' EXIT
+
+# ── Der Ordner ────────────────────────────────────────────────────────────────
 # Ohne Angabe: dort, wo HAPM schon läuft. Sonst die Vorgabe, auf Nachfrage.
 # Gefragt wird als Erstes, nicht erst nach der Installation von Docker.
 if [ -z "$DIR" ]; then
   DIR="$(installed_dir)"
-  if [ -z "$DIR" ]; then
-    DIR="$DEFAULT_DIR"
-    if [ ! -f "$DIR/docker-compose.yml" ] && can_ask; then
-      printf '\nWohin soll HAPM installiert werden? Dort liegen docker-compose.yml, .env\n' >/dev/tty
-      printf 'und unter data/ alle Daten: Konfiguration, Zertifikate, Datenbank.\n' >/dev/tty
-      ask "Ordner" "$DIR"
-      DIR="$ANSWER"
-    fi
+fi
+if [ -z "$DIR" ]; then
+  DIR="$DEFAULT_DIR"
+  if [ ! -f "$DIR/docker-compose.yml" ] && can_ask; then
+    {
+      printf '\nWohin soll HAPM installiert werden?\n'
+      printf '%sDort liegen docker-compose.yml, .env und unter data/ alle Daten:%s\n' "$DIM" "$RESET"
+      printf '%sKonfiguration, Zertifikate, Datenbank.%s\n\n' "$DIM" "$RESET"
+    } >/dev/tty
+    ask "Ordner" "$DIR"
+    DIR="$ANSWER"
   fi
 fi
-trim_slashes "$DIR"; DIR="$TRIMMED"
+trim_slashes "$DIR"
+DIR="$TRIMMED"
 check_path "Der Ordner der Installation" "$DIR"
 
 EXISTING=0
-if [ -f "$DIR/docker-compose.yml" ]; then EXISTING=1; fi
+if [ -f "$DIR/docker-compose.yml" ]; then
+  EXISTING=1
+fi
 
 # Wo die Daten einer vorhandenen Installation liegen, ändert kein zweiter Lauf:
 # HAPM fände sie sonst nicht wieder und sähe aus wie frisch installiert.
 if [ "$EXISTING" = 1 ]; then
   CURRENT="$(env_value HAPM_STORAGE "$DIR/.env")"
   CURRENT="${CURRENT:-$DIR/data}"
-  if [ -n "$STORAGE" ]; then
-    trim_slashes "$STORAGE"
-    if [ "$TRIMMED" != "$CURRENT" ]; then
-      fail "Die Daten dieser Installation liegen in $CURRENT. Zum Umziehen: cd $DIR && docker compose down, den Ordner verschieben, HAPM_STORAGE in $DIR/.env ändern, docker compose up -d."
-    fi
+  if [ -n "$STORAGE" ] && [ "$STORAGE" != "$CURRENT" ]; then
+    fail "Die Daten dieser Installation liegen in $CURRENT." \
+      "Zum Umziehen:" \
+      "  cd $DIR && docker compose down" \
+      "  den Ordner verschieben" \
+      "  HAPM_STORAGE in $DIR/.env ändern" \
+      "  docker compose up -d"
   fi
   STORAGE="$CURRENT"
 fi
 STORAGE="${STORAGE:-$DIR/data}"
-trim_slashes "$STORAGE"; STORAGE="$TRIMMED"
+trim_slashes "$STORAGE"
+STORAGE="$TRIMMED"
 check_path "Der Ordner der Daten" "$STORAGE"
 
-case "${PORT:-7080}" in
-  *[!0-9]* | "") fail "Der Port muss eine Zahl sein: $PORT" ;;
-esac
-
 # ── Docker ────────────────────────────────────────────────────────────────────
-command -v curl >/dev/null 2>&1 || NEED_CURL=1
+step "Docker"
+
+HAD_CURL=1
+command -v curl >/dev/null 2>&1 || HAD_CURL=0
 
 if have_docker; then
-  say "Docker ist vorhanden"
-  note "$(docker --version)"
+  note "Vorhanden: $(docker --version)"
 else
   install_docker
+  note "$(docker --version)"
 fi
 
-if [ "${NEED_CURL:-0}" = 1 ] && ! command -v curl >/dev/null 2>&1; then
-  apt-get install -y -qq curl >/dev/null 2>&1 || fail "curl fehlt und ließ sich nicht installieren."
+if [ "$HAD_CURL" = 0 ] && ! command -v curl >/dev/null 2>&1; then
+  apt-get install -y -qq curl >/dev/null 2>&1 \
+    || fail "curl fehlt und ließ sich nicht installieren."
 fi
 
 docker info >/dev/null 2>&1 || fail "Der Docker-Dienst ist nicht erreichbar."
 
 # ── Ports 80 und 443 ──────────────────────────────────────────────────────────
 # HAProxy läuft im Netz des Servers und braucht beide. Lauscht dort schon ein
-# anderer Webserver, startet HAProxy nicht, und das sähe aus wie ein Fehler von HAPM.
+# anderer Webserver, startet HAProxy nicht, und das sähe aus wie ein Fehler von
+# HAPM.
 own_haproxy_running() {
   [ "$(docker inspect -f '{{.State.Running}}' hapm-haproxy 2>/dev/null || true)" = "true" ]
 }
 
-if ! own_haproxy_running && command -v ss >/dev/null 2>&1; then
-  BUSY=""
+busy_ports() {
   for port in 80 443; do
-    if ss -Hltn "sport = :$port" 2>/dev/null | grep -q .; then BUSY="$BUSY $port"; fi
+    if ss -Hltn "sport = :$port" 2>/dev/null | grep -q .; then
+      printf '%s ' "$port"
+    fi
   done
+}
+
+if ! own_haproxy_running && command -v ss >/dev/null 2>&1; then
+  BUSY="$(busy_ports)"
   if [ -n "$BUSY" ]; then
-    printf '\nAuf diesem Server lauscht schon etwas auf Port%s:\n' "$BUSY" >&2
-    for port in $BUSY; do ss -Hltnp "sport = :$port" 2>/dev/null | sed 's/^/    /' >&2; done
+    step "Ports 80 und 443"
+    warn "Auf diesem Server lauscht schon etwas auf Port ${BUSY% }:"
+    for port in $BUSY; do
+      ss -Hltnp "sport = :$port" 2>/dev/null | sed 's/^/      /'
+    done
     if [ "$FORCE" != 1 ]; then
-      fail "HAProxy braucht die Ports 80 und 443. Bitte den anderen Dienst anhalten (etwa nginx, Apache oder Caddy) und das Skript noch einmal starten. Mit --force läuft es trotzdem weiter."
+      fail "HAProxy braucht die Ports 80 und 443." \
+        "Bitte den anderen Dienst anhalten (etwa nginx, Apache oder Caddy)" \
+        "und das Skript noch einmal starten." \
+        "Mit --force läuft es trotzdem weiter."
     fi
   fi
 fi
 
 # ── Dateien ───────────────────────────────────────────────────────────────────
-say "HAPM wird nach $DIR installiert"
+step "Dateien in $DIR"
 mkdir -p "$DIR"
 cd "$DIR"
 
 curl -fsSL "$SOURCE/docker-compose.yml" -o docker-compose.yml.neu \
   || fail "docker-compose.yml ließ sich nicht von $SOURCE holen."
 mv docker-compose.yml.neu docker-compose.yml
+note "docker-compose.yml geholt."
 
-# Eine Kopie des Skripts, damit es zum Entfernen nicht noch einmal geholt werden muss.
+# Eine Kopie des Skripts, damit es zum Entfernen nicht noch einmal geholt
+# werden muss.
 if curl -fsSL "$SOURCE/install.sh" -o install.sh.neu 2>/dev/null; then
   mv install.sh.neu install.sh
 else
   rm -f install.sh.neu
 fi
 
+server_timezone() {
+  if [ -r /etc/timezone ]; then
+    cat /etc/timezone
+  else
+    timedatectl show -p Timezone --value 2>/dev/null || true
+  fi
+}
+
 # Die Einstellungen entstehen einmal. Ein späterer Lauf ändert sie nicht.
 if [ ! -f .env ]; then
+  PORT="${PORT:-$DEFAULT_PORT}"
+  ZONE="$(server_timezone)"
   {
-    printf 'HAPM_PORT=%s\n' "${PORT:-7080}"
+    printf 'HAPM_PORT=%s\n' "$PORT"
     printf 'HAPM_STORAGE=%s\n' "$STORAGE"
-    ZONE=""
-    if [ -r /etc/timezone ]; then ZONE="$(cat /etc/timezone)"; fi
-    [ -n "$ZONE" ] || ZONE="$(timedatectl show -p Timezone --value 2>/dev/null || true)"
     [ -z "$ZONE" ] || printf 'TZ=%s\n' "$ZONE"
     [ -z "$IMAGE" ] || printf 'HAPM_IMAGE=%s\n' "$IMAGE"
   } >.env
-  PORT="${PORT:-7080}"
-  note "Einstellungen in $DIR/.env angelegt."
+  note ".env angelegt."
 else
-  note "$DIR/.env gibt es schon und bleibt, wie sie ist."
+  note ".env gibt es schon und bleibt, wie sie ist."
   WANTED="$PORT"
   PORT="$(env_value HAPM_PORT .env)"
-  PORT="${PORT:-7080}"
+  PORT="${PORT:-$DEFAULT_PORT}"
   if [ -n "$WANTED" ] && [ "$WANTED" != "$PORT" ]; then
-    note "Der Port bleibt $PORT. Ändern: HAPM_PORT in $DIR/.env, dann docker compose up -d."
+    warn "Der Port bleibt $PORT. Ändern: HAPM_PORT in $DIR/.env, dann docker compose up -d."
   fi
   if [ -z "$(env_value HAPM_STORAGE .env)" ]; then
     printf 'HAPM_STORAGE=%s\n' "$STORAGE" >>.env
-    note "Der Ordner der Daten steht jetzt in $DIR/.env."
+    note "Der Ordner der Daten steht jetzt in .env."
   fi
 fi
 
@@ -457,17 +694,25 @@ mkdir -p "$STORAGE"
 # einzeln eingebunden und brauchen den Zugang von außen nicht.
 chmod 700 "$STORAGE"
 # An dieser Kennung erkennt --uninstall, dass der Ordner HAPM gehört.
-[ -f "$STORAGE/$MARKER" ] || printf 'Daten von HAPM. Angelegt von install.sh.\n' >"$STORAGE/$MARKER"
-note "Daten: $STORAGE"
+if [ ! -f "$STORAGE/$MARKER" ]; then
+  printf 'Daten von HAPM. Angelegt von install.sh.\n' >"$STORAGE/$MARKER"
+fi
+note "Daten liegen in $STORAGE."
 
 # ── Umzug aus den Volumes ─────────────────────────────────────────────────────
 # Bis 0.2.0 lagen die Daten in Docker-Volumes. Die neue docker-compose.yml liest
 # sie aus dem Ordner: ohne Umzug stünde HAPM leer da.
+copy_volume() {
+  docker run --rm --network none --entrypoint sh \
+    -v "$1:/from:ro" -v "$2:/to" \
+    "$3" -c 'cp -a /from/. /to/'
+}
+
 migrate_volumes() {
   docker volume inspect "${PROJECT}_postgres-data" >/dev/null 2>&1 || return 0
   [ ! -e "$STORAGE/postgres/PG_VERSION" ] || return 0
 
-  say "Die Daten ziehen aus den Docker-Volumes nach $STORAGE um"
+  step "Umzug aus den Docker-Volumes"
   HELPER="$(docker inspect -f '{{.Config.Image}}' hapm-postgres 2>/dev/null || true)"
   HELPER="${HELPER:-postgres:17-alpine}"
   docker stop hapm-haproxy hapm hapm-postgres >/dev/null 2>&1 || true
@@ -477,41 +722,49 @@ migrate_volumes() {
     target="$STORAGE/${pair##*:}"
     docker volume inspect "$volume" >/dev/null 2>&1 || continue
     mkdir -p "$target"
-    if ! docker run --rm --network none --entrypoint sh -v "$volume:/from:ro" -v "$target:/to" "$HELPER" -c 'cp -a /from/. /to/'; then
+    if ! copy_volume "$volume" "$target" "$HELPER" >"$LOG" 2>&1; then
       rm -rf "$target"
-      fail "Das Volume $volume ließ sich nicht nach $target kopieren. Die Volumes sind unverändert."
+      show_log
+      fail "Das Volume $volume ließ sich nicht nach $target kopieren." \
+        "Die Volumes sind unverändert."
     fi
     note "$volume nach $target"
   done
-  note "Die alten Volumes bleiben liegen. Läuft HAPM danach wie gewohnt, räumt sie weg:"
-  note "docker volume ls -q --filter label=com.docker.compose.project=$PROJECT | xargs docker volume rm"
+
+  warn "Die alten Volumes bleiben liegen. Läuft HAPM danach wie gewohnt, räumt sie weg:"
+  note "  docker volume ls -q --filter label=com.docker.compose.project=$PROJECT | xargs docker volume rm"
 }
 migrate_volumes
 
 # ── Starten ───────────────────────────────────────────────────────────────────
-say "Abbilder werden geholt"
-if ! docker compose pull; then
+step "HAPM starten"
+
+if ! progress "Abbilder werden geholt" docker compose pull; then
   # Ein lokal gebautes Abbild (--image) liegt in keiner Registry.
-  note "Nicht alle Abbilder ließen sich holen. Es geht mit den vorhandenen weiter."
+  warn "Nicht alle Abbilder ließen sich holen. Es geht mit den vorhandenen weiter."
 fi
 
-say "HAPM wird gestartet"
-docker compose up -d --remove-orphans
+if ! progress "Container werden gestartet" docker compose up -d --remove-orphans; then
+  show_log
+  fail "Die Container ließen sich nicht starten." \
+    "Mehr sagt: cd $DIR && docker compose logs"
+fi
 
-printf '    Warte auf HAPM '
-READY=0
-for _ in $(seq 1 90); do
-  if curl -fsS "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1; then
-    READY=1
-    break
-  fi
-  printf '.'
-  sleep 2
-done
-printf '\n'
-if [ "$READY" != 1 ]; then
+# Bis zu drei Minuten: beim ersten Start richtet HAPM HAProxy und acme.sh ein.
+wait_until_healthy() {
+  for _ in $(seq 1 90); do
+    if curl -fsS "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+  done
+  return 1
+}
+
+if ! progress "Warte auf die Oberfläche" wait_until_healthy; then
   docker compose ps >&2 || true
-  fail "HAPM antwortet nach drei Minuten nicht. Mehr sagt: cd $DIR && docker compose logs hapm"
+  fail "HAPM antwortet nach drei Minuten nicht." \
+    "Mehr sagt: cd $DIR && docker compose logs hapm"
 fi
 
 # ── Fertig ────────────────────────────────────────────────────────────────────
@@ -526,18 +779,21 @@ fi
 
 cat <<EOF
 
-HAPM läuft.
+${GREEN}${BOLD}HAPM läuft.${RESET}
 
-  Oberfläche:   http://$ADDRESS:$PORT
-  Installation: $DIR
-  Daten:        $STORAGE
+    Oberfläche    ${BOLD}http://$ADDRESS:$PORT${RESET}
+    Installation  $DIR
+    Daten         $STORAGE
 
-Nächste Schritte:
-  1. Die Oberfläche öffnen. Die Einrichtung fragt nach dem ersten Konto und
-     danach, wie der Server erreichbar ist.
-  2. Port $PORT in der Firewall nur für die eigene Adresse öffnen. Von außen
-     braucht der Server die Ports 80 und 443 (TCP) und für HTTP/3 443 (UDP).
+  ${BOLD}Nächste Schritte${RESET}
+    1. Die Oberfläche öffnen. Die Einrichtung fragt nach dem ersten Konto
+       und danach, wie der Server erreichbar ist.
+    2. Port $PORT in der Firewall nur für die eigene Adresse öffnen.
+       Von außen braucht der Server die Ports 80 und 443 (TCP)
+       und für HTTP/3 443 (UDP).
 
-Aktualisieren:  cd $DIR && docker compose pull && docker compose up -d
-Entfernen:      $REMOVE
+  ${BOLD}Befehle${RESET}
+    Aktualisieren ${DIM}cd $DIR && docker compose pull && docker compose up -d${RESET}
+    Entfernen     ${DIM}$REMOVE${RESET}
+
 EOF

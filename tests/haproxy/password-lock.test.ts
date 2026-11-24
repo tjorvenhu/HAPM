@@ -86,7 +86,9 @@ const SERVICE: CreateServiceInput = {
   sticky: false,
   lockedDomains: ['vorschau.kunde.example'],
   passwordLock: LOCK,
-  preset: 'default',
+  responseHeaders: [],
+  requestHeaders: [],
+  tunnel: false,
   healthcheck: true,
 };
 

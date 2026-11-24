@@ -49,8 +49,10 @@ import {
   type ProvisionStep,
   type ProvisionReporter,
 } from './provision';
+import { runImport, describeImport, importAuditDetails, type ImportPlan } from './import-run';
 import { ensureProxyRecords, removeProxyRecords } from '../dns/sync';
 import type { ChallengeChoice } from './challenge';
+import type { SurfaceProtection } from './protected';
 import type { CreateServiceInput, HaproxyService, GlobalSettingsInput } from './config';
 import type { CreateStreamInput, HaproxyStream } from './streams';
 import type { Server, HaproxyRun, HaproxyAction, HaproxyPhase, RunStatus } from '../types';
@@ -97,6 +99,17 @@ interface RunOptions {
    * ohnehin selbst, für jede spätere Erneuerung.
    */
   challenge?: ChallengeChoice;
+  /**
+   * Die Adresse von HAPM: das Ziel, über das die Oberfläche läuft, und seine
+   * Gruppe bleiben stehen (`protected.ts`). Pflicht bei `delete`, `update` und
+   * `scope-remove`.
+   *
+   * Wie die Art der Installation löst die Route sie aus den Einstellungen auf.
+   * Geprüft wird im Lauf noch einmal, nicht nur in der Vorabprüfung: dazwischen
+   * kann ein anderer Vorgang die Domain der Oberfläche auf ein anderes Ziel
+   * gelegt haben.
+   */
+  protection?: SurfaceProtection;
   /** Die Domains eines Zertifikats ohne Ziel. Nur bei `action: 'certificate'`. */
   certificateDomains?: string[];
   /** Löschen: der Dienst, wie ihn die Vorabprüfung gerade gelesen hat. */
@@ -120,6 +133,8 @@ interface RunOptions {
   dns?: { ensure?: string[]; remove?: string[] };
   /** Die globalen Einstellungen. Nur bei `action: 'settings'`. */
   settings?: GlobalSettingsInput;
+  /** Die Einträge eines Imports (`import-run.ts`). Nur bei `action: 'import'`. */
+  importPlan?: ImportPlan;
   actor: HaproxyActor;
 }
 
@@ -131,6 +146,7 @@ interface RunOptions {
  * eine Zeile, die nur 8000 nennt, verschwiege den halben Eintrag.
  */
 function describe(opts: RunOptions): { domains: string | null; targets: string | null } {
+  if (opts.importPlan) return describeImport(opts.importPlan);
   if (opts.action === 'scope-add' || opts.action === 'scope-remove') {
     // Eine Gruppe hat weder Domains noch Ziele. Der Name steht in `serviceId`.
     return { domains: null, targets: null };
@@ -201,6 +217,7 @@ const AUDIT_ACTIONS: Record<HaproxyAction, { ok: AuditAction; failed: AuditActio
   'stream-update': { ok: 'haproxy_stream_updated', failed: 'haproxy_stream_failed' },
   'stream-delete': { ok: 'haproxy_stream_deleted', failed: 'haproxy_stream_delete_failed' },
   certificate: { ok: 'haproxy_certificate_issued', failed: 'haproxy_certificate_failed' },
+  import: { ok: 'haproxy_import_completed', failed: 'haproxy_import_failed' },
 };
 
 /**
@@ -213,9 +230,16 @@ function challengeOf(opts: RunOptions): ChallengeChoice {
   return opts.challenge;
 }
 
+/** Dieselbe Regel: ohne Angabe liefe ein Lauf, der entfernt, still ohne Schutz. */
+function protectionOf(opts: RunOptions): SurfaceProtection {
+  if (!opts.protection) throw new Error(`Der Vorgang "${opts.action}" braucht die Adresse von HAPM.`);
+  return opts.protection;
+}
+
 function auditDetails(opts: RunOptions, failure: string | null): string {
   const { serviceId, input } = opts;
   const suffix = failure ? `, fehlgeschlagen: ${failure}` : '';
+  if (opts.importPlan) return importAuditDetails(opts.importPlan, failure);
   if (opts.action === 'scope-add' || opts.action === 'scope-remove') {
     const what = opts.action === 'scope-add' ? 'angelegt' : 'entfernt';
     return `Gruppe "${serviceId}" ${what}${suffix}`;
@@ -338,13 +362,17 @@ export async function startHaproxyRun(opts: RunOptions): Promise<HaproxyRun> {
 
     try {
       const result =
-        action === 'scope-add' || action === 'scope-remove'
+        action === 'scope-add'
+          ? await updateScopes(server, serviceId, { action: 'add' }, reporter)
+          : action === 'scope-remove'
           ? await updateScopes(
               server,
               serviceId,
-              action === 'scope-add' ? 'add' : 'remove',
+              { action: 'remove', protection: protectionOf(opts) },
               reporter
             )
+          : action === 'import'
+          ? await runImport(server, opts.importPlan!, challengeOf(opts), reporter)
           : action === 'certificate'
           ? await issueCertificate(server, opts.certificateDomains ?? [], challengeOf(opts), reporter)
           : action === 'stream-create'
@@ -356,9 +384,16 @@ export async function startHaproxyRun(opts: RunOptions): Promise<HaproxyRun> {
           : action === 'settings'
           ? await updateGlobalSettings(server, opts.settings!, reporter)
           : action === 'delete'
-            ? await deleteService(server, serviceId, reporter)
+            ? await deleteService(server, serviceId, protectionOf(opts), reporter)
             : action === 'update'
-              ? await updateService(server, serviceId, input!, challengeOf(opts), reporter)
+              ? await updateService(
+                  server,
+                  serviceId,
+                  input!,
+                  challengeOf(opts),
+                  protectionOf(opts),
+                  reporter
+                )
               : await createService(server, input!, challengeOf(opts), reporter);
       steps = [...prefix, ...result.steps];
     } catch (err) {

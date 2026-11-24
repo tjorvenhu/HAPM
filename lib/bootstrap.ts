@@ -15,6 +15,8 @@ import path from 'node:path';
 import { HAPROXY_CFG, HAPROXY_CERT_DIR, LOCK_PAGE_DIR } from './haproxy/config';
 import { ERROR_DIR, renderBaseConfig } from './haproxy/base-config';
 import { errorFiles } from './haproxy/error-pages';
+import { defaultPageDesign, type PageDesign } from './haproxy/page-design';
+import { loadPageDesign } from './haproxy/page-design-store';
 import { ensureAcme } from './acme';
 import { localExec } from './ssh';
 import { buildCommand } from './shell';
@@ -72,8 +74,32 @@ async function ensureFallbackCertificate(): Promise<BootstrapStep> {
   }
 }
 
-function ensureErrorFiles(): { step: BootstrapStep; statuses: number[] } {
-  const files = errorFiles();
+/**
+ * Das gespeicherte Design der Fehlerseiten. Gelesen wird es bei jedem Start,
+ * auch wenn darunter nichts einzurichten ist: danach gilt es im Prozess, und
+ * die Seiten der Passwortsperre entstehen bei jedem Schreibvorgang daraus
+ * (`lib/haproxy/page-design.ts`).
+ *
+ * Lässt es sich nicht lesen, entstehen fehlende Dateien im Design von HAPM:
+ * ohne sie startete HAProxy nicht.
+ */
+async function storedDesign(): Promise<{ design: PageDesign; note: string }> {
+  try {
+    return { design: await loadPageDesign(), note: '' };
+  } catch (err) {
+    console.error('[bootstrap] Design der Fehlerseiten nicht lesbar:', err);
+    return {
+      design: defaultPageDesign(),
+      note: ' Das gespeicherte Design ließ sich nicht lesen, es gilt das von HAPM.',
+    };
+  }
+}
+
+function ensureErrorFiles(stored: { design: PageDesign; note: string }): {
+  step: BootstrapStep;
+  statuses: number[];
+} {
+  const files = errorFiles(stored.design);
   let written = 0;
   for (const file of files) {
     const target = path.posix.join(ERROR_DIR, `${file.status}.http`);
@@ -85,7 +111,7 @@ function ensureErrorFiles(): { step: BootstrapStep; statuses: number[] } {
     step: {
       label: 'Fehlerseiten',
       ok: true,
-      detail: written ? `${written} Fehlerseiten angelegt.` : 'Alle Fehlerseiten liegen vor.',
+      detail: (written ? `${written} Fehlerseiten angelegt.` : 'Alle Fehlerseiten liegen vor.') + stored.note,
     },
     statuses: files.map((file) => file.status),
   };
@@ -128,6 +154,8 @@ export async function runBootstrap(acmeEmail: string | null): Promise<BootstrapS
   const state = bootstrapState();
   if (state.status === 'running') return state;
 
+  const design = await storedDesign();
+
   // Auf einem Entwicklungsrechner ohne Container gibt es nichts einzurichten.
   if (process.platform !== 'linux' || process.env.HAPM_BOOTSTRAP === '0') {
     state.status = 'skipped';
@@ -148,7 +176,7 @@ export async function runBootstrap(acmeEmail: string | null): Promise<BootstrapS
     }
     add({ label: 'Verzeichnisse', ok: true });
 
-    const errors = ensureErrorFiles();
+    const errors = ensureErrorFiles(design);
     add(errors.step);
     add(await ensureFallbackCertificate());
     add(ensureBaseConfig(errors.statuses));

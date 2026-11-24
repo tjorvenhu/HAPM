@@ -3,7 +3,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import {
-  Network, Globe, Loader2, RefreshCw, ScrollText, ChevronRight, FolderPlus, Info, X,
+  Network, Globe, Loader2, RefreshCw, ScrollText, ChevronRight, FolderPlus, Info, X, ShieldCheck,
+  FileInput,
 } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
@@ -224,6 +225,12 @@ export default function ReverseProxyPage() {
               Gruppe anlegen
             </button>
           )}
+          {proxies.length > 0 && (
+            <Link className="btn btn-secondary" href="/reverse-proxy/import">
+              <FileInput size={16} />
+              Konfiguration importieren
+            </Link>
+          )}
           <Link className="btn btn-secondary" href="/reverse-proxy/logs">
             <ScrollText size={16} />
             Logs
@@ -321,6 +328,16 @@ export default function ReverseProxyPage() {
                                   .filter(Boolean)
                                   .join(', ')}
                           </EntityField>
+                          {page.surface && (
+                            <EntityTags>
+                              <EntityTag
+                                icon={<ShieldCheck size={13} />}
+                                tooltip={`HAPM ist über ein Ziel dieser Gruppe erreichbar (${page.surface.url}). Sie lässt sich nicht entfernen.`}
+                              >
+                                <span>Oberfläche von HAPM</span>
+                              </EntityTag>
+                            </EntityTags>
+                          )}
                         </EntityCard>
                       </Link>
                     );

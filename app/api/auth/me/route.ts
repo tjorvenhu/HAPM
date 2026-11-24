@@ -1,14 +1,17 @@
 import { getSession } from '@/lib/session';
-import { ok, fail, handleError } from '@/lib/api';
+import { getUserLocale } from '@/lib/auth/users';
+import { ok, handleError, ApiError } from '@/lib/api';
+import { msg } from '@/lib/i18n';
 
 /**
  * Die Sitzung, in der Form, die `ToolShell` (`ui/tool/ToolShell.tsx`) liest: ohne
- * Sitzung 401, mit `twoFactorPending` zurück zur Anmeldung.
+ * Sitzung 401, mit `twoFactorPending` zurück zur Anmeldung. `locale` ist die
+ * Sprache am Konto, `AppShell` stellt die Oberfläche darauf um.
  */
 export async function GET() {
   try {
     const session = await getSession();
-    if (!session.userId) return fail('Nicht authentifiziert', 401);
+    if (!session.userId) throw new ApiError(msg('Nicht authentifiziert'), 401);
 
     return ok({
       userId: session.userId,
@@ -17,6 +20,7 @@ export async function GET() {
       twoFactorPending: !session.twoFactorVerified,
       twoFactorSetupRequired: false,
       csrfToken: session.csrfToken,
+      locale: await getUserLocale(session.userId),
     });
   } catch (err) {
     return handleError(err);

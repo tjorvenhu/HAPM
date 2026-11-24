@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useRef, type FormEvent } from "react"
+import { useT } from "@/lib/i18n/react"
 import { ShieldCheck, Copy, Check, Loader2, ArrowLeft, ArrowRight, X } from "lucide-react"
 
 export interface TwoFactorSetupProps {
@@ -34,6 +35,7 @@ type Step = "intro" | "loading" | "scan" | "verify" | "recovery" | "done"
  * (`.two-factor-*`) in `css/tool-vocabulary.css`.
  */
 export default function TwoFactorSetup({ start, verify, onComplete, onCancel, required = false, className }: TwoFactorSetupProps) {
+  const { t, rich } = useT()
   const [step, setStep] = useState<Step>("intro")
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState("")
   const [manualCode, setManualCode] = useState("")
@@ -54,7 +56,7 @@ export default function TwoFactorSetup({ start, verify, onComplete, onCancel, re
       setManualCode(data.manualCode)
       setStep("scan")
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Fehler bei der Einrichtung")
+      setError(err instanceof Error ? err.message : t("Fehler bei der Einrichtung"))
       setStep("intro")
     }
   }
@@ -79,7 +81,7 @@ export default function TwoFactorSetup({ start, verify, onComplete, onCancel, re
         setTimeout(onComplete, 1500)
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Verifizierung fehlgeschlagen")
+      setError(err instanceof Error ? err.message : t("Verifizierung fehlgeschlagen"))
       setCode("")
     } finally {
       setVerifying(false)
@@ -91,7 +93,7 @@ export default function TwoFactorSetup({ start, verify, onComplete, onCancel, re
       <div className="two-factor-dialog">
         <div className="two-factor-header">
           <ShieldCheck size={32} />
-          <h2>Zwei-Faktor-Authentifizierung einrichten</h2>
+          <h2>{t("Zwei-Faktor-Authentifizierung einrichten")}</h2>
         </div>
 
         {error && <div className="two-factor-error" style={{ margin: "0 0 16px" }}>{error}</div>}
@@ -100,9 +102,9 @@ export default function TwoFactorSetup({ start, verify, onComplete, onCancel, re
           <div className="two-factor-body">
             <p>
               {required
-                ? "Zur Sicherheit Ihres Kontos ist die Zwei-Faktor-Authentifizierung (2FA) erforderlich."
-                : "Mit der Zwei-Faktor-Authentifizierung (2FA) braucht die Anmeldung zusätzlich einen Code von Ihrem Handy."}{" "}
-              Sie benötigen eine Authenticator-App wie:
+                ? t("Zur Sicherheit Ihres Kontos ist die Zwei-Faktor-Authentifizierung (2FA) erforderlich.")
+                : t("Mit der Zwei-Faktor-Authentifizierung (2FA) braucht die Anmeldung zusätzlich einen Code von Ihrem Handy.")}{" "}
+              {t("Sie benötigen eine Authenticator-App wie:")}
             </p>
             <ul style={{ margin: "12px 0", paddingLeft: 20, color: "var(--text-secondary)" }}>
               <li>Google Authenticator</li>
@@ -112,11 +114,11 @@ export default function TwoFactorSetup({ start, verify, onComplete, onCancel, re
             </ul>
             {onCancel && (
               <button className="two-factor-btn two-factor-btn--ghost" style={{ alignSelf: "center", marginTop: 8 }} onClick={onCancel}>
-                <X size={15} /> Abbrechen
+                <X size={15} /> {t("Abbrechen")}
               </button>
             )}
             <button className="two-factor-btn two-factor-btn--primary" style={{ alignSelf: "center", marginTop: 8 }} onClick={startSetup}>
-              Einrichtung starten
+              {t("Einrichtung starten")}
             </button>
           </div>
         )}
@@ -124,21 +126,21 @@ export default function TwoFactorSetup({ start, verify, onComplete, onCancel, re
         {step === "loading" && (
           <div className="two-factor-body" style={{ textAlign: "center", alignItems: "center", padding: "32px 0" }}>
             <Loader2 size={32} className="spin" />
-            <p style={{ marginTop: 12, color: "var(--text-secondary)" }}>QR-Code wird generiert...</p>
+            <p style={{ marginTop: 12, color: "var(--text-secondary)" }}>{t("QR-Code wird generiert...")}</p>
           </div>
         )}
 
         {step === "scan" && (
           <div className="two-factor-body">
             <p style={{ marginBottom: 16, color: "var(--text-secondary)", fontSize: "0.875rem" }}>
-              Scannen Sie den QR-Code mit Ihrer Authenticator-App oder geben Sie den Code manuell ein.
+              {t("Scannen Sie den QR-Code mit Ihrer Authenticator-App oder geben Sie den Code manuell ein.")}
             </p>
 
             <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
               {/* Ein Daten-Bild vom eigenen Server: next/image brächte hier nichts. */}
               <img
                 src={qrCodeDataUrl}
-                alt="2FA QR-Code"
+                alt={t("2FA QR-Code")}
                 width={200}
                 height={200}
                 style={{ borderRadius: 8, border: "1px solid var(--border)" }}
@@ -161,7 +163,7 @@ export default function TwoFactorSetup({ start, verify, onComplete, onCancel, re
                 type="button"
                 className="two-factor-btn two-factor-btn--ghost"
                 onClick={copyManualCode}
-                data-tooltip="Code kopieren"
+                data-tooltip={t("Code kopieren")}
               >
                 {copied ? <Check size={14} /> : <Copy size={14} />}
               </button>
@@ -172,7 +174,7 @@ export default function TwoFactorSetup({ start, verify, onComplete, onCancel, re
               style={{ alignSelf: "center", marginTop: 4 }}
               onClick={() => { setStep("verify"); setTimeout(() => codeInputRef.current?.focus(), 100) }}
             >
-              Weiter <ArrowRight size={15} />
+              {t("Weiter")} <ArrowRight size={15} />
             </button>
           </div>
         )}
@@ -180,7 +182,7 @@ export default function TwoFactorSetup({ start, verify, onComplete, onCancel, re
         {step === "verify" && (
           <form className="two-factor-body" onSubmit={verifyCode}>
             <p style={{ marginBottom: 16, color: "var(--text-secondary)", fontSize: "0.875rem" }}>
-              Geben Sie den 6-stelligen Code aus Ihrer Authenticator-App ein, um die Einrichtung abzuschließen.
+              {t("Geben Sie den 6-stelligen Code aus Ihrer Authenticator-App ein, um die Einrichtung abzuschließen.")}
             </p>
             <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 20 }}>
               <input
@@ -199,11 +201,11 @@ export default function TwoFactorSetup({ start, verify, onComplete, onCancel, re
             </div>
             <div style={{ display: "flex", gap: 10 }}>
               <button type="button" className="two-factor-btn two-factor-btn--secondary" style={{ flex: 1 }} onClick={() => setStep("scan")}>
-                <ArrowLeft size={15} /> Zurück
+                <ArrowLeft size={15} /> {t("Zurück")}
               </button>
               <button type="submit" className="two-factor-btn two-factor-btn--primary" style={{ flex: 1 }} disabled={verifying || code.length !== 6}>
                 {verifying ? <span className="btn-spinner" aria-hidden="true" /> : <ShieldCheck size={15} />}
-                {verifying ? "Prüfen…" : "Aktivieren"}
+                {verifying ? t("Prüfen…") : t("Aktivieren")}
               </button>
             </div>
           </form>
@@ -212,12 +214,13 @@ export default function TwoFactorSetup({ start, verify, onComplete, onCancel, re
         {step === "recovery" && (
           <div className="two-factor-body">
             <p style={{ marginBottom: 12, fontWeight: 600, color: "var(--text)" }}>
-              Wiederherstellungscodes speichern
+              {t("Wiederherstellungscodes speichern")}
             </p>
             <p style={{ marginBottom: 16, color: "var(--text-secondary)", fontSize: "0.875rem" }}>
-              Mit diesen Codes können Sie sich anmelden, falls Sie den Zugriff auf Ihre
-              Authenticator-App verlieren. Jeder Code ist einmal verwendbar und wird
-              <strong> nur jetzt</strong> angezeigt.
+              {rich(
+                "Mit diesen Codes können Sie sich anmelden, falls Sie den Zugriff auf Ihre Authenticator-App verlieren. Jeder Code ist einmal verwendbar und wird {onlyNow} angezeigt.",
+                { onlyNow: <strong>{t("nur jetzt")}</strong> }
+              )}
             </p>
 
             <div style={{
@@ -247,7 +250,7 @@ export default function TwoFactorSetup({ start, verify, onComplete, onCancel, re
                 }}
               >
                 {recoveryCopied ? <Check size={14} /> : <Copy size={14} />}
-                {recoveryCopied ? "Kopiert" : "Kopieren"}
+                {recoveryCopied ? t("Kopiert") : t("Kopieren")}
               </button>
               <button
                 type="button"
@@ -255,7 +258,7 @@ export default function TwoFactorSetup({ start, verify, onComplete, onCancel, re
                 style={{ flex: 1 }}
                 onClick={() => { setStep("done"); setTimeout(onComplete, 1500) }}
               >
-                <Check size={15} /> Codes gespeichert
+                <Check size={15} /> {t("Codes gespeichert")}
               </button>
             </div>
           </div>
@@ -267,10 +270,10 @@ export default function TwoFactorSetup({ start, verify, onComplete, onCancel, re
               <Check size={32} strokeWidth={3} />
             </div>
             <p style={{ marginTop: 20, fontWeight: 600, fontSize: "1.0625rem", color: "var(--text)" }}>
-              2FA erfolgreich aktiviert!
+              {t("2FA erfolgreich aktiviert!")}
             </p>
             <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem", marginTop: 6 }}>
-              Sie werden weitergeleitet...
+              {t("Sie werden weitergeleitet...")}
             </p>
           </div>
         )}

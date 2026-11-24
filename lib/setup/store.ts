@@ -1,3 +1,4 @@
+import { decrypt, encrypt } from '../crypto';
 import { getSingleton, updateDocument } from '../db';
 import { COLLECTIONS, SETUP_ID, type SetupState } from '../types';
 import { EMPTY_SETUP, type SetupChoices } from './rules';
@@ -15,6 +16,28 @@ export async function getSetupState(): Promise<SetupChoices> {
     wildcardBase: row.wildcardBase ?? null,
     execution: row.execution ?? null,
   };
+}
+
+/**
+ * Das Token des DNS-Anbieters für die Dauer der Einrichtung, siehe
+ * `SetupState.dnsAccess`. Ein Token, das sich nicht mehr entschlüsseln lässt
+ * (anderer Schlüssel), gilt als nicht vorhanden.
+ */
+export async function getDnsAccess(): Promise<{ hook: string; token: string } | null> {
+  const row = await getSingleton<SetupState>(COLLECTIONS.SETUP_STATE, SETUP_ID, EMPTY_SETUP);
+  if (!row.dnsAccess?.hook || !row.dnsAccess.token) return null;
+  try {
+    return { hook: row.dnsAccess.hook, token: decrypt(row.dnsAccess.token) };
+  } catch {
+    return null;
+  }
+}
+
+export async function setDnsAccess(access: { hook: string; token: string } | null): Promise<void> {
+  await getSetupState();
+  await updateDocument<SetupState>(COLLECTIONS.SETUP_STATE, SETUP_ID, {
+    dnsAccess: access ? { hook: access.hook, token: encrypt(access.token) } : null,
+  });
 }
 
 export async function updateSetupState(patch: Partial<SetupChoices>): Promise<SetupChoices> {

@@ -7,8 +7,12 @@ import { ArrowLeft, Plus, Trash2, Pencil, Cloud, CloudOff, ListTree } from 'luci
 import { useApp } from '@/components/AppShell';
 import { usePolling } from '@/components/usePolling';
 import { useConfirm } from '@/components/ConfirmDialog';
+import { useToast } from '@/components/Toast';
 import RecordFormModal from '@/components/dns/RecordFormModal';
-import { formatTtl, isEditableRecord, type DnsRecord } from '@/lib/dns/records';
+import ProviderName from '@/components/dns/ProviderName';
+import { formatTtl, isEditableRecord, PROVIDER_RULES, type DnsRecord } from '@/lib/dns/records';
+import { dnsProviderInfo } from '@/lib/dns/provider-info';
+import type { DnsProviderId } from '@/lib/dns/zones';
 import { SkeletonRows } from '@/components/Skeleton';
 
 /**
@@ -18,15 +22,19 @@ import { SkeletonRows } from '@/components/Skeleton';
  * zeigt wohin), und das ist die Trennlinie aus docs/ui.md. Eine gewachsene Zone
  * hat hundert Zeilen.
  *
- * **Was hier steht, kommt bei jedem Takt von Cloudflare.** Deshalb ist der
- * Bestand auch dann aktuell, wenn jemand parallel im Dashboard arbeitet — und
+ * **Was hier steht, kommt bei jedem Takt vom Anbieter der Zone.** Deshalb ist
+ * der Bestand auch dann aktuell, wenn jemand parallel dort arbeitet — und
  * deshalb kann eine Zeile hier nicht bearbeitbar sein, obwohl sie dasteht: was
- * dieses Formular nicht vollständig abbildet (SRV, CAA, ein von Cloudflare
+ * dieses Formular nicht vollständig abbildet (SRV, CAA, ein vom Anbieter
  * gepflegter Eintrag), wird angezeigt und nicht angefasst.
+ *
+ * Eine Zeile ist ein Wert. Hetzner führt mehrere Werte desselben Namens als
+ * einen Satz, hier stehen sie einzeln (`lib/dns/hetzner-rrsets.ts`).
  */
 
 interface ZoneHead {
   $id: string;
+  provider: DnsProviderId;
   name: string;
   zoneId: string;
   status: 'ok' | 'error';
@@ -36,6 +44,7 @@ interface ZoneHead {
 export default function DnsZonePage() {
   const { apiFetch } = useApp();
   const confirm = useConfirm();
+  const { notify } = useToast();
   const id = String(useParams().id ?? '');
 
   const [zone, setZone] = useState<ZoneHead | null>(null);
@@ -70,11 +79,15 @@ export default function DnsZonePage() {
     if (id) load();
   }, [id, load]);
 
-  // Eine Abfrage bei Cloudflare je Takt. 60 Sekunden, weil sich eine Zone nicht
-  // im Sekundentakt ändert — aber ohne Takt stünde eine Änderung aus dem
-  // Dashboard hier bis zum nächsten F5 nicht drin, und genau das soll es nicht
-  // geben.
+  // Eine Abfrage beim Anbieter je Takt. 60 Sekunden, weil sich eine Zone nicht
+  // im Sekundentakt ändert — aber ohne Takt stünde eine Änderung von dort hier
+  // bis zum nächsten F5 nicht drin, und genau das soll es nicht geben.
   usePolling(() => load(true), 60_000);
+
+  const providerLabel = zone ? dnsProviderInfo(zone.provider).label : '';
+  // Die Spalte gibt es nur, wo es die Frage gibt: bei Hetzner stünde in jeder
+  // Zeile dieselbe Antwort.
+  const withProxy = zone ? PROVIDER_RULES[zone.provider].proxy : false;
 
   const term = search.trim().toLowerCase();
   const visible = term
@@ -90,7 +103,7 @@ export default function DnsZonePage() {
     await confirm({
       title: 'Eintrag entfernen',
       message:
-        `${record.type} ${record.name} → ${record.content} wird bei Cloudflare gelöscht. ` +
+        `${record.type} ${record.name} → ${record.content} wird bei ${providerLabel} gelöscht. ` +
         `Was darüber aufgelöst wird, ist danach nicht mehr erreichbar, bei einem A- oder ` +
         `CNAME-Eintrag also die Adresse selbst.`,
       confirmLabel: 'Entfernen',
@@ -105,6 +118,7 @@ export default function DnsZonePage() {
           throw new Error(data.error);
         }
         setError('');
+        notify({ variant: 'success', message: `${record.type} ${record.name} ist entfernt.` });
         await load(true);
       },
     });
@@ -120,7 +134,14 @@ export default function DnsZonePage() {
           </Link>
           <h1 className="page-title">{zone?.name ?? 'Zone'}</h1>
           <p className="page-subtitle">
-            Die DNS-Einträge dieser Zone, gelesen bei Cloudflare. Änderungen wirken dort sofort.
+            {zone ? (
+              <>
+                Die DNS-Einträge dieser Zone, gelesen bei <ProviderName provider={zone.provider} />.
+                Änderungen wirken dort sofort.
+              </>
+            ) : (
+              'Die DNS-Einträge dieser Zone.'
+            )}
           </p>
         </div>
         <div className="page-actions">
@@ -167,7 +188,7 @@ export default function DnsZonePage() {
                 <th style={{ width: '28%' }}>Name</th>
                 <th>Wert</th>
                 <th style={{ width: 80 }}>TTL</th>
-                <th style={{ width: 110 }}>Proxy</th>
+                {withProxy && <th style={{ width: 110 }}>Proxy</th>}
                 <th style={{ width: 90 }} />
               </tr>
             </thead>
@@ -203,21 +224,23 @@ export default function DnsZonePage() {
                       </span>
                     </td>
                     <td>{formatTtl(record.ttl)}</td>
-                    <td>
-                      {/* Farblos statt grün: „geht direkt" ist kein Zustand, der
-                          Aufmerksamkeit verdient, sondern der Normalfall hier. */}
-                      <span
-                        className="badge-status badge-neutral"
-                        data-tooltip={
-                          record.proxied
-                            ? 'Läuft über die Cloudflare-Server'
-                            : 'Zeigt direkt auf das Ziel'
-                        }
-                      >
-                        {record.proxied ? <Cloud size={13} /> : <CloudOff size={13} />}
-                        {record.proxied ? 'Cloudflare' : 'direkt'}
-                      </span>
-                    </td>
+                    {withProxy && (
+                      <td>
+                        {/* Farblos statt grün: „geht direkt" ist kein Zustand, der
+                            Aufmerksamkeit verdient, sondern der Normalfall hier. */}
+                        <span
+                          className="badge-status badge-neutral"
+                          data-tooltip={
+                            record.proxied
+                              ? 'Läuft über die Cloudflare-Server'
+                              : 'Zeigt direkt auf das Ziel'
+                          }
+                        >
+                          {record.proxied ? <Cloud size={13} /> : <CloudOff size={13} />}
+                          {record.proxied ? 'Cloudflare' : 'direkt'}
+                        </span>
+                      </td>
+                    )}
                     <td>
                       {/* Nach links, und das ist nicht Geschmack: ein zentrierter
                           Tooltip an der letzten Spalte ragt über den rechten
@@ -262,7 +285,10 @@ export default function DnsZonePage() {
           zone={zone}
           edit={editing === 'new' ? null : editing}
           onClose={() => setEditing(null)}
-          onSaved={() => load(true)}
+          onSaved={async () => {
+            notify({ variant: 'success', message: 'Der Eintrag ist gespeichert.' });
+            await load(true);
+          }}
         />
       )}
     </>

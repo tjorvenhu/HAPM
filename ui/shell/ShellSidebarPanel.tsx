@@ -5,6 +5,7 @@ import Image from "next/image"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { ChevronDown, Search, type LucideIcon } from "lucide-react"
+import { useT } from "@/lib/i18n/react"
 
 export interface ShellNavSection {
   href: string
@@ -119,6 +120,7 @@ export function ShellSidebarPanel({
   logo,
 }: ShellSidebarPanelProps) {
   const pathname = usePathname()
+  const { t } = useT()
   const [toggled, setToggled] = useState<Record<string, boolean>>({})
 
   // Bei geringer Höhe liegt der aktive Eintrag sonst unter dem Fuß der Leiste.
@@ -234,7 +236,7 @@ export function ShellSidebarPanel({
                 <button
                   type="button"
                   className={toggleClass}
-                  aria-label={`Seiten im Bereich ${area.label}`}
+                  aria-label={t("Seiten im Bereich {area}", { area: area.label })}
                   aria-expanded={expanded}
                   aria-controls={subnavId}
                   onClick={toggle}
@@ -251,7 +253,7 @@ export function ShellSidebarPanel({
             inert={!expanded}
           >
             <div className="shell-subnav-clip">
-              <ul className="shell-subnav" id={subnavId} aria-label={`Seiten im Bereich ${area.label}`}>
+              <ul className="shell-subnav" id={subnavId} aria-label={t("Seiten im Bereich {area}", { area: area.label })}>
                 {sections.map((section) => {
                   const sectionActive = section.href === current
                   return (
@@ -295,8 +297,8 @@ export function ShellSidebarPanel({
         {onSearch && (
           <button type="button" className="shell-search" onClick={onSearch}>
             <Search size={16} strokeWidth={1.5} aria-hidden="true" />
-            <span className="shell-search__label">Suchen</span>
-            <kbd className="shell-search__kbd">Strg K</kbd>
+            <span className="shell-search__label">{t("Suchen")}</span>
+            <kbd className="shell-search__kbd">{t("Strg K")}</kbd>
           </button>
         )}
         {search}

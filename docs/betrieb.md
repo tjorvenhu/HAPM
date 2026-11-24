@@ -199,7 +199,8 @@ sind angemeldete Aufrufe unter `/api/setup/*` und darf scheitern oder liegen
 bleiben.
 
 1. **Konto** und die Adresse für Let's Encrypt (`POST /api/setup`, ohne Sitzung
-   und nur, solange es kein Konto gibt).
+   und nur, solange es kein Konto gibt). Die E-Mail-Adresse des Kontos wird
+   Empfänger der Benachrichtigungen, bis jemand die Empfänger ändert.
 2. **Erreichbarkeit:** nur im eigenen Netz oder aus dem Internet. Die Wahl steht
    sofort in den Einstellungen (`exposure`). An ihr hängt, ob Zertifikate über
    HTTP-01 oder immer über DNS-01 ausgestellt werden, siehe
@@ -207,15 +208,31 @@ bleiben.
 3. **DNS-Anbieter** (Hetzner, Cloudflare). Intern Pflicht, öffentlich nur für
    Wildcards nötig und überspringbar. Der Token wird dem Anbieter einmal
    vorgezeigt (`lib/setup/token-check.ts`) und geht dann über denselben Weg wie
-   unter Reverse-Proxy, Einstellungen nach `account.conf`. HAPM speichert ihn
-   nicht. Lehnt der Anbieter ihn ab, wird nichts abgelegt.
+   unter Reverse-Proxy, Einstellungen nach `account.conf`. Lehnt der Anbieter
+   ihn ab, wird nichts abgelegt.
 4. **Adresse der Oberfläche:** die Domain für HAPM, auf Wunsch mit einem
-   Wildcard-Zertifikat für die Basis darüber. Den DNS-Eintrag auf diesen Server
-   legt der Benutzer selbst an. Die Seite fragt das DNS, worauf die Domain
-   zeigt, und sagt das Ergebnis. Aufgehalten wird damit niemand.
+   Wildcard-Zertifikat für die Basis darüber. Die Seite zeigt den DNS-Eintrag
+   auf diesen Server und legt ihn auf Knopfdruck beim Anbieter an
+   (`PUT /api/setup/dns-record`). Bei einer internen Installation sagt sie,
+   dass der Eintrag in den DNS-Server des eigenen Netzes gehört. Sie fragt das
+   DNS, worauf die Domain zeigt, und sagt das Ergebnis. Aufgehalten wird damit
+   niemand.
 5. **Ausführen** (`lib/setup/run.ts`): Gruppe `HAPM`, Zertifikat, Ziel `hapm`
    auf `127.0.0.1:<PORT>`, `publicUrl`. Jeder Schritt ist ein gewöhnlicher Lauf
    mit derselben Vorabprüfung wie in der Oberfläche und steht in der Historie.
+
+**Das Token liegt für die Dauer der Einrichtung beim Assistenten**
+(`SetupState.dnsAccess`, verschlüsselt wie die Tokens der Zonen). Der Grund ist
+die Reihenfolge: das Token kommt in Schritt 3, die Domain in Schritt 4, und
+erst mit der Domain steht fest, welche Zone gemeint ist. Mit dem Speichern der
+Adresse richtet der Assistent diese Zone unter „DNS" ein (`connectZone`), wo
+das Token danach wie bei jeder Zone liegt, und der Knopf setzt den Eintrag über
+denselben Weg wie die Seite dort (`ensureAddressRecord`). Der Wert des
+Eintrags kommt aus dem Formular: hinter einer Adressumsetzung trägt der Server
+seine öffentliche Adresse nicht selbst. `getSetupState` liest das Feld nicht,
+es erreicht den Browser also nie, und mit dem Ende der Einrichtung
+(abgeschlossen oder übersprungen) wird es gelöscht. Ein übernommener Hook
+(„Mit Cloudflare weiter") bringt kein Token mit: dann gibt es den Knopf nicht.
 
 **Der Zustand liegt in der Datenbank**, in einer Zeile der Collection
 `setup_state`: Art, gewählter Hook, Domain, Wildcard und der Stand des

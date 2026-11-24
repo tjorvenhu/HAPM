@@ -53,7 +53,9 @@ const INPUT: CreateServiceInput = {
   sticky: true,
   lockedDomains: [],
   passwordLock: null,
-  preset: 'default',
+  responseHeaders: [],
+  requestHeaders: [],
+  tunnel: false,
   healthcheck: true,
 };
 
