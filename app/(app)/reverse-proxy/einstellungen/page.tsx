@@ -22,6 +22,7 @@ import { HAPROXY_PHASES, HAPROXY_PHASE_LABELS } from '@/components/runPhases';
 import { HTTPS_MARKER, type GlobalSettings } from '@/lib/haproxy/config';
 import { SkeletonRows } from '@/components/Skeleton';
 import GeoipPanel from '@/components/reverse-proxy/GeoipPanel';
+import BaseConfigPanel from '@/components/reverse-proxy/BaseConfigPanel';
 import { useT } from '@/lib/i18n/react';
 
 /**
@@ -38,6 +39,9 @@ import { useT } from '@/lib/i18n/react';
  *
  * Geschrieben wird über denselben Weg wie ein Dienst: prüfen, Backup,
  * einsetzen, reloaden — abgekoppelt, sichtbar in der Pille unten rechts.
+ *
+ * Darunter der Abgleich mit der Grundkonfiguration (`BaseConfigPanel`): was
+ * eine ältere Installation an neuen Vorgaben nicht hat.
  */
 
 interface SettingsRow {
@@ -789,6 +793,10 @@ export default function ReverseProxySettingsPage() {
           );
         })
       )}
+
+      {/* Lädt sich selbst: der Abgleich ist eine eigene Runde und soll die
+          Einstellungen darüber nicht aufhalten. */}
+      <BaseConfigPanel />
 
       {openRunId && (
         <UpdateRunOverlay

@@ -310,6 +310,12 @@ export interface SetupState extends DbDoc {
    * `acmeHttpReachable`): die Wahl gilt sofort, wie die Erreichbarkeit.
    */
   certificates: 'pending' | 'set';
+  /**
+   * Ob der Schritt zum SMTP-Konto beantwortet ist. Das Konto selbst steht in
+   * den Einstellungen (`smtpHost` usw.), wie unter „Benachrichtigungen".
+   * Fehlt das Feld (Zeile von vor diesem Schritt), siehe `mailAnswerOf`.
+   */
+  mail: 'pending' | 'set' | 'skipped';
   address: 'pending' | 'set' | 'skipped';
   domain: string | null;
   wildcard: boolean;

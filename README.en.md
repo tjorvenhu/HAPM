@@ -340,7 +340,7 @@ contents of [`docker-compose.yml`](docker-compose.yml).
 
 ## First steps
 
-After the start, `http://<server-ip>:7080` opens the wizard. It has six steps:
+After the start, `http://<server-ip>:7080` opens the wizard. It has seven steps:
 
 | Step | What happens |
 |---|---|
@@ -348,8 +348,9 @@ After the start, `http://<server-ip>:7080` opens the wizard. It has six steps:
 | **2. Reachability** | Reachable from the internet or only on your private network? This decides how certificates are issued |
 | **3. DNS** | Cloudflare or Hetzner with an API token, then HAPM creates DNS records itself. Or **your own DNS server**: HAPM tells you every record to set yourself |
 | **4. Certificates** | **Let's Encrypt** (default), **your own ACME server** with a directory URL, for example step-ca on your network, or **upload**: HAPM requests nothing, you upload certificate and key |
-| **5. Web interface address** | The domain for HAPM itself, for example `hapm.example.org`. HAPM shows the required DNS record and creates it at the provider if one is connected |
-| **6. Set up** | HAPM issues the certificate and adds itself as a target. Afterwards the web interface is reachable over HTTPS |
+| **5. Email** | The SMTP account HAPM sends email through: for passkeys, "Forgot password" and notifications. Can be skipped and set up later under "Notifications" |
+| **6. Web interface address** | The domain for HAPM itself, for example `hapm.example.org`. HAPM shows the required DNS record and creates it at the provider if one is connected |
+| **7. Set up** | HAPM issues the certificate and adds itself as a target. Afterwards the web interface is reachable over HTTPS |
 
 <p align="center">
   <img src="docs/images/setup-done.en.jpg" alt="The last step of the wizard: HAPM is set up" width="70%">

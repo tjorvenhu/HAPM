@@ -227,6 +227,40 @@ export interface SettingsInput {
   setupStatus?: SetupStatus;
 }
 
+const SMTP_TEXT_FIELDS = ['smtpHost', 'smtpUser', 'mailFrom'] as const;
+
+/**
+ * Die Felder des SMTP-Kontos aus einem Anfragekörper, nur auf ihre Form
+ * geprüft. Was die Werte bedeuten dürfen, prüft `settingsPatch`. Dieselbe
+ * Regel unter „Benachrichtigungen" (`/api/settings`) und im Assistenten
+ * (`/api/setup/mail`). Ein fehlendes Feld bleibt unverändert.
+ */
+export function readSmtpInput(body: Record<string, unknown>): SettingsInput {
+  const input: SettingsInput = {};
+  for (const field of SMTP_TEXT_FIELDS) {
+    if (!(field in body)) continue;
+    const value = body[field];
+    if (value !== null && typeof value !== 'string') throw new ApiError(msg('Das Feld {field} erwartet einen Text.', { field }));
+    input[field] = value;
+  }
+  if ('smtpPort' in body) {
+    if (typeof body.smtpPort !== 'number') throw new ApiError(msg('Der SMTP-Port ist eine Zahl zwischen 1 und 65535.'));
+    input.smtpPort = body.smtpPort;
+  }
+  if ('smtpSecurity' in body) {
+    if (typeof body.smtpSecurity !== 'string') throw new ApiError(msg('Die Verschlüsselung ist STARTTLS, TLS oder keine.'));
+    input.smtpSecurity = body.smtpSecurity as SmtpSecurity;
+  }
+  // Leer heißt unverändert, `null` heißt löschen.
+  if ('smtpPass' in body && body.smtpPass !== '') {
+    if (body.smtpPass !== null && typeof body.smtpPass !== 'string') {
+      throw new ApiError(msg('Das SMTP-Passwort muss ein Text sein.'));
+    }
+    input.smtpPass = body.smtpPass;
+  }
+  return input;
+}
+
 /**
  * Aus einer Eingabe das, was gespeichert wird. Rein bis auf `encryptPass`, das
  * hereingereicht wird: so lässt sich jede Regel ohne Datenbank und ohne

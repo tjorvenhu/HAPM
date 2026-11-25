@@ -1,7 +1,7 @@
 import { decrypt, encrypt } from '../crypto';
 import { getSingleton, updateDocument } from '../db';
 import { COLLECTIONS, SETUP_ID, type SetupState } from '../types';
-import { EMPTY_SETUP, type SetupChoices } from './rules';
+import { EMPTY_SETUP, mailAnswerOf, type SetupChoices } from './rules';
 
 /** Die eine Zeile des Assistenten. Fehlt ein Feld (ältere Zeile), gilt die Vorgabe. */
 export async function getSetupState(): Promise<SetupChoices> {
@@ -11,6 +11,7 @@ export async function getSetupState(): Promise<SetupChoices> {
     dns: row.dns ?? EMPTY_SETUP.dns,
     dnsHook: row.dnsHook ?? null,
     certificates: row.certificates === 'set' ? 'set' : 'pending',
+    mail: mailAnswerOf(row),
     address: row.address ?? EMPTY_SETUP.address,
     domain: row.domain ?? null,
     wildcard: row.wildcard === true,

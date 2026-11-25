@@ -47,7 +47,8 @@ Next.js (App Router) mit TypeScript strict, pnpm. Drei Container: HAPM, HAProxy
   Gruppe: die erste legt der Benutzer an, oder der Assistent (Gruppe `HAPM`),
   wenn er die Oberfläche als Ziel einrichtet.
 - **Die Ersteinrichtung ist ein Assistent** (`app/setup/`, `lib/setup/`): Konto,
-  Art der Installation, DNS-Anbieter, Adresse der Oberfläche, Ausführen. Die
+  Art der Installation, DNS-Anbieter, Zertifikate, SMTP-Konto (überspringbar),
+  Adresse der Oberfläche, Ausführen. Die
   Art (`exposure` in den Einstellungen) entscheidet, wie Zertifikate
   ausgestellt werden: `internal` heißt DNS-01 für jedes, `public` HTTP-01 und
   DNS-01 nur für Wildcards. Die eine Regel dafür steht in

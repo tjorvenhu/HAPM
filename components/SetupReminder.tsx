@@ -6,7 +6,7 @@ import { ArrowRight, ListChecks } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/ConfirmDialog';
-import { SETUP_STEPS } from '@/lib/setup/rules';
+import { SETUP_STEPS, type SetupStep } from '@/lib/setup/rules';
 import { msgid } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
 // Nur der Typ: die Datei dahinter erreicht `lib/db`.
@@ -22,9 +22,11 @@ import type { SetupView } from '@/lib/setup';
  * „Allgemein" und im Reverse-Proxy eingerichtet.
  */
 
-const STEP_NAMES: Record<string, string> = {
+const STEP_NAMES: Record<Exclude<SetupStep, 'account' | 'done'>, string> = {
   exposure: msgid('Erreichbarkeit'),
   dns: msgid('DNS-Anbieter'),
+  certificates: msgid('Zertifikate'),
+  mail: msgid('SMTP-Konto'),
   address: msgid('Adresse der Oberfläche'),
   run: msgid('Einrichten'),
 };
@@ -99,7 +101,7 @@ export default function SetupReminder() {
           {t('Es fehlt noch Schritt {step} von {total}: {name}.', {
             step: position,
             total: SETUP_STEPS.length,
-            name: STEP_NAMES[setup.step] ? t(STEP_NAMES[setup.step]) : setup.step,
+            name: setup.step in STEP_NAMES ? t(STEP_NAMES[setup.step as keyof typeof STEP_NAMES]) : setup.step,
           })}
         </span>
       </div>

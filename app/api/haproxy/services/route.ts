@@ -2,7 +2,14 @@ import { requireSession, requireCsrf } from '@/lib/session';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
 import { getT } from '@/lib/i18n/server';
 import { getClientIP } from '@/lib/audit';
-import { getProxyServer, probeProxy, precheckCreate, readPemCoverage } from '@/lib/haproxy/provision';
+import {
+  baseConfigOptions,
+  getProxyServer,
+  probeProxy,
+  precheckCreate,
+  readPemCoverage,
+} from '@/lib/haproxy/provision';
+import { diffBaseConfig } from '@/lib/haproxy/base-config-diff';
 import { startHaproxyRun } from '@/lib/haproxy/runner';
 import { getSettings, challengeFor } from '@/lib/settings';
 import { selectedDnsDomains } from '@/lib/dns/zones';
@@ -94,6 +101,10 @@ interface ProxyRow {
    *  Die TCP-Weiterleitungen stehen mit drin: ein `listen`-Abschnitt taucht in
    *  `show stat` unter seinem Namen auf wie jedes Backend. */
   health: Record<string, ServiceHealth>;
+  /** Wie viele Zeilen der Grundkonfiguration in der Datei fehlen
+   *  (`base-config-diff.ts`). Die Karte von HAProxy verweist dann auf
+   *  Reverse-Proxy, Einstellungen. Aus demselben Text gerechnet, ohne Runde. */
+  baseConfigMissing: number;
   error: string | null;
 }
 
@@ -132,6 +143,7 @@ export async function GET() {
               globalHeaders: { request: [], response: [] },
               defaultsTunnel: null,
               health: {},
+              baseConfigMissing: 0,
               error: t('Die HAProxy-Konfiguration ist nicht lesbar.'),
             };
           }
@@ -162,6 +174,9 @@ export async function GET() {
                 serviceHealth({ id: stream.id, routes: [] }, probe.serverStates),
               ]),
             ]),
+            baseConfigMissing: diffBaseConfig(probe.raw, baseConfigOptions(probe.raw)).drifts.filter(
+              (drift) => drift.kind === 'missing'
+            ).length,
             error: null,
           };
         } catch (err) {
@@ -179,6 +194,7 @@ export async function GET() {
             globalHeaders: { request: [], response: [] },
               defaultsTunnel: null,
             health: {},
+            baseConfigMissing: 0,
             error: err instanceof Error ? err.message : t('HAProxy ist nicht erreichbar.'),
           };
         }

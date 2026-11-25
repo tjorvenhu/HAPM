@@ -2038,6 +2038,26 @@ a.kpi { color: inherit; }
   gap: 1.25rem;
 }
 
+/* Platzhalter des Formulars (AuthFormSkeleton): Maße wie Beschriftung,
+   Eingabefeld und Knopf darunter. */
+.auth-skeleton-label {
+  width: 8rem;
+  height: 0.875rem;
+  margin: 0.1875rem 0 0.6875rem;
+  border-radius: 4px;
+}
+
+.auth-skeleton-input {
+  height: 3rem;
+  border-radius: var(--radius-input);
+}
+
+.auth-skeleton-submit {
+  height: 3rem;
+  margin-top: 0.5rem;
+  border-radius: var(--radius-full);
+}
+
 .auth-field label {
   display: block;
   margin-bottom: 0.5rem;

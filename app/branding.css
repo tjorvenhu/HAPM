@@ -338,12 +338,16 @@
   margin-bottom: 6px;
 }
 
-.brand-app__logo .brand-logo img:not(.brand-logo__img) {
-  width: 5.5rem;
-  height: auto;
+/* Die Zeile der echten Leiste: so breit wie dort (Leiste minus Innenabstand
+   und Rand von `.shell-sidebar__header`), mit `zoom` auf die Innenbreite der
+   Leiste hier gebracht (11.5rem minus 2 × 8px Abstand und 2 × 1px Rand). So
+   stehen Logo und Pille im selben Verhältnis wie in echt. */
+.brand-app__logo-row {
+  flex: none;
+  width: calc(var(--shell-sidebar-width) - 1.5rem - 2px);
+  zoom: 0.72;
 }
 
-.brand-app__logo .brand-pill,
 .brand-dark .brand-pill {
   height: 1.125rem;
   padding: 0 0.375rem;
@@ -493,4 +497,5 @@
 
 @media (max-width: 640px) {
   .brand-app__sidebar { width: 9.5rem; }
+  .brand-app__logo-row { zoom: 0.58; }
 }

@@ -81,9 +81,12 @@ import {
   errorPageWriteCommand,
   errorPageRestoreCommand,
   followableErrorPages,
+  errorPageStatuses,
   type ErrorPageEntry,
 } from './error-pages';
 import { rememberWrittenPages, writtenPageDigests } from './page-files';
+import { applyBaseConfigDrifts, detectIpv6, diffBaseConfig, type BaseConfigDiff } from './base-config-diff';
+import type { BaseConfigOptions } from './base-config';
 import {
   addStream,
   removeStream,
@@ -2139,6 +2142,78 @@ export async function updateGlobalSettings(
     await steps.phase('installing');
     await installAndReload(ssh, probe.digest, steps);
     return { steps: steps.steps };
+  });
+}
+
+/* ── Abgleich mit der Grundkonfiguration ──
+ *
+ * Synchron wie die Fehlerseiten: kein Zertifikat, nur ein `haproxy -c` und ein
+ * Reload. Geschrieben wird trotzdem über denselben Weg wie jeder andere
+ * Vorgang an `haproxy.cfg` (Lock, Prüfsumme, Prüfen neben der gültigen Datei,
+ * Backup, Reload, Rollback). Was verglichen wird, steht in
+ * `base-config-diff.ts`. */
+
+/** Die Optionen, mit denen `renderBaseConfig` diese Datei geschrieben hätte.
+ *  IPv6 steht in der Datei, die Fehlerseiten legt `bootstrap.ts` für jeden
+ *  Status an, den HAPM kennt. */
+export function baseConfigOptions(raw: string): BaseConfigOptions {
+  return { ipv6: detectIpv6(raw), errorStatuses: errorPageStatuses() };
+}
+
+export async function readBaseConfigDiff(server: Server): Promise<BaseConfigDiff> {
+  const probe = await readableProbe(server);
+  return diffBaseConfig(probe.raw, baseConfigOptions(probe.raw));
+}
+
+/**
+ * Die ausgewählten Abweichungen übernehmen. Zurück kommen die Schritte und der
+ * Abgleich, wie er DANACH aussieht.
+ */
+export async function updateBaseConfig(
+  server: Server,
+  ids: string[]
+): Promise<{ steps: ProvisionStep[]; diff: BaseConfigDiff }> {
+  return withProxyLock(server.$id, async () => {
+    const steps = new StepLog();
+    const ssh = await getSSHConfig(server);
+    const probe = await readableProbe(server);
+    const options = baseConfigOptions(probe.raw);
+
+    let nextConfig: string;
+    try {
+      nextConfig = applyBaseConfigDrifts(probe.raw, options, ids);
+    } catch (err) {
+      if (err instanceof HaproxyConfigError) throw new ApiError(err, 409);
+      throw err;
+    }
+
+    const after = async () => {
+      const now = await probeProxy(server).catch(() => null);
+      return now?.configReadable ? diffBaseConfig(now.raw, baseConfigOptions(now.raw)) : diffBaseConfig(probe.raw, options);
+    };
+
+    if (nextConfig === probe.raw) {
+      await steps.push({
+        label: msgid('Keine Änderung'),
+        ok: true,
+        detail: msgid('Die Konfiguration steht bereits so da. Es wurde nichts geschrieben.'),
+      });
+      return { steps: steps.steps, diff: diffBaseConfig(probe.raw, options) };
+    }
+
+    const staged = await stageAndCheck(ssh, nextConfig);
+    if (!staged.ok) {
+      await steps.push({
+        label: msgid('Neue Konfiguration prüfen'),
+        ok: false,
+        detail: `${staged.detail}. Es wurde nichts eingesetzt, die bestehende Konfiguration ist unverändert.`,
+      });
+      return { steps: steps.steps, diff: diffBaseConfig(probe.raw, options) };
+    }
+    await steps.push({ label: msgid('Neue Konfiguration geprüft'), ok: true });
+
+    await installAndReload(ssh, probe.digest, steps);
+    return { steps: steps.steps, diff: await after() };
   });
 }
 

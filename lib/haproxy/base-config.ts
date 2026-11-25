@@ -3,7 +3,9 @@
  *
  * HAPM legt sie genau einmal an: wenn `/etc/haproxy/haproxy.cfg` fehlt. Danach
  * ist die Datei die Wahrheit, und nichts hier schreibt sie je wieder als
- * Ganzes.
+ * Ganzes. Neue Vorgaben bringt `base-config-diff.ts` Zeile für Zeile in eine
+ * bestehende Datei, auf Wunsch unter Reverse-Proxy, Einstellungen. Eine neue
+ * Zeile hier braucht dort eine Begründung (`HINTS`).
  *
  * Die Form ist die, die `config.ts` erwartet: der Marker der globalen
  * Einstellungen im HTTPS-Frontend und die Weiterleitung der ACME-Challenge auf

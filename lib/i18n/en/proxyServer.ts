@@ -599,4 +599,48 @@ export const proxyServer: Dictionary = {
     'Unknown setting for how the targets of the path rule "{name}" are addressed.',
   'Das Zertifikat des Ziels gegen die CAs des Systems zu prüfen braucht HAProxy 2.6 oder neuer. Hier läuft {version}. HTTPS ohne Prüfung geht dort.':
     'Verifying the target certificate against the system CAs needs HAProxy 2.6 or newer. This one runs {version}. HTTPS without verification works there.',
+
+  // lib/haproxy/base-config-diff.ts, Route /api/haproxy/base-config
+  'Schaltet HTTP/3 auch dann frei, wenn die TLS-Bibliothek von HAProxy keine QUIC-Schnittstelle hat. Ohne die Zeile bleiben die quic-Listener dann aus. Wo die Bibliothek QUIC kann, ist die Zeile wirkungslos.':
+    'Enables HTTP/3 even when the TLS library of HAProxy has no QUIC interface. Without this line the quic listeners stay off in that case. Where the library supports QUIC, the line has no effect.',
+  'Sperrt HAProxy nach dem Start in dieses Verzeichnis ein. Ein Fehler in HAProxy erreicht den Rest des Dateisystems dann nicht.':
+    'Locks HAProxy into this directory after startup. A flaw in HAProxy then cannot reach the rest of the file system.',
+  'Über diesen Socket liest HAPM, ob die Ziele antworten.': 'HAPM reads through this socket whether the targets respond.',
+  'Wie lange eine Verbindung zum Socket ohne Befehl offen bleibt.': 'How long a connection to the socket stays open without a command.',
+  'HAProxy gibt nach dem Start die Rechte von root ab und läuft als dieser Benutzer und diese Gruppe.':
+    'After startup HAProxy drops root privileges and runs as this user and group.',
+  'Verzeichnis für relative Pfade zu CAs und Zertifikaten.': 'Directory for relative paths to CAs and certificates.',
+  'Verfahren für TLS 1.2: nur solche mit Forward Secrecy und AEAD.': 'Ciphers for TLS 1.2: only those with forward secrecy and AEAD.',
+  'Verfahren für TLS 1.3.': 'Cipher suites for TLS 1.3.',
+  'TLS ab Version 1.2. no-tls-tickets schaltet Sitzungstickets ab, deren Schlüssel sonst über viele Verbindungen gleich bliebe.':
+    'TLS from version 1.2. no-tls-tickets turns off session tickets, whose key would otherwise stay the same across many connections.',
+  'Die Abschnitte schreiben in das Log, das in global steht.': 'The sections write to the log defined in global.',
+  'HAProxy liest HTTP. Ohne das gibt es keine Weichen nach Domain, keine Kopfzeilen und keine Sperren.':
+    'HAProxy reads HTTP. Without it there is no routing by domain, no headers and no locks.',
+  'Eine ausführliche Logzeile je Anfrage. Logs und Statistik in HAPM lesen dieses Format.':
+    'A detailed log line per request. Logs and statistics in HAPM read this format.',
+  'Verbindungen ohne Anfrage, etwa von Port-Scans, kommen nicht ins Log.': 'Connections without a request, such as port scans, are not logged.',
+  'Wie lange HAProxy auf den Verbindungsaufbau zum Ziel wartet.': 'How long HAProxy waits for the connection to the target.',
+  'Wie lange eine Verbindung offen bleibt, über die der Besucher nichts schickt.': 'How long a connection stays open while the visitor sends nothing.',
+  'Wie lange HAProxy auf eine Antwort des Ziels wartet.': 'How long HAProxy waits for a response from the target.',
+  'Bis dahin muss eine Anfrage vollständig angekommen sein. Schützt vor Anfragen, die absichtlich langsam tröpfeln.':
+    'A request must arrive completely within this time. Protects against requests that trickle in slowly on purpose.',
+  'Wie lange eine Verbindung zwischen zwei Anfragen offen bleibt.': 'How long a connection stays open between two requests.',
+  'Wie lange eine Anfrage wartet, wenn alle Ziele ausgelastet sind.': 'How long a request waits when all targets are busy.',
+  'Erkennt die Prüfanfragen von Let’s Encrypt (HTTP-01).': 'Detects the validation requests from Let’s Encrypt (HTTP-01).',
+  'Leitet alles außer der ACME-Challenge auf HTTPS um.': 'Redirects everything except the ACME challenge to HTTPS.',
+  'Gibt die ACME-Challenge an acme.sh weiter.': 'Passes the ACME challenge to acme.sh.',
+  'Sagt dem Browser, dass HTTP/3 auf Port 443 bereitsteht.': 'Tells the browser that HTTP/3 is available on port 443.',
+  'Unbekannte Domains bekommen die Fehlerseite 404.': 'Unknown domains get the 404 error page.',
+  'HAProxy läuft im Container im Vordergrund. Das Abbild startet es mit -db, das hebt die Zeile auf. HAPM schreibt sie deshalb nicht.':
+    'HAProxy runs in the foreground in the container. The image starts it with -db, which overrides this line. HAPM therefore does not write it.',
+  'Die Fehlerseite von HAPM für diesen Status. Die Datei legt HAPM beim Start an.': 'The HAPM error page for this status. HAPM creates the file at startup.',
+  'HTTP/3 über QUIC auf Port 443.': 'HTTP/3 over QUIC on port 443.',
+  'Nimmt HTTP an, für die Umleitung auf HTTPS und die ACME-Challenge.': 'Accepts HTTP, for the redirect to HTTPS and the ACME challenge.',
+  'HTTPS mit allen Zertifikaten aus dem Verzeichnis. strict-sni: ohne passendes Zertifikat kommt keine Verbindung zustande, statt dass ein fremder Name das Zertifikat einer anderen Domain sieht.':
+    'HTTPS with all certificates from the directory. strict-sni: without a matching certificate no connection is made, instead of an unknown name seeing the certificate of another domain.',
+  'Die Abweichung „{id}" gibt es in der Konfiguration nicht mehr. Bitte die Seite neu laden.':
+    'The difference “{id}” no longer exists in the configuration. Please reload the page.',
+  'Zeilen, die es nur in dieser Datei gibt, werden nicht angefasst: {line}': 'Lines that exist only in this file are left untouched: {line}',
+  'Es wurde keine Abweichung ausgewählt.': 'No difference was selected.',
 };

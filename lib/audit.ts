@@ -48,6 +48,8 @@ export type AuditAction =
   | 'haproxy_import_failed'
   | 'haproxy_error_pages_updated'
   | 'haproxy_error_pages_failed'
+  | 'haproxy_base_config_updated'
+  | 'haproxy_base_config_failed'
   | 'geoip_table_updated'
   | 'geoip_table_reset'
   | 'dns_zone_created'

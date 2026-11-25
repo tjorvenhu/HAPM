@@ -8,12 +8,14 @@ import {
   executionOutcome,
   executionPlan,
   hapmServiceInput,
+  mailAnswerOf,
   judgeAddresses,
   listenPort,
   newExecution,
   normalizeSetupDomain,
   pickServerAddresses,
   resumeStep,
+  SETUP_STEPS,
   settleExecution,
   stepReached,
   validateSetupDomain,
@@ -38,8 +40,9 @@ import { withDefaults, setupOpen } from '@/lib/settings';
 
 const ACCOUNT = { hasAccount: true, dnsHooks: [] as string[] | null };
 
+/** Das SMTP-Konto gilt hier als beantwortet: um dessen Schritt geht es nur in seinem eigenen Block. */
 function state(patch: Partial<SetupChoices>): SetupChoices {
-  return { ...EMPTY_SETUP, ...patch };
+  return { ...EMPTY_SETUP, mail: 'set', ...patch };
 }
 
 describe('resumeStep', () => {
@@ -141,6 +144,51 @@ describe('resumeStep', () => {
   });
 });
 
+describe('das SMTP-Konto', () => {
+  const answered = state({ exposure: 'public', dns: 'manual', certificates: 'set' });
+
+  it('kommt nach den Zertifikaten und vor der Adresse', () => {
+    expect(SETUP_STEPS.indexOf('mail')).toBe(SETUP_STEPS.indexOf('certificates') + 1);
+    expect(SETUP_STEPS.indexOf('address')).toBe(SETUP_STEPS.indexOf('mail') + 1);
+    expect(resumeStep({ ...answered, mail: 'pending' }, ACCOUNT)).toBe('mail');
+    expect(resumeStep({ ...answered, mail: 'pending', certificates: 'pending' }, ACCOUNT)).toBe('certificates');
+  });
+
+  it('gespeichert oder übersprungen: weiter zur Adresse', () => {
+    expect(resumeStep({ ...answered, mail: 'set' }, ACCOUNT)).toBe('address');
+    expect(resumeStep({ ...answered, mail: 'skipped' }, ACCOUNT)).toBe('address');
+  });
+
+  it('ein offenes SMTP-Konto hält das Ausführen auf', () => {
+    const ready = { ...answered, address: 'set' as const, domain: 'hapm.example.org' };
+    expect(resumeStep({ ...ready, mail: 'skipped' }, ACCOUNT)).toBe('run');
+    expect(resumeStep({ ...ready, mail: 'pending' }, ACCOUNT)).toBe('mail');
+  });
+
+  it('eine frische Zeile fragt es ab', () => {
+    expect(EMPTY_SETUP.mail).toBe('pending');
+    expect(mailAnswerOf(EMPTY_SETUP)).toBe('pending');
+  });
+
+  it('eine Zeile von vor dem Schritt schickt niemanden zurück, der schon weiter war', () => {
+    // Ohne Feld, die Adresse noch offen: der Schritt kommt noch.
+    expect(mailAnswerOf({ address: 'pending', execution: null })).toBe('pending');
+    // Ohne Feld, aber Adresse beantwortet oder Ausführen begonnen: gilt als übersprungen.
+    expect(mailAnswerOf({ address: 'set', execution: null })).toBe('skipped');
+    expect(mailAnswerOf({ address: 'skipped', execution: null })).toBe('skipped');
+    expect(
+      mailAnswerOf({
+        address: 'pending',
+        execution: { startedAt: '2026-11-24T10:00:00.000Z', running: true, stages: [] },
+      })
+    ).toBe('skipped');
+    // Ein gespeichertes Feld gilt, wie es steht.
+    expect(mailAnswerOf({ mail: 'pending', address: 'set' })).toBe('pending');
+    expect(mailAnswerOf({ mail: 'set', address: 'pending' })).toBe('set');
+    expect(mailAnswerOf({ mail: 'kaputt', address: 'pending' })).toBe('pending');
+  });
+});
+
 describe('die Zertifikatsfrage', () => {
   const LE: CertificateFacts = { source: 'acme', customServer: false, httpReachable: false };
   const CUSTOM: CertificateFacts = { source: 'acme', customServer: true, httpReachable: false };
@@ -204,6 +252,8 @@ describe('stepReached', () => {
     expect(stepReached('exposure', 'address')).toBe(true);
     expect(stepReached('address', 'address')).toBe(true);
     expect(stepReached('run', 'address')).toBe(false);
+    expect(stepReached('certificates', 'mail')).toBe(true);
+    expect(stepReached('address', 'mail')).toBe(false);
   });
 });
 

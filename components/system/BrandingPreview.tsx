@@ -53,8 +53,13 @@ export default function BrandingPreview({ brand, accent, favicon }: Props) {
 
       <div className="brand-app">
         <div className="brand-app__sidebar">
+          {/* Die Zeile der echten Leiste (`ShellSidebarPanel`, `Sidebar.tsx`)
+              in ihrer echten Breite, als Ganzes verkleinert: eigene Maße für
+              Logo und Pille wichen bei jedem Seitenverhältnis anders ab. */}
           <div className="brand-app__logo">
-            <Logo width={112} brand={brand} priority={false} />
+            <div className="shell-sidebar__logo brand-app__logo-row">
+              <Logo width={132} brand={brand} priority={false} />
+            </div>
           </div>
           <div className="brand-app__search">
             <Search size={12} strokeWidth={1.75} />

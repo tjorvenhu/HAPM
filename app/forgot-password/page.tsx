@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Mail } from 'lucide-react';
 import { AuthCard } from '@/ui/auth/AuthCard';
+import AuthFormSkeleton from '@/ui/auth/AuthFormSkeleton';
 import { useT } from '@/lib/i18n/react';
 
 /** `null`, solange die Seite noch nicht weiß, ob diese Installation Mails verschicken kann. */
@@ -56,10 +57,7 @@ export default function ForgotPasswordPage() {
   return (
     <AuthCard standalone title={t('Passwort vergessen')} subtitle={subtitle}>
       {available === null && (
-        <>
-          <div className="skeleton shell-skeleton--row" />
-          <div className="skeleton shell-skeleton--row" />
-        </>
+        <AuthFormSkeleton fields={1} />
       )}
 
       {available === false && (
