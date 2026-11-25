@@ -706,3 +706,41 @@ export async function restoreOverview() {
 
 export type RestoreOverview = Awaited<ReturnType<typeof restoreOverview>>;
 export type { BackupFile };
+
+/** Das laufende Zurückspielen für die Pille unten rechts, ohne den Rest der Übersicht. */
+export function activeRestore(): { runId: string; startedAt: string; name: string } | null {
+  const state = readState();
+  if (!state || readProgress().done) return null;
+  return { runId: state.runId, startedAt: state.startedAt, name: state.archive.name };
+}
+
+/**
+ * Ein Lauf für das Fenster der Läufe: solange er läuft aus der Datei des
+ * Fortschritts, danach aus der Datenbank. `null`, wenn es ihn nicht gibt.
+ */
+export async function restoreRunView(runId: string) {
+  await finalizeRestore().catch((err) => console.error('[restore]', err));
+  const state = readState();
+  if (state?.runId === runId) {
+    return {
+      $id: runId,
+      status: 'running' as RunStatus,
+      startedAt: state.startedAt,
+      completedAt: null,
+      fileName: state.archive.name,
+      steps: toSteps(readProgress()),
+      error: null,
+    };
+  }
+  const run = await getDocument<RestoreRun>(COLLECTIONS.RESTORE_RUNS, runId).catch(() => null);
+  if (!run) return null;
+  return {
+    $id: run.$id,
+    status: run.status,
+    startedAt: run.startedAt,
+    completedAt: run.completedAt as string | null,
+    fileName: run.fileName,
+    steps: JSON.parse(run.steps || '[]') as HaproxyStep[],
+    error: run.error,
+  };
+}

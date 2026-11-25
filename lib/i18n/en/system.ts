@@ -257,7 +257,7 @@ export const system: Dictionary = {
   "Die HAProxy-Konfiguration ist nicht lesbar.": "The HAProxy configuration cannot be read.",
   "acme.sh oder das Zertifikatsverzeichnis fehlt.": "acme.sh or the certificate directory is missing.",
 
-  // Updates: `app/(app)/updates`, `components/UpdateRunOverlay.tsx`, `components/system`, `lib/updates`, `app/api/updates`
+  // Updates: `app/(app)/updates`, `components/system`, `lib/updates`, `app/api/updates`
   'Neue Abbilder für HAProxy und HAPM, neue Fassungen von acme.sh.': 'New images for HAProxy and HAPM, new versions of acme.sh.',
   'Jetzt prüfen': 'Check now',
   'Vor dem Tausch prüft das neue Abbild die vorhandene Konfiguration. Lehnt es sie ab, bleibt alles unverändert. Beim Tausch ist HAProxy für wenige Sekunden nicht erreichbar. Startet der neue Container nicht, kommt der bisherige zurück.':
@@ -316,7 +316,6 @@ export const system: Dictionary = {
   // Läufe von Updates und Sicherung
   'Zeitplan': 'Schedule',
   'Zu diesem Lauf sind keine Schritte festgehalten.': 'No steps were recorded for this run.',
-  'Die Schritte stehen in der Historie.': 'The steps are in the history.',
   'Der Lauf geht weiter, auch wenn diese Seite geschlossen wird.': 'The run continues even if this page is closed.',
   'Uhrzeit': 'Time',
   'Historie': 'History',
@@ -352,7 +351,13 @@ export const system: Dictionary = {
   'Das Abbild ist lokal gebaut und stammt aus keiner Registry.': 'The image was built locally and does not come from a registry.',
   'acme.sh ist nicht installiert.': 'acme.sh is not installed.',
   'GitHub nennt keine Fassung.': 'GitHub reports no version.',
-  // `components/UpdateRunOverlay.tsx`
+  // Fenster der Läufe: `components/runs/`
+  'Diesen Lauf gibt es nicht.': 'This run does not exist.',
+  'Fehlgeschlagen bei: {step}': 'Failed at: {step}',
+  'Die Schritte stehen im Fenster des Laufs.': 'The steps are in the run window.',
+  'Beim Update von HAPM ist das zu erwarten.': 'This is expected during an update of HAPM.',
+  'Gerade wird {name} zurückgespielt. Der Fortschritt steht im Fenster des Laufs.': 'Restoring {name}. Progress is shown in the run window.',
+  'Fortschritt ansehen': 'Show progress',
   '{noun} läuft': '{noun} running',
   '{noun} fehlgeschlagen': '{noun} failed',
   '{noun} abgeschlossen': '{noun} completed',
@@ -378,7 +383,6 @@ export const system: Dictionary = {
   'Bitte zuerst einen Ordner auf dem Server eintragen.': 'Please enter a folder on the server first.',
   'Die Sicherung braucht Docker. HAPM läuft gerade nicht in einem Container.': 'The backup needs Docker. HAPM is not running in a container right now.',
   'Sicherung läuft': 'Backup running',
-  'Ziel: {path}.': 'Destination: {path}.',
   'Wohin und wann': 'Where and when',
   'Ordner auf dem Server': 'Folder on the server',
   'Ein eingebundenes Netzlaufwerk geht genauso, wenn es auf dem Server unter diesem Pfad liegt.':
@@ -459,7 +463,6 @@ export const system: Dictionary = {
   'Begonnen am {date} von {user}.': 'Started on {date} by {user}.',
   'Der Stand von vorher liegt in {path}.': 'The previous state is in {path}.',
   'Zurückspielen fehlgeschlagen': 'Restore failed',
-  'Die Schritte stehen unter „Sicherung zurückspielen“.': 'The steps are under “Restore backup”.',
   'Zurückgespielt': 'Restored',
   'HAPM hat nicht geantwortet. Bitte versuchen Sie es erneut.': 'HAPM did not respond. Please try again.',
   'Vorher sichert HAPM den aktuellen Stand in den Ordner {path}. Diese Sicherung räumt die Aufbewahrung nicht weg.':

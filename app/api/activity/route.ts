@@ -3,22 +3,28 @@ import { listDocuments, Query } from '@/lib/db';
 import { COLLECTIONS } from '@/lib/types';
 import { ok, handleError } from '@/lib/api';
 import { componentLabel } from '@/lib/updates/apply';
-import type { HaproxyRun, UpdateRun } from '@/lib/types';
+import { BACKUP_RUNS } from '@/lib/backup/settings';
+import { activeRestore } from '@/lib/backup/restore';
+import type { BackupRun } from '@/lib/backup/run';
+import type { HaproxyRun, UpdateComponent, UpdateRun } from '@/lib/types';
+import type { RunKind } from '@/components/runs/runs';
 
 export interface ActivityJob {
   id: string;
-  kind: 'haproxy' | 'update';
-  /** Was läuft: die Dienst-ID samt Maschine, bei einem Update der Bestandteil. */
+  kind: RunKind;
+  /** Was läuft: die Dienst-ID samt Maschine, bei einem Update der Bestandteil, bei einer Sicherung der Ordner. */
   name: string;
-  /** Ein Update-Lauf kennt keine Phase, nur Schritte. */
+  /** Nur ein Reverse-Proxy-Vorgang kennt Phasen, die anderen Läufe nur Schritte. */
   phase: string | null;
+  /** Der Bestandteil eines Updates: beim Tausch von HAPM ist die Oberfläche kurz weg. */
+  component?: UpdateComponent;
   startedAt: string;
 }
 
 /**
- * Alles, was gerade im Hintergrund läuft: Vorgänge am Reverse-Proxy und
- * Updates. Das ist die Quelle der Pille unten rechts, also gehört hier alles
- * hinein, was länger läuft als eine Anfrage und eine Zeile in der Datenbank hat.
+ * Alles, was gerade im Hintergrund läuft: Vorgänge am Reverse-Proxy, Updates,
+ * Sicherungen und das Zurückspielen. Das ist die Quelle der Pille unten
+ * rechts, also gehört hier alles hinein, was länger läuft als eine Anfrage.
  *
  * Ein Lauf, dessen treibender Prozess gestorben ist (Neustart, Absturz), steht
  * hier bis zum nächsten Abgleich weiter als `running`: sichtbar statt
@@ -28,18 +34,13 @@ export async function GET() {
   try {
     await requireSession();
 
-    const [haproxy, updates] = await Promise.all([
-      listDocuments<HaproxyRun>(COLLECTIONS.HAPROXY_RUNS, [
-        Query.equal('status', 'running'),
-        Query.orderDesc('startedAt'),
-        Query.limit(50),
-      ]),
-      listDocuments<UpdateRun>(COLLECTIONS.UPDATE_RUNS, [
-        Query.equal('status', 'running'),
-        Query.orderDesc('startedAt'),
-        Query.limit(50),
-      ]),
+    const running = [Query.equal('status', 'running'), Query.orderDesc('startedAt'), Query.limit(50)];
+    const [haproxy, updates, backups] = await Promise.all([
+      listDocuments<HaproxyRun>(COLLECTIONS.HAPROXY_RUNS, running),
+      listDocuments<UpdateRun>(COLLECTIONS.UPDATE_RUNS, running),
+      listDocuments<BackupRun>(BACKUP_RUNS, running),
     ]);
+    const restore = activeRestore();
 
     const jobs: ActivityJob[] = [
       // Dieselbe Beschriftung wie die Überschrift des Overlays (`/api/haproxy/runs/[id]`).
@@ -55,8 +56,19 @@ export async function GET() {
         kind: 'update' as const,
         name: componentLabel(run.component),
         phase: null,
+        component: run.component,
         startedAt: run.startedAt,
       })),
+      ...backups.map((run) => ({
+        id: run.$id,
+        kind: 'backup' as const,
+        name: run.hostPath,
+        phase: null,
+        startedAt: run.startedAt,
+      })),
+      ...(restore
+        ? [{ id: restore.runId, kind: 'restore' as const, name: restore.name, phase: null, startedAt: restore.startedAt }]
+        : []),
     ].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
 
     return ok({ jobs });

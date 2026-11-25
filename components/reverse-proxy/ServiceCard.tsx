@@ -5,7 +5,7 @@ import Link from 'next/link';
 import {
   Globe, Activity, GitBranch, Server, Lock, LockOpen, Pencil, Trash2, Loader2, ArrowRight,
   EyeOff, ChevronDown, ChevronRight, CornerUpRight, Scale, Cookie, BarChart3, KeyRound, ShieldCheck,
-  SlidersHorizontal, LockKeyhole, Check, X, Hourglass,
+  SlidersHorizontal, LockKeyhole, Hourglass,
 } from 'lucide-react';
 import {
   BALANCE_LABELS,
@@ -18,7 +18,6 @@ import {
 import { msgid } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
 import type { ProxyRow } from './types';
-import type { ProvisionStep } from '@/lib/haproxy/provision';
 import { findSavedTarget, type SavedTarget } from '@/lib/haproxy/saved-targets';
 
 /**
@@ -82,17 +81,17 @@ interface Props {
  * Bewusst KEIN halb gefülltes `HaproxyService`: was auf der Maschine steht,
  * weiß hier niemand, und eine Karte mit erfundenen Backend-Zeilen wäre eine
  * Behauptung über eine Konfiguration, die es noch nicht gibt.
+ *
+ * Die Schritte stehen nicht auf der Karte, nur die Phase als Marke: der Ablauf
+ * steht im Fenster des Laufs (`components/runs/RunOverlay.tsx`).
  */
 export function PendingCard({
   title,
   phase,
-  steps,
   queued = false,
 }: {
   title: string;
   phase: string | null;
-  /** Die Schritte aus dem Lauf, mit dem gerade laufenden am Ende. */
-  steps: ProvisionStep[];
   /** Der Lauf steht am Lock hinter einem anderen und hat noch nicht begonnen. */
   queued?: boolean;
 }) {
@@ -114,52 +113,14 @@ export function PendingCard({
         </span>
       </div>
       <div className="rp-section">
-        {steps.length === 0 ? (
-          <div className="rp-empty-line">
-            {queued
-              ? t('Ein anderer Vorgang an HAProxy läuft noch. Dieser beginnt, sobald er fertig ist.')
-              : t('Zertifikat, Prüfung und Reload laufen. Der Eintrag erscheint vollständig, sobald HAProxy die neue Konfiguration übernommen hat.')}
-          </div>
-        ) : (
-          <ul className="hapm-steps">
-            {steps.map((step, index) => {
-              const state = step.running ? 'is-running' : step.ok ? 'is-ok' : 'is-failed';
-              const line = step.running ? lastOutputLine(step.detail) : null;
-              return (
-                <li key={`${index}-${step.label}`} className={`hapm-step ${state}`}>
-                  {step.running ? (
-                    <Loader2 size={14} strokeWidth={1.5} className="spin" />
-                  ) : step.ok ? (
-                    <Check size={14} strokeWidth={1.5} />
-                  ) : (
-                    <X size={14} strokeWidth={1.5} />
-                  )}
-                  <span className="hapm-step-text">
-                    <span className="hapm-step-label">{t(step.label)}</span>
-                    {line && <span className="hapm-step-detail">{line}</span>}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        )}
+        <div className="rp-empty-line">
+          {queued
+            ? t('Ein anderer Vorgang an HAProxy läuft noch. Dieser beginnt, sobald er fertig ist.')
+            : t('Zertifikat, Prüfung und Reload laufen. Der Eintrag erscheint vollständig, sobald HAProxy die neue Konfiguration übernommen hat.')}
+        </div>
       </div>
     </div>
   );
-}
-
-/**
- * Die letzte Zeile der Ausgabe eines laufenden Schritts, ohne den Zeitstempel,
- * den acme.sh jeder Zeile voranstellt. Sie zeigt, dass sich etwas tut (etwa
- * „Sleeping for 120 seconds"), das ganze Protokoll steht im Overlay.
- */
-function lastOutputLine(detail: string | undefined): string | null {
-  const line = detail
-    ?.split('\n')
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-    .pop();
-  return line ? line.replace(/^\[[^\]]*\]\s*/, '') : null;
 }
 
 interface Tag {

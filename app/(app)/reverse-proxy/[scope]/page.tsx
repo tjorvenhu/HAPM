@@ -10,8 +10,7 @@ import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
 import { usePolling } from '@/components/usePolling';
 import { useConfirm } from '@/components/ConfirmDialog';
-import UpdateRunOverlay from '@/components/UpdateRunOverlay';
-import { HAPROXY_PHASES, HAPROXY_PHASE_LABELS } from '@/components/runPhases';
+import { openRun } from '@/components/runs/runs';
 import Select from '@/components/Select';
 import { SkeletonTitle, SkeletonCards } from '@/components/Skeleton';
 import { EntityGrid } from '@/components/EntityCard';
@@ -150,26 +149,21 @@ function ScopeView({ slug }: { slug: string }) {
    * braucht seine Karte und seine Meldung (siehe `pendingRuns.ts`).
    *
    * Anlegen, Ändern und Löschen laufen abgekoppelt (lib/haproxy/runner.ts): der
-   * Dialog schließt sich sofort, und was passiert, steht in der Pille unten
-   * rechts. Diese Seite behält trotzdem einen Faden zu jedem eigenen Vorgang,
+   * Dialog schließt sich sofort, und was passiert, steht im Fenster des Laufs
+   * und danach in der Pille unten rechts. Diese Seite behält trotzdem einen Faden zu jedem eigenen Vorgang,
    * um die Liste in dem Moment nachzuladen, in dem er fertig ist. Ohne das
    * stünde die neue Domain bis zum nächsten Takt nicht da, und das sähe aus,
    * als wäre nichts passiert.
    */
   const [pendingRuns, setPendingRuns] = useState<PendingRun[]>([]);
-  const [openRunId, setOpenRunId] = useState<string | null>(null);
+  const showRun = (id: string) => openRun({ kind: 'haproxy', id });
 
-  /** Der Vorgang läuft ab jetzt abgekoppelt: eine Meldung, dass er gestartet
-   *  ist, und danach zeigt ihn die Pille unten rechts. Keine Memoisierung — die
+  /** Der Vorgang läuft ab jetzt abgekoppelt: sein Fenster geht auf, und nach dem
+   *  Schließen zeigt ihn die Pille unten rechts. Keine Memoisierung, die
    *  Funktion wird nur aus Klick-Handlern gerufen, nie aus einem Effekt. */
   function startRun(run: PendingRun) {
     setPendingRuns((current) => addPendingRun(current, run));
-    notify({
-      variant: 'info',
-      title: t('{label} läuft', { label: run.label }),
-      message: t('Zertifikat, Prüfung und Reload dauern ein paar Minuten. Der Fortschritt steht unten rechts.'),
-      action: { label: t('Schritte ansehen'), onClick: () => setOpenRunId(run.id) },
-    });
+    showRun(run.id);
   }
   /** Welches Schloss gerade umgelegt wird — `<proxyId>:<serviceId>`. */
   const [lockingId, setLockingId] = useState<string | null>(null);
@@ -324,7 +318,7 @@ function ScopeView({ slug }: { slug: string }) {
             message: ok
               ? t('Durchgelaufen, HAProxy hat die neue Konfiguration übernommen.')
               : t('Nicht durchgelaufen. Der erste fehlgeschlagene Schritt steht im Protokoll.'),
-            action: { label: t('Protokoll'), onClick: () => setOpenRunId(run.id) },
+            action: { label: t('Protokoll'), onClick: () => showRun(run.id) },
           });
         }
       } finally {
@@ -590,11 +584,10 @@ function ScopeView({ slug }: { slug: string }) {
       // Übersicht übergeben, die ihn zu Ende verfolgt und die Karte so lange
       // rot stehen lässt — sonst stünde die Gruppe dort unverändert in der
       // Liste, bis der nächste Takt sie abholt.
-      handOverScopeRun({
-        name: page.scope,
-        runIds: data.data.runs.map((r: { runId: string }) => r.runId),
-        action: 'remove',
-      });
+      const runIds: string[] = data.data.runs.map((r: { runId: string }) => r.runId);
+      handOverScopeRun({ name: page.scope, runIds, action: 'remove' });
+      // Das Fenster hängt am Rahmen und bleibt über den Seitenwechsel offen.
+      if (runIds[0]) showRun(runIds[0]);
       router.push('/reverse-proxy');
     } catch (err) {
       notify({
@@ -819,8 +812,8 @@ function ScopeView({ slug }: { slug: string }) {
       {/* Ein neuer Eintrag steht schon in der Liste, während er entsteht: das
           Anlegen dauert Minuten (Zertifikat), und eine Liste, die sich nach dem
           Klick auf „Anlegen" nicht rührt, sieht aus, als wäre der Klick
-          verlorengegangen. Der Fortschritt selbst steht in der Pille unten
-          rechts. Je Anlegen eine Karte, auch wenn mehrere hintereinander am
+          verlorengegangen. Der Fortschritt selbst steht im Fenster des Laufs
+          und in der Pille unten rechts. Je Anlegen eine Karte, auch wenn mehrere hintereinander am
           Lock warten. */}
       {placeholders.length > 0 && (
         <div className="sys-block">
@@ -830,7 +823,6 @@ function ScopeView({ slug }: { slug: string }) {
                 key={run.id}
                 title={run.title}
                 phase={run.phase}
-                steps={run.steps}
                 queued={isQueued(run)}
               />
             ))}
@@ -1008,21 +1000,6 @@ function ScopeView({ slug }: { slug: string }) {
             setStreamDialog(null);
             startRun({ ...run, kind: 'write', phase: null, steps: [] });
           }}
-        />
-      )}
-
-      {/* Dasselbe Overlay wie in der Pille und auf der Logs-Seite: es holt sich
-          den Lauf selbst, statt eine Kopie der Zeile zu zeigen, die bei einem
-          laufenden Vorgang eingefroren wäre. */}
-      {openRunId && (
-        <UpdateRunOverlay
-          runId={openRunId}
-          endpoint="/api/haproxy/runs"
-          phases={HAPROXY_PHASES}
-          phaseLabels={HAPROXY_PHASE_LABELS}
-          noun="Reverse-Proxy"
-          onClose={() => setOpenRunId(null)}
-          onFinished={() => load(true)}
         />
       )}
     </>

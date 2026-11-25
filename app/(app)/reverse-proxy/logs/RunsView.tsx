@@ -7,8 +7,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { usePolling } from '@/components/usePolling';
-import UpdateRunOverlay from '@/components/UpdateRunOverlay';
-import { HAPROXY_PHASES, HAPROXY_PHASE_LABELS } from '@/components/runPhases';
+import { openRun, subscribeRunFinished } from '@/components/runs/runs';
 import Select from '@/components/Select';
 import type { HaproxyAction, HaproxyStep, RunStatus } from '@/lib/types';
 import { SkeletonRows } from '@/components/Skeleton';
@@ -141,7 +140,6 @@ export default function RunsView() {
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(0);
 
-  const [detailId, setDetailId] = useState<string | null>(null);
 
   const load = useCallback(
     async (quiet = false) => {
@@ -176,6 +174,15 @@ export default function RunsView() {
 
   // Ein laufender Vorgang schreibt hierhin, während die Seite offen ist.
   usePolling(() => load(true), 20_000);
+
+  // Das Fenster eines Laufs hat sein Ende gesehen: die Zeile gleich nachziehen.
+  useEffect(
+    () =>
+      subscribeRunFinished((run) => {
+        if (run.kind === 'haproxy') load(true);
+      }),
+    [load]
+  );
 
   return (
     <>
@@ -314,7 +321,7 @@ export default function RunsView() {
                         data-tooltip={t('Schritte anzeigen')}
                         data-tooltip-pos="left"
                         aria-label={t('Schritte anzeigen')}
-                        onClick={() => setDetailId(run.$id)}
+                        onClick={() => openRun({ kind: 'haproxy', id: run.$id })}
                       >
                         <Eye size={16} />
                       </button>
@@ -351,19 +358,6 @@ export default function RunsView() {
         </>
       )}
 
-      {/* Dasselbe Overlay wie in der Pille: bei einem noch laufenden Vorgang
-          zeigt es den Fortschritt, bei einem fertigen das Protokoll. */}
-      {detailId && (
-        <UpdateRunOverlay
-          runId={detailId}
-          endpoint="/api/haproxy/runs"
-          phases={HAPROXY_PHASES}
-          phaseLabels={HAPROXY_PHASE_LABELS}
-          noun="Reverse-Proxy"
-          onClose={() => setDetailId(null)}
-          onFinished={() => load(true)}
-        />
-      )}
     </>
   );
 }

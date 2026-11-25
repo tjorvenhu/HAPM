@@ -1,20 +1,17 @@
 'use client';
 
-import { Fragment, Suspense, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { Fragment, Suspense, useCallback, useEffect, useState, type FormEvent } from 'react';
 import {
   AlertTriangle,
   Archive,
-  Check,
   ChevronDown,
   ChevronRight,
-  Circle,
   FolderClock,
   History,
   ListChecks,
   Loader2,
   RotateCcw,
   Save,
-  X,
 } from 'lucide-react';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import { useApp } from '@/components/AppShell';
@@ -27,6 +24,9 @@ import { RUN_STATUS_CLASS, RUN_STATUS_LABELS, formatClock } from '@/components/s
 import { formatBytes, formatDateTime, msgid, type Translator } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
 import RestorePanel from '@/components/backup/RestorePanel';
+import RunStepList from '@/components/runs/RunStepList';
+import { startRun, subscribeRunFinished } from '@/components/runs/runs';
+import { remainingBackupSteps } from '@/lib/backup/plan';
 // Nur Typen: die Dateien dahinter erreichen `lib/db` und `lib/docker`.
 import type { BackupOverview, BackupRunForClient } from '@/app/api/backup/route';
 import type { HaproxyStep } from '@/lib/types';
@@ -35,9 +35,9 @@ type RunView = Omit<BackupRunForClient, 'steps'> & { steps: HaproxyStep[] };
 type BackupData = Omit<BackupOverview, 'runs'> & { runs: RunView[] };
 
 /**
- * Ein laufender Lauf steht über den Reitern, darunter je ein Thema: wohin und
- * wann gesichert wird, das Zurückspielen und die Läufe. Der gewählte steht als
- * `?bereich=` in der Adresse.
+ * Je Reiter ein Thema: wohin und wann gesichert wird, das Zurückspielen und die
+ * Läufe. Der gewählte steht als `?bereich=` in der Adresse. Ein laufender Lauf
+ * steht im Fenster der Läufe (`components/runs/`), nicht auf der Seite.
  */
 type BackupArea = 'einstellungen' | 'zurueckspielen' | 'historie';
 
@@ -61,18 +61,6 @@ const POLL_RUNNING_MS = 2000;
 // importiert: `lib/backup/settings.ts` erreicht die Datenbank.
 const KEEP_MIN = 1;
 const KEEP_MAX = 365;
-
-/**
- * Was ein Lauf der Reihe nach tut. `lib/backup/run.ts` meldet einen Schritt
- * erst, wenn er fertig ist: an der Zahl der gemeldeten zeigt sich, welcher
- * gerade läuft.
- */
-const BACKUP_PLAN = [
-  msgid('Datenbank herausschreiben'),
-  msgid('Schlüssel dazulegen'),
-  msgid('Archiv schreiben'),
-  msgid('Alte Sicherungen aufräumen'),
-];
 
 function formFrom(settings: BackupData['settings']): FormState {
   return {
@@ -102,42 +90,8 @@ function runDuration(run: RunView, now: number): string {
   return formatClock(end - start);
 }
 
-function pendingSteps(run: RunView): string[] {
-  if (run.status !== 'running' || run.steps.some((step) => !step.ok)) return [];
-  return BACKUP_PLAN.slice(run.steps.length);
-}
-
 function RunSteps({ run }: { run: RunView }) {
-  const { t } = useT();
-  const pending = pendingSteps(run);
-  if (run.steps.length === 0 && pending.length === 0) {
-    return <p className="form-hint">{t('Zu diesem Lauf sind keine Schritte festgehalten.')}</p>;
-  }
-  return (
-    <ul className="hapm-steps">
-      {run.steps.map((step, index) => (
-        <li key={`${index}-${step.label}`} className={`hapm-step ${step.ok ? 'is-ok' : 'is-failed'}`}>
-          {step.ok ? <Check size={14} strokeWidth={1.5} /> : <X size={14} strokeWidth={1.5} />}
-          <span className="hapm-step-text">
-            <span className="hapm-step-label">{t(step.label)}</span>
-            {step.detail && <span className="hapm-step-detail">{t(step.detail)}</span>}
-          </span>
-        </li>
-      ))}
-      {pending.map((label, index) => (
-        <li key={`pending-${label}`} className={`hapm-step ${index === 0 ? 'is-running' : 'is-pending'}`}>
-          {index === 0 ? (
-            <Loader2 size={14} strokeWidth={1.5} className="spin" />
-          ) : (
-            <Circle size={14} strokeWidth={1.5} />
-          )}
-          <span className="hapm-step-text">
-            <span className="hapm-step-label">{t(label)}</span>
-          </span>
-        </li>
-      ))}
-    </ul>
-  );
+  return <RunStepList steps={run.steps} pending={remainingBackupSteps(run.status === 'running', run.steps)} />;
 }
 
 export default function BackupPage() {
@@ -186,30 +140,14 @@ function Backup() {
   const locked = Boolean(data?.running) || starting;
   usePolling(load, locked ? POLL_RUNNING_MS : POLL_IDLE_MS);
 
-  /* Das Ende eines Laufs melden, den diese Seite hat laufen sehen. */
-  const watchedRun = useRef<string | null>(null);
-  useEffect(() => {
-    if (!data) return;
-    const watched = watchedRun.current;
-    const active = data.runs.find((run) => run.status === 'running') ?? null;
-    if (watched && watched !== active?.$id) {
-      const finished = data.runs.find((run) => run.$id === watched);
-      if (finished?.status === 'error') {
-        notify({
-          variant: 'error',
-          title: t('Sicherung fehlgeschlagen'),
-          message: finished.error ? t(finished.error) : t('Die Schritte stehen in der Historie.'),
-        });
-      } else if (finished?.status === 'success') {
-        notify({
-          variant: 'success',
-          title: t('Sicherung geschrieben'),
-          message: `${finished.hostPath}/${finished.fileName}`,
-        });
-      }
-    }
-    watchedRun.current = active?.$id ?? null;
-  }, [data, notify, t]);
+  // Das Fenster des Laufs hat sein Ende gesehen: Historie und Liste der Archive gleich nachziehen.
+  useEffect(
+    () =>
+      subscribeRunFinished((run) => {
+        if (run.kind === 'backup') void load();
+      }),
+    [load]
+  );
 
   async function start() {
     setStarting(true);
@@ -218,6 +156,8 @@ function Backup() {
       const body = await res.json();
       if (!body.success) {
         notify({ variant: 'error', message: body.error || t('Die Sicherung ließ sich nicht starten.') });
+      } else {
+        startRun({ kind: 'backup', id: body.data.runId as string });
       }
       await load();
     } catch {
@@ -343,7 +283,6 @@ function Backup() {
 
   const form = draft ?? formFrom(data.settings);
   const edit = (patch: Partial<FormState>) => setDraft({ ...form, ...patch });
-  const activeRun = data.runs.find((run) => run.status === 'running') ?? null;
   /** Der Lauf, aus dem die Liste der Dateien stammt. Sein Ordner kann ein früherer sein. */
   const listedRun = data.files ? data.runs.find((run) => run.files.length > 0) : undefined;
 
@@ -359,25 +298,6 @@ function Backup() {
       )}
 
       {error && <div className="alert alert-danger sys-block">{error}</div>}
-
-      {activeRun && (
-        <div className="card sys-block">
-          <div className="card-header">
-            <div>
-              <h2 className="card-title">
-                <Loader2 size={16} strokeWidth={1.5} className="spin" />
-                {t('Sicherung läuft')}
-              </h2>
-              <p className="card-subtitle">
-                {t('Ziel: {path}.', { path: activeRun.hostPath })}{' '}
-                {t('Der Lauf geht weiter, auch wenn diese Seite geschlossen wird.')}
-              </p>
-            </div>
-            <span className="run-timer">{runDuration(activeRun, now)}</span>
-          </div>
-          <RunSteps run={activeRun} />
-        </div>
-      )}
 
       <AreaTabs areas={AREAS} value={area} onChange={selectArea} dirty={(key) => key === 'einstellungen' && draft !== null} />
 
@@ -532,8 +452,8 @@ function Backup() {
         </>
       )}
 
-      {/* Bleibt auf jedem Reiter eingehängt: während des Zurückspielens wartet die
-          Karte auf den Neustart von HAPM und lädt danach die Seite neu. */}
+      {/* Bleibt auf jedem Reiter eingehängt: ein geprüftes Archiv und das
+          eingetippte Passwort sollen einen Wechsel des Reiters überstehen. */}
       <div hidden={area !== 'zurueckspielen'}>
         <RestorePanel
           files={data.files}

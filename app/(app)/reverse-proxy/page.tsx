@@ -18,6 +18,7 @@ import {
   type ProxyRow,
 } from '@/components/reverse-proxy/types';
 import { takeScopeRun, type ScopeRunHandover } from '@/components/reverse-proxy/scopeHandover';
+import { openRun } from '@/components/runs/runs';
 import SavedTargetsPanel from '@/components/reverse-proxy/SavedTargetsPanel';
 import { shortVersion, validateScopeName, scopeLabel } from '@/lib/haproxy/config';
 import { SkeletonCards } from '@/components/Skeleton';
@@ -186,11 +187,7 @@ export default function ReverseProxyPage() {
       const runIds: string[] = data.data.runs.map((r: { runId: string }) => r.runId);
       setNewScope(null);
       setPendingScope({ name, runIds, action: 'add' });
-      notify({
-        variant: 'info',
-        title: t('Gruppe „{name}" wird angelegt', { name: scopeLabel(name) }),
-        message: t('Prüfen, Backup, einsetzen, neu laden. Der Fortschritt steht unten rechts.'),
-      });
+      if (runIds[0]) openRun({ kind: 'haproxy', id: runIds[0] });
     } catch (err) {
       setFormError(err instanceof Error ? err.message : t('Unbekannter Fehler.'));
     } finally {

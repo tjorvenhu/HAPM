@@ -10,14 +10,14 @@ import type { HaproxyRun } from '@/lib/types';
 type Params = { params: Promise<{ id: string }> };
 
 /**
- * Der Poll-Endpunkt des Overlays, in der Form, die `UpdateRunOverlay` liest.
+ * Der Poll-Endpunkt des Fensters der Läufe, in der Form, die
+ * `components/runs/sources.ts` liest.
  *
- * `output` ist deshalb ein Text und keine Liste: das Overlay ist dasselbe wie
- * beim Update-Lauf, und dort IST die Ausgabe ein Protokoll. Die Übersetzung
- * steht in `stepsAsLog` und nicht hier, damit die Logs-Seite dieselben Wörter
- * zeigt. `serverName` trägt die Dienst-ID: das Feld ist der Zusatz in der
- * Überschrift des Overlays, und bei einer Maschine ist deren Name dort keine
- * Auskunft.
+ * `output` ist ein Text: das Fenster zeigt ihn als Protokoll unter den Phasen.
+ * Die Übersetzung steht in `stepsAsLog` und nicht hier, damit die Logs-Seite
+ * dieselben Wörter zeigt. `serverName` trägt die Dienst-ID: das Feld ist der
+ * Zusatz in der Überschrift des Fensters, und bei einer Maschine ist deren Name
+ * dort keine Auskunft.
  */
 export async function GET(request: Request, { params }: Params) {
   try {

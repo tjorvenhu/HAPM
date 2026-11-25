@@ -2335,6 +2335,13 @@ gehört (siehe [`betrieb.md`](betrieb.md)): eine Zeile in `haproxy_runs`, ein Ei
   statt sie zu bemängeln. Der Preis ist eine zweite Probe je Vorgang: der
   Lauf probt innerhalb des Locks noch einmal, weil die Antwort auf „ist die
   Domain frei" nicht aus einer Momentaufnahme von vorhin kommen darf.
+- **Beim Start geht das Fenster des Laufs auf** (`components/runs/`, für alle
+  Läufe dasselbe, siehe `docs/betrieb.md`, „Läufe im Hintergrund“). Früher kam
+  nur ein Toast „… läuft“ mit einem Knopf zu den Schritten; jetzt ist der
+  Fortschritt sofort zu sehen, und „Im Hintergrund weiterlaufen lassen“ gibt
+  ihn an die Pille unten rechts ab. Die Platzhalterkarte zeigt nur noch die
+  Phase als Marke, keine Schritte: ein zweiter Fortschritt in der Liste wäre
+  derselbe Kasten, den das Fenster ersetzt.
 - **Die Seite verfolgt ihre eigenen Vorgänge**, um in dem Moment
   nachzuladen, in dem einer fertig ist. Ohne das stünde die neue Domain bis zum
   nächsten Takt nicht in der Liste, und das sieht aus, als wäre nichts
@@ -2355,7 +2362,7 @@ gehört (siehe [`betrieb.md`](betrieb.md)): eine Zeile in `haproxy_runs`, ein Ei
   die Phase `queued` („Wartet"), bis er dran ist, und beginnt dann mit
   `preflight`. Vorher sah ein wartender Lauf minutenlang aus wie einer, der
   gerade die Konfiguration liest. `queued` steht nicht in `HAPROXY_PHASES`:
-  Warten ist kein Schritt des Ablaufs, das Overlay zeigt es nur als Zeile.
+  Warten ist kein Schritt des Ablaufs, das Fenster zeigt es nur als Zeile.
 
 ### Derselbe Vorgang ohne Dialog: `/api/internal/haproxy/**`
 

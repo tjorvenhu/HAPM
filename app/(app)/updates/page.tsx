@@ -1,12 +1,10 @@
 'use client';
 
-import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useState, type ReactNode } from 'react';
 import {
   AlertTriangle,
-  Check,
   ChevronDown,
   ChevronRight,
-  Circle,
   Download,
   Info,
   LayoutDashboard,
@@ -14,7 +12,6 @@ import {
   Network,
   RefreshCw,
   ShieldCheck,
-  X,
 } from 'lucide-react';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import { useApp } from '@/components/AppShell';
@@ -23,6 +20,8 @@ import { useConfirm } from '@/components/ConfirmDialog';
 import { usePolling } from '@/components/usePolling';
 import { useNow } from '@/components/useNow';
 import EntityCard, { EntityField, EntityGrid } from '@/components/EntityCard';
+import RunStepList from '@/components/runs/RunStepList';
+import { startRun, subscribeRunFinished } from '@/components/runs/runs';
 import { SkeletonCards, SkeletonRows } from '@/components/Skeleton';
 import {
   COMPONENT_LABELS,
@@ -33,7 +32,7 @@ import {
   formatDateTime,
   versionStep,
 } from '@/components/system/format';
-import { HANDOVER_STEP, needsCheckAfterRun, remainingSteps } from '@/lib/updates/plan';
+import { needsCheckAfterRun, remainingSteps } from '@/lib/updates/plan';
 import { msgid, type Translator } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
 import type { HaproxyStep, UpdateComponent, UpdateRun, UpdateState } from '@/lib/types';
@@ -78,9 +77,6 @@ const CONSEQUENCES: Record<UpdateComponent, string> = {
 const POLL_IDLE_MS = 30_000;
 const POLL_RUNNING_MS = 2000;
 
-/** Ab hier sagt die Übergabe von HAPM, dass sie länger dauert als üblich. */
-const HANDOVER_SLOW_MS = 3 * 60 * 1000;
-
 function shortDigest(digest: string): string {
   const [algorithm, hash] = digest.includes(':') ? digest.split(':') : ['', digest];
   return `${algorithm ? `${algorithm}:` : ''}${hash.slice(0, 12)}`;
@@ -105,36 +101,8 @@ function triggeredByLabel(value: string | null, t: Translator['t']): string {
  * noch kommen: der erste davon ist der, an dem gerade gearbeitet wird.
  */
 function RunSteps({ run }: { run: RunView }) {
-  const { t } = useT();
   const pending = run.status === 'running' ? remainingSteps(run.component, run.steps) : [];
-  if (run.steps.length === 0 && pending.length === 0) {
-    return <p className="form-hint">{t('Zu diesem Lauf sind keine Schritte festgehalten.')}</p>;
-  }
-  return (
-    <ul className="hapm-steps">
-      {run.steps.map((step, index) => (
-        <li key={`${index}-${step.label}`} className={`hapm-step ${step.ok ? 'is-ok' : 'is-failed'}`}>
-          {step.ok ? <Check size={14} strokeWidth={1.5} /> : <X size={14} strokeWidth={1.5} />}
-          <span className="hapm-step-text">
-            <span className="hapm-step-label">{t(step.label)}</span>
-            {step.detail && <span className="hapm-step-detail">{t(step.detail)}</span>}
-          </span>
-        </li>
-      ))}
-      {pending.map((label, index) => (
-        <li key={`pending-${label}`} className={`hapm-step ${index === 0 ? 'is-running' : 'is-pending'}`}>
-          {index === 0 ? (
-            <Loader2 size={14} strokeWidth={1.5} className="spin" />
-          ) : (
-            <Circle size={14} strokeWidth={1.5} />
-          )}
-          <span className="hapm-step-text">
-            <span className="hapm-step-label">{t(label)}</span>
-          </span>
-        </li>
-      ))}
-    </ul>
-  );
+  return <RunStepList steps={run.steps} pending={pending} />;
 }
 
 function runDuration(run: RunView, now: number): string {
@@ -162,8 +130,6 @@ export default function UpdatesPage() {
   const [error, setError] = useState('');
   /** Eine Abfrage ist gescheitert. Während eines Tauschs ist das zu erwarten. */
   const [offline, setOffline] = useState(false);
-  /** Ob HAPM seit dem Laden schon einmal nicht geantwortet hat. Danach ist es ein anderer Prozess. */
-  const sawDown = useRef(false);
   const [checking, setChecking] = useState(false);
   const [starting, setStarting] = useState<UpdateComponent | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
@@ -183,7 +149,6 @@ export default function UpdatesPage() {
         setOffline(false);
       }
     } catch {
-      sawDown.current = true;
       setOffline(true);
     }
   }, [apiFetch, t]);
@@ -192,13 +157,17 @@ export default function UpdatesPage() {
     void load();
   }, [load]);
 
+  // Das Fenster des Laufs hat sein Ende gesehen: den Stand gleich nachziehen.
+  useEffect(
+    () =>
+      subscribeRunFinished((run) => {
+        if (run.kind === 'update') void load();
+      }),
+    [load]
+  );
+
   const activeRun = data?.runs.find((run) => run.status === 'running') ?? null;
   const locked = Boolean(data?.running) || starting !== null;
-  // Zwischen dem Schritt „Übergabe" und dem Ende des alten Containers liegt oft
-  // weniger als eine Abfrage. Antwortet HAPM mitten im eigenen Update nicht mehr,
-  // ist es dieselbe Lage.
-  const handover =
-    activeRun?.component === 'hapm' && (offline || activeRun.steps.some((step) => step.label === HANDOVER_STEP));
 
   const lastRunOf = (component: UpdateComponent) => data?.runs.find((run) => run.component === component) ?? null;
 
@@ -223,68 +192,12 @@ export default function UpdatesPage() {
   // Wechsel auf „Aktuell" soll erscheinen, sobald die Prüfung durch ist.
   usePolling(load, locked || offline || settling || data?.checking ? POLL_RUNNING_MS : POLL_IDLE_MS);
 
-  /* Das Ende eines Laufs melden, den diese Seite hat laufen sehen. */
-  const watchedRun = useRef<string | null>(null);
-  useEffect(() => {
-    if (!data) return;
-    const watched = watchedRun.current;
-    const active = data.runs.find((run) => run.status === 'running') ?? null;
-    if (watched && watched !== active?.$id) {
-      const finished = data.runs.find((run) => run.$id === watched);
-      if (finished && finished.status !== 'running') {
-        const label = COMPONENT_LABELS[finished.component];
-        if (finished.status === 'error') {
-          notify({
-            variant: 'error',
-            title: t('{component}: Update fehlgeschlagen', { component: label }),
-            message: finished.error ? t(finished.error) : t('Die Schritte stehen in der Historie.'),
-          });
-        } else if (finished.steps.some((step) => step.label === HANDOVER_STEP)) {
-          // Die Seite stammt noch aus dem alten Abbild.
-          window.location.reload();
-          return;
-        } else if (finished.component !== 'acme' && finished.steps.length <= 1) {
-          notify({
-            variant: 'info',
-            title: label,
-            message: t('Das laufende Abbild ist schon das neueste. Es wurde nichts getauscht.'),
-          });
-        } else {
-          notify({
-            variant: 'success',
-            title: t('{component} aktualisiert', { component: label }),
-            message: finished.toVersion
-              ? t('Es läuft jetzt {version}.', { version: finished.toVersion })
-              : t('Das neue Abbild läuft.'),
-          });
-        }
-      }
-    }
-    watchedRun.current = active?.$id ?? null;
-  }, [data, notify, t]);
-
   /*
-   * Die Übergabe von HAPM: der Container wird ersetzt, Anfragen scheitern. Die
-   * Seite fragt weiter und lädt neu, sobald HAPM nach der Lücke wieder antwortet.
+   * Der Lauf selbst steht im Fenster der Läufe (`components/runs/`), nicht auf
+   * dieser Seite: es geht beim Start auf, die Pille unten rechts öffnet es
+   * wieder. Dort stehen auch die Meldung am Ende und das Neuladen nach dem
+   * Tausch von HAPM.
    */
-  useEffect(() => {
-    if (!handover) return;
-    let busy = false;
-    const timer = setInterval(async () => {
-      if (busy) return;
-      busy = true;
-      try {
-        const res = await apiFetch('/api/health', { cache: 'no-store' });
-        if (!res.ok) sawDown.current = true;
-        else if (sawDown.current) window.location.reload();
-      } catch {
-        sawDown.current = true;
-      } finally {
-        busy = false;
-      }
-    }, POLL_RUNNING_MS);
-    return () => clearInterval(timer);
-  }, [handover, apiFetch]);
 
   async function check() {
     setChecking(true);
@@ -341,6 +254,8 @@ export default function UpdatesPage() {
       const body = await res.json();
       if (!body.success) {
         notify({ variant: 'error', title: label, message: body.error || t('Das Update ließ sich nicht starten.') });
+      } else {
+        startRun({ kind: 'update', id: body.data.runId as string });
       }
       await load();
     } catch {
@@ -437,60 +352,25 @@ export default function UpdatesPage() {
     );
   }
 
-  const handoverElapsed = activeRun ? now - Date.parse(activeRun.startedAt) : 0;
   const timeValue = timeDraft ?? data.settings.autoUpdateTime;
 
   return (
     <>
       {header}
 
-      {handover ? (
-        <div className="alert alert-info sys-block hapm-flag">
-          <Loader2 size={16} strokeWidth={1.5} className="spin" />
-          <div className="hapm-flag-body">
-            <strong>{t('HAPM wird ersetzt')}</strong>
-            <span>
-              {t(
-                'Ein Helfer aus dem neuen Abbild tauscht gerade den Container. Die Oberfläche ist kurz nicht erreichbar. Diese Seite lädt neu, sobald HAPM wieder antwortet.'
-              )}
-            </span>
-            {handoverElapsed > HANDOVER_SLOW_MS && (
-              <span>
-                {t('Das dauert länger als üblich. Die Ausgabe des Containers auf dem Server zeigt, woran es hängt.')}
-              </span>
-            )}
-          </div>
+      {offline && (
+        <div className="alert alert-warning sys-block">
+          <AlertTriangle size={16} strokeWidth={1.5} />
+          <span>
+            {t('HAPM antwortet gerade nicht. Die Seite versucht es weiter.')}
+            {activeRun?.component === 'haproxy' &&
+              ` ${t('Läuft die Oberfläche über HAProxy, ist das beim Tausch zu erwarten.')}`}
+            {activeRun?.component === 'hapm' && ` ${t('Beim Update von HAPM ist das zu erwarten.')}`}
+          </span>
         </div>
-      ) : (
-        offline && (
-          <div className="alert alert-warning sys-block">
-            <AlertTriangle size={16} strokeWidth={1.5} />
-            <span>
-              {t('HAPM antwortet gerade nicht. Die Seite versucht es weiter.')}
-              {activeRun?.component === 'haproxy' &&
-                ` ${t('Läuft die Oberfläche über HAProxy, ist das beim Tausch zu erwarten.')}`}
-            </span>
-          </div>
-        )
       )}
 
       {error && !offline && <div className="alert alert-danger sys-block">{error}</div>}
-
-      {activeRun && (
-        <div className="card sys-block">
-          <div className="card-header">
-            <div>
-              <h2 className="card-title">
-                <Loader2 size={16} strokeWidth={1.5} className="spin" />
-                {t('{component} wird aktualisiert', { component: COMPONENT_LABELS[activeRun.component] })}
-              </h2>
-              <p className="card-subtitle">{t('Der Lauf geht weiter, auch wenn diese Seite geschlossen wird.')}</p>
-            </div>
-            <span className="run-timer">{runDuration(activeRun, now)}</span>
-          </div>
-          <RunSteps run={activeRun} />
-        </div>
-      )}
 
       <div className="sys-block">
         <EntityGrid>

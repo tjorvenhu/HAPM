@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState, useCallback } from 'react';
 import Link from 'next/link';
 import {
-  ArrowLeft, Upload, Eye, Loader2, FileInput, ChevronDown, ChevronRight, Check, X, ScrollText,
+  ArrowLeft, Upload, Eye, Loader2, FileInput, ChevronDown, ChevronRight,
 } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
@@ -11,7 +11,6 @@ import { useConfirm } from '@/components/ConfirmDialog';
 import { usePolling } from '@/components/usePolling';
 import Select from '@/components/Select';
 import { InfoHint } from '@/ui/primitives/InfoHint';
-import { HAPROXY_PHASE_LABELS } from '@/components/runPhases';
 import { scopeLabel } from '@/lib/haproxy/config';
 import {
   IMPORT_MAX_BYTES,
@@ -26,16 +25,18 @@ import {
   type ImportPreview,
   type ImportState,
 } from '@/lib/haproxy/import';
-import type { HaproxyStep, RunStatus } from '@/lib/types';
+import type { RunStatus } from '@/lib/types';
+import { startRun } from '@/components/runs/runs';
 import { msgid } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
 
 /**
  * Eine bestehende HAProxy-Konfiguration übernehmen.
  *
- * Drei Schritte auf einer Seite: Text hinein, Vorschau ansehen und auswählen,
- * Lauf verfolgen. Die Vorschau rechnet der Server (`/api/haproxy/import/preview`),
- * weil die Konflikte an der Datei auf der Maschine hängen. Beim Ausführen
+ * Zwei Schritte auf einer Seite: Text hinein, Vorschau ansehen und auswählen.
+ * Den Lauf zeigt danach das Fenster der Läufe (`components/runs/`). Die
+ * Vorschau rechnet der Server (`/api/haproxy/import/preview`), weil die
+ * Konflikte an der Datei auf der Maschine hängen. Beim Ausführen
  * schickt die Seite nur die Schlüssel der gewählten Einträge; der Server liest
  * den Text noch einmal und glaubt der Vorschau nicht.
  *
@@ -64,31 +65,12 @@ const STATE_CLASS: Record<ImportState, string> = {
   unsupported: 'badge-danger',
 };
 
-const RUN_LABELS: Record<RunStatus, string> = {
-  running: msgid('Läuft'),
-  success: msgid('Abgeschlossen'),
-  warning: msgid('Mit Hinweisen'),
-  error: msgid('Mit Fehlern'),
-  cancelled: msgid('Abgebrochen'),
-};
-
-const RUN_CLASS: Record<RunStatus, string> = {
-  running: 'badge-neutral',
-  success: 'badge-success',
-  warning: 'badge-warning',
-  error: 'badge-danger',
-  cancelled: 'badge-neutral',
-};
-
 /** Der Wert der Auswahl „neue Gruppe". Kein gültiger Gruppenname, kann also
  *  mit keiner vorhandenen zusammenfallen. */
 const NEW_SCOPE = '+neu';
 
 interface RunView {
   status: RunStatus;
-  phase: string | null;
-  error: string | null;
-  steps: HaproxyStep[];
 }
 
 export default function ReverseProxyImportPage() {
@@ -192,7 +174,7 @@ export default function ReverseProxyImportPage() {
       .then((r) => r.json())
       .catch(() => null);
     if (!data?.success) return;
-    setRun({ status: data.data.status, phase: data.data.phase, error: data.data.error, steps: data.data.steps });
+    setRun({ status: data.data.status });
   }, [apiFetch, runId]);
 
   usePolling(() => (run?.status === 'running' || (runId && !run) ? pollRun() : undefined), 3000);
@@ -250,11 +232,7 @@ export default function ReverseProxyImportPage() {
       setRun(null);
       setRunId(data.data.runId);
       setImportedFrom(preview);
-      notify({
-        variant: 'info',
-        title: t('Import läuft'),
-        message: t('Die Einträge werden nacheinander angelegt. Der Fortschritt steht hier und unten rechts.'),
-      });
+      startRun({ kind: 'haproxy', id: data.data.runId as string, label: t('Import') });
     } catch (err) {
       notify({
         variant: 'error',
@@ -283,45 +261,6 @@ export default function ReverseProxyImportPage() {
           </p>
         </div>
       </div>
-
-      {runId && (
-        <div className="card sys-block">
-          <div className="card-header">
-            <h2 className="card-title">
-              {running ? <Loader2 size={16} className="spin" /> : <FileInput size={16} />}
-              {t('Import')}
-              {run && <span className={`badge-status ${RUN_CLASS[run.status]}`}>{t(RUN_LABELS[run.status])}</span>}
-            </h2>
-            <Link className="btn btn-secondary btn-sm" href="/reverse-proxy/logs">
-              <ScrollText size={14} />
-              {t('Zur Historie')}
-            </Link>
-          </div>
-          <div className="card-body">
-            {running && (
-              <span className="form-hint">
-                {t('{phase}. Der Lauf geht auch weiter, wenn Sie die Seite verlassen.', {
-                  phase: run?.phase ? t(HAPROXY_PHASE_LABELS[run.phase] ?? run.phase) : t('Wird gestartet'),
-                })}
-              </span>
-            )}
-            {run?.error && <div className="alert alert-danger">{t(run.error)}</div>}
-            {run && run.steps.length > 0 && (
-              <ul className="hapm-steps">
-                {run.steps.map((step, index) => (
-                  <li key={`${index}-${step.label}`} className={`hapm-step ${step.ok ? 'is-ok' : 'is-failed'}`}>
-                    {step.ok ? <Check size={14} strokeWidth={1.5} /> : <X size={14} strokeWidth={1.5} />}
-                    <span className="hapm-step-text">
-                      <span className="hapm-step-label">{t(step.label)}</span>
-                      {step.detail && <span className="hapm-step-detail">{t(step.detail)}</span>}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
-      )}
 
       <div className="card sys-block">
         <div className="card-header">

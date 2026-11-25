@@ -8,8 +8,6 @@ export const proxyPages: Dictionary = {
   'Der Zustand von HAProxy steht in der {overview}.': 'The {overview} shows the state of HAProxy.',
   'Durchgelaufen, HAProxy hat die neue Konfiguration übernommen.': 'Completed, HAProxy has applied the new configuration.',
   'Nicht durchgelaufen. Der erste fehlgeschlagene Schritt steht im Protokoll.': 'Did not complete. The log shows the first failed step.',
-  '{label} läuft': '{label} is running',
-  'Prüfen, Backup, einsetzen, neu laden. Der Fortschritt steht unten rechts.': 'Check, back up, apply, reload. Progress is shown at the bottom right.',
   'Schritte ansehen': 'View steps',
   'Ändern fehlgeschlagen': 'Change failed',
   'Löschen fehlgeschlagen': 'Delete failed',
@@ -35,7 +33,6 @@ export const proxyPages: Dictionary = {
   'Die Gruppe ist angelegt.': 'The group has been created.',
   'Die Gruppe ist entfernt.': 'The group has been removed.',
   'Die Gruppe konnte nicht angelegt werden.': 'The group could not be created.',
-  'Gruppe „{name}" wird angelegt': 'Creating group “{name}”',
   'Welche Domain auf welches Ziel zeigt. Gelesen wird direkt aus der HAProxy-Konfiguration, nicht aus einer Kopie.':
     'Which domain points to which target. Read directly from the HAProxy configuration, not from a copy.',
   'HAProxy nicht gefunden': 'HAProxy not found',
@@ -66,8 +63,6 @@ export const proxyPages: Dictionary = {
     'Two marker pairs are added to the configuration ({services} and the same for {backends}). Existing entries are not touched.',
 
   // Gruppenseite (`[scope]/page.tsx`)
-  'Zertifikat, Prüfung und Reload dauern ein paar Minuten. Der Fortschritt steht unten rechts.':
-    'Certificate, check, and reload take a few minutes. Progress is shown at the bottom right.',
   'Eintrag nicht gefunden': 'Entry not found',
   '„{id}" steht nicht (mehr) in dieser Gruppe.': '“{id}” is not (or no longer) in this group.',
   'Sperre von „{id}" lösen': 'Unlock “{id}”',
@@ -375,14 +370,9 @@ export const proxyPages: Dictionary = {
   'Zertifikate werden keine beantragt.': 'No certificates will be requested.',
   'Importieren': 'Import',
   'Der Import ließ sich nicht starten.': 'The import could not be started.',
-  'Import läuft': 'Import running',
-  'Die Einträge werden nacheinander angelegt. Der Fortschritt steht hier und unten rechts.':
-    'The entries are created one after another. Progress is shown here and at the bottom right.',
   'Import nicht gestartet': 'Import not started',
   'Einträge aus einer bestehenden haproxy.cfg übernehmen, statt sie einzeln abzutippen.':
     'Take over entries from an existing haproxy.cfg instead of typing them one by one.',
-  'Zur Historie': 'Go to history',
-  '{phase}. Der Lauf geht auch weiter, wenn Sie die Seite verlassen.': '{phase}. The run continues even if you leave the page.',
   'Eine haproxy.cfg als Text, höchstens 1 MB. Sie wird nur gelesen und nirgends gespeichert. Übernommen wird erst, was Sie in der Vorschau auswählen und importieren.':
     'A haproxy.cfg as text, at most 1 MB. It is only read and stored nowhere. Only what you select in the preview and import is taken over.',
   'Oder den Text einfügen': 'Or paste the text',

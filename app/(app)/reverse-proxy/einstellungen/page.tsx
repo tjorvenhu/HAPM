@@ -17,8 +17,7 @@ import {
   type DnsProvider,
 } from '@/lib/haproxy/dns-credentials';
 import { usePolling } from '@/components/usePolling';
-import UpdateRunOverlay from '@/components/UpdateRunOverlay';
-import { HAPROXY_PHASES, HAPROXY_PHASE_LABELS } from '@/components/runPhases';
+import { openRun } from '@/components/runs/runs';
 import { HTTPS_MARKER, type GlobalSettings } from '@/lib/haproxy/config';
 import { SkeletonRows } from '@/components/Skeleton';
 import AreaTabs, { useArea, type Area as AreaEntry } from '@/components/AreaTabs';
@@ -140,7 +139,6 @@ function SettingsPage() {
    * verworfen, nicht was jemand inzwischen weiter getippt hat.
    */
   const [pendingRun, setPendingRun] = useState<{ id: string; label: string; rowId: string; sent: string } | null>(null);
-  const [openRunId, setOpenRunId] = useState<string | null>(null);
 
   const load = useCallback(
     async (quiet = false) => {
@@ -203,7 +201,7 @@ function SettingsPage() {
         message: ok
           ? t('Durchgelaufen, HAProxy hat die neue Konfiguration übernommen.')
           : t('Nicht durchgelaufen. Der erste fehlgeschlagene Schritt steht im Protokoll.'),
-        action: { label: t('Protokoll'), onClick: () => setOpenRunId(pendingRun.id) },
+        action: { label: t('Protokoll'), onClick: () => openRun({ kind: 'haproxy', id: pendingRun.id }) },
       });
     };
 
@@ -417,12 +415,7 @@ function SettingsPage() {
       if (!res.ok) throw new Error(data.error || t('Speichern fehlgeschlagen'));
       const run = { id: data.data.runId, label: t('Einstellungen speichern'), rowId: row.$id, sent: JSON.stringify(value) };
       setPendingRun(run);
-      notify({
-        variant: 'info',
-        title: t('{label} läuft', { label: run.label }),
-        message: t('Prüfen, Backup, einsetzen, neu laden. Der Fortschritt steht unten rechts.'),
-        action: { label: t('Schritte ansehen'), onClick: () => setOpenRunId(run.id) },
-      });
+      openRun({ kind: 'haproxy', id: run.id });
     } catch (err) {
       notify({
         variant: 'error',
@@ -905,17 +898,6 @@ function SettingsPage() {
           })
         ))}
 
-      {openRunId && (
-        <UpdateRunOverlay
-          runId={openRunId}
-          endpoint="/api/haproxy/runs"
-          phases={HAPROXY_PHASES}
-          phaseLabels={HAPROXY_PHASE_LABELS}
-          noun="Reverse-Proxy"
-          onClose={() => setOpenRunId(null)}
-          onFinished={() => load(true)}
-        />
-      )}
     </>
   );
 }

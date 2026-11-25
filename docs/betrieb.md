@@ -446,6 +446,46 @@ Abbild vorgab (`recreateBody`): sonst stünde im neuen Container
 HAProxy lässt sich zu einer Uhrzeit selbsttätig aktualisieren (Einstellung unter
 „Updates"). Für HAPM selbst gibt es das mit Absicht nicht.
 
+**In der Oberfläche** steht ein laufendes Update nicht auf der Seite, sondern im
+Fenster der Läufe (siehe unten, „Läufe im Hintergrund“). Auf der Karte des
+Bestandteils bleibt nur die Marke „Wird aktualisiert“. Beim Tausch von HAPM ist
+die Oberfläche kurz weg: das Fenster sagt das, fragt weiter, und sobald HAPM
+wieder antwortet (oder der Lauf mit dem Schritt „Übergabe“ endet), lädt die
+Seite neu, weil sie noch aus dem alten Abbild stammt. Danach ist das Fenster
+wieder offen und zeigt das Ergebnis.
+
+## Läufe im Hintergrund: `components/runs/`
+
+Updates, Sicherung, Zurückspielen und die Vorgänge am Reverse-Proxy (auch der
+Import) laufen abgekoppelt und haben eine Zeile in der Datenbank (das
+Zurückspielen eine Datei unter `/data/.restore/`). Sie stehen nie als Kasten in
+einer Seite, sondern in einem Fenster (`RunOverlay.tsx`):
+
+- **Beim Start geht es auf** (`startRun` aus `runs.ts`). „Im Hintergrund
+  weiterlaufen lassen“ schließt nur das Fenster, der Lauf geht auf dem Server
+  weiter. Die Pille unten rechts (`ActivityIndicator.tsx`, Quelle
+  `/api/activity`) zeigt jeden laufenden Lauf, ein Klick öffnet sein Fenster
+  wieder. Eine Meldung oder die Historie öffnet es über `openRun`.
+- **Ein Neuladen der Seite öffnet kein Fenster**, wie beim Reverse-Proxy: dann
+  zeigt nur die Pille den Lauf. Ausnahme ist das Neuladen, das HAPM selbst nach
+  dem Tausch oder dem Zurückspielen auslöst (`reloadKeepingRun`, in
+  `sessionStorage`, 30 Minuten gültig, auch über die Anmeldung hinweg).
+- **Am Ende** zeigt das Fenster Erfolg oder Fehler, bei einem Fehler den ersten
+  fehlgeschlagenen Schritt, und es kommt ein Toast. Der Toast kommt für jeden
+  hier gestarteten Lauf und für jedes Update, jede Sicherung und jedes
+  Zurückspielen, das die Pille laufen gesehen hat (auch nach Zeitplan). Das
+  Ende eines Reverse-Proxy-Vorgangs melden dessen Seiten selbst, weil sie
+  danach die Liste nachladen.
+- Je Art liest das Fenster seinen Endpunkt (`sources.ts`):
+  `/api/haproxy/runs/[id]`, `/api/updates/runs/[id]`, `/api/backup/runs/[id]`,
+  `/api/backup/restore/runs/[id]`. Ein Reverse-Proxy-Vorgang zeigt Phasen und
+  Protokoll, die anderen ihre Schritte untereinander (`RunStepList.tsx`, auch
+  in den Historien), samt der noch kommenden aus `lib/updates/plan.ts` und
+  `lib/backup/plan.ts`.
+- Antwortet HAPM nicht (Tausch von HAPM oder HAProxy, Zurückspielen), bleibt
+  das Fenster stehen und sagt, warum. Neu lädt die Pille: sie weiß, welcher
+  laufende Lauf HAPM ersetzt.
+
 ## Das Log
 
 `log stdout format raw local0` in der Grundkonfiguration. `lib/haproxy-log.ts`
@@ -622,7 +662,7 @@ Unter „Sicherung", Reiter „Einstellungen“, stellt man einen Ordner **auf d
 Server** ein, eine Uhrzeit und wie viele Archive liegen bleiben. Die anderen
 Reiter: „Zurückspielen“ (`?bereich=zurueckspielen`) und „Historie“
 (`?bereich=historie`, die Läufe mit ihren Schritten). Ein laufender Lauf steht
-über den Reitern. Ein Lauf (täglich oder auf Knopfdruck)
+im Fenster der Läufe, nicht auf der Seite. Ein Lauf (täglich oder auf Knopfdruck)
 schreibt `hapm-backup-JJJJMMTT-HHMMSS.tar.gz` dorthin:
 
 | Im Archiv | Inhalt |
@@ -734,9 +774,11 @@ entfernen ist). Ohne Manifest bleibt es bei einer Warnung, falls
 `ENCRYPTION_KEY` gesetzt ist. Nach dem Neustart vergleicht HAPM den Schlüssel,
 mit dem es läuft, noch einmal und schreibt das Ergebnis als Schritt in den Lauf.
 
-Die Seite verliert die Verbindung, während HAPM neu startet. Sie fragt dann
-`/api/health` und lädt neu, sobald HAPM antwortet; ohne Sitzung führt das zur
-Anmeldung. Das Ergebnis steht danach in der Karte.
+Der laufende Vorgang steht im Fenster der Läufe; auf dem Reiter steht nur eine
+Zeile mit „Fortschritt ansehen“. Die Seite verliert die Verbindung, während
+HAPM neu startet. Das Fenster sagt das und fragt weiter, die Pille lädt neu,
+sobald HAPM antwortet; ohne Sitzung führt das zur Anmeldung, und danach geht das
+Fenster mit dem Ergebnis wieder auf. Das Ergebnis steht außerdem auf dem Reiter.
 
 Steht der Helfer mitten im Lauf still (Neustart von Docker), bleibt HAPM
 angehalten: `docker start hapm`, beim Start schließt HAPM den Lauf als

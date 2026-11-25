@@ -7,23 +7,22 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
-  Circle,
+  Eye,
   Loader2,
   RotateCcw,
   Trash2,
   Upload,
-  X,
 } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
-import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { usePolling } from '@/components/usePolling';
 import { useMountedLoad } from '@/components/useMountedLoad';
 import { SkeletonDetail } from '@/components/Skeleton';
 import { InfoHint } from '@/ui/primitives/InfoHint';
+import RunStepList from '@/components/runs/RunStepList';
+import { openRun, startRun, subscribeRunFinished } from '@/components/runs/runs';
 import { formatBytes, formatDateTime, type Locale } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
-import { RESTORE_PLAN, RESTORE_STEP_LABELS } from '@/lib/backup/restore-script';
 // Nur Typen: die Dateien dahinter erreichen `lib/db` und `lib/docker`.
 import type { RestoreOverview } from '@/lib/backup/restore';
 import type { BackupFile } from '@/lib/backup/run';
@@ -57,31 +56,6 @@ function fileLocal(name: string): string | null {
   if (!match) return null;
   const [, y, mo, d, h, mi, s] = match;
   return `${y}-${mo}-${d}T${h}:${mi}:${s}`;
-}
-
-function StepList({ steps, pending }: { steps: HaproxyStep[]; pending: string[] }) {
-  const { t } = useT();
-  return (
-    <ul className="hapm-steps">
-      {steps.map((step, index) => (
-        <li key={`${index}-${step.label}`} className={`hapm-step ${step.ok ? 'is-ok' : 'is-failed'}`}>
-          {step.ok ? <Check size={14} strokeWidth={1.5} /> : <X size={14} strokeWidth={1.5} />}
-          <span className="hapm-step-text">
-            <span className="hapm-step-label">{t(step.label)}</span>
-            {step.detail && <span className="hapm-step-detail">{t(step.detail)}</span>}
-          </span>
-        </li>
-      ))}
-      {pending.map((label, index) => (
-        <li key={`pending-${label}`} className={`hapm-step ${index === 0 ? 'is-running' : 'is-pending'}`}>
-          {index === 0 ? <Loader2 size={14} strokeWidth={1.5} className="spin" /> : <Circle size={14} strokeWidth={1.5} />}
-          <span className="hapm-step-text">
-            <span className="hapm-step-label">{t(label)}</span>
-          </span>
-        </li>
-      ))}
-    </ul>
-  );
 }
 
 function LastRun({ run }: { run: RestoreRunView }) {
@@ -121,7 +95,7 @@ function LastRun({ run }: { run: RestoreRunView }) {
       </div>
       {open && (
         <div className="hapm-flag-detail">
-          <StepList steps={steps} pending={[]} />
+          <RunStepList steps={steps} />
         </div>
       )}
     </div>
@@ -139,20 +113,17 @@ interface Props {
 
 /**
  * Die Karte „Sicherung zurückspielen" auf der Seite „Sicherung". Der Ablauf
- * steht in `lib/backup/restore.ts`. Während HAPM neu startet, verliert die
- * Seite die Verbindung: sie fragt dann `/api/health` und lädt neu, sobald HAPM
- * wieder antwortet (wie beim Update von HAPM selbst). Ohne Sitzung führt das
- * Neuladen zur Anmeldung.
+ * steht in `lib/backup/restore.ts`. Der laufende Vorgang steht im Fenster der
+ * Läufe (`components/runs/`): dort wartet er auch auf den Neustart von HAPM und
+ * lädt danach die Seite neu. Ohne Sitzung führt das Neuladen zur Anmeldung.
  */
 export default function RestorePanel({ files, filesAsOf, listedPath, hostPath }: Props) {
   const { apiFetch } = useApp();
-  const { notify } = useToast();
   const confirm = useConfirm();
   const { t, locale } = useT();
 
   const [data, setData] = useState<RestoreOverview | null>(null);
   const [offline, setOffline] = useState(false);
-  const sawDown = useRef(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [formError, setFormError] = useState('');
   const [password, setPassword] = useState('');
@@ -165,12 +136,8 @@ export default function RestorePanel({ files, filesAsOf, listedPath, hostPath }:
       if (body.success) {
         setData(body.data as RestoreOverview);
         setOffline(false);
-      } else if (res.status === 401 && sawDown.current) {
-        // Die Sitzung ist mit der Datenbank gegangen.
-        window.location.reload();
       }
     } catch {
-      sawDown.current = true;
       setOffline(true);
     }
   }, [apiFetch]);
@@ -181,48 +148,16 @@ export default function RestorePanel({ files, filesAsOf, listedPath, hostPath }:
   const running = Boolean(active && !active.done);
   usePolling(load, running || offline || busy === 'start' ? POLL_RUNNING_MS : POLL_IDLE_MS);
 
-  /* HAPM startet neu: weiterfragen und neu laden, sobald es wieder antwortet. */
-  const restarting = offline && (running || busy === 'start');
-  useEffect(() => {
-    if (!restarting) return;
-    let pending = false;
-    const timer = setInterval(async () => {
-      if (pending) return;
-      pending = true;
-      try {
-        const res = await fetch('/api/health', { cache: 'no-store' });
-        if (!res.ok) sawDown.current = true;
-        else if (sawDown.current) window.location.reload();
-      } catch {
-        sawDown.current = true;
-      } finally {
-        pending = false;
-      }
-    }, POLL_RUNNING_MS);
-    return () => clearInterval(timer);
-  }, [restarting]);
+  useEffect(
+    () =>
+      subscribeRunFinished((run) => {
+        if (run.kind === 'restore') void load();
+      }),
+    [load]
+  );
 
-  /* Das Ende eines Laufs melden, den diese Seite hat laufen sehen, ohne dass HAPM neu gestartet ist. */
-  const watched = useRef<string | null>(null);
-  useEffect(() => {
-    if (!data) return;
-    const current = data.active && !data.active.done ? data.active.runId : null;
-    if (watched.current && watched.current !== current) {
-      const finished = data.runs.find((run) => run.$id === watched.current);
-      if (finished?.status === 'error') {
-        notify({
-          variant: 'error',
-          title: t('Zurückspielen fehlgeschlagen'),
-          message: finished.error ? t(finished.error) : t('Die Schritte stehen unter „Sicherung zurückspielen“.'),
-        });
-      } else if (finished) {
-        notify({ variant: 'success', title: t('Zurückgespielt'), message: finished.fileName });
-      }
-    }
-    watched.current = current;
-  }, [data, notify, t]);
-
-  async function send(url: string, init: RequestInit, label: string): Promise<boolean> {
+  /** Gibt bei Erfolg `data` der Antwort zurück, sonst `null`. */
+  async function send(url: string, init: RequestInit, label: string): Promise<{ data: unknown } | null> {
     setFormError('');
     setBusy(label);
     try {
@@ -230,13 +165,13 @@ export default function RestorePanel({ files, filesAsOf, listedPath, hostPath }:
       const body = await res.json();
       if (!body.success) {
         setFormError(body.error || t('Das hat nicht geklappt.'));
-        return false;
+        return null;
       }
       if (body.data && 'staged' in body.data) setData(body.data as RestoreOverview);
-      return true;
+      return { data: body.data };
     } catch {
       setFormError(t('HAPM hat nicht geantwortet. Bitte versuchen Sie es erneut.'));
-      return false;
+      return null;
     } finally {
       setBusy(null);
     }
@@ -293,7 +228,7 @@ export default function RestorePanel({ files, filesAsOf, listedPath, hostPath }:
     });
     if (!confirmed) return;
 
-    const ok = await send(
+    const started = await send(
       '/api/backup/restore/start',
       {
         method: 'POST',
@@ -302,8 +237,9 @@ export default function RestorePanel({ files, filesAsOf, listedPath, hostPath }:
       },
       'start'
     );
-    if (ok) {
+    if (started) {
       setPassword('');
+      startRun({ kind: 'restore', id: (started.data as { runId: string }).runId });
       await load();
     }
   }
@@ -355,30 +291,21 @@ export default function RestorePanel({ files, filesAsOf, listedPath, hostPath }:
           </div>
         )}
 
-        {restarting && (
-          <div className="alert alert-info hapm-flag">
-            <Loader2 size={16} strokeWidth={1.5} className="spin" />
-            <div className="hapm-flag-body">
-              <strong>{t('HAPM startet mit dem Stand der Sicherung neu')}</strong>
-              <span>
-                {t(
-                  'Die Oberfläche ist kurz nicht erreichbar. Diese Seite lädt neu, sobald HAPM wieder antwortet. Danach melden Sie sich mit einem Konto aus der Sicherung an.'
-                )}
-              </span>
-            </div>
-          </div>
-        )}
-
         {active && running && (
-          <div>
-            <div className="form-section-title">
-              {t('Wird zurückgespielt: {name}', { name: active.archive.name })}
-            </div>
-            <p className="form-hint">{t('Der Lauf geht weiter, auch wenn diese Seite geschlossen wird.')}</p>
-            <StepList
-              steps={active.steps}
-              pending={RESTORE_PLAN.slice(active.steps.length).map((step) => RESTORE_STEP_LABELS[step])}
-            />
+          <div className="hapm-inline-actions">
+            <span className="form-hint">
+              {t('Gerade wird {name} zurückgespielt. Der Fortschritt steht im Fenster des Laufs.', {
+                name: active.archive.name,
+              })}
+            </span>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => openRun({ kind: 'restore', id: active.runId })}
+            >
+              <Eye size={14} strokeWidth={1.5} />
+              {t('Fortschritt ansehen')}
+            </button>
           </div>
         )}
 
