@@ -18,6 +18,7 @@ import { proxyPages } from './proxyPages';
 import { proxyServer } from './proxyServer';
 import { system } from './system';
 import { mail } from './mail';
+import { logs } from './logs';
 
 export type Dictionary = Readonly<Record<string, string>>;
 
@@ -34,6 +35,7 @@ export const PARTS: Readonly<Record<string, Dictionary>> = {
   proxyServer,
   system,
   mail,
+  logs,
 };
 
 export const en: Dictionary = Object.freeze(Object.assign({}, ...Object.values(PARTS)));

@@ -37,9 +37,14 @@ function state(): FollowerState {
   return (globalState.__hapmLogFollower ??= { started: false, last: '', connected: false, lines: 0 });
 }
 
-export function logFollowerStatus(): { connected: boolean; lines: number; last: string | null } {
+export function logFollowerStatus(): {
+  started: boolean;
+  connected: boolean;
+  lines: number;
+  last: string | null;
+} {
   const s = state();
-  return { connected: s.connected, lines: s.lines, last: s.last || null };
+  return { started: s.started, connected: s.connected, lines: s.lines, last: s.last || null };
 }
 
 function rotateIfNeeded(): void {

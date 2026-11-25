@@ -1,0 +1,189 @@
+/* Reverse-Proxy → Logs (`app/(app)/reverse-proxy/logs/`).
+ *
+ * Eine eigene Datei, weil nur diese Seite sie braucht. Eingebunden in
+ * `page.tsx`, geprüft von `tests/ui/css-classes.test.ts`. */
+
+/* ── Werkzeugleiste: Suche, Filter, Zeilen, Aktualisieren ── */
+.logs-toolbar {
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 16px;
+  margin-bottom: 1rem;
+}
+
+.logs-toolbar .form-group { flex: 0 1 13rem; min-width: 10rem; }
+
+.logs-toolbar .page-search { flex: 1 1 16rem; min-width: 0; }
+
+.logs-toolbar-end {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+  margin-left: auto;
+}
+
+.logs-live {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 0.8125rem; color: var(--text-secondary); cursor: pointer;
+}
+
+.logs-meta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px;
+  margin-bottom: 12px; font-size: 0.8125rem; color: var(--text-tertiary);
+}
+
+.logs-meta .mono { font-family: var(--font-mono); font-size: 0.75rem; }
+
+.logs-more { display: flex; justify-content: center; margin-top: 16px; }
+
+/* ── Tabellen, die in die Breite passen ──
+ *
+ * Kein waagerechtes Scrollen: `table-layout: fixed` mit festen Breiten für
+ * die kurzen Spalten, der Rest teilt sich, was bleibt, und lange Inhalte
+ * brechen um oder werden gekürzt. `overflow: visible` statt des `auto` von
+ * `.table-wrap`, damit die Tooltips der gekürzten Zellen nicht abgeschnitten
+ * werden. Die runden Ecken tragen dafür die Eckzellen selbst.
+ *
+ * Wird der Platz zu knapp (Container-Abfrage, nicht die Fensterbreite: die
+ * Seitenleiste nimmt ihren Teil), wird jede Zeile zur Karte, und jede Zelle
+ * trägt ihr Etikett aus `data-label`. */
+.logs-table-wrap { overflow: visible; container-type: inline-size; }
+
+.logs-table { table-layout: fixed; }
+
+.logs-table-wrap .logs-table :is(th, td) { padding-left: 0.625rem; padding-right: 0.625rem; vertical-align: top; }
+
+.logs-table-wrap .logs-table :is(th, td):first-child { padding-left: 1.25rem; }
+
+.logs-table-wrap .logs-table :is(th, td):last-child { padding-right: 1.25rem; }
+
+.logs-table-wrap .logs-table th { vertical-align: middle; }
+
+.logs-table td { font-size: 0.8125rem; overflow-wrap: anywhere; }
+
+.logs-table thead th:first-child { border-top-left-radius: var(--radius-card); }
+
+.logs-table thead th:last-child { border-top-right-radius: var(--radius-card); }
+
+.logs-table tbody tr:last-child td:first-child { border-bottom-left-radius: var(--radius-card); }
+
+.logs-table tbody tr:last-child td:last-child { border-bottom-right-radius: var(--radius-card); }
+
+.logs-table .logs-end { text-align: right; }
+
+/* Spaltenbreiten: Vorgänge */
+.logs-col-when { width: 9.5rem; }
+.logs-col-action { width: 10rem; }
+.logs-col-status { width: 8.25rem; }
+.logs-col-details { width: 3.75rem; }
+
+/* Spaltenbreiten: HAProxy-Log */
+.logs-col-time { width: 6.5rem; }
+.logs-col-client { width: 9.5rem; }
+.logs-col-flow { width: 26%; }
+.logs-col-code { width: 5.25rem; }
+.logs-col-duration { width: 5.5rem; }
+
+.logs-muted { color: var(--text-tertiary); }
+
+.logs-mono { font-family: var(--font-mono); font-size: 0.75rem; }
+
+.logs-action { display: inline-flex; align-items: center; gap: 6px; }
+
+.logs-method {
+  margin-right: 6px; font-family: var(--font-mono); font-size: 0.75rem;
+  font-weight: 600; color: var(--text-secondary);
+}
+
+.logs-message { display: flex; align-items: flex-start; gap: 10px; }
+
+.logs-message .badge-status { flex-shrink: 0; }
+
+.logs-message .logs-mono { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Der Tooltip einer gekürzten Zelle sitzt an der HÜLLE und nicht an dem
+ * Element, das kürzt: dessen `overflow: hidden` schnitte die Sprechblase mit
+ * ab. Linksbündig und mit Umbruch, damit ein langer Pfad nicht über den Rand
+ * des Fensters hinauswächst. */
+.logs-tip { display: block; min-width: 0; }
+
+.logs-tip[data-tooltip]::before {
+  left: 0; transform: translateY(4px);
+  width: max-content; max-width: min(32rem, 80vw);
+  white-space: pre-line; overflow-wrap: anywhere; text-align: left;
+}
+
+.logs-tip[data-tooltip]::after { left: 1rem; transform: translateY(4px); }
+
+.logs-tip[data-tooltip]:hover::before,
+.logs-tip[data-tooltip]:hover::after { transform: translateY(0); }
+
+/* ── Karten statt Zeilen ──
+ * Je Zelle ein Raster: links das Etikett aus `data-label`, rechts der Inhalt.
+ * Ein Raster und keine absolute Position, damit ein Etikett über zwei Zeilen
+ * die Zelle höher macht, statt in die nächste zu ragen. */
+@container (max-width: 860px) {
+  .logs-runs,
+  .logs-runs tbody,
+  .logs-runs tr,
+  .logs-runs td { display: block; width: 100%; }
+
+  .logs-runs thead, .logs-runs colgroup { display: none; }
+
+  .logs-runs tr { padding: 0.875rem 1.25rem; border-bottom: 1px solid var(--border); }
+
+  .logs-runs tbody tr:last-child { border-bottom: none; }
+
+  .logs-table-wrap .logs-runs td,
+  .logs-table-wrap .logs-runs td:first-child,
+  .logs-table-wrap .logs-runs td:last-child {
+    display: grid; grid-template-columns: 7.75rem minmax(0, 1fr); column-gap: 0.75rem;
+    padding: 0.25rem 0; border: none; border-radius: 0; text-align: left;
+  }
+
+  .logs-runs td > * { grid-column: 2; }
+
+  .logs-runs td::before {
+    content: attr(data-label);
+    grid-column: 1; grid-row: 1 / span 4; padding-top: 0.1rem;
+    font-size: 0.75rem; color: var(--text-tertiary);
+  }
+
+  .logs-table-wrap .logs-runs td[data-label="actions"] { display: block; }
+
+  .logs-runs td[data-label="actions"]::before { content: none; }
+
+  .logs-runs tr:hover td { background: none; }
+}
+
+@container (max-width: 760px) {
+  .logs-lines,
+  .logs-lines tbody,
+  .logs-lines tr,
+  .logs-lines td { display: block; width: 100%; }
+
+  .logs-lines thead, .logs-lines colgroup { display: none; }
+
+  .logs-lines tr { padding: 0.875rem 1.25rem; border-bottom: 1px solid var(--border); }
+
+  .logs-lines tbody tr:last-child { border-bottom: none; }
+
+  .logs-table-wrap .logs-lines td,
+  .logs-table-wrap .logs-lines td:first-child,
+  .logs-table-wrap .logs-lines td:last-child {
+    display: grid; grid-template-columns: 6.25rem minmax(0, 1fr); column-gap: 0.75rem;
+    padding: 0.25rem 0; border: none; border-radius: 0; text-align: left;
+  }
+
+  .logs-lines td > * { grid-column: 2; }
+
+  .logs-lines td::before {
+    content: attr(data-label);
+    grid-column: 1; grid-row: 1 / span 4; padding-top: 0.1rem;
+    font-size: 0.75rem; color: var(--text-tertiary);
+  }
+
+  .logs-lines tr:hover td { background: none; }
+}
+
+@media (max-width: 640px) {
+  .logs-toolbar .form-group { flex: 1 1 100%; }
+
+  .logs-toolbar-end { margin-left: 0; }
+}

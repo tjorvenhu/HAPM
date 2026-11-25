@@ -1766,3 +1766,51 @@ gescheitert). Ein gescheiterter Eintrag macht den Lauf zu einem gescheiterten,
 mit Mail wie bei jedem anderen. Die Seite verfolgt den Lauf über
 `/api/haproxy/runs/[id]` und verlinkt in die Historie.
 
+
+### Die Logs: `/reverse-proxy/logs`
+
+Zwei Reiter, zwei Quellen. **„Vorgänge"** ist die Historie dessen, was HAPM an
+der Konfiguration geändert hat (`haproxy_runs`, `GET /api/haproxy/runs`).
+**„HAProxy-Log"** ist, was HAProxy selbst schreibt: jede Anfrage und jede
+Meldung des Prozesses (`GET /api/haproxy/log`). Der Reiter steht in der Adresse
+(`?ansicht=haproxy`). Die Seite liegt in `app/(app)/reverse-proxy/logs/`
+(`page.tsx` mit den Reitern, `RunsView.tsx`, `HaproxyLogView.tsx`), ihr CSS in
+`app/logs.css`, das `tests/ui/css-classes.test.ts` über `PAGE_CSS` mitliest.
+
+- **Kein seitliches Scrollen.** Beide Tabellen haben `table-layout: fixed`,
+  feste Breiten für die kurzen Spalten und kürzen lange Inhalte mit dem vollen
+  Text im Tooltip (`.logs-tip` an der Hülle, nicht am kürzenden Element: dessen
+  `overflow: hidden` schnitte die Sprechblase ab). Wird der Platz knapp, wird
+  jede Zeile zur Karte mit den Etiketten aus `data-label`. Gemessen wird das
+  über eine Container-Abfrage auf `.logs-table-wrap` und nicht über die
+  Fensterbreite, weil die Seitenleiste ihren Teil nimmt. Bei den Vorgängen
+  stehen „Ausgelöst von" unter dem Vorgang und die Dauer unter dem Zeitpunkt:
+  neun Spalten passten neben der Seitenleiste nicht.
+- **Gelesen wird nur die Datei des Mitschnitts** (`HAPROXY_LOG_FILE` aus
+  `lib/haproxy-log.ts`), über `tail -n` aus `buildCommand`. Der Pfad ist eine
+  Konstante, Suche und Filter laufen in Node über die gelesenen Zeilen und gehen
+  in kein Kommando. Ohne Filter liest ein Aufruf so viele Zeilen, wie er zeigt
+  (200 bis 2000). **Mit Filter liest er ein festes Fenster von 20 000 Zeilen**
+  (`FILTER_WINDOW`): unter den letzten 200 ist auf einem belebten Proxy selten
+  ein 5xx. Die Seite sagt, in wie vielen Zeilen gesucht wurde.
+- **Zerlegt wird in `lib/haproxy/log-view.ts`**, rein und ohne Shell prüfbar
+  (`tests/haproxy/log-view.test.ts`): Anfrage (`option httplog`),
+  TCP-Verbindung (`option tcplog`), Verbindungsfehler vor der ersten Anfrage
+  (`https/1: SSL handshake failure`), Meldung von HAProxy (`[NOTICE]`,
+  `[WARNING]`, `[ALERT]` und die Sätze ohne Stufe wie `Server x/y is DOWN`).
+  **Was keiner Form entspricht, kommt als rohe Zeile** und nicht gar nicht:
+  eine unbekannte Zeile ist oft genau die gesuchte. Die Adresse wird wie in der
+  Statistik von rechts vom Port getrennt (IPv6). Die Zeit ist die aus dem Kopf
+  des Mitschnitts (UTC), nicht das Annahmedatum in der Zeile.
+- **Ehrliche Nullwerte.** Die Route liefert `exists` und den Zustand des
+  Mitschnitts (`logFollowerStatus()`, mit `started` und `connected`). Fehlt die
+  Datei, sagt die Seite, warum (Mitschnitt läuft nicht, ist nicht verbunden,
+  oder HAProxy hat noch nichts geschrieben) statt einer leeren Liste. Ist die
+  Datei da, der Mitschnitt aber getrennt, steht über den Zeilen, dass sie der
+  letzte Stand sind. Unter macOS läuft der Mitschnitt nie (`startLogFollower`
+  nur unter Linux), lokal sieht man deshalb den Leerzustand.
+- **Die Seite pollt alle zehn Sekunden**, solange „Mitlaufen" an ist. Wer eine
+  Zeile liest, schaltet es ab, damit sie nicht wegrutscht. Die Vorgänge pollen
+  wie bisher alle zwanzig Sekunden.
+- Die rotierte Vorgängerin (`haproxy.log.1`) wird nicht gelesen: direkt nach
+  dem Beiseitelegen zeigt der Reiter deshalb nur die wenigen neuen Zeilen.
