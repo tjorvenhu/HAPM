@@ -34,6 +34,7 @@ export default function TwoFactorSetup({ onComplete, onCancel }: TwoFactorSetupP
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || t('Der Code ließ sich nicht prüfen.'));
+    return { recoveryCodes: data.data?.recoveryCodes as string[] | undefined };
   }
 
   return <SharedTwoFactorSetup start={start} verify={verify} onComplete={onComplete} onCancel={onCancel} />;

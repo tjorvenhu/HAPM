@@ -2,7 +2,22 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import Link from 'next/link';
-import { Fingerprint, KeyRound, Languages, Loader2, Pencil, Plus, ShieldCheck, ShieldOff, Trash2, X } from 'lucide-react';
+import {
+  Check,
+  Copy,
+  Download,
+  Fingerprint,
+  KeyRound,
+  Languages,
+  LifeBuoy,
+  Loader2,
+  Pencil,
+  Plus,
+  ShieldCheck,
+  ShieldOff,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { browserSupportsWebAuthn, startRegistration } from '@simplewebauthn/browser';
 import { useApp } from '@/components/AppShell';
 import { useConfirm } from '@/components/ConfirmDialog';
@@ -10,6 +25,7 @@ import { useToast } from '@/components/Toast';
 import { usePolling } from '@/components/usePolling';
 import { SkeletonRows } from '@/components/Skeleton';
 import TwoFactorSetup from '@/components/TwoFactorSetup';
+import { RecoveryCodeGrid, useRecoveryCodeActions } from '@/ui/auth/RecoveryCodes';
 import Select from '@/components/Select';
 import { formatDate, LOCALES, LOCALE_NAMES, msgid, type Locale } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
@@ -25,6 +41,12 @@ import type { PublicUser } from '@/lib/auth/users';
 import type { PasskeyView } from '@/lib/auth/passkeys';
 
 type RegistrationOptions = Parameters<typeof startRegistration>[0]['optionsJSON'];
+
+/** `/api/account`: das Konto und wie viele Wiederherstellungscodes noch gelten. */
+type AccountView = PublicUser & { recoveryCodesLeft: number };
+
+/** Ab hier steht die Zahl der übrigen Codes als Warnung da. */
+const FEW_RECOVERY_CODES = 3;
 
 /** Was der Dialog gerade tut: einen Passkey hinterlegen oder einen umbenennen. */
 type PasskeyDialog = { mode: 'add' } | { mode: 'rename'; passkey: PasskeyView };
@@ -58,9 +80,9 @@ export default function AccountPage() {
   const { apiFetch, session, reload } = useApp();
   const confirm = useConfirm();
   const { notify } = useToast();
-  const { t, rich, locale, setLocale } = useT();
+  const { t, rich, plural, locale, setLocale } = useT();
 
-  const [account, setAccount] = useState<PublicUser | null>(null);
+  const [account, setAccount] = useState<AccountView | null>(null);
   const [passkeyState, setPasskeyState] = useState<PasskeyState | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -76,6 +98,14 @@ export default function AccountPage() {
   const [disablePassword, setDisablePassword] = useState('');
   const [disableError, setDisableError] = useState('');
   const [disabling, setDisabling] = useState(false);
+
+  // Neue Wiederherstellungscodes: erst das Passwort, dann die Codes, einmal.
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
+  const [recoveryPassword, setRecoveryPassword] = useState('');
+  const [recoveryError, setRecoveryError] = useState('');
+  const [creatingCodes, setCreatingCodes] = useState(false);
+  const [newCodes, setNewCodes] = useState<string[] | null>(null);
+  const codeActions = useRecoveryCodeActions(newCodes ?? [], (message) => notify({ variant: 'error', message }));
 
   const [savingLocale, setSavingLocale] = useState(false);
 
@@ -185,6 +215,57 @@ export default function AccountPage() {
     } finally {
       setDisabling(false);
     }
+  }
+
+  async function openRecoveryCodes() {
+    // Mit gültigen Codes vorher fragen: sie gelten danach nicht mehr. Ohne
+    // Codes gibt es nichts zu verlieren.
+    if (account && account.recoveryCodesLeft > 0) {
+      const proceed = await confirm({
+        title: t('Neue Wiederherstellungscodes'),
+        message: plural(account.recoveryCodesLeft, {
+          one: 'Der eine verbliebene Code gilt danach nicht mehr. Ersetzen Sie die abgelegten Codes durch die neuen.',
+          other: 'Die {count} verbliebenen Codes gelten danach nicht mehr. Ersetzen Sie die abgelegten Codes durch die neuen.',
+        }),
+        confirmLabel: t('Weiter'),
+        variant: 'warning',
+      });
+      if (!proceed) return;
+    }
+    setRecoveryPassword('');
+    setRecoveryError('');
+    setNewCodes(null);
+    setRecoveryOpen(true);
+  }
+
+  async function handleCreateCodes(e: FormEvent) {
+    e.preventDefault();
+    setRecoveryError('');
+    setCreatingCodes(true);
+    try {
+      const res = await apiFetch('/api/account/2fa/recovery-codes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: recoveryPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || t('Die Wiederherstellungscodes ließen sich nicht erzeugen.'));
+
+      setRecoveryPassword('');
+      setNewCodes(data.data.recoveryCodes as string[]);
+      await load();
+      notify({ variant: 'success', message: t('Neue Wiederherstellungscodes sind erzeugt. Die alten gelten nicht mehr.') });
+    } catch (err: unknown) {
+      setRecoveryError(err instanceof Error ? err.message : t('Die Wiederherstellungscodes ließen sich nicht erzeugen.'));
+    } finally {
+      setCreatingCodes(false);
+    }
+  }
+
+  function closeRecovery() {
+    if (creatingCodes) return;
+    setRecoveryOpen(false);
+    setNewCodes(null);
   }
 
   function openAddPasskey() {
@@ -444,20 +525,61 @@ export default function AccountPage() {
           <SkeletonRows />
         ) : account ? (
           <div className="card-body">
-            <div className="alert alert-warning">
-              <span>
-                {rich(
-                  'Es gibt keine Wiederherstellungscodes. Geht die Authenticator-App verloren, hilft nur noch der Zugang zum Server: dort setzt {command} mit der E-Mail-Adresse dahinter ein neues Passwort, schaltet den zweiten Faktor ab und entfernt die Passkeys.',
-                  { command: <code>docker exec -it hapm hapm-admin reset-password</code> }
-                )}
-              </span>
-            </div>
-            <div>
+            {account.totpEnabled && account.recoveryCodesLeft === 0 && (
+              <div className="alert alert-warning">
+                <span>
+                  {t(
+                    'Für dieses Konto gibt es keine Wiederherstellungscodes. Geht die Authenticator-App verloren, kommen Sie nur noch über den Server wieder hinein. Erzeugen Sie jetzt Codes und legen Sie sie sicher ab.'
+                  )}
+                </span>
+              </div>
+            )}
+            {account.totpEnabled && account.recoveryCodesLeft > 0 && account.recoveryCodesLeft <= FEW_RECOVERY_CODES && (
+              <div className="alert alert-warning">
+                <span>
+                  {plural(account.recoveryCodesLeft, {
+                    one: 'Nur noch ein Wiederherstellungscode übrig. Erzeugen Sie neue, bevor er verbraucht ist.',
+                    other: 'Nur noch {count} Wiederherstellungscodes übrig. Erzeugen Sie neue, bevor alle verbraucht sind.',
+                  })}
+                </span>
+              </div>
+            )}
+            {account.totpEnabled && account.recoveryCodesLeft > FEW_RECOVERY_CODES && (
+              <p className="form-hint">
+                {t('{count} Wiederherstellungscodes übrig. Jeder ersetzt bei der Anmeldung einmal den Code aus der App.', {
+                  count: account.recoveryCodesLeft,
+                })}
+              </p>
+            )}
+            {!account.totpEnabled && (
+              <p className="form-hint">
+                {t('Bei der Einrichtung entstehen zehn Wiederherstellungscodes für den Fall, dass die App verloren geht.')}
+              </p>
+            )}
+            <p className="form-hint">
+              {rich(
+                'Gehen App und Wiederherstellungscodes verloren, hilft nur noch der Zugang zum Server: dort setzt {command} mit der E-Mail-Adresse dahinter ein neues Passwort, schaltet den zweiten Faktor ab und entfernt die Passkeys.',
+                { command: <code>docker exec -it hapm hapm-admin reset-password</code> }
+              )}
+            </p>
+            <div className="hapm-form-actions">
               {account.totpEnabled ? (
-                <button className="btn btn-secondary" type="button" onClick={openDisable}>
-                  <ShieldOff size={16} />
-                  {t('Abschalten')}
-                </button>
+                <>
+                  <button
+                    className={`btn ${account.recoveryCodesLeft === 0 ? 'btn-primary' : 'btn-secondary'}`}
+                    type="button"
+                    onClick={openRecoveryCodes}
+                  >
+                    <LifeBuoy size={16} />
+                    {account.recoveryCodesLeft === 0
+                      ? t('Wiederherstellungscodes erzeugen')
+                      : t('Neue Wiederherstellungscodes')}
+                  </button>
+                  <button className="btn btn-secondary" type="button" onClick={openDisable}>
+                    <ShieldOff size={16} />
+                    {t('Abschalten')}
+                  </button>
+                </>
               ) : (
                 <button className="btn btn-primary" type="button" onClick={() => setSetupOpen(true)}>
                   <ShieldCheck size={16} />
@@ -627,6 +749,84 @@ export default function AccountPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {recoveryOpen && (
+        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && !newCodes && closeRecovery()}>
+          <div className="modal">
+            <div className="modal-header">
+              <h2 className="modal-title">{t('Wiederherstellungscodes')}</h2>
+              <button
+                type="button"
+                className="modal-close"
+                onClick={closeRecovery}
+                disabled={creatingCodes}
+                aria-label={t('Dialog schließen')}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            {newCodes ? (
+              <>
+                <div className="modal-body">
+                  <p className="form-hint">
+                    {rich(
+                      'Mit diesen Codes können Sie sich anmelden, falls Sie den Zugriff auf Ihre Authenticator-App verlieren. Jeder Code ist einmal verwendbar und wird {onlyNow} angezeigt.',
+                      { onlyNow: <strong>{t('nur jetzt')}</strong> }
+                    )}{' '}
+                    {t('Legen Sie sie getrennt von diesem Gerät ab, zum Beispiel ausgedruckt oder im Passwortmanager.')}
+                  </p>
+                  <RecoveryCodeGrid codes={newCodes} />
+                </div>
+                <div className="modal-footer">
+                  <button type="button" className="btn btn-secondary" onClick={codeActions.copy}>
+                    {codeActions.copied ? <Check size={16} /> : <Copy size={16} />}
+                    {codeActions.copied ? t('Kopiert') : t('Kopieren')}
+                  </button>
+                  <button type="button" className="btn btn-secondary" onClick={codeActions.download}>
+                    <Download size={16} />
+                    {t('Herunterladen')}
+                  </button>
+                  <button type="button" className="btn btn-primary" onClick={closeRecovery}>
+                    <Check size={16} />
+                    {t('Codes gespeichert')}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <form onSubmit={handleCreateCodes}>
+                <div className="modal-body">
+                  {recoveryError && <div className="alert alert-danger">{recoveryError}</div>}
+                  <p className="form-hint">
+                    {t('Zehn neue Codes entstehen und werden einmal angezeigt. Zur Bestätigung Ihr Passwort.')}
+                  </p>
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="recoveryPassword">{t('Passwort')}</label>
+                    <input
+                      id="recoveryPassword"
+                      className="form-input"
+                      type="password"
+                      required
+                      value={recoveryPassword}
+                      onChange={(e) => setRecoveryPassword(e.target.value)}
+                      autoComplete="current-password"
+                      autoFocus
+                    />
+                  </div>
+                </div>
+                <div className="modal-footer">
+                  <button type="button" className="btn btn-secondary" onClick={closeRecovery} disabled={creatingCodes}>
+                    {t('Abbrechen')}
+                  </button>
+                  <button className="btn btn-primary" type="submit" disabled={creatingCodes}>
+                    {creatingCodes ? <Loader2 size={16} className="spin" /> : <LifeBuoy size={16} />}
+                    {t('Codes erzeugen')}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}

@@ -27,8 +27,33 @@ export const account: Dictionary = {
   // Zweiter Faktor
   'Zweiter Faktor': 'Second factor',
   'Nach dem Passwort verlangt die Anmeldung einen Code aus einer App.': 'After the password, sign-in asks for a code from an app.',
-  'Es gibt keine Wiederherstellungscodes. Geht die Authenticator-App verloren, hilft nur noch der Zugang zum Server: dort setzt {command} mit der E-Mail-Adresse dahinter ein neues Passwort, schaltet den zweiten Faktor ab und entfernt die Passkeys.':
-    'There are no recovery codes. If the authenticator app is lost, only access to the server helps: there, {command} followed by the email address sets a new password, turns off the second factor and removes the passkeys.',
+  'Gehen App und Wiederherstellungscodes verloren, hilft nur noch der Zugang zum Server: dort setzt {command} mit der E-Mail-Adresse dahinter ein neues Passwort, schaltet den zweiten Faktor ab und entfernt die Passkeys.':
+    'If both the app and the recovery codes are lost, only access to the server helps: there, {command} followed by the email address sets a new password, turns off the second factor and removes the passkeys.',
+
+  // Wiederherstellungscodes
+  'Für dieses Konto gibt es keine Wiederherstellungscodes. Geht die Authenticator-App verloren, kommen Sie nur noch über den Server wieder hinein. Erzeugen Sie jetzt Codes und legen Sie sie sicher ab.':
+    'This account has no recovery codes. If the authenticator app is lost, the only way back in is through the server. Create codes now and store them safely.',
+  'Nur noch ein Wiederherstellungscode übrig. Erzeugen Sie neue, bevor er verbraucht ist.':
+    'Only one recovery code left. Create new ones before it is used up.',
+  'Nur noch {count} Wiederherstellungscodes übrig. Erzeugen Sie neue, bevor alle verbraucht sind.':
+    'Only {count} recovery codes left. Create new ones before all are used up.',
+  '{count} Wiederherstellungscodes übrig. Jeder ersetzt bei der Anmeldung einmal den Code aus der App.':
+    '{count} recovery codes left. Each one replaces the code from the app once when signing in.',
+  'Bei der Einrichtung entstehen zehn Wiederherstellungscodes für den Fall, dass die App verloren geht.':
+    'Setup creates ten recovery codes in case the app is lost.',
+  'Wiederherstellungscodes erzeugen': 'Create recovery codes',
+  'Neue Wiederherstellungscodes': 'New recovery codes',
+  'Wiederherstellungscodes': 'Recovery codes',
+  'Der eine verbliebene Code gilt danach nicht mehr. Ersetzen Sie die abgelegten Codes durch die neuen.':
+    'The one remaining code will no longer work. Replace your stored codes with the new ones.',
+  'Die {count} verbliebenen Codes gelten danach nicht mehr. Ersetzen Sie die abgelegten Codes durch die neuen.':
+    'The {count} remaining codes will no longer work. Replace your stored codes with the new ones.',
+  'Zehn neue Codes entstehen und werden einmal angezeigt. Zur Bestätigung Ihr Passwort.':
+    'Ten new codes are created and shown once. Confirm with your password.',
+  'Codes erzeugen': 'Create codes',
+  'Die Wiederherstellungscodes ließen sich nicht erzeugen.': 'The recovery codes could not be created.',
+  'Neue Wiederherstellungscodes sind erzeugt. Die alten gelten nicht mehr.':
+    'New recovery codes are created. The old ones no longer work.',
   'Zweiten Faktor abschalten': 'Turn off second factor',
   'Danach reicht für die Anmeldung das Passwort. Das hinterlegte Geheimnis wird gelöscht.':
     'After that, the password is enough to sign in. The stored secret is deleted.',

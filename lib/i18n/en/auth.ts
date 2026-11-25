@@ -106,6 +106,21 @@ export const auth: Dictionary = {
     'Use these codes to sign in if you lose access to your authenticator app. Each code works once and is shown {onlyNow}.',
   'nur jetzt': 'only now',
   'Codes gespeichert': 'Codes saved',
+  'Legen Sie sie getrennt von diesem Gerät ab, zum Beispiel ausgedruckt oder im Passwortmanager.':
+    'Store them away from this device, for example printed or in your password manager.',
+  'Herunterladen': 'Download',
+  'Kopieren nicht möglich. Bitte laden Sie die Codes herunter oder markieren Sie sie von Hand.':
+    'Copying is not possible. Please download the codes or select them by hand.',
+  'Wiederherstellungscodes für HAPM ({host})': 'Recovery codes for HAPM ({host})',
+  'Wiederherstellungscode': 'Recovery code',
+  'Geben Sie einen Ihrer Wiederherstellungscodes ein. Er ist danach verbraucht.':
+    'Enter one of your recovery codes. It is used up afterwards.',
+  'Wiederherstellungscode verwenden': 'Use a recovery code',
+  'Code aus der App verwenden': 'Use the code from the app',
+  'Ein Wiederherstellungscode hat zehn Buchstaben und Ziffern, zum Beispiel abcde-23456.':
+    'A recovery code has ten letters and digits, for example abcde-23456.',
+  'Der Wiederherstellungscode stimmt nicht oder ist schon benutzt.':
+    'The recovery code is wrong or has already been used.',
   '2FA erfolgreich aktiviert!': '2FA activated!',
   'Sie werden weitergeleitet...': 'Redirecting...',
   'Fehler bei der Einrichtung': 'Setup failed',

@@ -20,8 +20,26 @@
  * steht mit in der Signatur. Eine zweite Anmeldung im selben Browser bringt
  * eine neue Sitzung mit, und für die gilt der alte Nachweis nicht.
  *
- * Es gibt keine Wiederherstellungscodes. Wer seine App verliert, braucht den
- * Zugang zum Server (`hapm-admin reset-password`).
+ * ── Wiederherstellungscodes ──
+ *
+ * Beim Einschalten entstehen zehn Einmal-Codes (`lib/recovery-codes.ts`). Sie
+ * stehen genau einmal in der Antwort von `/api/account/2fa/verify` und danach
+ * nur noch als HMAC in derselben Zeile (`recoveryCodes`). Ein Code ersetzt bei
+ * der Anmeldung den Code aus der App und ist danach verbraucht. Unter „Konto“
+ * lassen sich neue erzeugen, die alten gelten dann nicht mehr.
+ *
+ * Wer App und Codes verliert, braucht den Zugang zum Server
+ * (`hapm-admin reset-password`).
+ *
+ * ── Warum das Verbrauchen eine Sperre im Speicher hat ──
+ *
+ * `lib/db` kennt keine bedingte Änderung („nur wenn die Liste noch so
+ * aussieht“). Zwei gleichzeitige Anmeldungen mit demselben Code läsen beide die
+ * Liste mit dem Code darin und kämen beide durch. HAPM ist ein einziger
+ * Prozess, also reicht eine Warteschlange je Konto: lesen, prüfen und
+ * schreiben laufen für ein Konto nacheinander. Das Erzeugen neuer Codes steht
+ * in derselben Schlange, sonst schriebe ein Verbrauchen mit der alten Liste die
+ * gerade ungültig gemachten Codes zurück.
  */
 
 import { cookies } from 'next/headers';
@@ -30,6 +48,7 @@ import { createDocument, deleteDocument, listDocuments, updateDocument, Query, t
 import { isSecureRequest } from './auth/config';
 import { secrets } from './secrets';
 import { decryptTOTPSecret, encryptTOTPSecret } from './totp';
+import { findRecoveryCode, generateRecoveryCodes, hashRecoveryCode } from './recovery-codes';
 import { COLLECTIONS, type TwoFactorConfig } from './types';
 
 const COOKIE_NAME = 'hapm_2fa';
@@ -94,13 +113,79 @@ export async function get2FASecret(userId: string): Promise<string | null> {
 /** Ein neues Geheimnis ablegen. Es gilt erst nach `enable2FA`. */
 export async function store2FASecret(userId: string, secret: string): Promise<void> {
   const existing = await get2FAConfig(userId);
-  const data = { secret: encryptTOTPSecret(secret), enabled: false };
+  const data = { secret: encryptTOTPSecret(secret), enabled: false, recoveryCodes: [], recoveryCodesCreatedAt: null };
   if (existing) await updateDocument<TwoFactorConfig>(COLLECTIONS.TWO_FACTOR, existing.$id, data);
   else await createDocument<TwoFactorConfig>(COLLECTIONS.TWO_FACTOR, { userId, ...data });
 }
 
-export async function enable2FA(config: WithMeta<TwoFactorConfig>): Promise<void> {
-  await updateDocument<TwoFactorConfig>(COLLECTIONS.TWO_FACTOR, config.$id, { enabled: true });
+function freshRecoveryCodes(): { codes: string[]; data: Partial<TwoFactorConfig> } {
+  const codes = generateRecoveryCodes();
+  return {
+    codes,
+    data: { recoveryCodes: codes.map(hashRecoveryCode), recoveryCodesCreatedAt: new Date().toISOString() },
+  };
+}
+
+/**
+ * Den zweiten Faktor einschalten. Liefert die Wiederherstellungscodes im
+ * Klartext: das einzige Mal, dass es sie so gibt.
+ */
+export async function enable2FA(config: WithMeta<TwoFactorConfig>): Promise<string[]> {
+  return exclusive(config.userId, async () => {
+    const { codes, data } = freshRecoveryCodes();
+    await updateDocument<TwoFactorConfig>(COLLECTIONS.TWO_FACTOR, config.$id, { ...data, enabled: true });
+    return codes;
+  });
+}
+
+/** Wie viele Codes noch übrig sind. Ein Konto aus der Zeit vor den Codes hat keine. */
+export function recoveryCodesLeft(config: TwoFactorConfig | null): number {
+  return config?.enabled ? (config.recoveryCodes?.length ?? 0) : 0;
+}
+
+/**
+ * Neue Codes für ein Konto mit eingeschaltetem zweiten Faktor; die alten gelten
+ * danach nicht mehr. `null`, wenn der zweite Faktor nicht eingeschaltet ist.
+ */
+export async function replaceRecoveryCodes(userId: string): Promise<string[] | null> {
+  return exclusive(userId, async () => {
+    const config = await get2FAConfig(userId);
+    if (!config?.enabled) return null;
+    const { codes, data } = freshRecoveryCodes();
+    await updateDocument<TwoFactorConfig>(COLLECTIONS.TWO_FACTOR, config.$id, data);
+    return codes;
+  });
+}
+
+/**
+ * Einen Wiederherstellungscode einlösen. Passt er, ist er danach verbraucht,
+ * und `remaining` sagt, wie viele bleiben. `null` bei jedem anderen Ausgang:
+ * falscher Code, kein zweiter Faktor, keine Codes.
+ */
+export async function consumeRecoveryCode(userId: string, input: string): Promise<{ remaining: number } | null> {
+  return exclusive(userId, async () => {
+    const config = await get2FAConfig(userId);
+    const hashes = config?.enabled ? (config.recoveryCodes ?? []) : [];
+    const index = findRecoveryCode(hashes, input);
+    if (!config || index === -1) return null;
+    const remaining = hashes.filter((_, i) => i !== index);
+    await updateDocument<TwoFactorConfig>(COLLECTIONS.TWO_FACTOR, config.$id, { recoveryCodes: remaining });
+    return { remaining: remaining.length };
+  });
+}
+
+const queues = new Map<string, Promise<unknown>>();
+
+/** Führt `task` erst aus, wenn alles davor für dieses Konto fertig ist. Siehe Kopf. */
+async function exclusive<T>(userId: string, task: () => Promise<T>): Promise<T> {
+  const run = (queues.get(userId) ?? Promise.resolve()).then(task);
+  const tail = run.catch(() => undefined);
+  queues.set(userId, tail);
+  try {
+    return await run;
+  } finally {
+    if (queues.get(userId) === tail) queues.delete(userId);
+  }
 }
 
 /** Den zweiten Faktor eines Kontos entfernen. Liefert, ob es einen gab. */

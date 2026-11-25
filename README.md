@@ -544,15 +544,18 @@ installieren und das Archiv unter „Sicherung“ hochladen.
 ### Passwort vergessen
 
 Sind die Adresse von HAPM und ein SMTP-Konto eingerichtet, schickt die
-Anmeldeseite einen Link per Mail. Sonst, und auch wenn der zweite Faktor
-verloren ist, auf dem Server:
+Anmeldeseite einen Link per Mail. Ist die Authenticator-App verloren, ersetzt
+bei der Anmeldung einer der Wiederherstellungscodes den Code aus der App
+(„Wiederherstellungscode verwenden“). Danach unter „Konto“ neue Codes erzeugen
+oder den zweiten Faktor neu einrichten. Sind auch die Codes weg, oder gibt es
+keine Mail, auf dem Server:
 
 ```bash
 docker exec -it hapm hapm-admin reset-password admin@example.org
 ```
 
-Das setzt ein neues Passwort, schaltet den zweiten Faktor des Kontos ab und
-entfernt seine Passkeys. Alle Konten zeigt `docker exec -it hapm hapm-admin users`.
+Das setzt ein neues Passwort, schaltet den zweiten Faktor des Kontos ab (seine
+Wiederherstellungscodes verfallen damit) und entfernt seine Passkeys. Alle Konten zeigt `docker exec -it hapm hapm-admin users`.
 
 ### Entfernen
 

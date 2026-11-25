@@ -7,7 +7,8 @@ import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
 import { msg } from '@/lib/i18n';
 
 /**
- * Den ersten Code prüfen und den zweiten Faktor einschalten.
+ * Den ersten Code prüfen und den zweiten Faktor einschalten. Die Antwort
+ * trägt die Wiederherstellungscodes im Klartext, das einzige Mal.
  *
  * `decryptTOTPSecret` direkt und nicht `get2FASecret`: das Geheimnis ist
  * Sekunden alt und mit demselben Schlüssel entstanden. Lässt es sich nicht
@@ -37,7 +38,7 @@ export async function POST(request: Request) {
     // Erst der Nachweis für diese Sitzung, dann der Schalter: andersherum wäre
     // die eigene Sitzung für einen Augenblick unbestätigt.
     await set2FACookie(session.userId, await currentSessionToken());
-    await enable2FA(config);
+    const recoveryCodes = await enable2FA(config);
     // Die anderen Sitzungen sind nur mit dem Passwort entstanden. Sie müssten
     // den Code ohnehin zeigen, sollen aber gar nicht erst offen bleiben.
     await revokeOtherSessions();
@@ -47,9 +48,10 @@ export async function POST(request: Request) {
       userEmail: session.email,
       action: '2fa_setup',
       ip: getClientIP(request),
+      details: `${recoveryCodes.length} Wiederherstellungscodes erzeugt`,
     });
 
-    return ok();
+    return ok({ recoveryCodes });
   } catch (err) {
     return handleError(err);
   }

@@ -33,6 +33,13 @@ export interface TwoFactorConfig extends DbDoc {
   secret: string;
   /** `false`, solange die Einrichtung begonnen, der erste Code aber noch nicht gezeigt ist. */
   enabled: boolean;
+  /**
+   * Die noch nicht benutzten Wiederherstellungscodes, als HMAC (`lib/recovery-codes.ts`).
+   * Fehlt bei Konten, deren zweiter Faktor vor den Codes eingerichtet wurde.
+   */
+  recoveryCodes?: string[];
+  /** Wann die gültigen Codes erzeugt wurden (ISO). */
+  recoveryCodesCreatedAt?: string | null;
 }
 
 /** Eine Zeile je Konto, Kennung ist die des Kontos. */

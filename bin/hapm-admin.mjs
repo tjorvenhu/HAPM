@@ -8,7 +8,9 @@
  *
  * `reset-password` setzt ein neues, zufälliges Passwort, schaltet den zweiten
  * Faktor des Kontos ab, entfernt seine Passkeys und beendet seine Sitzungen.
- * Das neue Passwort steht danach einmal in der Ausgabe.
+ * Das neue Passwort steht danach einmal in der Ausgabe. Die
+ * Wiederherstellungscodes liegen in derselben Zeile von `two_factor` und gehen
+ * mit ihr: sie sind der Weg ohne Server, dieses Kommando der danach.
  *
  * Wer dieses Kommando ausführen kann, hat ohnehin root auf dem Server: es ist
  * kein zusätzlicher Zugang, nur der kürzere Weg als ein Eingriff in die

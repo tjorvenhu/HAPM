@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { LogIn, ShieldCheck, ArrowLeft } from 'lucide-react';
+import { LogIn, ShieldCheck, ArrowLeft, LifeBuoy, Smartphone } from 'lucide-react';
 import { AuthCard } from '@/ui/auth/AuthCard';
 import AuthFormSkeleton from '@/ui/auth/AuthFormSkeleton';
 import PasskeyLoginButton from '@/components/PasskeyLoginButton';
@@ -26,6 +26,9 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
+  // Statt des Codes aus der App ein Wiederherstellungscode (`lib/recovery-codes.ts`).
+  const [useRecovery, setUseRecovery] = useState(false);
+  const [recoveryCode, setRecoveryCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [csrfToken, setCsrfToken] = useState('');
@@ -77,7 +80,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (step === 'twoFactor') codeInputRef.current?.focus();
-  }, [step]);
+  }, [step, useRecovery]);
 
   async function handleCredentials(e: FormEvent) {
     e.preventDefault();
@@ -114,11 +117,13 @@ export default function LoginPage() {
       const res = await fetch('/api/auth/2fa/validate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
-        body: JSON.stringify({ code }),
+        body: JSON.stringify(useRecovery ? { recoveryCode } : { code }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || t('Der Code ließ sich nicht prüfen.'));
-      router.push('/dashboard');
+      // Nach einem Wiederherstellungscode auf die Kontoseite: dort steht, wie
+      // viele noch übrig sind, und dort entstehen neue.
+      router.push(useRecovery ? '/konto' : '/dashboard');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : t('Der Code ließ sich nicht prüfen.'));
       setCode('');
@@ -136,6 +141,8 @@ export default function LoginPage() {
     setLoading(false);
     setCsrfToken('');
     setCode('');
+    setRecoveryCode('');
+    setUseRecovery(false);
     setError('');
     setStep('credentials');
   }
@@ -144,7 +151,11 @@ export default function LoginPage() {
     <AuthCard
       standalone
       title={HEADING[step].title && t(HEADING[step].title)}
-      subtitle={HEADING[step].subtitle && t(HEADING[step].subtitle)}
+      subtitle={
+        step === 'twoFactor' && useRecovery
+          ? t('Wiederherstellungscode')
+          : HEADING[step].subtitle && t(HEADING[step].subtitle)
+      }
     >
       {step === 'checking' && (
         <AuthFormSkeleton />
@@ -196,40 +207,82 @@ export default function LoginPage() {
         <>
           <form className="auth-form" onSubmit={handleTwoFactor}>
             <div className="auth-intro">
-              <ShieldCheck />
-              <p>{t('Geben Sie den 6-stelligen Code aus Ihrer Authenticator-App ein.')}</p>
+              {useRecovery ? <LifeBuoy /> : <ShieldCheck />}
+              <p>
+                {useRecovery
+                  ? t('Geben Sie einen Ihrer Wiederherstellungscodes ein. Er ist danach verbraucht.')
+                  : t('Geben Sie den 6-stelligen Code aus Ihrer Authenticator-App ein.')}
+              </p>
             </div>
-            <div className="auth-field">
-              <label htmlFor="twoFactorCode">{t('Code')}</label>
-              <input
-                ref={codeInputRef}
-                id="twoFactorCode"
-                className="auth-code"
-                type="text"
-                inputMode="numeric"
-                pattern="\d{6}"
-                maxLength={6}
-                required
-                value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                placeholder="000000"
-                autoComplete="one-time-code"
-              />
-            </div>
+            {useRecovery ? (
+              <div className="auth-field">
+                <label htmlFor="recoveryCode">{t('Wiederherstellungscode')}</label>
+                <input
+                  ref={codeInputRef}
+                  id="recoveryCode"
+                  className="auth-code auth-code--recovery"
+                  type="text"
+                  required
+                  maxLength={16}
+                  value={recoveryCode}
+                  onChange={(e) => setRecoveryCode(e.target.value)}
+                  placeholder="xxxxx-xxxxx"
+                  autoComplete="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                />
+              </div>
+            ) : (
+              <div className="auth-field">
+                <label htmlFor="twoFactorCode">{t('Code')}</label>
+                <input
+                  ref={codeInputRef}
+                  id="twoFactorCode"
+                  className="auth-code"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="\d{6}"
+                  maxLength={6}
+                  required
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="000000"
+                  autoComplete="one-time-code"
+                />
+              </div>
+            )}
             {error && <div className="auth-error">{error}</div>}
-            <button className="auth-submit" type="submit" disabled={loading || code.length !== 6}>
+            <button
+              className="auth-submit"
+              type="submit"
+              disabled={loading || (useRecovery ? recoveryCode.trim().length === 0 : code.length !== 6)}
+            >
               {loading ? <span className="btn-spinner" aria-hidden="true" /> : <ShieldCheck size={16} />}
               {loading ? t('Prüfen…') : t('Bestätigen')}
             </button>
           </form>
-          <button
-            type="button"
-            className="two-factor-btn two-factor-btn--ghost auth-link"
-            onClick={backToCredentials}
-            disabled={loading}
-          >
-            <ArrowLeft size={15} /> {t('Zurück zur Anmeldung')}
-          </button>
+          <div className="auth-links">
+            <button
+              type="button"
+              className="two-factor-btn two-factor-btn--ghost auth-link"
+              onClick={() => {
+                setUseRecovery(!useRecovery);
+                setError('');
+              }}
+              disabled={loading}
+            >
+              {useRecovery ? <Smartphone size={15} /> : <LifeBuoy size={15} />}{' '}
+              {useRecovery ? t('Code aus der App verwenden') : t('Wiederherstellungscode verwenden')}
+            </button>
+            <button
+              type="button"
+              className="two-factor-btn two-factor-btn--ghost auth-link"
+              onClick={backToCredentials}
+              disabled={loading}
+            >
+              <ArrowLeft size={15} /> {t('Zurück zur Anmeldung')}
+            </button>
+          </div>
         </>
       )}
     </AuthCard>

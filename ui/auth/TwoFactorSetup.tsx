@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useRef, type FormEvent } from "react"
 import { useT } from "@/lib/i18n/react"
-import { ShieldCheck, Copy, Check, Loader2, ArrowLeft, ArrowRight, X } from "lucide-react"
+import { ShieldCheck, Copy, Check, Download, Loader2, ArrowLeft, ArrowRight, X } from "lucide-react"
+import { RecoveryCodeGrid, useRecoveryCodeActions } from "./RecoveryCodes"
 
 export interface TwoFactorSetupProps {
   /**
@@ -44,7 +45,7 @@ export default function TwoFactorSetup({ start, verify, onComplete, onCancel, re
   const [copied, setCopied] = useState(false)
   const [verifying, setVerifying] = useState(false)
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>([])
-  const [recoveryCopied, setRecoveryCopied] = useState(false)
+  const recovery = useRecoveryCodeActions(recoveryCodes, setError)
   const codeInputRef = useRef<HTMLInputElement>(null)
 
   // Abbrechen geht bis zur Bestätigung des Codes. Danach ist der zweite Faktor
@@ -237,47 +238,35 @@ export default function TwoFactorSetup({ start, verify, onComplete, onCancel, re
               {rich(
                 "Mit diesen Codes können Sie sich anmelden, falls Sie den Zugriff auf Ihre Authenticator-App verlieren. Jeder Code ist einmal verwendbar und wird {onlyNow} angezeigt.",
                 { onlyNow: <strong>{t("nur jetzt")}</strong> }
-              )}
+              )}{" "}
+              {t("Legen Sie sie getrennt von diesem Gerät ab, zum Beispiel ausgedruckt oder im Passwortmanager.")}
             </p>
 
-            <div style={{
-              background: "var(--bg-warm)",
-              border: "1px solid var(--border)",
-              borderRadius: 8,
-              padding: "12px 16px",
-              marginBottom: 16,
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: "6px 16px",
-            }}>
-              {recoveryCodes.map((rc) => (
-                <code key={rc} style={{ fontSize: "0.8125rem" }}>{rc}</code>
-              ))}
+            <div style={{ marginBottom: 16 }}>
+              <RecoveryCodeGrid codes={recoveryCodes} />
             </div>
 
-            <div style={{ display: "flex", gap: 10 }}>
+            <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
               <button
                 type="button"
-                className={recoveryCopied ? "two-factor-btn two-factor-btn--secondary is-copied" : "two-factor-btn two-factor-btn--secondary"}
+                className={recovery.copied ? "two-factor-btn two-factor-btn--secondary is-copied" : "two-factor-btn two-factor-btn--secondary"}
                 style={{ flex: 1 }}
-                onClick={() => {
-                  navigator.clipboard.writeText(recoveryCodes.join("\n"))
-                  setRecoveryCopied(true)
-                  setTimeout(() => setRecoveryCopied(false), 2000)
-                }}
+                onClick={recovery.copy}
               >
-                {recoveryCopied ? <Check key="done" size={14} /> : <Copy key="copy" size={14} />}
-                {recoveryCopied ? t("Kopiert") : t("Kopieren")}
+                {recovery.copied ? <Check key="done" size={14} /> : <Copy key="copy" size={14} />}
+                {recovery.copied ? t("Kopiert") : t("Kopieren")}
               </button>
-              <button
-                type="button"
-                className="two-factor-btn two-factor-btn--primary"
-                style={{ flex: 1 }}
-                onClick={() => { setStep("done"); setTimeout(onComplete, 1500) }}
-              >
-                <Check size={15} /> {t("Codes gespeichert")}
+              <button type="button" className="two-factor-btn two-factor-btn--secondary" style={{ flex: 1 }} onClick={recovery.download}>
+                <Download size={14} /> {t("Herunterladen")}
               </button>
             </div>
+            <button
+              type="button"
+              className="two-factor-btn two-factor-btn--primary"
+              onClick={() => { setError(""); setStep("done"); setTimeout(onComplete, 1500) }}
+            >
+              <Check size={15} /> {t("Codes gespeichert")}
+            </button>
           </div>
         )}
 

@@ -20,6 +20,8 @@ export type AuditAction =
   | '2fa_verified'
   | '2fa_failed'
   | '2fa_disabled'
+  | '2fa_recovery_codes_created'
+  | '2fa_recovery_code_used'
   | 'user_created'
   | 'user_deleted'
   | 'haproxy_service_created'

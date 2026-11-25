@@ -128,7 +128,12 @@ Variable werden diese Tests übersprungen und sagen das in einer Zeile.
 **Der Notweg.** `docker exec -it hapm hapm-admin users` zeigt die Konten,
 `… reset-password <e-mail>` setzt ein neues Passwort, schaltet den zweiten
 Faktor ab, entfernt die Passkeys und beendet die Sitzungen des Kontos. Das
-Kommando spricht ohne die Oberfläche mit der Datenbank.
+Kommando spricht ohne die Oberfläche mit der Datenbank. Vorher kommt der Weg
+ohne Server: Wiederherstellungscodes des zweiten Faktors (`lib/two-factor.ts`,
+`lib/recovery-codes.ts`), als HMAC in `two_factor` neben dem Geheimnis. Der
+Schlüssel des HMAC ist aus `encryptionKey` abgeleitet: ein Abzug der Datenbank
+allein reicht nicht zum Durchprobieren, und nach dem Zurückspielen einer
+Sicherung gelten die Codes weiter, weil `secrets.json` mitkommt.
 
 ## Der Docker-Socket
 
