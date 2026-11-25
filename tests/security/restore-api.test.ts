@@ -49,8 +49,9 @@ const TOUCHES = [
 
 describe('die Routen des Zurückspielens', () => {
   it('findet alle Routen, damit ein kaputter Pfad die Suite nicht grün macht', () => {
-    expect(FILES).toHaveLength(4);
-    expect(CASES.map((c) => c.method).sort()).toEqual(['DELETE', 'GET', 'POST', 'POST', 'POST']);
+    // Fünf seit `runs/[id]`: der Stand eines Laufs für das Fenster, nur lesend.
+    expect(FILES).toHaveLength(5);
+    expect(CASES.map((c) => c.method).sort()).toEqual(['DELETE', 'GET', 'GET', 'POST', 'POST', 'POST']);
   });
 
   it.each(CASES)('$file $method verlangt eine Sitzung', ({ body }) => {
