@@ -1,0 +1,54 @@
+name: Fehler melden · Bug report
+description: Etwas funktioniert nicht wie erwartet · Something does not work as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Danke für die Meldung. Sicherheitslücken bitte **nicht** hier, sondern wie in `SECURITY.md` beschrieben melden.
+        Thanks for reporting. Please do **not** report security issues here, see `SECURITY.md`.
+  - type: textarea
+    id: beschreibung
+    attributes:
+      label: Was ist passiert? · What happened?
+      description: Was haben Sie getan, was haben Sie erwartet, was kam stattdessen? · What did you do, what did you expect, what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: schritte
+    attributes:
+      label: Schritte zum Nachstellen · Steps to reproduce
+      placeholder: |
+        1. Unter „Ziele“ …
+        2. …
+    validations:
+      required: true
+  - type: input
+    id: fassung
+    attributes:
+      label: Fassung von HAPM · HAPM version
+      description: Steht unter „Updates“ · Shown under "Updates"
+      placeholder: 0.5.0
+    validations:
+      required: true
+  - type: dropdown
+    id: installation
+    attributes:
+      label: Installation
+      options:
+        - Installationsskript · Install script
+        - Nur Docker Compose · Docker Compose only
+        - Portainer, Dockge oder andere · Portainer, Dockge or other
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Betriebssystem und Architektur · OS and architecture
+      placeholder: Debian 12, amd64
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: "Ausgabe von · Output of: docker compose logs --tail 200 hapm"
+      render: text
