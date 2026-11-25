@@ -319,14 +319,19 @@ export async function startHaproxyRun(opts: RunOptions): Promise<HaproxyRun> {
    * nie einen Eintrag angefasst.
    */
   let prefix: ProvisionStep[] = [];
+  /** Was zuletzt in der Zeile stand. Wirft der Vorgang (etwa acme.sh nach fünf
+   *  Minuten), bleiben diese Schritte samt Ausgabe stehen, statt zu verschwinden. */
+  let reported: ProvisionStep[] = [];
 
   const reporter: ProvisionReporter = {
     onPhase: (phase) =>
       updateDocument<HaproxyRun>(COLLECTIONS.HAPROXY_RUNS, runId, { phase }).then(() => {}),
-    onStep: (steps) =>
-      updateDocument<HaproxyRun>(COLLECTIONS.HAPROXY_RUNS, runId, {
-        steps: JSON.stringify([...prefix, ...steps]),
-      }).then(() => {}),
+    onStep: (steps) => {
+      reported = [...prefix, ...steps];
+      return updateDocument<HaproxyRun>(COLLECTIONS.HAPROXY_RUNS, runId, {
+        steps: JSON.stringify(reported),
+      }).then(() => {});
+    },
   };
 
   const work = (async () => {
@@ -402,6 +407,9 @@ export async function startHaproxyRun(opts: RunOptions): Promise<HaproxyRun> {
       // ihr und dem Lauf entstanden ist: eine Domain, die inzwischen jemand
       // anders belegt, ein Server, der gerade weg ist.
       error = err instanceof Error ? err.message : msgid('Der Vorgang ist fehlgeschlagen.');
+      if (reported.length > steps.length) {
+        steps = reported.map(({ running, ...step }) => (running ? { ...step, ok: false } : step));
+      }
     }
 
     /* ── DNS zuletzt: die Einträge, die niemand mehr braucht ──
@@ -526,7 +534,8 @@ export function parseSteps(raw: string | null): ProvisionStep[] {
 export function stepsAsLog(steps: ProvisionStep[], t: (text: string) => string = (text) => text): string {
   return steps
     .map((step) => {
-      const head = `${step.ok ? '[ok]' : t(msgid('[fehler]'))} ${t(step.label)}`;
+      const mark = step.running ? t(msgid('[läuft]')) : step.ok ? '[ok]' : t(msgid('[fehler]'));
+      const head = `${mark} ${t(step.label)}`;
       if (!step.detail) return head;
       const detail = t(step.detail)
         .split('\n')

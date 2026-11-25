@@ -604,6 +604,8 @@ export interface ProvisionStep {
   label: string;
   ok: boolean;
   detail?: string;
+  /** Der Schritt läuft noch. Steht nur in Zwischenständen, nie im Ergebnis. */
+  running?: boolean;
 }
 
 export interface ProvisionResult {
@@ -624,21 +626,68 @@ export interface ProvisionReporter {
   onPhase?: (phase: HaproxyPhase) => void | Promise<void>;
 }
 
-/** Sammelt die Schritte und meldet jeden einzelnen weiter, sobald er feststeht. */
+/** Wie oft die Ausgabe eines laufenden Schritts höchstens in die Zeile geht. */
+const LIVE_REPORT_MS = 1000;
+
+/**
+ * Sammelt die Schritte und meldet jeden einzelnen weiter, sobald er feststeht.
+ *
+ * Dazu ein laufender Schritt mit der Ausgabe, die bisher kam (`live`). Ohne ihn
+ * stand während der Ausstellung eines Zertifikats minutenlang nichts Neues da,
+ * und die Oberfläche sah aus, als hinge sie. Die Meldungen laufen über eine
+ * Kette: ein später ankommender Zwischenstand darf das Ergebnis nicht
+ * überschreiben.
+ */
 class StepLog {
   readonly steps: ProvisionStep[] = [];
+  private queue: Promise<void> = Promise.resolve();
 
   constructor(private readonly reporter?: ProvisionReporter) {}
 
-  async push(step: ProvisionStep): Promise<void> {
-    this.steps.push(step);
+  private report(steps: ProvisionStep[]): Promise<void> {
     // Ein Fehlschlag beim Melden darf den Vorgang nicht anhalten: die Datenbank
     // ist für das, was auf der Maschine passiert, nicht zuständig.
-    await Promise.resolve(this.reporter?.onStep?.(this.steps)).catch(() => {});
+    this.queue = this.queue.then(() =>
+      Promise.resolve(this.reporter?.onStep?.(steps)).catch(() => {})
+    );
+    return this.queue;
+  }
+
+  async push(step: ProvisionStep): Promise<void> {
+    this.steps.push(step);
+    await this.report([...this.steps]);
   }
 
   async phase(phase: HaproxyPhase): Promise<void> {
     await Promise.resolve(this.reporter?.onPhase?.(phase)).catch(() => {});
+  }
+
+  /**
+   * Einen laufenden Schritt zeigen und seine Ausgabe mitschreiben, höchstens
+   * einmal je Sekunde. `stop` vor dem `push` des Ergebnisses rufen.
+   */
+  live(label: string): { onOutput: (chunk: string) => void; stop: () => void } {
+    let output = '';
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let stopped = false;
+    const flush = () => {
+      timer = null;
+      if (stopped) return;
+      void this.report([...this.steps, { label, ok: true, running: true, detail: tail(output) || undefined }]);
+    };
+    flush();
+    return {
+      onOutput: (chunk) => {
+        output += chunk;
+        if (output.length > 8192) output = output.slice(-8192);
+        if (!timer && !stopped) timer = setTimeout(flush, LIVE_REPORT_MS);
+      },
+      stop: () => {
+        stopped = true;
+        if (timer) clearTimeout(timer);
+        timer = null;
+      },
+    };
   }
 }
 
@@ -1004,6 +1053,7 @@ async function issueAndDeploy(
     return deployCertificate(ssh, existing.mainDomain, isEccKey(existing.keyLength), steps);
   }
 
+  const live = steps.live(msgid('Zertifikat wird ausgestellt'));
   const issue = await sshExec(
     ssh,
     buildCommand([
@@ -1016,8 +1066,9 @@ async function issueAndDeploy(
       'ec-256',
       ...domains.flatMap((domain) => ['-d', domain]),
     ]),
-    ACME_MS
-  );
+    ACME_MS,
+    { onOutput: live.onOutput }
+  ).finally(live.stop);
   // 2 heißt bei acme.sh „das vorhandene Zertifikat ist noch gültig". Das ist
   // kein Fehlschlag, sondern der zweite Normalfall.
   if (issue.code !== 0 && issue.code !== 2) {
@@ -1062,6 +1113,7 @@ async function deployCertificate(
   ecc: boolean,
   steps: StepLog
 ): Promise<boolean> {
+  const live = steps.live(msgid('Zertifikat wird ausgerollt'));
   const deploy = await sshExec(
     ssh,
     withEnv(
@@ -1079,8 +1131,9 @@ async function deployCertificate(
       },
       [ACME, '--deploy', '-d', mainDomain, ...(ecc ? ['--ecc'] : []), '--deploy-hook', 'haproxy']
     ),
-    ACME_MS
-  );
+    ACME_MS,
+    { onOutput: live.onOutput }
+  ).finally(live.stop);
   if (deploy.code !== 0) {
     await steps.push({
       label: msgid('Zertifikat ausrollen'),

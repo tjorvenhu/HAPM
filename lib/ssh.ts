@@ -39,15 +39,26 @@ const INLINE_LIMIT = 64 * 1024;
 
 const MAX_OUTPUT = 32 * 1024 * 1024;
 
+export interface ExecOptions {
+  /** Jedes Stück Ausgabe (stdout und stderr), sobald es kommt. Für Kommandos,
+   *  die Minuten laufen und deren Fortschritt jemand sehen soll (acme.sh). */
+  onOutput?: (chunk: string) => void;
+}
+
 export async function sshExec(
   _config: SSHConnectionConfig,
   command: string,
-  timeoutMs = 120_000
+  timeoutMs = 120_000,
+  options: ExecOptions = {}
 ): Promise<SSHExecResult> {
-  return localExec(command, timeoutMs);
+  return localExec(command, timeoutMs, options);
 }
 
-export function localExec(command: string, timeoutMs = 120_000): Promise<SSHExecResult> {
+export function localExec(
+  command: string,
+  timeoutMs = 120_000,
+  { onOutput }: ExecOptions = {}
+): Promise<SSHExecResult> {
   return new Promise((resolve, reject) => {
     let script: string | null = null;
     let args: string[];
@@ -91,6 +102,13 @@ export function localExec(command: string, timeoutMs = 120_000): Promise<SSHExec
     const collect = (target: Buffer[]) => (chunk: Buffer) => {
       size += chunk.length;
       if (size <= MAX_OUTPUT) target.push(chunk);
+      if (onOutput) {
+        try {
+          onOutput(chunk.toString('utf8'));
+        } catch {
+          // Wer mitliest, darf das Kommando nicht aufhalten.
+        }
+      }
     };
     child.stdout.on('data', collect(out));
     child.stderr.on('data', collect(err));

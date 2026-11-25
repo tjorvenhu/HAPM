@@ -43,6 +43,7 @@ import {
 } from '@/lib/haproxy/config';
 import { matchesStreamSearch, type HaproxyStream } from '@/lib/haproxy/streams';
 import { msgid } from '@/lib/i18n';
+import type { ProvisionStep } from '@/lib/haproxy/provision';
 import { useT } from '@/lib/i18n/react';
 
 /**
@@ -87,6 +88,8 @@ interface PendingRun {
   /** Aus dem Lauf nachgezogen: „Zertifikat", „Prüfung", „Einsetzen …". Deutsch,
    *  wie `HAPROXY_PHASE_LABELS` sie führt: die Karten übersetzen sie selbst. */
   phase: string | null;
+  /** Die Schritte aus dem Lauf, solange er läuft. Die Platzhalter-Karte zeigt sie. */
+  steps: ProvisionStep[];
 }
 
 export default function ReverseProxyScopePage({
@@ -283,9 +286,12 @@ function ScopeView({ slug }: { slug: string }) {
         // Die Phase auf der Karte mitziehen: „Zertifikat" dauert am längsten,
         // und ein Spinner ohne Wort sagt nicht, worauf man wartet.
         const phase = HAPROXY_PHASE_LABELS[data.data.phase] ?? null;
+        const steps: ProvisionStep[] = Array.isArray(data.data.steps) ? data.data.steps : [];
         setPendingRun((current) =>
-          current && current.id === pendingRun.id && current.phase !== phase
-            ? { ...current, phase }
+          current &&
+          current.id === pendingRun.id &&
+          (current.phase !== phase || JSON.stringify(current.steps) !== JSON.stringify(steps))
+            ? { ...current, phase, steps }
             : current
         );
         return;
@@ -312,7 +318,7 @@ function ScopeView({ slug }: { slug: string }) {
       });
     };
 
-    const interval = setInterval(poll, 3000);
+    const interval = setInterval(poll, 2000);
     return () => {
       cancelled = true;
       clearInterval(interval);
@@ -387,6 +393,7 @@ function ScopeView({ slug }: { slug: string }) {
         isNew: false,
         kind: 'write',
         phase: null,
+        steps: [],
       });
     } catch (err) {
       notify({
@@ -478,6 +485,7 @@ function ScopeView({ slug }: { slug: string }) {
           isNew: false,
           kind: 'delete',
           phase: null,
+          steps: [],
         });
       },
     });
@@ -518,6 +526,7 @@ function ScopeView({ slug }: { slug: string }) {
           isNew: false,
           kind: 'delete',
           phase: null,
+          steps: [],
         });
       },
     });
@@ -797,6 +806,7 @@ function ScopeView({ slug }: { slug: string }) {
             <PendingCard
               title={pendingRun.title}
               phase={pendingRun.phase}
+              steps={pendingRun.steps}
             />
           </EntityGrid>
         </div>
@@ -961,7 +971,7 @@ function ScopeView({ slug }: { slug: string }) {
           onClose={() => setDialog(null)}
           onStarted={(run) => {
             setDialog(null);
-            startRun({ ...run, kind: 'write', phase: null });
+            startRun({ ...run, kind: 'write', phase: null, steps: [] });
           }}
         />
       )}
@@ -974,7 +984,7 @@ function ScopeView({ slug }: { slug: string }) {
           onClose={() => setStreamDialog(null)}
           onStarted={(run) => {
             setStreamDialog(null);
-            startRun({ ...run, kind: 'write', phase: null });
+            startRun({ ...run, kind: 'write', phase: null, steps: [] });
           }}
         />
       )}

@@ -138,4 +138,11 @@ describe('stepsAsLog', () => {
     expect(log).toContain('    Zone nicht erreichbar: 503');
     expect(log).toContain('[ok] DNS-Eintrag app.example.org');
   });
+
+  it('kennzeichnet einen laufenden Schritt samt bisheriger Ausgabe', () => {
+    const { t } = createTranslator('en');
+    const running = [{ label: 'Zertifikat wird ausgestellt', ok: true, running: true, detail: 'Verifying: app.example.org' }];
+    expect(stepsAsLog(running)).toBe('[läuft] Zertifikat wird ausgestellt\n    Verifying: app.example.org');
+    expect(stepsAsLog(running, t)).toBe('[running] Issuing certificate\n    Verifying: app.example.org');
+  });
 });

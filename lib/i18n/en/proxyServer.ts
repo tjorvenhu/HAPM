@@ -119,6 +119,8 @@ export const proxyServer: Dictionary = {
   'Zertifikat schon vorhanden': 'Certificate already present',
   'Zertifikat war noch gültig': 'Certificate was still valid',
   'Zertifikat ausgestellt': 'Certificate issued',
+  'Zertifikat wird ausgestellt': 'Issuing certificate',
+  'Zertifikat wird ausgerollt': 'Deploying certificate',
   'Zertifikat ausrollen': 'Deploy certificate',
   'Zertifikat ausgerollt': 'Certificate deployed',
   'Zertifikat aus der Erneuerung genommen': 'Certificate removed from renewal',
@@ -520,6 +522,7 @@ export const proxyServer: Dictionary = {
   'nichts gesetzt': 'nothing set',
   'DNS-Einträge entfernen': 'Remove DNS records',
   '[fehler]': '[error]',
+  '[läuft]': '[running]',
   // app/api/geoip/**
   "Der Schalter für das selbsttätige Erneuern kennt nur an und aus.": "The automatic refresh switch only knows on and off.",
   "Der Abruf ist gescheitert.": "The download failed.",

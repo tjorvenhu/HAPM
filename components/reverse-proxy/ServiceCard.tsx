@@ -5,7 +5,7 @@ import Link from 'next/link';
 import {
   Globe, Activity, GitBranch, Server, Lock, LockOpen, Pencil, Trash2, Loader2, ArrowRight,
   EyeOff, ChevronDown, ChevronRight, CornerUpRight, Scale, Cookie, BarChart3, KeyRound, ShieldCheck,
-  SlidersHorizontal, LockKeyhole,
+  SlidersHorizontal, LockKeyhole, Check, X,
 } from 'lucide-react';
 import {
   BALANCE_LABELS,
@@ -18,6 +18,7 @@ import {
 import { msgid } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
 import type { ProxyRow } from './types';
+import type { ProvisionStep } from '@/lib/haproxy/provision';
 import { findSavedTarget, type SavedTarget } from '@/lib/haproxy/saved-targets';
 
 /**
@@ -85,9 +86,12 @@ interface Props {
 export function PendingCard({
   title,
   phase,
+  steps,
 }: {
   title: string;
   phase: string | null;
+  /** Die Schritte aus dem Lauf, mit dem gerade laufenden am Ende. */
+  steps: ProvisionStep[];
 }) {
   const { t } = useT();
   return (
@@ -107,12 +111,50 @@ export function PendingCard({
         </span>
       </div>
       <div className="rp-section">
-        <div className="rp-empty-line">
-          {t('Zertifikat, Prüfung und Reload laufen. Der Eintrag erscheint vollständig, sobald HAProxy die neue Konfiguration übernommen hat.')}
-        </div>
+        {steps.length === 0 ? (
+          <div className="rp-empty-line">
+            {t('Zertifikat, Prüfung und Reload laufen. Der Eintrag erscheint vollständig, sobald HAProxy die neue Konfiguration übernommen hat.')}
+          </div>
+        ) : (
+          <ul className="hapm-steps">
+            {steps.map((step, index) => {
+              const state = step.running ? 'is-running' : step.ok ? 'is-ok' : 'is-failed';
+              const line = step.running ? lastOutputLine(step.detail) : null;
+              return (
+                <li key={`${index}-${step.label}`} className={`hapm-step ${state}`}>
+                  {step.running ? (
+                    <Loader2 size={14} strokeWidth={1.5} className="spin" />
+                  ) : step.ok ? (
+                    <Check size={14} strokeWidth={1.5} />
+                  ) : (
+                    <X size={14} strokeWidth={1.5} />
+                  )}
+                  <span className="hapm-step-text">
+                    <span className="hapm-step-label">{t(step.label)}</span>
+                    {line && <span className="hapm-step-detail">{line}</span>}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </div>
     </div>
   );
+}
+
+/**
+ * Die letzte Zeile der Ausgabe eines laufenden Schritts, ohne den Zeitstempel,
+ * den acme.sh jeder Zeile voranstellt. Sie zeigt, dass sich etwas tut (etwa
+ * „Sleeping for 120 seconds"), das ganze Protokoll steht im Overlay.
+ */
+function lastOutputLine(detail: string | undefined): string | null {
+  const line = detail
+    ?.split('\n')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .pop();
+  return line ? line.replace(/^\[[^\]]*\]\s*/, '') : null;
 }
 
 interface Tag {
