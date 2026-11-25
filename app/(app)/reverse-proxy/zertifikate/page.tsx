@@ -422,7 +422,7 @@ export default function ReverseProxyCertificatesPage() {
               {source === 'upload'
                 ? rich(
                     'Diese Installation stellt keine Zertifikate selbst aus. Ein neues Ziel braucht ein hochgeladenes Zertifikat, das seine Domains abdeckt. Umstellen lässt sich das unter {general}.',
-                    { general: <Link href="/system">{t('Allgemein')}</Link> }
+                    { general: <Link href="/system?bereich=zertifikate">{t('Allgemein')}</Link> }
                   )
                 : t(
                     'Zertifikate von acme.sh entstehen mit ihrem Ziel. Eins, das kein Ziel mehr braucht, löschen Sie in seiner Zeile. Hochgeladene ersetzen und entfernen Sie hier, acme.sh beantragt dann für ihre Domains keins.'

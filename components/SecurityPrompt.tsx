@@ -113,7 +113,7 @@ export default function SecurityPrompt() {
                 // dorthin, und der Dialog geht dort gleich auf.
                 setOpen(false);
                 void dismiss();
-                router.push('/konto?passkey=neu');
+                router.push('/konto?bereich=passkeys&passkey=neu');
               }}
             >
               <KeyRound size={18} strokeWidth={1.5} />

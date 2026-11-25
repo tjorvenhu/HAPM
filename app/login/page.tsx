@@ -123,7 +123,7 @@ export default function LoginPage() {
       if (!res.ok) throw new Error(data.error || t('Der Code ließ sich nicht prüfen.'));
       // Nach einem Wiederherstellungscode auf die Kontoseite: dort steht, wie
       // viele noch übrig sind, und dort entstehen neue.
-      router.push(useRecovery ? '/konto' : '/dashboard');
+      router.push(useRecovery ? '/konto?bereich=zweiter-faktor' : '/dashboard');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : t('Der Code ließ sich nicht prüfen.'));
       setCode('');

@@ -101,7 +101,9 @@ Next.js (App Router) mit TypeScript strict, pnpm. Drei Container: HAPM, HAProxy
 - **Oberfläche:** `apiFetch` aus `useApp()`, nie nacktes `fetch`. `<Select>`
   statt `<select>`, `useConfirm()` statt `confirm()`, Schalter ist
   `.toggle-switch` in einem `label`. Meldungen nach einer Handlung sind Toasts.
-  Jede Seite aktualisiert sich selbst (`usePolling`, `useNow`). Eine
+  Jede Seite aktualisiert sich selbst (`usePolling`, `useNow`). Eine lange
+  Seite mit getrennten Themen bekommt Reiter aus `components/AreaTabs.tsx`
+  (`?bereich=` in der Adresse, Punkt für Ungespeichertes). Eine
   Client-Komponente importiert nichts, was `lib/db`, `lib/ssh` oder `lib/docker`
   erreicht (nur `import type`).
 - **Design:** `ui/` ist das Design von HAPM: Rahmen (`ToolShell`, Seitenleiste),

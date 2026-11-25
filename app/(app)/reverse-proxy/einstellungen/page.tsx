@@ -2,10 +2,9 @@
 
 import { Fragment, Suspense, useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ShieldCheck, Loader2, RefreshCw, X, ArrowLeft, Network, Save, Lock, Plus, Info,
-  KeyRound, Trash2, ShieldAlert, Globe, FileCog, type LucideIcon,
+  KeyRound, Trash2, ShieldAlert, Globe, FileCog,
 } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
@@ -22,6 +21,7 @@ import UpdateRunOverlay from '@/components/UpdateRunOverlay';
 import { HAPROXY_PHASES, HAPROXY_PHASE_LABELS } from '@/components/runPhases';
 import { HTTPS_MARKER, type GlobalSettings } from '@/lib/haproxy/config';
 import { SkeletonRows } from '@/components/Skeleton';
+import AreaTabs, { useArea, type Area as AreaEntry } from '@/components/AreaTabs';
 import GeoipPanel from '@/components/reverse-proxy/GeoipPanel';
 import BaseConfigPanel from '@/components/reverse-proxy/BaseConfigPanel';
 import ProtectionSection, {
@@ -58,17 +58,13 @@ import { msgid } from '@/lib/i18n';
 
 type Area = 'https' | 'zugriff' | 'dns' | 'laender' | 'grundkonfiguration';
 
-const AREAS: { key: Area; label: string; icon: LucideIcon }[] = [
+const AREAS: AreaEntry<Area>[] = [
   { key: 'https', label: msgid('HTTPS'), icon: ShieldCheck },
   { key: 'zugriff', label: msgid('Zugriff'), icon: Lock },
   { key: 'dns', label: msgid('DNS-Zugangsdaten'), icon: KeyRound },
   { key: 'laender', label: msgid('Länder-Tabelle'), icon: Globe },
   { key: 'grundkonfiguration', label: msgid('Grundkonfiguration'), icon: FileCog },
 ];
-
-function areaOf(value: string | null): Area {
-  return AREAS.find((entry) => entry.key === value)?.key ?? 'https';
-}
 
 interface SettingsRow {
   $id: string;
@@ -101,22 +97,8 @@ export default function ReverseProxySettingsPage() {
 
 function SettingsPage() {
   const { apiFetch } = useApp();
-  const router = useRouter();
-  const searchParams = useSearchParams();
   // Ältere Links zeigen mit `#grundkonfiguration` auf die Karte.
-  const [area, setArea] = useState<Area>(() =>
-    typeof window !== 'undefined' && window.location.hash === '#grundkonfiguration'
-      ? 'grundkonfiguration'
-      : areaOf(searchParams.get('bereich'))
-  );
-
-  const select = useCallback(
-    (next: Area) => {
-      setArea(next);
-      router.replace(next === 'https' ? '/reverse-proxy/einstellungen' : `?bereich=${next}`, { scroll: false });
-    },
-    [router]
-  );
+  const [area, select] = useArea(AREAS, '/reverse-proxy/einstellungen', { grundkonfiguration: 'grundkonfiguration' });
   const { notify } = useToast();
   const confirm = useConfirm();
   const { t, rich } = useT();
@@ -478,26 +460,7 @@ function SettingsPage() {
 
       {error && <div className="alert alert-danger sys-block">{error}</div>}
 
-      <div className="tabs" role="tablist">
-        {AREAS.map((entry) => {
-          const Icon = entry.icon;
-          const changed = rows.some((row) => areaDirty(row, entry.key));
-          return (
-            <button
-              key={entry.key}
-              type="button"
-              role="tab"
-              aria-selected={area === entry.key}
-              className={`tab ${area === entry.key ? 'active' : ''}`}
-              onClick={() => select(entry.key)}
-            >
-              <Icon size={15} />
-              {t(entry.label)}
-              {changed && <span className="hapm-tab-dot" aria-label={t('Ungespeicherte Änderungen')} />}
-            </button>
-          );
-        })}
-      </div>
+      <AreaTabs areas={AREAS} value={area} onChange={select} dirty={(key) => rows.some((row) => areaDirty(row, key))} />
 
       {area === 'laender' && <GeoipPanel />}
       {area === 'grundkonfiguration' && <BaseConfigPanel />}

@@ -13,7 +13,8 @@ zweite („Für den, der den Server ändert") sagt, warum er so gebaut ist.
 
 Ein API-Key aus HAPM unter **Reverse-Proxy → API und MCP**
 (`/reverse-proxy/api`). Es sind **dieselben Keys wie für die API**, es gibt
-kein zweites Token-System. Auf derselben Seite steht im Abschnitt „MCP" die
+kein zweites Token-System. Auf derselben Seite steht im Reiter „MCP"
+(`?bereich=mcp`) die
 Adresse des Endpunkts und für jeden Client die fertige Konfiguration zum
 Kopieren.
 

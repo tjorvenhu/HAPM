@@ -128,9 +128,9 @@ export function passkeyChangeMail(
         mailText(escapeHtml(greeting)) +
         mailText(sentence) +
         mailNote(escapeHtml(advice), 'warning', t('Das waren nicht Sie?')),
-      // Nach `/konto` und nicht zum Zurücksetzen: dort stehen die Passkeys, und
-      // der unbekannte muss zuerst weg.
-      action: publicUrl ? { label: t('Konto öffnen'), url: `${publicUrl}/konto` } : undefined,
+      // Auf den Reiter Passkeys von `/konto` und nicht zum Zurücksetzen: dort
+      // stehen die Passkeys, und der unbekannte muss zuerst weg.
+      action: publicUrl ? { label: t('Konto öffnen'), url: `${publicUrl}/konto?bereich=passkeys` } : undefined,
     },
     { ...currentInstallation(), locale }
   );

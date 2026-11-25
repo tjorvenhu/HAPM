@@ -1,12 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { AlertTriangle, ArrowRightLeft, AtSign, Globe, Home, Loader2, Network, Save, Trash2 } from 'lucide-react';
+import { Suspense, useCallback, useEffect, useState, type FormEvent } from 'react';
+import { AlertTriangle, ArrowRightLeft, AtSign, Globe, Home, Loader2, Network, Save, ShieldCheck, Trash2 } from 'lucide-react';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { SkeletonDetail } from '@/components/Skeleton';
+import AreaTabs, { useArea, type Area } from '@/components/AreaTabs';
 import CertificateSourceCard from '@/components/system/CertificateSourceCard';
 import AddressMoveWizard from '@/components/system/AddressMoveWizard';
 import { MOVE_STAGE_LABELS, moveOutcome } from '@/lib/address-move/rules';
@@ -31,13 +32,34 @@ const EXPOSURE_CHOICES: { value: Exposure; title: string; text: string }[] = [
   },
 ];
 
+/**
+ * Zwei Reiter: die Adresse von HAPM, und alles, was bestimmt, wie Zertifikate
+ * entstehen (Art der Installation, Herkunft, Kontakt beim ACME-Server). Der
+ * gewählte steht als `?bereich=` in der Adresse.
+ */
+type GeneralArea = 'adresse' | 'zertifikate';
+
+const AREAS: Area<GeneralArea>[] = [
+  { key: 'adresse', label: msgid('Adresse'), icon: Globe },
+  { key: 'zertifikate', label: msgid('Zertifikate'), icon: ShieldCheck },
+];
+
 interface SaveResult {
   settings: SettingsView;
   acme: { ok: boolean; detail: string } | null;
 }
 
 export default function GeneralSettingsPage() {
+  return (
+    <Suspense fallback={<SkeletonDetail />}>
+      <GeneralSettings />
+    </Suspense>
+  );
+}
+
+function GeneralSettings() {
   const { apiFetch } = useApp();
+  const [area, selectArea] = useArea(AREAS, '/system');
   const { notify } = useToast();
   const confirm = useConfirm();
   const { t } = useT();
@@ -205,6 +227,9 @@ export default function GeneralSettingsPage() {
 
       {error && <div className="alert alert-danger sys-block">{error}</div>}
 
+      <AreaTabs areas={AREAS} value={area} onChange={selectArea} dirty={(key) => key === 'zertifikate' && emailChanged} />
+
+      {area === 'adresse' && (
       <div className="card sys-block">
         <div className="card-header">
           <div>
@@ -262,6 +287,7 @@ export default function GeneralSettingsPage() {
           </div>
         </div>
       </div>
+      )}
 
       {wizardOpen && moveView && (
         <AddressMoveWizard
@@ -275,89 +301,93 @@ export default function GeneralSettingsPage() {
         />
       )}
 
-      <div className="card sys-block">
-        <div className="card-header">
-          <div>
-            <h2 className="card-title">
-              <Network size={17} strokeWidth={1.5} />
-              {t('Art der Installation')}
-            </h2>
-            <p className="card-subtitle">{t('Sie bestimmt, wie neue Zertifikate ausgestellt werden.')}</p>
-          </div>
-        </div>
+      {area === 'zertifikate' && (
+        <>
+          <div className="card sys-block">
+            <div className="card-header">
+              <div>
+                <h2 className="card-title">
+                  <Network size={17} strokeWidth={1.5} />
+                  {t('Art der Installation')}
+                </h2>
+                <p className="card-subtitle">{t('Sie bestimmt, wie neue Zertifikate ausgestellt werden.')}</p>
+              </div>
+            </div>
 
-        <div className="card-body">
-          <div className="hapm-choices">
-            {EXPOSURE_CHOICES.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className={`hapm-choice${settings.exposure === option.value ? ' is-selected' : ''}`}
-                aria-pressed={settings.exposure === option.value}
-                disabled={savingExposure}
-                onClick={() => void saveExposure(option.value)}
-              >
-                {option.value === 'internal' ? <Home size={18} strokeWidth={1.5} /> : <Globe size={18} strokeWidth={1.5} />}
-                <span className="hapm-choice-text">
-                  <strong>{t(option.title)}</strong>
-                  <span>{t(option.text)}</span>
-                </span>
-              </button>
-            ))}
-          </div>
+            <div className="card-body">
+              <div className="hapm-choices">
+                {EXPOSURE_CHOICES.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={`hapm-choice${settings.exposure === option.value ? ' is-selected' : ''}`}
+                    aria-pressed={settings.exposure === option.value}
+                    disabled={savingExposure}
+                    onClick={() => void saveExposure(option.value)}
+                  >
+                    {option.value === 'internal' ? <Home size={18} strokeWidth={1.5} /> : <Globe size={18} strokeWidth={1.5} />}
+                    <span className="hapm-choice-text">
+                      <strong>{t(option.title)}</strong>
+                      <span>{t(option.text)}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
 
-          <div className="alert alert-info">
-            <span>{t('Bestehende Zertifikate behalten ihre Methode, auch bei der Erneuerung.')}</span>
-          </div>
-        </div>
-      </div>
-
-      <CertificateSourceCard settings={settings} onSaved={setSettings} />
-
-      <div className="card sys-block">
-        <div className="card-header">
-          <div>
-            <h2 className="card-title">
-              <AtSign size={17} strokeWidth={1.5} />
-              {t("E-Mail für Let's Encrypt")}
-            </h2>
-            <p className="card-subtitle">{t("Mit dieser Adresse meldet acme.sh das Konto bei Let's Encrypt an.")}</p>
-          </div>
-        </div>
-
-        <form className="card-body" onSubmit={saveEmail}>
-          {emailError && <div className="alert alert-danger">{emailError}</div>}
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="acme-email">
-              {t('E-Mail-Adresse')}
-              <InfoHint
-                text={t(
-                  "Let's Encrypt verschickt keine Warnungen vor dem Ablauf eines Zertifikats mehr. Wer gewarnt werden will, richtet die Benachrichtigungen von HAPM ein."
-                )}
-              />
-            </label>
-            <input
-              id="acme-email"
-              className="form-input"
-              type="email"
-              placeholder="admin@example.org"
-              value={emailValue}
-              disabled={savingEmail}
-              onChange={(event) => setEmailDraft(event.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-            />
+              <div className="alert alert-info">
+                <span>{t('Bestehende Zertifikate behalten ihre Methode, auch bei der Erneuerung.')}</span>
+              </div>
+            </div>
           </div>
 
-          <div className="hapm-form-actions">
-            <button className="btn btn-primary" type="submit" disabled={savingEmail || !emailChanged}>
-              {savingEmail ? <Loader2 size={16} strokeWidth={1.5} className="spin" /> : <Save size={16} strokeWidth={1.5} />}
-              {t('Speichern')}
-            </button>
+          <CertificateSourceCard settings={settings} onSaved={setSettings} />
+
+          <div className="card sys-block">
+            <div className="card-header">
+              <div>
+                <h2 className="card-title">
+                  <AtSign size={17} strokeWidth={1.5} />
+                  {t("E-Mail für Let's Encrypt")}
+                </h2>
+                <p className="card-subtitle">{t("Mit dieser Adresse meldet acme.sh das Konto bei Let's Encrypt an.")}</p>
+              </div>
+            </div>
+
+            <form className="card-body" onSubmit={saveEmail}>
+              {emailError && <div className="alert alert-danger">{emailError}</div>}
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="acme-email">
+                  {t('E-Mail-Adresse')}
+                  <InfoHint
+                    text={t(
+                      "Let's Encrypt verschickt keine Warnungen vor dem Ablauf eines Zertifikats mehr. Wer gewarnt werden will, richtet die Benachrichtigungen von HAPM ein."
+                    )}
+                  />
+                </label>
+                <input
+                  id="acme-email"
+                  className="form-input"
+                  type="email"
+                  placeholder="admin@example.org"
+                  value={emailValue}
+                  disabled={savingEmail}
+                  onChange={(event) => setEmailDraft(event.target.value)}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </div>
+
+              <div className="hapm-form-actions">
+                <button className="btn btn-primary" type="submit" disabled={savingEmail || !emailChanged}>
+                  {savingEmail ? <Loader2 size={16} strokeWidth={1.5} className="spin" /> : <Save size={16} strokeWidth={1.5} />}
+                  {t('Speichern')}
+                </button>
+              </div>
+            </form>
           </div>
-        </form>
-      </div>
+        </>
+      )}
     </>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { Fragment, Suspense, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import {
   AlertTriangle,
   Archive,
@@ -9,8 +9,10 @@ import {
   ChevronRight,
   Circle,
   FolderClock,
+  History,
   ListChecks,
   Loader2,
+  RotateCcw,
   Save,
   X,
 } from 'lucide-react';
@@ -20,6 +22,7 @@ import { useToast } from '@/components/Toast';
 import { usePolling } from '@/components/usePolling';
 import { useNow } from '@/components/useNow';
 import { SkeletonDetail, SkeletonRows } from '@/components/Skeleton';
+import AreaTabs, { useArea, type Area } from '@/components/AreaTabs';
 import { RUN_STATUS_CLASS, RUN_STATUS_LABELS, formatClock } from '@/components/system/format';
 import { formatBytes, formatDateTime, msgid, type Translator } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
@@ -30,6 +33,19 @@ import type { HaproxyStep } from '@/lib/types';
 
 type RunView = Omit<BackupRunForClient, 'steps'> & { steps: HaproxyStep[] };
 type BackupData = Omit<BackupOverview, 'runs'> & { runs: RunView[] };
+
+/**
+ * Ein laufender Lauf steht über den Reitern, darunter je ein Thema: wohin und
+ * wann gesichert wird, das Zurückspielen und die Läufe. Der gewählte steht als
+ * `?bereich=` in der Adresse.
+ */
+type BackupArea = 'einstellungen' | 'zurueckspielen' | 'historie';
+
+const AREAS: Area<BackupArea>[] = [
+  { key: 'einstellungen', label: msgid('Einstellungen'), icon: FolderClock },
+  { key: 'zurueckspielen', label: msgid('Zurückspielen'), icon: RotateCcw },
+  { key: 'historie', label: msgid('Historie'), icon: History },
+];
 
 interface FormState {
   hostPath: string;
@@ -125,7 +141,16 @@ function RunSteps({ run }: { run: RunView }) {
 }
 
 export default function BackupPage() {
+  return (
+    <Suspense fallback={<SkeletonDetail />}>
+      <Backup />
+    </Suspense>
+  );
+}
+
+function Backup() {
   const { apiFetch } = useApp();
+  const [area, selectArea] = useArea(AREAS, '/backup');
   const { notify } = useToast();
   const { t, rich, locale } = useT();
   const now = useNow(1000);
@@ -354,253 +379,267 @@ export default function BackupPage() {
         </div>
       )}
 
-      <div className="card sys-block">
-        <div className="card-header">
-          <h2 className="card-title">
-            <FolderClock size={17} strokeWidth={1.5} />
-            {t('Wohin und wann')}
-          </h2>
-        </div>
+      <AreaTabs areas={AREAS} value={area} onChange={selectArea} dirty={(key) => key === 'einstellungen' && draft !== null} />
 
-        <form className="card-body" onSubmit={save}>
-          {formError && <div className="alert alert-danger">{formError}</div>}
+      {area === 'einstellungen' && (
+        <>
+          <div className="card sys-block">
+            <div className="card-header">
+              <h2 className="card-title">
+                <FolderClock size={17} strokeWidth={1.5} />
+                {t('Wohin und wann')}
+              </h2>
+            </div>
 
-          <div className="form-group">
-            <label className="form-label" htmlFor="backup-path">
-              {t('Ordner auf dem Server')}
-              <InfoHint
-                text={t('Ein eingebundenes Netzlaufwerk geht genauso, wenn es auf dem Server unter diesem Pfad liegt.')}
-              />
-            </label>
-            <input
-              id="backup-path"
-              className="form-input"
-              type="text"
-              placeholder="/srv/hapm-backup"
-              value={form.hostPath}
-              disabled={saving}
-              onChange={(event) => edit({ hostPath: event.target.value })}
-              autoComplete="off"
-              spellCheck={false}
-            />
-            <p className="form-hint">{t('Liegt auf dem Server, nicht im Container. Fehlt er, wird er angelegt.')}</p>
+            <form className="card-body" onSubmit={save}>
+              {formError && <div className="alert alert-danger">{formError}</div>}
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="backup-path">
+                  {t('Ordner auf dem Server')}
+                  <InfoHint
+                    text={t('Ein eingebundenes Netzlaufwerk geht genauso, wenn es auf dem Server unter diesem Pfad liegt.')}
+                  />
+                </label>
+                <input
+                  id="backup-path"
+                  className="form-input"
+                  type="text"
+                  placeholder="/srv/hapm-backup"
+                  value={form.hostPath}
+                  disabled={saving}
+                  onChange={(event) => edit({ hostPath: event.target.value })}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+                <p className="form-hint">{t('Liegt auf dem Server, nicht im Container. Fehlt er, wird er angelegt.')}</p>
+              </div>
+
+              <div className="hapm-auto">
+                <label className="form-subsection hapm-auto-switch">
+                  <div className="form-subsection-head">
+                    <div>
+                      <div className="form-section-title">{t('Täglich sichern')}</div>
+                      <div className="form-section-sub">{t('Einmal am Tag zur eingestellten Uhrzeit.')}</div>
+                    </div>
+                    <span className="toggle-switch">
+                      <input
+                        type="checkbox"
+                        checked={form.enabled}
+                        disabled={saving}
+                        onChange={(event) => edit({ enabled: event.target.checked })}
+                      />
+                      <span className="toggle-slider" />
+                    </span>
+                  </div>
+                </label>
+                <div className="form-group hapm-auto-time">
+                  <label className="form-label" htmlFor="backup-time">
+                    {t('Uhrzeit')}
+                    <InfoHint
+                      text={t(
+                        'Es gilt die Zeitzone des Containers, gesetzt über die Variable TZ. Gesichert wird einmal am Tag zu dieser Minute.'
+                      )}
+                    />
+                  </label>
+                  <input
+                    id="backup-time"
+                    type="time"
+                    className="form-input"
+                    required
+                    value={form.time}
+                    disabled={saving || !form.enabled}
+                    onChange={(event) => edit({ time: event.target.value })}
+                  />
+                </div>
+                <div className="form-group hapm-auto-keep">
+                  <label className="form-label" htmlFor="backup-keep">
+                    {t('Aufbewahren')}
+                  </label>
+                  <input
+                    id="backup-keep"
+                    type="number"
+                    className="form-input"
+                    required
+                    min={KEEP_MIN}
+                    max={KEEP_MAX}
+                    value={form.keep}
+                    disabled={saving}
+                    onChange={(event) => edit({ keep: readKeepField(event.target.value, form.keep) })}
+                  />
+                  <p className="form-hint">{t('Anzahl Sicherungen. Ältere löscht der nächste Lauf.')}</p>
+                </div>
+              </div>
+
+              <div className="hapm-form-actions">
+                <button className="btn btn-primary" type="submit" disabled={saving || !draft}>
+                  {saving ? <Loader2 size={16} strokeWidth={1.5} className="spin" /> : <Save size={16} strokeWidth={1.5} />}
+                  {t('Speichern')}
+                </button>
+                <button
+                  className="btn btn-secondary"
+                  type="button"
+                  disabled={saving || locked || !data.available || !form.hostPath.trim()}
+                  onClick={() => void saveAndStart()}
+                >
+                  <Archive size={16} strokeWidth={1.5} />
+                  {draft ? t('Speichern und jetzt sichern') : t('Jetzt sichern')}
+                </button>
+              </div>
+              <p className="form-hint">
+                {t('Eine Sicherung von Hand braucht nur den Ordner. Der Schalter „Täglich sichern“ kann aus bleiben.')}
+              </p>
+            </form>
           </div>
 
-          <div className="hapm-auto">
-            <label className="form-subsection hapm-auto-switch">
-              <div className="form-subsection-head">
-                <div>
-                  <div className="form-section-title">{t('Täglich sichern')}</div>
-                  <div className="form-section-sub">{t('Einmal am Tag zur eingestellten Uhrzeit.')}</div>
-                </div>
-                <span className="toggle-switch">
-                  <input
-                    type="checkbox"
-                    checked={form.enabled}
-                    disabled={saving}
-                    onChange={(event) => edit({ enabled: event.target.checked })}
-                  />
-                  <span className="toggle-slider" />
+          <div className="card sys-block">
+            <div className="card-header">
+              <h2 className="card-title">
+                <ListChecks size={17} strokeWidth={1.5} />
+                {t('Was gesichert wird')}
+              </h2>
+            </div>
+
+            <div className="card-body">
+              <dl className="detail-grid">
+                <dt>{t('Datenbank')}</dt>
+                <dd>{t('Die Datenbank von HAPM: Konten, Einstellungen, Historie.')}</dd>
+                <dt>{t('Schlüssel')}</dt>
+                <dd>
+                  {rich('{file}, der Schlüssel zu den verschlüsselten Einstellungen.', {
+                    file: <code>secrets.json</code>,
+                  })}
+                </dd>
+                <dt>HAProxy</dt>
+                <dd>{rich('{path}: Konfiguration, Zertifikate, Fehlerseiten.', { path: <code>/etc/haproxy</code> })}</dd>
+                <dt>acme.sh</dt>
+                <dd>{t('acme.sh mit Konto und Erneuerungseinträgen.')}</dd>
+                <dt>{t('Nicht gesichert')}</dt>
+                <dd className="muted">{t('Das Zugriffsprotokoll und die Abbilder.')}</dd>
+              </dl>
+
+              <div className="alert alert-warning">
+                <AlertTriangle size={16} strokeWidth={1.5} />
+                <span>
+                  {t(
+                    'Das Archiv enthält private Schlüssel und den Schlüssel zu den verschlüsselten Einstellungen. Es ist nicht verschlüsselt. Der Ordner gehört an einen Ort, an den nur Sie kommen.'
+                  )}
                 </span>
               </div>
-            </label>
-            <div className="form-group hapm-auto-time">
-              <label className="form-label" htmlFor="backup-time">
-                {t('Uhrzeit')}
-                <InfoHint
-                  text={t(
-                    'Es gilt die Zeitzone des Containers, gesetzt über die Variable TZ. Gesichert wird einmal am Tag zu dieser Minute.'
-                  )}
-                />
-              </label>
-              <input
-                id="backup-time"
-                type="time"
-                className="form-input"
-                required
-                value={form.time}
-                disabled={saving || !form.enabled}
-                onChange={(event) => edit({ time: event.target.value })}
-              />
-            </div>
-            <div className="form-group hapm-auto-keep">
-              <label className="form-label" htmlFor="backup-keep">
-                {t('Aufbewahren')}
-              </label>
-              <input
-                id="backup-keep"
-                type="number"
-                className="form-input"
-                required
-                min={KEEP_MIN}
-                max={KEEP_MAX}
-                value={form.keep}
-                disabled={saving}
-                onChange={(event) => edit({ keep: readKeepField(event.target.value, form.keep) })}
-              />
-              <p className="form-hint">{t('Anzahl Sicherungen. Ältere löscht der nächste Lauf.')}</p>
+
             </div>
           </div>
+        </>
+      )}
 
-          <div className="hapm-form-actions">
-            <button className="btn btn-primary" type="submit" disabled={saving || !draft}>
-              {saving ? <Loader2 size={16} strokeWidth={1.5} className="spin" /> : <Save size={16} strokeWidth={1.5} />}
-              {t('Speichern')}
-            </button>
-            <button
-              className="btn btn-secondary"
-              type="button"
-              disabled={saving || locked || !data.available || !form.hostPath.trim()}
-              onClick={() => void saveAndStart()}
-            >
-              <Archive size={16} strokeWidth={1.5} />
-              {draft ? t('Speichern und jetzt sichern') : t('Jetzt sichern')}
-            </button>
-          </div>
-          <p className="form-hint">
-            {t('Eine Sicherung von Hand braucht nur den Ordner. Der Schalter „Täglich sichern“ kann aus bleiben.')}
-          </p>
-        </form>
+      {/* Bleibt auf jedem Reiter eingehängt: während des Zurückspielens wartet die
+          Karte auf den Neustart von HAPM und lädt danach die Seite neu. */}
+      <div hidden={area !== 'zurueckspielen'}>
+        <RestorePanel
+          files={data.files}
+          filesAsOf={data.filesAsOf}
+          listedPath={listedRun?.hostPath ?? null}
+          hostPath={data.settings.hostPath}
+        />
       </div>
 
-      <div className="card sys-block">
-        <div className="card-header">
-          <h2 className="card-title">
-            <ListChecks size={17} strokeWidth={1.5} />
-            {t('Was gesichert wird')}
-          </h2>
-        </div>
-
-        <div className="card-body">
-          <dl className="detail-grid">
-            <dt>{t('Datenbank')}</dt>
-            <dd>{t('Die Datenbank von HAPM: Konten, Einstellungen, Historie.')}</dd>
-            <dt>{t('Schlüssel')}</dt>
-            <dd>
-              {rich('{file}, der Schlüssel zu den verschlüsselten Einstellungen.', {
-                file: <code>secrets.json</code>,
-              })}
-            </dd>
-            <dt>HAProxy</dt>
-            <dd>{rich('{path}: Konfiguration, Zertifikate, Fehlerseiten.', { path: <code>/etc/haproxy</code> })}</dd>
-            <dt>acme.sh</dt>
-            <dd>{t('acme.sh mit Konto und Erneuerungseinträgen.')}</dd>
-            <dt>{t('Nicht gesichert')}</dt>
-            <dd className="muted">{t('Das Zugriffsprotokoll und die Abbilder.')}</dd>
-          </dl>
-
-          <div className="alert alert-warning">
-            <AlertTriangle size={16} strokeWidth={1.5} />
-            <span>
-              {t(
-                'Das Archiv enthält private Schlüssel und den Schlüssel zu den verschlüsselten Einstellungen. Es ist nicht verschlüsselt. Der Ordner gehört an einen Ort, an den nur Sie kommen.'
-              )}
-            </span>
+      {area === 'historie' && (
+        <>
+          <div className="section-header">
+            <h2 className="section-title">
+              {t('Historie')}
+              <span className="section-count">{data.runs.length}</span>
+            </h2>
+            <span className="section-hint">{t('Die letzten Läufe, der neueste zuerst.')}</span>
           </div>
 
-        </div>
-      </div>
-
-      <RestorePanel
-        files={data.files}
-        filesAsOf={data.filesAsOf}
-        listedPath={listedRun?.hostPath ?? null}
-        hostPath={data.settings.hostPath}
-      />
-
-      <div className="section-header">
-        <h2 className="section-title">
-          {t('Historie')}
-          <span className="section-count">{data.runs.length}</span>
-        </h2>
-        <span className="section-hint">{t('Die letzten Läufe, der neueste zuerst.')}</span>
-      </div>
-
-      {data.runs.length === 0 ? (
-        <div className="empty-state">
-          <Archive size={32} strokeWidth={1.5} />
-          <h3>{t('Noch kein Lauf')}</h3>
-          <p>{t('Hier steht jeder Lauf mit seinen Schritten, auch die nach Zeitplan.')}</p>
-        </div>
-      ) : (
-        <div className="table-wrap">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>{t('Beginn')}</th>
-                <th>{t('Ergebnis')}</th>
-                <th>{t('Datei')}</th>
-                <th className="sys-th-num">{t('Größe')}</th>
-                <th>{t('Dauer')}</th>
-                <th>{t('Ausgelöst von')}</th>
-                <th aria-label={t('Schritte')} />
-              </tr>
-            </thead>
-            <tbody>
-              {data.runs.map((run) => {
-                const open = expanded.has(run.$id);
-                return (
-                  <Fragment key={run.$id}>
-                    <tr>
-                      <td data-label="primary">
-                        <strong>{formatDateTime(locale, run.startedAt)}</strong>
-                      </td>
-                      <td data-label={t('Ergebnis')}>
-                        <span className={`badge-status ${RUN_STATUS_CLASS[run.status] ?? 'badge-neutral'}`}>
-                          {run.status === 'running' && <Loader2 size={12} strokeWidth={1.5} className="spin" />}
-                          {RUN_STATUS_LABELS[run.status] ? t(RUN_STATUS_LABELS[run.status]) : run.status}
-                        </span>
-                        {run.error && <div className="detail-error">{t(run.error)}</div>}
-                      </td>
-                      <td data-label={t('Datei')}>
-                        {run.status === 'success' && run.fileName ? (
-                          <span className="ranking-mono">{run.fileName}</span>
-                        ) : run.status === 'running' ? (
-                          <span className="hapm-muted">{t('Wird geschrieben')}</span>
-                        ) : (
-                          <span className="hapm-muted">{t('Keine')}</span>
-                        )}
-                      </td>
-                      <td data-label={t('Größe')} className="sys-td-num">
-                        {run.sizeBytes !== null && <span className="sys-num">{formatBytes(locale, run.sizeBytes)}</span>}
-                      </td>
-                      <td data-label={t('Dauer')}>
-                        <span className="sys-num">{runDuration(run, now)}</span>
-                      </td>
-                      <td data-label={t('Ausgelöst von')}>{triggeredByLabel(run.triggeredBy, t)}</td>
-                      <td data-label="actions">
-                        <div className="actions hapm-actions-end">
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-icon btn-sm"
-                            data-tooltip={open ? t('Schritte ausblenden') : t('Schritte anzeigen')}
-                            data-tooltip-pos="left"
-                            aria-label={open ? t('Schritte ausblenden') : t('Schritte anzeigen')}
-                            aria-expanded={open}
-                            onClick={() => toggleRun(run.$id)}
-                          >
-                            {open ? (
-                              <ChevronDown size={16} strokeWidth={1.5} />
+          {data.runs.length === 0 ? (
+            <div className="empty-state">
+              <Archive size={32} strokeWidth={1.5} />
+              <h3>{t('Noch kein Lauf')}</h3>
+              <p>{t('Hier steht jeder Lauf mit seinen Schritten, auch die nach Zeitplan.')}</p>
+            </div>
+          ) : (
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>{t('Beginn')}</th>
+                    <th>{t('Ergebnis')}</th>
+                    <th>{t('Datei')}</th>
+                    <th className="sys-th-num">{t('Größe')}</th>
+                    <th>{t('Dauer')}</th>
+                    <th>{t('Ausgelöst von')}</th>
+                    <th aria-label={t('Schritte')} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.runs.map((run) => {
+                    const open = expanded.has(run.$id);
+                    return (
+                      <Fragment key={run.$id}>
+                        <tr>
+                          <td data-label="primary">
+                            <strong>{formatDateTime(locale, run.startedAt)}</strong>
+                          </td>
+                          <td data-label={t('Ergebnis')}>
+                            <span className={`badge-status ${RUN_STATUS_CLASS[run.status] ?? 'badge-neutral'}`}>
+                              {run.status === 'running' && <Loader2 size={12} strokeWidth={1.5} className="spin" />}
+                              {RUN_STATUS_LABELS[run.status] ? t(RUN_STATUS_LABELS[run.status]) : run.status}
+                            </span>
+                            {run.error && <div className="detail-error">{t(run.error)}</div>}
+                          </td>
+                          <td data-label={t('Datei')}>
+                            {run.status === 'success' && run.fileName ? (
+                              <span className="ranking-mono">{run.fileName}</span>
+                            ) : run.status === 'running' ? (
+                              <span className="hapm-muted">{t('Wird geschrieben')}</span>
                             ) : (
-                              <ChevronRight size={16} strokeWidth={1.5} />
+                              <span className="hapm-muted">{t('Keine')}</span>
                             )}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                    {open && (
-                      <tr className="hapm-run-detail">
-                        <td colSpan={7}>
-                          <RunSteps run={run} />
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                          </td>
+                          <td data-label={t('Größe')} className="sys-td-num">
+                            {run.sizeBytes !== null && <span className="sys-num">{formatBytes(locale, run.sizeBytes)}</span>}
+                          </td>
+                          <td data-label={t('Dauer')}>
+                            <span className="sys-num">{runDuration(run, now)}</span>
+                          </td>
+                          <td data-label={t('Ausgelöst von')}>{triggeredByLabel(run.triggeredBy, t)}</td>
+                          <td data-label="actions">
+                            <div className="actions hapm-actions-end">
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-icon btn-sm"
+                                data-tooltip={open ? t('Schritte ausblenden') : t('Schritte anzeigen')}
+                                data-tooltip-pos="left"
+                                aria-label={open ? t('Schritte ausblenden') : t('Schritte anzeigen')}
+                                aria-expanded={open}
+                                onClick={() => toggleRun(run.$id)}
+                              >
+                                {open ? (
+                                  <ChevronDown size={16} strokeWidth={1.5} />
+                                ) : (
+                                  <ChevronRight size={16} strokeWidth={1.5} />
+                                )}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                        {open && (
+                          <tr className="hapm-run-detail">
+                            <td colSpan={7}>
+                              <RunSteps run={run} />
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
       )}
     </>
   );

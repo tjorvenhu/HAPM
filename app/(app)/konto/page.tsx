@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { Suspense, useCallback, useEffect, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import {
   Check,
@@ -24,6 +24,7 @@ import { useConfirm } from '@/components/ConfirmDialog';
 import { useToast } from '@/components/Toast';
 import { usePolling } from '@/components/usePolling';
 import { SkeletonRows } from '@/components/Skeleton';
+import AreaTabs, { useArea, type Area } from '@/components/AreaTabs';
 import TwoFactorSetup from '@/components/TwoFactorSetup';
 import { RecoveryCodeGrid, useRecoveryCodeActions } from '@/ui/auth/RecoveryCodes';
 import Select from '@/components/Select';
@@ -73,11 +74,34 @@ const REQUIREMENTS: Record<PasskeyRequirement, { label: string; href: string; re
 };
 
 /**
+ * Je Art der Anmeldung ein Reiter, dazu die Sprache. Der gewählte steht als
+ * `?bereich=` in der Adresse: nach einem Wiederherstellungscode führt die
+ * Anmeldung auf „Zweiter Faktor", das Fenster „Konto absichern" auf „Passkeys".
+ */
+type AccountArea = 'passwort' | 'zweiter-faktor' | 'passkeys' | 'sprache';
+
+const AREAS: Area<AccountArea>[] = [
+  { key: 'passwort', label: msgid('Passwort'), icon: KeyRound },
+  { key: 'zweiter-faktor', label: msgid('Zweiter Faktor'), icon: ShieldCheck },
+  { key: 'passkeys', label: msgid('Passkeys'), icon: Fingerprint },
+  { key: 'sprache', label: msgid('Sprache'), icon: Languages },
+];
+
+/**
  * Das eigene Konto: wie man sich daran anmeldet. Ein Passkey kommt zu Passwort
  * und zweitem Faktor dazu und ersetzt keines von beiden.
  */
 export default function AccountPage() {
+  return (
+    <Suspense fallback={<SkeletonRows />}>
+      <Account />
+    </Suspense>
+  );
+}
+
+function Account() {
   const { apiFetch, session, reload } = useApp();
+  const [area, selectArea] = useArea(AREAS, '/konto');
   const confirm = useConfirm();
   const { notify } = useToast();
   const { t, rich, plural, locale, setLocale } = useT();
@@ -127,7 +151,7 @@ export default function AccountPage() {
       // öffnen, einmal. Danach weg aus der Adresse, sonst ginge er bei jedem
       // Neuladen und jedem Takt des Pollings wieder auf.
       if (passkeyData.data?.available && new URLSearchParams(window.location.search).get('passkey') === 'neu') {
-        window.history.replaceState(null, '', window.location.pathname);
+        selectArea('passkeys');
         setPasskeyName(t(suggestPasskeyName(navigator.userAgent)));
         setPasskeyError('');
         setPasskeyDialog({ mode: 'add' });
@@ -137,7 +161,7 @@ export default function AccountPage() {
     } finally {
       setLoading(false);
     }
-  }, [apiFetch, t]);
+  }, [apiFetch, t, selectArea]);
 
   useEffect(() => {
     load();
@@ -411,286 +435,296 @@ export default function AccountPage() {
 
       {error && <div className="alert alert-danger sys-block">{error}</div>}
 
-      <div className="card sys-block">
-        <div className="card-header">
-          <div>
-            <h2 className="card-title">
-              <Languages size={17} />
-              {t('Sprache')}
-            </h2>
-            <p className="card-subtitle">{t('Gilt für dieses Konto, auf jedem Gerät.')}</p>
-          </div>
-        </div>
-        <div className="card-body">
-          <div className="form-group hapm-locale-field">
-            <label className="form-label" htmlFor="accountLocale">
-              {t('Sprache der Oberfläche')}
-            </label>
-            <Select<Locale>
-              id="accountLocale"
-              value={locale}
-              onChange={handleLocale}
-              disabled={savingLocale}
-              options={LOCALES.map((option) => ({ value: option, label: LOCALE_NAMES[option] }))}
-            />
-          </div>
-        </div>
-      </div>
+      <AreaTabs areas={AREAS} value={area} onChange={selectArea} dirty={(key) => key === 'passwort' && Boolean(current || next || repeat)} />
 
-      <div className="card sys-block">
-        <div className="card-header">
-          <div>
-            <h2 className="card-title">
-              <KeyRound size={17} />
-              {t('Passwort ändern')}
-            </h2>
-            <p className="card-subtitle">{t('Mindestens 10 Zeichen mit Groß- und Kleinbuchstaben und einer Zahl.')}</p>
-          </div>
-        </div>
-
-        <form className="card-body" onSubmit={handlePassword}>
-          {passwordError && <div className="alert alert-danger">{passwordError}</div>}
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="currentPassword">{t('Aktuelles Passwort')}</label>
-            <input
-              id="currentPassword"
-              className="form-input"
-              type="password"
-              required
-              value={current}
-              onChange={(e) => setCurrent(e.target.value)}
-              autoComplete="current-password"
-            />
-          </div>
-
-          <div className="form-row">
-            <div className="form-group">
-              <label className="form-label" htmlFor="nextPassword">{t('Neues Passwort')}</label>
-              <input
-                id="nextPassword"
-                className="form-input"
-                type="password"
-                required
-                minLength={10}
-                value={next}
-                onChange={(e) => setNext(e.target.value)}
-                autoComplete="new-password"
-              />
-            </div>
-            <div className="form-group">
-              <label className="form-label" htmlFor="repeatPassword">{t('Neues Passwort wiederholen')}</label>
-              <input
-                id="repeatPassword"
-                className="form-input"
-                type="password"
-                required
-                minLength={10}
-                value={repeat}
-                onChange={(e) => setRepeat(e.target.value)}
-                autoComplete="new-password"
-              />
+      {area === 'passwort' && (
+        <div className="card sys-block">
+          <div className="card-header">
+            <div>
+              <h2 className="card-title">
+                <KeyRound size={17} />
+                {t('Passwort ändern')}
+              </h2>
+              <p className="card-subtitle">{t('Mindestens 10 Zeichen mit Groß- und Kleinbuchstaben und einer Zahl.')}</p>
             </div>
           </div>
 
-          <p className="form-hint">{t('Alle anderen Sitzungen dieses Kontos werden dabei beendet.')}</p>
+          <form className="card-body" onSubmit={handlePassword}>
+            {passwordError && <div className="alert alert-danger">{passwordError}</div>}
 
-          <div>
-            <button className="btn btn-primary" type="submit" disabled={savingPassword}>
-              {savingPassword ? <Loader2 size={16} className="spin" /> : <KeyRound size={16} />}
-              {t('Passwort ändern')}
+            <div className="form-group">
+              <label className="form-label" htmlFor="currentPassword">{t('Aktuelles Passwort')}</label>
+              <input
+                id="currentPassword"
+                className="form-input"
+                type="password"
+                required
+                value={current}
+                onChange={(e) => setCurrent(e.target.value)}
+                autoComplete="current-password"
+              />
+            </div>
+
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label" htmlFor="nextPassword">{t('Neues Passwort')}</label>
+                <input
+                  id="nextPassword"
+                  className="form-input"
+                  type="password"
+                  required
+                  minLength={10}
+                  value={next}
+                  onChange={(e) => setNext(e.target.value)}
+                  autoComplete="new-password"
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="repeatPassword">{t('Neues Passwort wiederholen')}</label>
+                <input
+                  id="repeatPassword"
+                  className="form-input"
+                  type="password"
+                  required
+                  minLength={10}
+                  value={repeat}
+                  onChange={(e) => setRepeat(e.target.value)}
+                  autoComplete="new-password"
+                />
+              </div>
+            </div>
+
+            <p className="form-hint">{t('Alle anderen Sitzungen dieses Kontos werden dabei beendet.')}</p>
+
+            <div>
+              <button className="btn btn-primary" type="submit" disabled={savingPassword}>
+                {savingPassword ? <Loader2 size={16} className="spin" /> : <KeyRound size={16} />}
+                {t('Passwort ändern')}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {area === 'zweiter-faktor' && (
+        <div className="card sys-block">
+          <div className="card-header">
+            <div>
+              <h2 className="card-title">
+                <ShieldCheck size={17} />
+                {t('Zweiter Faktor')}
+              </h2>
+              <p className="card-subtitle">{t('Nach dem Passwort verlangt die Anmeldung einen Code aus einer App.')}</p>
+            </div>
+            {account && (
+              <span className={`badge-status ${account.totpEnabled ? 'badge-success' : 'badge-neutral'}`}>
+                <span className="dot" />
+                {account.totpEnabled ? t('Eingerichtet') : t('Nicht eingerichtet')}
+              </span>
+            )}
+          </div>
+
+          {loading ? (
+            <SkeletonRows />
+          ) : account ? (
+            <div className="card-body">
+              {account.totpEnabled && account.recoveryCodesLeft === 0 && (
+                <div className="alert alert-warning">
+                  <span>
+                    {t(
+                      'Für dieses Konto gibt es keine Wiederherstellungscodes. Geht die Authenticator-App verloren, kommen Sie nur noch über den Server wieder hinein. Erzeugen Sie jetzt Codes und legen Sie sie sicher ab.'
+                    )}
+                  </span>
+                </div>
+              )}
+              {account.totpEnabled && account.recoveryCodesLeft > 0 && account.recoveryCodesLeft <= FEW_RECOVERY_CODES && (
+                <div className="alert alert-warning">
+                  <span>
+                    {plural(account.recoveryCodesLeft, {
+                      one: 'Nur noch ein Wiederherstellungscode übrig. Erzeugen Sie neue, bevor er verbraucht ist.',
+                      other: 'Nur noch {count} Wiederherstellungscodes übrig. Erzeugen Sie neue, bevor alle verbraucht sind.',
+                    })}
+                  </span>
+                </div>
+              )}
+              {account.totpEnabled && account.recoveryCodesLeft > FEW_RECOVERY_CODES && (
+                <p className="form-hint">
+                  {t('{count} Wiederherstellungscodes übrig. Jeder ersetzt bei der Anmeldung einmal den Code aus der App.', {
+                    count: account.recoveryCodesLeft,
+                  })}
+                </p>
+              )}
+              {!account.totpEnabled && (
+                <p className="form-hint">
+                  {t('Bei der Einrichtung entstehen zehn Wiederherstellungscodes für den Fall, dass die App verloren geht.')}
+                </p>
+              )}
+              <p className="form-hint">
+                {rich(
+                  'Gehen App und Wiederherstellungscodes verloren, hilft nur noch der Zugang zum Server: dort setzt {command} mit der E-Mail-Adresse dahinter ein neues Passwort, schaltet den zweiten Faktor ab und entfernt die Passkeys.',
+                  { command: <code>docker exec -it hapm hapm-admin reset-password</code> }
+                )}
+              </p>
+              <div className="hapm-form-actions">
+                {account.totpEnabled ? (
+                  <>
+                    <button
+                      className={`btn ${account.recoveryCodesLeft === 0 ? 'btn-primary' : 'btn-secondary'}`}
+                      type="button"
+                      onClick={openRecoveryCodes}
+                    >
+                      <LifeBuoy size={16} />
+                      {account.recoveryCodesLeft === 0
+                        ? t('Wiederherstellungscodes erzeugen')
+                        : t('Neue Wiederherstellungscodes')}
+                    </button>
+                    <button className="btn btn-secondary" type="button" onClick={openDisable}>
+                      <ShieldOff size={16} />
+                      {t('Abschalten')}
+                    </button>
+                  </>
+                ) : (
+                  <button className="btn btn-primary" type="button" onClick={() => setSetupOpen(true)}>
+                    <ShieldCheck size={16} />
+                    {t('Einrichten')}
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {area === 'passkeys' && (
+        <div className={`card sys-block${passkeysBlocked ? ' hapm-card-blocked' : ''}`}>
+          <div className="card-header">
+            <div>
+              <h2 className="card-title">
+                <Fingerprint size={17} />
+                {t('Passkeys')}
+              </h2>
+              <p className="card-subtitle">
+                {t('Anmelden ohne Passwort und ohne Code, per Fingerabdruck, Gesicht oder PIN.')}
+              </p>
+            </div>
+            <button
+              className="btn btn-primary"
+              type="button"
+              onClick={openAddPasskey}
+              disabled={loading || !passkeyState?.available || passkeysFull}
+              data-tooltip={
+                passkeysBlocked
+                  ? t('Erst einrichten, was unten steht')
+                  : passkeysFull
+                    ? t('Mehr als {max} Passkeys je Konto sind nicht möglich', { max: maxPasskeys })
+                    : undefined
+              }
+              data-tooltip-pos="left"
+            >
+              <Plus size={16} />
+              {t('Passkey hinzufügen')}
             </button>
           </div>
-        </form>
-      </div>
 
-      <div className="card sys-block">
-        <div className="card-header">
-          <div>
-            <h2 className="card-title">
-              <ShieldCheck size={17} />
-              {t('Zweiter Faktor')}
-            </h2>
-            <p className="card-subtitle">{t('Nach dem Passwort verlangt die Anmeldung einen Code aus einer App.')}</p>
-          </div>
-          {account && (
-            <span className={`badge-status ${account.totpEnabled ? 'badge-success' : 'badge-neutral'}`}>
-              <span className="dot" />
-              {account.totpEnabled ? t('Eingerichtet') : t('Nicht eingerichtet')}
-            </span>
-          )}
+          {loading ? (
+            <SkeletonRows />
+          ) : passkeyState && !passkeyState.available ? (
+            <div className="card-body">
+              <p>{t('Passkeys lassen sich erst benutzen, wenn das eingerichtet ist:')}</p>
+              <ul className="hapm-requirements">
+                {passkeyState.missing.map((item) => (
+                  <li key={item}>
+                    <Link href={REQUIREMENTS[item].href}>{t(REQUIREMENTS[item].label)}</Link>
+                    <span>{t(REQUIREMENTS[item].reason)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : passkeyState && passkeys.length === 0 ? (
+            <div className="card-body">
+              <p className="form-hint">
+                {t(
+                  'Noch kein Passkey hinterlegt. Ein Passkey liegt auf Ihrem Gerät oder in Ihrem Passwortmanager. Geht das Gerät verloren, melden Sie sich wie bisher mit dem Passwort an.'
+                )}
+              </p>
+            </div>
+          ) : passkeyState ? (
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>{t('Name')}</th>
+                    <th>{t('Ablage')}</th>
+                    <th>{t('Hinterlegt am')}</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {passkeys.map((passkey) => (
+                    <tr key={passkey.id}>
+                      <td>{passkey.name}</td>
+                      <td>{t(passkey.storage)}</td>
+                      <td>{formatDate(locale, passkey.createdAt)}</td>
+                      <td>
+                        <div className="actions" style={{ justifyContent: 'flex-end' }}>
+                          <button
+                            className="btn btn-ghost btn-icon btn-sm"
+                            type="button"
+                            data-tooltip={t('Umbenennen')}
+                            data-tooltip-pos="left"
+                            aria-label={t('{name} umbenennen', { name: passkey.name })}
+                            onClick={() => openRenamePasskey(passkey)}
+                          >
+                            <Pencil size={16} />
+                          </button>
+                          <button
+                            className="btn btn-ghost btn-icon btn-sm"
+                            type="button"
+                            data-tooltip={t('Entfernen')}
+                            data-tooltip-pos="left"
+                            aria-label={t('{name} entfernen', { name: passkey.name })}
+                            onClick={() => handleRemovePasskey(passkey)}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
         </div>
+      )}
 
-        {loading ? (
-          <SkeletonRows />
-        ) : account ? (
-          <div className="card-body">
-            {account.totpEnabled && account.recoveryCodesLeft === 0 && (
-              <div className="alert alert-warning">
-                <span>
-                  {t(
-                    'Für dieses Konto gibt es keine Wiederherstellungscodes. Geht die Authenticator-App verloren, kommen Sie nur noch über den Server wieder hinein. Erzeugen Sie jetzt Codes und legen Sie sie sicher ab.'
-                  )}
-                </span>
-              </div>
-            )}
-            {account.totpEnabled && account.recoveryCodesLeft > 0 && account.recoveryCodesLeft <= FEW_RECOVERY_CODES && (
-              <div className="alert alert-warning">
-                <span>
-                  {plural(account.recoveryCodesLeft, {
-                    one: 'Nur noch ein Wiederherstellungscode übrig. Erzeugen Sie neue, bevor er verbraucht ist.',
-                    other: 'Nur noch {count} Wiederherstellungscodes übrig. Erzeugen Sie neue, bevor alle verbraucht sind.',
-                  })}
-                </span>
-              </div>
-            )}
-            {account.totpEnabled && account.recoveryCodesLeft > FEW_RECOVERY_CODES && (
-              <p className="form-hint">
-                {t('{count} Wiederherstellungscodes übrig. Jeder ersetzt bei der Anmeldung einmal den Code aus der App.', {
-                  count: account.recoveryCodesLeft,
-                })}
-              </p>
-            )}
-            {!account.totpEnabled && (
-              <p className="form-hint">
-                {t('Bei der Einrichtung entstehen zehn Wiederherstellungscodes für den Fall, dass die App verloren geht.')}
-              </p>
-            )}
-            <p className="form-hint">
-              {rich(
-                'Gehen App und Wiederherstellungscodes verloren, hilft nur noch der Zugang zum Server: dort setzt {command} mit der E-Mail-Adresse dahinter ein neues Passwort, schaltet den zweiten Faktor ab und entfernt die Passkeys.',
-                { command: <code>docker exec -it hapm hapm-admin reset-password</code> }
-              )}
-            </p>
-            <div className="hapm-form-actions">
-              {account.totpEnabled ? (
-                <>
-                  <button
-                    className={`btn ${account.recoveryCodesLeft === 0 ? 'btn-primary' : 'btn-secondary'}`}
-                    type="button"
-                    onClick={openRecoveryCodes}
-                  >
-                    <LifeBuoy size={16} />
-                    {account.recoveryCodesLeft === 0
-                      ? t('Wiederherstellungscodes erzeugen')
-                      : t('Neue Wiederherstellungscodes')}
-                  </button>
-                  <button className="btn btn-secondary" type="button" onClick={openDisable}>
-                    <ShieldOff size={16} />
-                    {t('Abschalten')}
-                  </button>
-                </>
-              ) : (
-                <button className="btn btn-primary" type="button" onClick={() => setSetupOpen(true)}>
-                  <ShieldCheck size={16} />
-                  {t('Einrichten')}
-                </button>
-              )}
+      {area === 'sprache' && (
+        <div className="card sys-block">
+          <div className="card-header">
+            <div>
+              <h2 className="card-title">
+                <Languages size={17} />
+                {t('Sprache')}
+              </h2>
+              <p className="card-subtitle">{t('Gilt für dieses Konto, auf jedem Gerät.')}</p>
             </div>
           </div>
-        ) : null}
-      </div>
-
-      <div className={`card sys-block${passkeysBlocked ? ' hapm-card-blocked' : ''}`}>
-        <div className="card-header">
-          <div>
-            <h2 className="card-title">
-              <Fingerprint size={17} />
-              {t('Passkeys')}
-            </h2>
-            <p className="card-subtitle">
-              {t('Anmelden ohne Passwort und ohne Code, per Fingerabdruck, Gesicht oder PIN.')}
-            </p>
+          <div className="card-body">
+            <div className="form-group hapm-locale-field">
+              <label className="form-label" htmlFor="accountLocale">
+                {t('Sprache der Oberfläche')}
+              </label>
+              <Select<Locale>
+                id="accountLocale"
+                value={locale}
+                onChange={handleLocale}
+                disabled={savingLocale}
+                options={LOCALES.map((option) => ({ value: option, label: LOCALE_NAMES[option] }))}
+              />
+            </div>
           </div>
-          <button
-            className="btn btn-primary"
-            type="button"
-            onClick={openAddPasskey}
-            disabled={loading || !passkeyState?.available || passkeysFull}
-            data-tooltip={
-              passkeysBlocked
-                ? t('Erst einrichten, was unten steht')
-                : passkeysFull
-                  ? t('Mehr als {max} Passkeys je Konto sind nicht möglich', { max: maxPasskeys })
-                  : undefined
-            }
-            data-tooltip-pos="left"
-          >
-            <Plus size={16} />
-            {t('Passkey hinzufügen')}
-          </button>
         </div>
-
-        {loading ? (
-          <SkeletonRows />
-        ) : passkeyState && !passkeyState.available ? (
-          <div className="card-body">
-            <p>{t('Passkeys lassen sich erst benutzen, wenn das eingerichtet ist:')}</p>
-            <ul className="hapm-requirements">
-              {passkeyState.missing.map((item) => (
-                <li key={item}>
-                  <Link href={REQUIREMENTS[item].href}>{t(REQUIREMENTS[item].label)}</Link>
-                  <span>{t(REQUIREMENTS[item].reason)}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : passkeyState && passkeys.length === 0 ? (
-          <div className="card-body">
-            <p className="form-hint">
-              {t(
-                'Noch kein Passkey hinterlegt. Ein Passkey liegt auf Ihrem Gerät oder in Ihrem Passwortmanager. Geht das Gerät verloren, melden Sie sich wie bisher mit dem Passwort an.'
-              )}
-            </p>
-          </div>
-        ) : passkeyState ? (
-          <div className="table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>{t('Name')}</th>
-                  <th>{t('Ablage')}</th>
-                  <th>{t('Hinterlegt am')}</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {passkeys.map((passkey) => (
-                  <tr key={passkey.id}>
-                    <td>{passkey.name}</td>
-                    <td>{t(passkey.storage)}</td>
-                    <td>{formatDate(locale, passkey.createdAt)}</td>
-                    <td>
-                      <div className="actions" style={{ justifyContent: 'flex-end' }}>
-                        <button
-                          className="btn btn-ghost btn-icon btn-sm"
-                          type="button"
-                          data-tooltip={t('Umbenennen')}
-                          data-tooltip-pos="left"
-                          aria-label={t('{name} umbenennen', { name: passkey.name })}
-                          onClick={() => openRenamePasskey(passkey)}
-                        >
-                          <Pencil size={16} />
-                        </button>
-                        <button
-                          className="btn btn-ghost btn-icon btn-sm"
-                          type="button"
-                          data-tooltip={t('Entfernen')}
-                          data-tooltip-pos="left"
-                          aria-label={t('{name} entfernen', { name: passkey.name })}
-                          onClick={() => handleRemovePasskey(passkey)}
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : null}
-      </div>
+      )}
 
       {setupOpen && (
         <TwoFactorSetup onComplete={handleSetupComplete} onCancel={() => setSetupOpen(false)} />

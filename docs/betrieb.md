@@ -212,8 +212,10 @@ bleiben.
    IP und Port, ein Passwortmanager speicherte die Anmeldung für diese Adresse,
    und ein Passkey hängt an der Domain. Das Fenster erscheint ohne zweiten
    Faktor und ohne Passkey, bis jemand es wegklickt (`securityPromptDismissedAt`
-   in `user_state`). „Passkey anlegen“ führt nach `/konto?passkey=neu`, wo der
-   Dialog gleich aufgeht.
+   in `user_state`). „Passkey anlegen“ führt nach
+   `/konto?bereich=passkeys&passkey=neu`, wo der Dialog gleich aufgeht.
+   Nach einer Anmeldung mit einem Wiederherstellungscode geht es auf
+   `/konto?bereich=zweiter-faktor`: dort stehen die übrigen Codes.
 2. **Erreichbarkeit:** nur im eigenen Netz oder aus dem Internet. Die Wahl steht
    sofort in den Einstellungen (`exposure`). An ihr hängt, ob Zertifikate über
    HTTP-01 oder immer über DNS-01 ausgestellt werden, siehe
@@ -321,9 +323,17 @@ Was sie eingerichtet hat, ändert man danach an seiner Stelle: Art und Adresse
 unter „Allgemein" (die Adresse über den Assistenten im nächsten Abschnitt), die
 Anbindung unter „DNS", das Ziel unter „Reverse-Proxy".
 
+### Die Seite „Allgemein“: `/system`
+
+Zwei Reiter: „Adresse“ (die Adresse von HAPM mit dem Assistenten unten) und
+„Zertifikate“ (`?bereich=zertifikate`: Art der Installation, Herkunft der
+Zertifikate, E-Mail für Let's Encrypt). Links, die auf die Herkunft der
+Zertifikate zeigen, nehmen den zweiten Reiter. Der Assistent hängt nicht am
+Reiter: läuft ein Umzug, geht er beim Laden auf jedem Reiter auf.
+
 ### Die Adresse ändern: `lib/address-move/`
 
-Unter „Allgemein" steht die gültige Adresse mit dem Knopf „Adresse ändern"
+Unter „Allgemein“, Reiter „Adresse“, steht die gültige Adresse mit dem Knopf „Adresse ändern"
 (ohne Adresse „Adresse einrichten"). Er öffnet einen Assistenten im Fenster
 (`components/system/AddressMoveWizard.tsx`), gebaut wie die Einrichtung:
 Schrittleiste und Abschluss kommen aus `app/setup/setup.css`.
@@ -448,6 +458,12 @@ Absender geht nichts raus, ohne Empfänger auch nicht. Das Passwort liegt
 verschlüsselt in der Datenbank (`encryptionKey` aus `lib/secrets.ts`), die
 Oberfläche erfährt nur, ob eines gesetzt ist. Ändert sich der Schlüssel, ist es
 nicht mehr lesbar und muss neu eingetragen werden.
+
+Die Seite hat über den Reitern den Zustand (Konto, Empfänger, letzter
+Versand), darunter drei Reiter: „SMTP-Konto“ mit Testmail, „Empfänger“
+(`?bereich=empfaenger`, dazu die Sprache der Mails) und „Ereignisse“
+(`?bereich=ereignisse`). Ein Entwurf des SMTP-Kontos bleibt beim Wechsel des
+Reiters stehen, der Reiter trägt dann einen Punkt.
 
 Wer etwas zu melden hat, ruft `notify(event)` (`lib/notifications/index.ts`).
 Die Funktion wirft nie und hält ihren Aufrufer nicht auf. Sie entscheidet der
@@ -589,8 +605,11 @@ Layout schreibt dann nichts in den Kopf der Seite und lässt die Favicons aus
 
 ## Sicherung: `lib/backup/`
 
-Unter „Sicherung" stellt man einen Ordner **auf dem Server** ein, eine Uhrzeit
-und wie viele Archive liegen bleiben. Ein Lauf (täglich oder auf Knopfdruck)
+Unter „Sicherung", Reiter „Einstellungen“, stellt man einen Ordner **auf dem
+Server** ein, eine Uhrzeit und wie viele Archive liegen bleiben. Die anderen
+Reiter: „Zurückspielen“ (`?bereich=zurueckspielen`) und „Historie“
+(`?bereich=historie`, die Läufe mit ihren Schritten). Ein laufender Lauf steht
+über den Reitern. Ein Lauf (täglich oder auf Knopfdruck)
 schreibt `hapm-backup-JJJJMMTT-HHMMSS.tar.gz` dorthin:
 
 | Im Archiv | Inhalt |
@@ -626,7 +645,7 @@ Nicht im Archiv: das Zugriffsprotokoll und die Abbilder.
 
 ### Zurückspielen
 
-Unter „Sicherung", Karte „Sicherung zurückspielen" (`lib/backup/restore.ts`,
+Unter „Sicherung", Reiter „Zurückspielen" (`lib/backup/restore.ts`,
 das Skript des Helfers in `lib/backup/restore-script.ts`). Der Ablauf:
 
 1. **Bereitlegen.** Ein Archiv aus dem Ordner (die Liste stammt aus dem

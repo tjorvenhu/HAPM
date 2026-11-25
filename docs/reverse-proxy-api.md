@@ -24,8 +24,8 @@ Zwei Dinge vorweg:
 ## Zugang
 
 Ein API-Key, ausgestellt in HAPM unter **Reverse-Proxy → API und MCP**
-(`/reverse-proxy/api`). Dort stehen auch die fertige Basis-URL zum Kopieren und
-die Liste der Endpunkte. Verwaltet werden dieselben Token auch unter
+(`/reverse-proxy/api`). Im Reiter „Endpunkte“ (`?bereich=endpunkte`) stehen
+auch die fertige Basis-URL zum Kopieren und die Liste der Endpunkte. Verwaltet werden dieselben Token auch unter
 `/service-tokens`. Der Klartext erscheint genau einmal, in der Antwort auf
 das Anlegen — verloren heißt neu ausstellen, nicht wiederherstellen. Er beginnt
 mit `hapm_`.

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { Suspense, useCallback, useEffect, useState, type FormEvent } from 'react';
 import { BellRing, Languages, Loader2, Mail, Plus, Save, Send, Trash2, Users, X } from 'lucide-react';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import { useApp } from '@/components/AppShell';
@@ -10,9 +10,10 @@ import { usePolling } from '@/components/usePolling';
 import { useNow } from '@/components/useNow';
 import Select from '@/components/Select';
 import { SkeletonDetail, SkeletonRows } from '@/components/Skeleton';
+import AreaTabs, { useArea, type Area } from '@/components/AreaTabs';
 import { formatAgo, formatDateTime } from '@/components/system/format';
 import { useT } from '@/lib/i18n/react';
-import { LOCALES, LOCALE_NAMES, type Locale } from '@/lib/i18n';
+import { LOCALES, LOCALE_NAMES, msgid, type Locale } from '@/lib/i18n';
 // Rein: Ports und Beschriftungen der Verschlüsselung.
 import { SMTP_DEFAULT_PORTS, SMTP_SECURITY_CHOICES } from '@/lib/mail/config';
 // Rein: nur Namen und Sätze der Ereignisse.
@@ -34,6 +35,18 @@ interface SmtpForm {
 
 const POLL_MS = 30_000;
 
+/**
+ * Der Zustand steht über den Reitern, darunter je ein Thema: womit verschickt
+ * wird, an wen, und wozu. Der gewählte steht als `?bereich=` in der Adresse.
+ */
+type NotificationArea = 'smtp' | 'empfaenger' | 'ereignisse';
+
+const AREAS: Area<NotificationArea>[] = [
+  { key: 'smtp', label: msgid('SMTP-Konto'), icon: Mail },
+  { key: 'empfaenger', label: msgid('Empfänger'), icon: Users },
+  { key: 'ereignisse', label: msgid('Ereignisse'), icon: BellRing },
+];
+
 function formFrom(settings: SettingsView): SmtpForm {
   return {
     smtpHost: settings.smtpHost ?? '',
@@ -46,7 +59,16 @@ function formFrom(settings: SettingsView): SmtpForm {
 }
 
 export default function NotificationsPage() {
+  return (
+    <Suspense fallback={<SkeletonDetail />}>
+      <Notifications />
+    </Suspense>
+  );
+}
+
+function Notifications() {
   const { apiFetch, session } = useApp();
+  const [area, selectArea] = useArea(AREAS, '/notifications');
   const { notify } = useToast();
   const confirm = useConfirm();
   const { t, locale } = useT();
@@ -355,317 +377,328 @@ export default function NotificationsPage() {
         {last && !last.ok && last.error && <div className="detail-error">{last.error}</div>}
       </div>
 
-      <div className="card sys-block">
-        <div className="card-header">
-          <div>
-            <h2 className="card-title">
-              <Mail size={17} strokeWidth={1.5} />
-              {t('SMTP-Konto')}
-            </h2>
-            <p className="card-subtitle">{t('Über dieses Konto verschickt HAPM alle Mails.')}</p>
-          </div>
-        </div>
+      {/* Der Entwurf des SMTP-Kontos liegt in der Seite und bleibt beim Wechsel des Reiters stehen. */}
+      <AreaTabs areas={AREAS} value={area} onChange={selectArea} dirty={(key) => key === 'smtp' && draft !== null} />
 
-        <div className="card-body">
-        <form className="card-body" onSubmit={saveSmtp}>
-          {formError && <div className="alert alert-danger">{formError}</div>}
-
-          <div className="form-row">
-            <div className="form-group">
-              <label className="form-label" htmlFor="smtp-host">{t('Server')}</label>
-              <input
-                id="smtp-host"
-                className="form-input"
-                type="text"
-                placeholder="smtp.example.org"
-                value={form.smtpHost}
-                disabled={saving}
-                onChange={(event) => edit({ smtpHost: event.target.value })}
-                autoComplete="off"
-                spellCheck={false}
-              />
-            </div>
-            <div className="form-group">
-              <label className="form-label" htmlFor="smtp-port">{t('Port')}</label>
-              <input
-                id="smtp-port"
-                className="form-input"
-                type="text"
-                inputMode="numeric"
-                value={form.smtpPort}
-                disabled={saving}
-                onChange={(event) => edit({ smtpPort: event.target.value.replace(/\D/g, '').slice(0, 5) })}
-                autoComplete="off"
-              />
+      {area === 'smtp' && (
+        <div className="card sys-block">
+          <div className="card-header">
+            <div>
+              <h2 className="card-title">
+                <Mail size={17} strokeWidth={1.5} />
+                {t('SMTP-Konto')}
+              </h2>
+              <p className="card-subtitle">{t('Über dieses Konto verschickt HAPM alle Mails.')}</p>
             </div>
           </div>
 
-          <div className="form-row">
-            <div className="form-group">
-              <label className="form-label" htmlFor="smtp-security">{t('Verschlüsselung')}</label>
-              <Select
-                id="smtp-security"
-                value={form.smtpSecurity}
-                options={SMTP_SECURITY_CHOICES.map((option) => ({
-                  ...option,
-                  label: t(option.label),
-                  hint: t(option.hint),
-                }))}
-                disabled={saving}
-                onChange={(value) =>
-                  edit({
-                    smtpSecurity: value,
-                    smtpPort:
-                      form.smtpPort === String(SMTP_DEFAULT_PORTS[form.smtpSecurity])
-                        ? String(SMTP_DEFAULT_PORTS[value])
-                        : form.smtpPort,
-                  })
-                }
-              />
-            </div>
-            <div className="form-group">
-              <label className="form-label" htmlFor="mail-from">
-                {t('Absender')}
-                <InfoHint text={t('Eine Adresse, die das SMTP-Konto verschicken darf. Wahlweise mit Namen davor: HAPM <hapm@example.org>. Ohne Namen steht im Postfach „HAPM“.')} />
-              </label>
-              <input
-                id="mail-from"
-                className="form-input"
-                type="text"
-                placeholder="hapm@example.org"
-                value={form.mailFrom}
-                disabled={saving}
-                onChange={(event) => edit({ mailFrom: event.target.value })}
-                autoComplete="off"
-                spellCheck={false}
-              />
-            </div>
-          </div>
+          <div className="card-body">
+          <form className="card-body" onSubmit={saveSmtp}>
+            {formError && <div className="alert alert-danger">{formError}</div>}
 
-          <div className="form-row">
-            <div className="form-group">
-              <label className="form-label" htmlFor="smtp-user">{t('Benutzername')}</label>
-              <input
-                id="smtp-user"
-                className="form-input"
-                type="text"
-                value={form.smtpUser}
-                disabled={saving}
-                onChange={(event) => edit({ smtpUser: event.target.value })}
-                autoComplete="off"
-                spellCheck={false}
-              />
-              <p className="form-hint">{t('Leer, wenn der Server keine Anmeldung verlangt.')}</p>
-            </div>
-            <div className="form-group">
-              <div className="form-label-row">
-                <label className="form-label" htmlFor="smtp-pass">{t('Passwort')}</label>
-                <span className={`badge-status ${settings.smtpPassSet ? 'badge-success' : 'badge-neutral'}`}>
-                  <span className="dot" />
-                  {settings.smtpPassSet ? t('Gesetzt') : t('Nicht gesetzt')}
-                </span>
-                <InfoHint text={t('Das Passwort liegt verschlüsselt in der Datenbank und wird nach dem Speichern nicht mehr angezeigt.')} />
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label" htmlFor="smtp-host">{t('Server')}</label>
+                <input
+                  id="smtp-host"
+                  className="form-input"
+                  type="text"
+                  placeholder="smtp.example.org"
+                  value={form.smtpHost}
+                  disabled={saving}
+                  onChange={(event) => edit({ smtpHost: event.target.value })}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
               </div>
-              <input
-                id="smtp-pass"
-                className="form-input"
-                type="password"
-                placeholder={settings.smtpPassSet ? t('Leer lassen, um es zu behalten') : ''}
-                value={form.smtpPass}
-                disabled={saving}
-                onChange={(event) => edit({ smtpPass: event.target.value })}
-                autoComplete="new-password"
-              />
-            </div>
-          </div>
-
-          <div className="hapm-form-actions">
-            <button className="btn btn-primary" type="submit" disabled={saving || !draft}>
-              {saving ? <Loader2 size={16} strokeWidth={1.5} className="spin" /> : <Save size={16} strokeWidth={1.5} />}
-              {t('Speichern')}
-            </button>
-            {settings.smtpPassSet && (
-              <button className="btn btn-ghost" type="button" onClick={() => void clearPassword()} disabled={saving}>
-                <Trash2 size={16} strokeWidth={1.5} />
-                {t('Passwort löschen')}
-              </button>
-            )}
-          </div>
-        </form>
-
-        <form className="card-body" onSubmit={sendTest}>
-          <div className="form-group">
-            <label className="form-label" htmlFor="test-to">
-              {t('Testmail an')}
-              <InfoHint text={t('Verschickt wird mit dem gespeicherten Konto, nicht mit dem, was gerade im Formular steht. Die Antwort des Mailservers steht danach hier.')} />
-            </label>
-            <div className="form-list-row">
-              <input
-                id="test-to"
-                className="form-input"
-                type="email"
-                placeholder={session.email}
-                value={testTo}
-                disabled={testing}
-                onChange={(event) => setTestTo(event.target.value)}
-                autoComplete="off"
-                spellCheck={false}
-              />
-              <button
-                className="btn btn-secondary"
-                type="submit"
-                disabled={testing || !configured || draft !== null}
-                data-tooltip={
-                  !configured
-                    ? t('Erst Server und Absender speichern.')
-                    : draft !== null
-                      ? t('Erst die Änderungen speichern.')
-                      : undefined
-                }
-                data-tooltip-pos="left"
-              >
-                {testing ? <Loader2 size={16} strokeWidth={1.5} className="spin" /> : <Send size={16} strokeWidth={1.5} />}
-                {t('Testmail senden')}
-              </button>
-            </div>
-          </div>
-          {testResult &&
-            (testResult.sent ? (
-              <div className="alert alert-success">
-                {t('Der Mailserver hat die Testmail an {to} angenommen. Ob sie im Postfach ankommt, zeigt nur das Postfach.', {
-                  to: testResult.to,
-                })}
+              <div className="form-group">
+                <label className="form-label" htmlFor="smtp-port">{t('Port')}</label>
+                <input
+                  id="smtp-port"
+                  className="form-input"
+                  type="text"
+                  inputMode="numeric"
+                  value={form.smtpPort}
+                  disabled={saving}
+                  onChange={(event) => edit({ smtpPort: event.target.value.replace(/\D/g, '').slice(0, 5) })}
+                  autoComplete="off"
+                />
               </div>
-            ) : (
-              <div className="alert alert-danger">{testResult.error ?? t('Die Testmail wurde nicht verschickt.')}</div>
-            ))}
-        </form>
-        </div>
-      </div>
-
-      <div className="card sys-block">
-        <div className="card-header">
-          <div>
-            <h2 className="card-title">
-              <Languages size={17} strokeWidth={1.5} />
-              {t('Sprache der Mails')}
-              <InfoHint text={t('Gilt für jede Mail von HAPM: Benachrichtigungen, Testmail und die Mails zum Konto. Eine Mail zum Konto (neues Passwort, Passkey) geht in der Sprache, die der Inhaber unter „Konto“ gewählt hat, wenn er eine gewählt hat.')} />
-            </h2>
-            <p className="card-subtitle">{t('Eine Sprache für alle Empfänger.')}</p>
-          </div>
-        </div>
-        <div className="card-body">
-          <div className="form-group">
-            <Select
-              id="mail-locale"
-              value={settings.mailLocale}
-              disabled={savingLocale}
-              onChange={(value) => void saveMailLocale(value)}
-              options={LOCALES.map((entry) => ({ value: entry, label: LOCALE_NAMES[entry] }))}
-            />
-          </div>
-        </div>
-      </div>
-
-      <div className="card sys-block">
-        <div className="card-header">
-          <div>
-            <h2 className="card-title">
-              <Users size={17} strokeWidth={1.5} />
-              {t('Empfänger')}
-            </h2>
-            <p className="card-subtitle">{t('Jede Adresse bekommt jede Benachrichtigung als eigene Mail.')}</p>
-          </div>
-        </div>
-
-        <div className="card-body">
-          {recipientError && <div className="alert alert-danger">{recipientError}</div>}
-
-          {settings.notifyRecipients.length === 0 ? (
-            <p className="form-list-empty">{t('Noch kein Empfänger. Ohne Empfänger wird keine Benachrichtigung verschickt.')}</p>
-          ) : (
-            <div className="pill-list">
-              {settings.notifyRecipients.map((address) => (
-                <span className="pill" key={address}>
-                  <span>{address}</span>
-                  <button
-                    type="button"
-                    className="pill-remove"
-                    aria-label={t('{address} entfernen', { address })}
-                    disabled={savingRecipients}
-                    onClick={() =>
-                      void saveRecipients(
-                        settings.notifyRecipients.filter((entry) => entry !== address),
-                        t('{address} bekommt keine Benachrichtigungen mehr.', { address })
-                      )
-                    }
-                  >
-                    <X size={14} strokeWidth={1.5} />
-                  </button>
-                </span>
-              ))}
             </div>
-          )}
 
-          <form className="form-list-row" onSubmit={addRecipient}>
-            <input
-              className="form-input"
-              type="email"
-              aria-label={t('Neue Empfängeradresse')}
-              placeholder="name@example.org"
-              value={recipient}
-              disabled={savingRecipients}
-              onChange={(event) => setRecipient(event.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-            />
-            <button className="btn btn-secondary" type="submit" disabled={savingRecipients || !recipient.trim()}>
-              {savingRecipients ? <Loader2 size={16} strokeWidth={1.5} className="spin" /> : <Plus size={16} strokeWidth={1.5} />}
-              {t('Hinzufügen')}
-            </button>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label" htmlFor="smtp-security">{t('Verschlüsselung')}</label>
+                <Select
+                  id="smtp-security"
+                  value={form.smtpSecurity}
+                  options={SMTP_SECURITY_CHOICES.map((option) => ({
+                    ...option,
+                    label: t(option.label),
+                    hint: t(option.hint),
+                  }))}
+                  disabled={saving}
+                  onChange={(value) =>
+                    edit({
+                      smtpSecurity: value,
+                      smtpPort:
+                        form.smtpPort === String(SMTP_DEFAULT_PORTS[form.smtpSecurity])
+                          ? String(SMTP_DEFAULT_PORTS[value])
+                          : form.smtpPort,
+                    })
+                  }
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="mail-from">
+                  {t('Absender')}
+                  <InfoHint text={t('Eine Adresse, die das SMTP-Konto verschicken darf. Wahlweise mit Namen davor: HAPM <hapm@example.org>. Ohne Namen steht im Postfach „HAPM“.')} />
+                </label>
+                <input
+                  id="mail-from"
+                  className="form-input"
+                  type="text"
+                  placeholder="hapm@example.org"
+                  value={form.mailFrom}
+                  disabled={saving}
+                  onChange={(event) => edit({ mailFrom: event.target.value })}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </div>
+            </div>
+
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label" htmlFor="smtp-user">{t('Benutzername')}</label>
+                <input
+                  id="smtp-user"
+                  className="form-input"
+                  type="text"
+                  value={form.smtpUser}
+                  disabled={saving}
+                  onChange={(event) => edit({ smtpUser: event.target.value })}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+                <p className="form-hint">{t('Leer, wenn der Server keine Anmeldung verlangt.')}</p>
+              </div>
+              <div className="form-group">
+                <div className="form-label-row">
+                  <label className="form-label" htmlFor="smtp-pass">{t('Passwort')}</label>
+                  <span className={`badge-status ${settings.smtpPassSet ? 'badge-success' : 'badge-neutral'}`}>
+                    <span className="dot" />
+                    {settings.smtpPassSet ? t('Gesetzt') : t('Nicht gesetzt')}
+                  </span>
+                  <InfoHint text={t('Das Passwort liegt verschlüsselt in der Datenbank und wird nach dem Speichern nicht mehr angezeigt.')} />
+                </div>
+                <input
+                  id="smtp-pass"
+                  className="form-input"
+                  type="password"
+                  placeholder={settings.smtpPassSet ? t('Leer lassen, um es zu behalten') : ''}
+                  value={form.smtpPass}
+                  disabled={saving}
+                  onChange={(event) => edit({ smtpPass: event.target.value })}
+                  autoComplete="new-password"
+                />
+              </div>
+            </div>
+
+            <div className="hapm-form-actions">
+              <button className="btn btn-primary" type="submit" disabled={saving || !draft}>
+                {saving ? <Loader2 size={16} strokeWidth={1.5} className="spin" /> : <Save size={16} strokeWidth={1.5} />}
+                {t('Speichern')}
+              </button>
+              {settings.smtpPassSet && (
+                <button className="btn btn-ghost" type="button" onClick={() => void clearPassword()} disabled={saving}>
+                  <Trash2 size={16} strokeWidth={1.5} />
+                  {t('Passwort löschen')}
+                </button>
+              )}
+            </div>
           </form>
-        </div>
-      </div>
 
-      <div className="card sys-block">
-        <div className="card-header">
-          <div>
-            <h2 className="card-title">
-              <BellRing size={17} strokeWidth={1.5} />
-              {t('Ereignisse')}
-              <InfoHint text={t('Dasselbe Ereignis für dieselbe Sache kommt höchstens einmal am Tag. Fällt ein Eintrag zehnmal aus, ist das eine Mail. Hält der Zustand an, kommt am nächsten Tag eine Erinnerung.')} />
-            </h2>
-            <p className="card-subtitle">{t('Zu welchen Ereignissen eine Mail rausgeht.')}</p>
-          </div>
-        </div>
-
-        <div className="card-body">
-          {NOTIFICATION_EVENT_GROUPS.map((group) => (
-            <div key={group.title}>
-              <div className="form-section-title">{t(group.title)}</div>
-              <div className="hapm-switch-list">
-                {group.events.map((event) => (
-                  <label className="hapm-switch-row" key={event.type}>
-                    <span className="hapm-switch-text">
-                      <span className="form-label">{t(event.label)}</span>
-                      <span className="form-hint">{t(event.description)}</span>
-                    </span>
-                    <span className="toggle-switch">
-                      <input
-                        type="checkbox"
-                        checked={settings.notifyEvents[event.type]}
-                        disabled={savingEvent !== null}
-                        onChange={(change) => void toggleEvent(event.type, change.target.checked)}
-                      />
-                      <span className="toggle-slider" />
-                    </span>
-                  </label>
-                ))}
+          <form className="card-body" onSubmit={sendTest}>
+            <div className="form-group">
+              <label className="form-label" htmlFor="test-to">
+                {t('Testmail an')}
+                <InfoHint text={t('Verschickt wird mit dem gespeicherten Konto, nicht mit dem, was gerade im Formular steht. Die Antwort des Mailservers steht danach hier.')} />
+              </label>
+              <div className="form-list-row">
+                <input
+                  id="test-to"
+                  className="form-input"
+                  type="email"
+                  placeholder={session.email}
+                  value={testTo}
+                  disabled={testing}
+                  onChange={(event) => setTestTo(event.target.value)}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+                <button
+                  className="btn btn-secondary"
+                  type="submit"
+                  disabled={testing || !configured || draft !== null}
+                  data-tooltip={
+                    !configured
+                      ? t('Erst Server und Absender speichern.')
+                      : draft !== null
+                        ? t('Erst die Änderungen speichern.')
+                        : undefined
+                  }
+                  data-tooltip-pos="left"
+                >
+                  {testing ? <Loader2 size={16} strokeWidth={1.5} className="spin" /> : <Send size={16} strokeWidth={1.5} />}
+                  {t('Testmail senden')}
+                </button>
               </div>
             </div>
-          ))}
+            {testResult &&
+              (testResult.sent ? (
+                <div className="alert alert-success">
+                  {t('Der Mailserver hat die Testmail an {to} angenommen. Ob sie im Postfach ankommt, zeigt nur das Postfach.', {
+                    to: testResult.to,
+                  })}
+                </div>
+              ) : (
+                <div className="alert alert-danger">{testResult.error ?? t('Die Testmail wurde nicht verschickt.')}</div>
+              ))}
+          </form>
+          </div>
         </div>
-      </div>
+      )}
+
+      {area === 'empfaenger' && (
+        <>
+          <div className="card sys-block">
+            <div className="card-header">
+              <div>
+                <h2 className="card-title">
+                  <Users size={17} strokeWidth={1.5} />
+                  {t('Empfänger')}
+                </h2>
+                <p className="card-subtitle">{t('Jede Adresse bekommt jede Benachrichtigung als eigene Mail.')}</p>
+              </div>
+            </div>
+
+            <div className="card-body">
+              {recipientError && <div className="alert alert-danger">{recipientError}</div>}
+
+              {settings.notifyRecipients.length === 0 ? (
+                <p className="form-list-empty">{t('Noch kein Empfänger. Ohne Empfänger wird keine Benachrichtigung verschickt.')}</p>
+              ) : (
+                <div className="pill-list">
+                  {settings.notifyRecipients.map((address) => (
+                    <span className="pill" key={address}>
+                      <span>{address}</span>
+                      <button
+                        type="button"
+                        className="pill-remove"
+                        aria-label={t('{address} entfernen', { address })}
+                        disabled={savingRecipients}
+                        onClick={() =>
+                          void saveRecipients(
+                            settings.notifyRecipients.filter((entry) => entry !== address),
+                            t('{address} bekommt keine Benachrichtigungen mehr.', { address })
+                          )
+                        }
+                      >
+                        <X size={14} strokeWidth={1.5} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              <form className="form-list-row" onSubmit={addRecipient}>
+                <input
+                  className="form-input"
+                  type="email"
+                  aria-label={t('Neue Empfängeradresse')}
+                  placeholder="name@example.org"
+                  value={recipient}
+                  disabled={savingRecipients}
+                  onChange={(event) => setRecipient(event.target.value)}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+                <button className="btn btn-secondary" type="submit" disabled={savingRecipients || !recipient.trim()}>
+                  {savingRecipients ? <Loader2 size={16} strokeWidth={1.5} className="spin" /> : <Plus size={16} strokeWidth={1.5} />}
+                  {t('Hinzufügen')}
+                </button>
+              </form>
+            </div>
+          </div>
+
+          <div className="card sys-block">
+            <div className="card-header">
+              <div>
+                <h2 className="card-title">
+                  <Languages size={17} strokeWidth={1.5} />
+                  {t('Sprache der Mails')}
+                  <InfoHint text={t('Gilt für jede Mail von HAPM: Benachrichtigungen, Testmail und die Mails zum Konto. Eine Mail zum Konto (neues Passwort, Passkey) geht in der Sprache, die der Inhaber unter „Konto“ gewählt hat, wenn er eine gewählt hat.')} />
+                </h2>
+                <p className="card-subtitle">{t('Eine Sprache für alle Empfänger.')}</p>
+              </div>
+            </div>
+            <div className="card-body">
+              <div className="form-group">
+                <Select
+                  id="mail-locale"
+                  value={settings.mailLocale}
+                  disabled={savingLocale}
+                  onChange={(value) => void saveMailLocale(value)}
+                  options={LOCALES.map((entry) => ({ value: entry, label: LOCALE_NAMES[entry] }))}
+                />
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {area === 'ereignisse' && (
+        <div className="card sys-block">
+          <div className="card-header">
+            <div>
+              <h2 className="card-title">
+                <BellRing size={17} strokeWidth={1.5} />
+                {t('Ereignisse')}
+                <InfoHint text={t('Dasselbe Ereignis für dieselbe Sache kommt höchstens einmal am Tag. Fällt ein Eintrag zehnmal aus, ist das eine Mail. Hält der Zustand an, kommt am nächsten Tag eine Erinnerung.')} />
+              </h2>
+              <p className="card-subtitle">{t('Zu welchen Ereignissen eine Mail rausgeht.')}</p>
+            </div>
+          </div>
+
+          <div className="card-body">
+            {NOTIFICATION_EVENT_GROUPS.map((group) => (
+              <div key={group.title}>
+                <div className="form-section-title">{t(group.title)}</div>
+                <div className="hapm-switch-list">
+                  {group.events.map((event) => (
+                    <label className="hapm-switch-row" key={event.type}>
+                      <span className="hapm-switch-text">
+                        <span className="form-label">{t(event.label)}</span>
+                        <span className="form-hint">{t(event.description)}</span>
+                      </span>
+                      <span className="toggle-switch">
+                        <input
+                          type="checkbox"
+                          checked={settings.notifyEvents[event.type]}
+                          disabled={savingEvent !== null}
+                          onChange={(change) => void toggleEvent(event.type, change.target.checked)}
+                        />
+                        <span className="toggle-slider" />
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </>
   );
 }

@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState, useCallback, type FormEvent } from 'react';
+import { Suspense, useEffect, useState, useCallback, type FormEvent } from 'react';
 import Link from 'next/link';
 import {
-  ArrowLeft, KeyRound, Plus, Ban, Loader2, Copy, Check, X, Globe, Link2,
+  ArrowLeft, KeyRound, Plus, Ban, Loader2, Copy, Check, X, Globe, Link2, Bot,
 } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { usePolling } from '@/components/usePolling';
@@ -13,6 +13,7 @@ import { useToast } from '@/components/Toast';
 import EntityCard, { EntityGrid, EntityField } from '@/components/EntityCard';
 import IpAllowList from '@/components/IpAllowList';
 import { SkeletonCards } from '@/components/Skeleton';
+import AreaTabs, { useArea, type Area } from '@/components/AreaTabs';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import McpAccess from '@/components/reverse-proxy/McpAccess';
 import { formatDate, formatRelative, msgid, type Locale } from '@/lib/i18n';
@@ -79,8 +80,30 @@ function lastUsed(locale: Locale, iso: string | null, now: number): string | nul
   return formatRelative(locale, now, iso);
 }
 
+/**
+ * Drei Reiter: die Schlüssel, die Schnittstelle (Basis-URL, Kopfzeile,
+ * Endpunkte) und derselbe Zugang über MCP. Der gewählte steht als `?bereich=`
+ * in der Adresse.
+ */
+type ApiArea = 'schluessel' | 'endpunkte' | 'mcp';
+
+const AREAS: Area<ApiArea>[] = [
+  { key: 'schluessel', label: msgid('API-Keys'), icon: KeyRound },
+  { key: 'endpunkte', label: msgid('Endpunkte'), icon: Link2 },
+  { key: 'mcp', label: msgid('MCP'), icon: Bot },
+];
+
 export default function ReverseProxyApiPage() {
+  return (
+    <Suspense fallback={<SkeletonCards />}>
+      <ApiPage />
+    </Suspense>
+  );
+}
+
+function ApiPage() {
   const { apiFetch } = useApp();
+  const [area, selectArea] = useArea(AREAS, '/reverse-proxy/api');
   const { notify } = useToast();
   const confirm = useConfirm();
   const now = useNow(30_000);
@@ -275,173 +298,176 @@ export default function ReverseProxyApiPage() {
 
       {error && <div className="alert alert-danger sys-block">{error}</div>}
 
-      <div className="card sys-block api-card">
-        <div className="form-section-head">
-          <span className="form-section-icon">
-            <Link2 size={17} />
-          </span>
-          <div>
-            <div className="form-section-title">{t('Zugang')}</div>
-            <div className="form-section-sub">
-              {rich(
-                'Die Basis-URL ist die Adresse, unter der HAPM erreichbar ist. Der Parameter {param} ist überall optional: ohne ihn gilt dieser Server.',
-                { param: <code>serverId</code> }
+      <AreaTabs areas={AREAS} value={area} onChange={selectArea} />
+
+      {area === 'schluessel' &&
+        (loading ? (
+          <SkeletonCards />
+        ) : active.length === 0 ? (
+          <div className="empty-state">
+            <KeyRound size={40} />
+            <h3>{t('Noch kein Key')}</h3>
+            <p>
+              {t(
+                'Solange keiner existiert, erreicht kein anderer Dienst die Reverse-Proxy-API. Ein Deploy-Skript braucht einen, um Ziele anzulegen.'
               )}
+            </p>
+          </div>
+        ) : (
+          <EntityGrid>
+            {active.map((token) => (
+              <EntityCard
+                key={token.$id}
+                icon={<KeyRound size={17} />}
+                name={token.name}
+                subtitle={token.description || undefined}
+                badge={<span className="badge-status badge-success">{t('Aktiv')}</span>}
+                actions={
+                  <>
+                    <button
+                      className="btn btn-ghost btn-icon btn-sm"
+                      data-tooltip={t('Erlaubte Adressen')}
+                      onClick={() => {
+                        setEditing(token);
+                        setEditIps(token.allowedIps.length > 0 ? [...token.allowedIps] : ['']);
+                      }}
+                    >
+                      <Globe size={16} />
+                    </button>
+                    <button
+                      className="btn btn-ghost btn-icon btn-sm"
+                      data-tooltip={t('Zurückziehen')}
+                      onClick={() => handleRevoke(token)}
+                    >
+                      <Ban size={16} />
+                    </button>
+                  </>
+                }
+              >
+                <EntityField label={t('Key')} mono>{`${token.prefix}…`}</EntityField>
+                <EntityField label={t('Adressen')}>
+                  {token.allowedIps.length > 0 ? token.allowedIps.join(', ') : t('von überall')}
+                </EntityField>
+                <EntityField label={t('Zuletzt benutzt')}>
+                  {lastUsed(locale, token.lastUsedAt, now) ?? t('nie')}
+                  {token.lastUsedIp ? ` · ${token.lastUsedIp}` : ''}
+                </EntityField>
+              </EntityCard>
+            ))}
+          </EntityGrid>
+        ))}
+
+      {area === 'endpunkte' && (
+        <>
+          <div className="card sys-block api-card">
+            <div className="form-section-head">
+              <span className="form-section-icon">
+                <Link2 size={17} />
+              </span>
+              <div>
+                <div className="form-section-title">{t('Zugang')}</div>
+                <div className="form-section-sub">
+                  {rich(
+                    'Die Basis-URL ist die Adresse, unter der HAPM erreichbar ist. Der Parameter {param} ist überall optional: ohne ihn gilt dieser Server.',
+                    { param: <code>serverId</code> }
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">
+                {t('Basis-URL')}
+                <InfoHint
+                  text={t(
+                    'Jeder Endpunkt der Tabelle unten hängt daran. Kein CSRF-Token: der schützt einen Browser mit Cookie, und hier gibt es weder das eine noch das andere.'
+                  )}
+                />
+              </label>
+              <div className="form-list-row">
+                <input
+                  className="form-input"
+                  value={baseUrl}
+                  readOnly
+                  onFocus={(e) => e.target.select()}
+                />
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-icon"
+                  data-tooltip={t('Kopieren')}
+                  disabled={!baseUrl}
+                  onClick={() => copy(baseUrl, 'base')}
+                >
+                  {copied === 'base' ? <Check size={16} /> : <Copy size={16} />}
+                </button>
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">{t('Kopfzeile')}</label>
+              <div className="form-list-row">
+                <input
+                  className="form-input"
+                  value="Authorization: Bearer hapm_…"
+                  readOnly
+                  onFocus={(e) => e.target.select()}
+                />
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-icon"
+                  data-tooltip={t('Kopieren')}
+                  onClick={() => copy('Authorization: Bearer ', 'header')}
+                >
+                  {copied === 'header' ? <Check size={16} /> : <Copy size={16} />}
+                </button>
+              </div>
+              <span className="form-hint">
+                {rich(
+                  'Ersatzweise {header}, falls ein Proxy dazwischen den Authorization-Header für sich beansprucht.',
+                  { header: <code>X-Service-Token: hapm_…</code> }
+                )}
+              </span>
             </div>
           </div>
-        </div>
 
-        <div className="form-group">
-          <label className="form-label">
-            {t('Basis-URL')}
-            <InfoHint
-              text={t(
-                'Jeder Endpunkt der Tabelle unten hängt daran. Kein CSRF-Token: der schützt einen Browser mit Cookie, und hier gibt es weder das eine noch das andere.'
-              )}
-            />
-          </label>
-          <div className="form-list-row">
-            <input
-              className="form-input"
-              value={baseUrl}
-              readOnly
-              onFocus={(e) => e.target.select()}
-            />
-            <button
-              type="button"
-              className="btn btn-secondary btn-icon"
-              data-tooltip={t('Kopieren')}
-              disabled={!baseUrl}
-              onClick={() => copy(baseUrl, 'base')}
-            >
-              {copied === 'base' ? <Check size={16} /> : <Copy size={16} />}
-            </button>
-          </div>
-        </div>
-
-        <div className="form-group">
-          <label className="form-label">{t('Kopfzeile')}</label>
-          <div className="form-list-row">
-            <input
-              className="form-input"
-              value="Authorization: Bearer hapm_…"
-              readOnly
-              onFocus={(e) => e.target.select()}
-            />
-            <button
-              type="button"
-              className="btn btn-secondary btn-icon"
-              data-tooltip={t('Kopieren')}
-              onClick={() => copy('Authorization: Bearer ', 'header')}
-            >
-              {copied === 'header' ? <Check size={16} /> : <Copy size={16} />}
-            </button>
-          </div>
-          <span className="form-hint">
+          <h2 className="section-title">
+            {t('Endpunkte')}
+          </h2>
+          <p className="page-subtitle sys-block">
             {rich(
-              'Ersatzweise {header}, falls ein Proxy dazwischen den Authorization-Header für sich beansprucht.',
-              { header: <code>X-Service-Token: hapm_…</code> }
-            )}
-          </span>
-        </div>
-      </div>
-
-      <McpAccess publicUrl={publicUrl} loading={settingsLoading} />
-
-      <h2 className="section-title">
-        {t('API-Keys')}
-      </h2>
-
-      {loading ? (
-        <SkeletonCards />
-      ) : active.length === 0 ? (
-        <div className="empty-state">
-          <KeyRound size={40} />
-          <h3>{t('Noch kein Key')}</h3>
-          <p>
-            {t(
-              'Solange keiner existiert, erreicht kein anderer Dienst die Reverse-Proxy-API. Ein Deploy-Skript braucht einen, um Ziele anzulegen.'
+              'Schreibende Aufrufe antworten mit einer Lauf-ID, nicht mit dem Ergebnis: DNS, Zertifikat und Reload dauern Minuten. Der Aufrufer pollt {path}, bis {status} nicht mehr {running} ist.',
+              { path: <code>/runs/&lt;id&gt;</code>, status: <code>status</code>, running: <code>running</code> }
             )}
           </p>
-        </div>
-      ) : (
-        <EntityGrid>
-          {active.map((token) => (
-            <EntityCard
-              key={token.$id}
-              icon={<KeyRound size={17} />}
-              name={token.name}
-              subtitle={token.description || undefined}
-              badge={<span className="badge-status badge-success">{t('Aktiv')}</span>}
-              actions={
-                <>
-                  <button
-                    className="btn btn-ghost btn-icon btn-sm"
-                    data-tooltip={t('Erlaubte Adressen')}
-                    onClick={() => {
-                      setEditing(token);
-                      setEditIps(token.allowedIps.length > 0 ? [...token.allowedIps] : ['']);
-                    }}
-                  >
-                    <Globe size={16} />
-                  </button>
-                  <button
-                    className="btn btn-ghost btn-icon btn-sm"
-                    data-tooltip={t('Zurückziehen')}
-                    onClick={() => handleRevoke(token)}
-                  >
-                    <Ban size={16} />
-                  </button>
-                </>
-              }
-            >
-              <EntityField label={t('Key')} mono>{`${token.prefix}…`}</EntityField>
-              <EntityField label={t('Adressen')}>
-                {token.allowedIps.length > 0 ? token.allowedIps.join(', ') : t('von überall')}
-              </EntityField>
-              <EntityField label={t('Zuletzt benutzt')}>
-                {lastUsed(locale, token.lastUsedAt, now) ?? t('nie')}
-                {token.lastUsedIp ? ` · ${token.lastUsedIp}` : ''}
-              </EntityField>
-            </EntityCard>
-          ))}
-        </EntityGrid>
+
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>{t('Methode')}</th>
+                  <th>{t('Pfad')}</th>
+                  <th>{t('Was er tut')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ENDPOINTS.map((endpoint) => (
+                  <tr key={`${endpoint.method} ${endpoint.path}`}>
+                    <td style={{ fontSize: '0.8125rem', whiteSpace: 'nowrap' }}>
+                      <code>{endpoint.method}</code>
+                    </td>
+                    <td style={{ fontSize: '0.8125rem', whiteSpace: 'nowrap' }}>
+                      <code>{endpoint.path}</code>
+                    </td>
+                    <td style={{ fontSize: '0.8125rem' }}>{t(endpoint.what)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
-      <h2 className="section-title">
-        {t('Endpunkte')}
-      </h2>
-      <p className="page-subtitle sys-block">
-        {rich(
-          'Schreibende Aufrufe antworten mit einer Lauf-ID, nicht mit dem Ergebnis: DNS, Zertifikat und Reload dauern Minuten. Der Aufrufer pollt {path}, bis {status} nicht mehr {running} ist.',
-          { path: <code>/runs/&lt;id&gt;</code>, status: <code>status</code>, running: <code>running</code> }
-        )}
-      </p>
-
-      <div className="table-wrap">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>{t('Methode')}</th>
-              <th>{t('Pfad')}</th>
-              <th>{t('Was er tut')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {ENDPOINTS.map((endpoint) => (
-              <tr key={`${endpoint.method} ${endpoint.path}`}>
-                <td style={{ fontSize: '0.8125rem', whiteSpace: 'nowrap' }}>
-                  <code>{endpoint.method}</code>
-                </td>
-                <td style={{ fontSize: '0.8125rem', whiteSpace: 'nowrap' }}>
-                  <code>{endpoint.path}</code>
-                </td>
-                <td style={{ fontSize: '0.8125rem' }}>{t(endpoint.what)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {area === 'mcp' && <McpAccess publicUrl={publicUrl} loading={settingsLoading} />}
 
       {modalOpen && (
         <div
