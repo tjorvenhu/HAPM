@@ -23,9 +23,10 @@
  * einen Namen und keine ID — deshalb wird ein zurückgezogenes Token gesperrt
  * und nicht gelöscht.
  *
- * **Ein Token gilt für die Reverse-Proxy-API und sonst nichts**, weil es unter
- * `/api/internal` nichts anderes gibt. Bereiche oder Scopes je Token gibt es
- * deshalb nicht. Einschränken lässt sich ein Token über die Liste der Adressen,
+ * **Ein Token gilt für alles unter `/api/internal`**: Reverse-Proxy, Updates,
+ * Sicherung, Einstellungen (docs/hapm-api.md). Bereiche oder Scopes je Token
+ * gibt es nicht. Was kein Token darf (Geheimnisse, Konten, die Adresse von
+ * HAPM), fehlt in der API ganz und steht in docs/mcp.md. Einschränken lässt sich ein Token über die Liste der Adressen,
  * von denen es gelten darf (`lib/ip-allow.ts`); ein leeres Feld heißt dort
  * „keine Einschränkung".
  */

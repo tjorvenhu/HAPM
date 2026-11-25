@@ -1,8 +1,7 @@
 import { requireSession, requireCsrf } from '@/lib/session';
-import { ok, handleError, ApiError } from '@/lib/api';
-import { msg } from '@/lib/i18n';
-import { logAudit, getClientIP } from '@/lib/audit';
-import { geoipOverview, refreshGeoip } from '@/lib/geoip/fetch';
+import { ok, handleError } from '@/lib/api';
+import { getClientIP } from '@/lib/audit';
+import { refreshGeoipNow } from '@/lib/geoip/actions';
 
 /**
  * „Jetzt erneuern": die Länder-Tabelle sofort von db-ip.com holen.
@@ -15,27 +14,9 @@ export async function POST(request: Request) {
   try {
     await requireCsrf(request);
     const session = await requireSession();
-
-    const result = await refreshGeoip({ actor: session.email });
-    // 502: HAPM selbst ist in Ordnung, die Gegenseite hat nicht geliefert.
-    if (!result.ok) throw new ApiError(result.error ?? msg('Der Abruf ist gescheitert.'), 502);
-
-    const overview = await geoipOverview();
-    if (result.changed) {
-      await logAudit({
-        userId: session.userId,
-        userEmail: session.email,
-        action: 'geoip_table_updated',
-        resource: 'settings',
-        resourceId: 'geoip',
-        details:
-          `Länder-Tabelle von db-ip.com geholt, Stand ${result.version}: ${overview.v4Count} IPv4- und ` +
-          `${overview.v6Count} IPv6-Bereiche`,
-        ip: getClientIP(request) ?? undefined,
-      });
-    }
-
-    return ok({ ...overview, changed: result.changed });
+    return ok(
+      await refreshGeoipNow({ userId: session.userId, userEmail: session.email, ip: getClientIP(request) ?? undefined })
+    );
   } catch (err) {
     return handleError(err);
   }

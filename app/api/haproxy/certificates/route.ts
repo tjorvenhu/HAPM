@@ -3,16 +3,11 @@ import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
 import { msg } from '@/lib/i18n';
 import { getT } from '@/lib/i18n/server';
 import { logAudit, getClientIP } from '@/lib/audit';
-import {
-  probeProxy,
-  readCertificateInventory,
-  removeAcmeCertificate,
-  removeUploadedCertificate,
-  uploadCertificate,
-} from '@/lib/haproxy/provision';
+import { probeProxy, readCertificateInventory, uploadCertificate } from '@/lib/haproxy/provision';
+import { removeCertificate } from '@/lib/haproxy/certificate-actions';
 import { certificateKeepers, certificateUse, pemFileName, type AcmeCertificate } from '@/lib/haproxy/certs';
 import { inspectUpload, isPemFileName, servedFiles, type UploadedCertificate } from '@/lib/haproxy/cert-upload';
-import { isValidDomain, scopeSlug, type HaproxyService } from '@/lib/haproxy/config';
+import { scopeSlug, type HaproxyService } from '@/lib/haproxy/config';
 import { localServer } from '@/lib/helpers';
 import { getSettings } from '@/lib/settings';
 import type { CertificateSource } from '@/lib/types';
@@ -210,53 +205,19 @@ export async function POST(request: Request) {
 /**
  * Ein Zertifikat entfernen: `?file=` ein hochgeladenes, `?domain=` eins von
  * acme.sh (seine Hauptdomain). Ob es noch gebraucht wird, prüft
- * `provision.ts` im Lock, nicht die Seite.
+ * `provision.ts` im Lock, nicht die Seite (`removeCertificate`).
  */
 export async function DELETE(request: Request) {
   try {
     await requireCsrf(request);
     const session = await requireSession();
     const params = new URL(request.url).searchParams;
-    const server = localServer();
-
-    const domain = params.get('domain');
-    if (domain !== null) {
-      const mainDomain = domain.trim().toLowerCase();
-      if (!isValidDomain(mainDomain)) throw new ApiError(msg('"{domain}" ist keine gültige Domain.', { domain: mainDomain }));
-      const removed = await removeAcmeCertificate(server, mainDomain);
-      const cert = removed.certificate;
-
-      await logAudit({
-        userId: session.userId,
-        userEmail: session.email,
-        action: 'haproxy_certificate_removed',
-        resource: 'server',
-        resourceId: server.$id,
-        details:
-          `acme.sh ${cert.mainDomain}: ${cert.domains.join(', ')}` +
-          (cert.createdAt === null ? ', nie ausgestellt' : removed.reloaded ? `, ${pemFileName(cert.mainDomain)} gelöscht` : ', nicht ausgerollt'),
-        ip: getClientIP(request),
-      });
-
-      return ok({ mainDomain: cert.mainDomain, reloaded: removed.reloaded });
-    }
-
-    const file = params.get('file') ?? '';
-    if (!isPemFileName(file)) throw new ApiError(msg('Unbekannte Zertifikatsdatei.'));
-
-    const removed = await removeUploadedCertificate(server, file);
-
-    await logAudit({
-      userId: session.userId,
-      userEmail: session.email,
-      action: 'haproxy_certificate_removed',
-      resource: 'server',
-      resourceId: server.$id,
-      details: `${file}: ${removed.domains.join(', ') || 'unlesbar'}`,
-      ip: getClientIP(request),
-    });
-
-    return ok({ file });
+    return ok(
+      await removeCertificate(
+        { domain: params.get('domain'), file: params.get('file') },
+        { userId: session.userId, userEmail: session.email, ip: getClientIP(request) }
+      )
+    );
   } catch (err) {
     return handleError(err);
   }

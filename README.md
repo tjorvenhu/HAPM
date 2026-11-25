@@ -410,7 +410,8 @@ Fertige Konfigurationen für weitere Clients stehen in HAPM auf derselben Seite
 zum Kopieren, Einzelheiten in [`docs/mcp.md`](docs/mcp.md).
 
 > [!WARNING]
-> Jedes Werkzeug läuft mit allen Rechten des Keys und kann Ziele löschen.
+> Jedes Werkzeug läuft mit allen Rechten des Keys: es kann Ziele löschen, Updates
+> einspielen, HAProxy neu starten und Einstellungen ändern.
 > Geben Sie einen Key nur an Clients, denen Sie das zutrauen.
 
 > [!NOTE]

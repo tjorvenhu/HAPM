@@ -14,8 +14,9 @@ Next.js (App Router) mit TypeScript strict, pnpm. Drei Container: HAPM, HAProxy
 |---|---|
 | `lib/haproxy/`, `app/(app)/reverse-proxy/`, `components/reverse-proxy/` | [`docs/reverse-proxy.md`](docs/reverse-proxy.md): dort steht zu fast jeder Zeile, warum die naheliegende Lösung einmal danebenging |
 | `lib/dns/`, `app/(app)/dns/` | [`docs/dns.md`](docs/dns.md) |
-| `app/api/internal/` | [`docs/reverse-proxy-api.md`](docs/reverse-proxy-api.md) |
-| `app/api/mcp/`, `lib/mcp/`, `lib/haproxy/api-actions.ts` | [`docs/mcp.md`](docs/mcp.md), dazu [`docs/reverse-proxy-api.md`](docs/reverse-proxy-api.md) |
+| `app/api/internal/haproxy/` | [`docs/reverse-proxy-api.md`](docs/reverse-proxy-api.md) |
+| `app/api/internal/` außerhalb von `haproxy/`, die `actions.ts`/`*-actions.ts` in `lib/` | [`docs/hapm-api.md`](docs/hapm-api.md), dazu [`docs/mcp.md`](docs/mcp.md), „Keine eigene Logik in den Werkzeugen" und „Was es bewusst nicht gibt" |
+| `app/api/mcp/`, `lib/mcp/`, `lib/haproxy/api-actions.ts` | [`docs/mcp.md`](docs/mcp.md), dazu [`docs/reverse-proxy-api.md`](docs/reverse-proxy-api.md) und [`docs/hapm-api.md`](docs/hapm-api.md) |
 | `lib/docker/`, `lib/updates/`, `lib/bootstrap.ts`, `Dockerfile`, Compose, `install.sh` | [`docs/betrieb.md`](docs/betrieb.md) |
 | `app/setup/`, `app/api/setup/`, `lib/setup/`, `lib/address-move/`, `lib/haproxy/challenge.ts` | [`docs/betrieb.md`](docs/betrieb.md), Abschnitt „Ersteinrichtung", und [`docs/reverse-proxy.md`](docs/reverse-proxy.md), „Interne Installation" |
 | `lib/db/`, `lib/setup-db.ts`, `bin/hapm-admin.mjs` | [`docs/betrieb.md`](docs/betrieb.md), Abschnitt „Postgres" |
@@ -98,6 +99,8 @@ Next.js (App Router) mit TypeScript strict, pnpm. Drei Container: HAPM, HAProxy
 - **Routen:** `requireCsrf` → `requireSession` → Logik → `logAudit` → `ok()`,
   alles in `try/catch` mit `handleError(err)`. Die Routen unter
   `app/api/internal/` nehmen statt der Sitzung ein Token (`requireServiceToken`).
+  Was Oberfläche, interne API und MCP gemeinsam können, steht als Funktion in
+  `lib/` (sie schreibt auch das Audit) und wird nicht in eine Route kopiert.
 - **Oberfläche:** `apiFetch` aus `useApp()`, nie nacktes `fetch`. `<Select>`
   statt `<select>`, `useConfirm()` statt `confirm()`, Schalter ist
   `.toggle-switch` in einem `label`. Meldungen nach einer Handlung sind Toasts.

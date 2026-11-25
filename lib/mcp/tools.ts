@@ -5,11 +5,14 @@
  * ── Was hier steht und was nicht ──
  *
  * Kein Werkzeug hat eigene Logik. Jedes ruft eine Funktion, die auch eine
- * Route ruft: `lib/haproxy/api-actions.ts` für alles, was die Reverse-Proxy-API
- * kann, dazu `systemOverview`, `readStatsOverview` und `checkZones` für die
- * Seiten Übersicht, Statistik und DNS. Damit gelten dieselben Prüfungen,
- * dieselbe Vorabprüfung und derselbe Schutz des Ziels der Oberfläche, ohne
- * dass sie hier ein zweites Mal stehen.
+ * Route unter `/api/internal` ruft: `lib/haproxy/api-actions.ts` für den
+ * Reverse-Proxy, dazu die `*-actions.ts` und `actions.ts` der übrigen Bereiche
+ * (Updates, Sicherung, Einstellungen, Zertifikate, Grundkonfiguration,
+ * Fehlerseiten, GeoIP) und die Lesefunktionen der Seiten (`systemOverview`,
+ * `readStatsOverview`, `checkZones`, `readHaproxyLog`). Damit gelten dieselben
+ * Prüfungen, dieselbe Vorabprüfung, derselbe Schutz des Ziels der Oberfläche
+ * und dasselbe Protokoll, ohne dass sie hier ein zweites Mal stehen. Die
+ * Tabelle, welche Route zu welchem Werkzeug gehört, steht in docs/mcp.md.
  *
  * Die Schemas prüfen nur die Form (Typen, Aufzählungen). Was eine gültige
  * Domain oder ein freier Port ist, entscheidet die Bibliothek, mit derselben
@@ -64,6 +67,31 @@ import {
 import { systemOverview } from '../system/overview';
 import { readStatsOverview } from '../haproxy/stats-overview';
 import { checkZones } from '../dns/zone-check';
+import { UPDATE_COMPONENTS, checkUpdatesNow, getUpdateRun, startComponentUpdate, updatesOverview } from '../updates/actions';
+import { backupOverview, changeBackupSettings, getBackupRun, startBackupRun } from '../backup/actions';
+import {
+  changeCertificateSettings,
+  changeSettings,
+  readServiceSettingsInput,
+  sendTestMailAs,
+  settingsOverview,
+} from '../settings-actions';
+import { EXPOSURES, CERTIFICATE_SOURCES } from '../settings';
+import { checkAddressMove } from '../address-move';
+import { reissueCertificate, removeCertificate } from '../haproxy/certificate-actions';
+import {
+  applyBaseConfig,
+  readBaseConfigRows,
+  readErrorPageRows,
+  redeployErrorPages,
+} from '../haproxy/maintenance-actions';
+import { readHaproxyLog } from '../haproxy/log-read';
+import { LOG_FILTERS } from '../haproxy/log-view';
+import { haproxyContainer, restartHaproxy } from '../system/haproxy-container';
+import { geoipOverview } from '../geoip/fetch';
+import { changeGeoipAutoRefresh, refreshGeoipNow } from '../geoip/actions';
+import { LOCALES } from '../i18n/locale';
+import { NOTIFICATION_EVENT_TYPES } from '../types';
 
 export interface ToolContext {
   /** Wer schreibt: der Name des Tokens, für Lauf und Audit. */
@@ -280,14 +308,44 @@ const streamFields = {
 };
 
 /** Ein Lauf, bis er fertig ist oder die Wartezeit um ist. */
-async function waitForRun(runId: string, waitSeconds: number, t: Translate): Promise<RunView> {
+async function waitFor<T extends { status: string }>(read: () => Promise<T>, waitSeconds: number): Promise<T> {
   const until = Date.now() + Math.min(Math.max(waitSeconds, 0), MAX_WAIT_SECONDS) * 1000;
-  let run = await getRun(runId, t);
+  let run = await read();
   while (run.status === 'running' && Date.now() + POLL_MS <= until) {
     await new Promise((resolve) => setTimeout(resolve, POLL_MS));
-    run = await getRun(runId, t);
+    run = await read();
   }
   return run;
+}
+
+function waitForRun(runId: string, waitSeconds: number, t: Translate): Promise<RunView> {
+  return waitFor(() => getRun(runId, t), waitSeconds);
+}
+
+/** Der Actor für Funktionen außerhalb des Reverse-Proxys, die ins Protokoll schreiben. */
+function auditActor(actor: HaproxyActor) {
+  return { userId: actor.userId, userEmail: actor.email, ...(actor.ip ? { ip: actor.ip } : {}) };
+}
+
+const waitSecondsInput = z
+  .number()
+  .int()
+  .min(0)
+  .max(MAX_WAIT_SECONDS)
+  .optional()
+  .describe(`Wait up to this many seconds for the run to finish. Default 0 (return at once).`);
+
+/** Hinweis an das Modell nach einem gestarteten Update. */
+const UPDATE_NEXT =
+  'The update runs in the background. Call get_update_run with this runId and waitSeconds=50 until status is no longer "running". ' +
+  'For component "hapm" the HAPM container replaces itself: this MCP connection fails for about a minute, ' +
+  'then call get_update_run again; the new container closes the run when it starts.';
+
+/** Ein Lauf in der Übersicht, ohne seine Schritte: die liefern get_update_run und get_backup_run. */
+function runSummary<T extends { $id: string; steps: unknown }>(run: T) {
+  const { steps: _steps, ...rest } = run;
+  void _steps;
+  return rest;
 }
 
 /* ── Die Werkzeuge ── */
@@ -592,7 +650,8 @@ export const TOOLS: ToolDefinition[] = [
     title: 'List certificates',
     description:
       'Certificates managed by acme.sh with their domains, renewal date and usedBy (target IDs). ' +
-      'usedBy empty means issued by hand or left over from a deleted target. Read-only: certificates come and go with their targets.',
+      'usedBy empty means issued by hand or left over from a deleted target; createdAt null means the request was never issued. ' +
+        'Certificates come and go with their targets; leftovers can be removed with delete_certificate, a pending request retried with reissue_certificate.',
     input: {},
     annotations: READ_ONLY,
     run: (_args, ctx) => listCertificates(null, ctx.t),
@@ -650,5 +709,355 @@ export const TOOLS: ToolDefinition[] = [
     input: {},
     annotations: { ...READ_ONLY, idempotentHint: true, openWorldHint: true },
     run: (_args, ctx) => checkZones(ctx.locale),
+  }),
+
+  /* ── Updates ── */
+
+  defineTool({
+    name: 'get_updates',
+    title: 'Updates overview',
+    description:
+      'Update state of the three components HAPM manages: "haproxy" (HAProxy container image), "hapm" (HAPM itself) and "acme" (acme.sh). ' +
+      'Per component: currentVersion, latestVersion, updateAvailable (null means unknown, not "up to date"), checkedAt and error. ' +
+      'Also the recent update runs (without steps), whether one is running, and the automatic update settings. ' +
+      'check=true asks the registries and GitHub first, like "check now" in the web interface; nothing is downloaded or installed.',
+    input: {
+      check: z.boolean().optional().describe('Check the registries and GitHub before answering. Takes a few seconds. Default false.'),
+    },
+    annotations: { ...READ_ONLY, openWorldHint: true },
+    run: async (args) => {
+      const overview = args.check ? await checkUpdatesNow() : await updatesOverview();
+      return { ...overview, runs: overview.runs.slice(0, 10).map(runSummary) };
+    },
+  }),
+
+  defineTool({
+    name: 'start_update',
+    title: 'Start update',
+    description:
+      'Installs the latest version of one component. Only one update runs at a time (409 otherwise). ' +
+      '"haproxy": pulls the image, checks the existing configuration with the new version first (nothing changes if it is rejected), ' +
+      'replaces the container; the old one comes back if the new one does not start. Open connections drop. ' +
+      '"hapm": replaces the HAPM container itself. THIS MCP CONNECTION BREAKS FOR ABOUT A MINUTE; afterwards call get_update_run, ' +
+      'the new container closes the run when it starts. "acme": upgrades acme.sh inside HAPM. ' +
+      'Check get_updates first: an update without a newer image ends with "already the running image". Returns { runId }.',
+    input: {
+      component: z.enum(UPDATE_COMPONENTS as [string, ...string[]]).describe('"haproxy", "hapm" or "acme".'),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+    run: async (args, ctx) => ({
+      ...(await startComponentUpdate(args.component, auditActor(ctx.actor))),
+      next: UPDATE_NEXT,
+    }),
+  }),
+
+  defineTool({
+    name: 'get_update_run',
+    title: 'Get update run',
+    description:
+      'Status of an update run started by start_update: status (running, success, error), fromVersion, toVersion, steps and a text log. ' +
+      `With waitSeconds (max ${MAX_WAIT_SECONDS}) the call waits until the run is finished or the time is up. ` +
+      'During a "hapm" update the call itself can fail while the container is replaced; wait a minute and call again.',
+    input: {
+      runId: z.string().describe('runId returned by start_update.'),
+      waitSeconds: waitSecondsInput,
+    },
+    annotations: READ_ONLY,
+    run: (args, ctx) => waitFor(() => getUpdateRun(args.runId, ctx.t), args.waitSeconds ?? 0),
+  }),
+
+  /* ── Sicherung ── */
+
+  defineTool({
+    name: 'get_backup',
+    title: 'Backup overview',
+    description:
+      'Backup settings (enabled, hostPath = folder on the host, time HH:MM, keep = how many archives stay), whether backups are available ' +
+      '(HAPM must run in a container), whether one is running, the recent runs (without steps) and the archives in the folder after the last run. ' +
+      'An archive contains the database and the HAProxy files.',
+    input: {},
+    annotations: READ_ONLY,
+    run: async () => {
+      const overview = await backupOverview();
+      return { ...overview, runs: overview.runs.map(runSummary) };
+    },
+  }),
+
+  defineTool({
+    name: 'update_backup_settings',
+    title: 'Update backup settings',
+    description:
+      'Partial update of the backup settings: only the fields you send change. ' +
+      'hostPath is an absolute folder on the host (not inside the container); null removes it, which stops backups. ' +
+      'Lowering keep means the next backup deletes the oldest archives beyond that number. Returns the backup overview.',
+    input: {
+      enabled: z.boolean().optional().describe('Daily backup on or off.'),
+      hostPath: z.string().nullable().optional().describe('Absolute folder on the host, e.g. "/srv/backups/hapm". null: no folder.'),
+      time: z.string().optional().describe('Time of the daily backup, HH:MM (24 h, server time).'),
+      keep: z.number().int().optional().describe('How many archives to keep, 1 to 365.'),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    run: (args, ctx) => changeBackupSettings(args, auditActor(ctx.actor)),
+  }),
+
+  defineTool({
+    name: 'start_backup',
+    title: 'Start backup',
+    description:
+      'Writes a backup archive into the configured folder now (database and HAProxy files). Needs hostPath (get_backup). ' +
+      'Old archives beyond keep are removed afterwards, as with the daily backup. Returns { runId }; poll get_backup_run.',
+    input: {},
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    run: async (_args, ctx) => ({
+      ...(await startBackupRun(auditActor(ctx.actor))),
+      next: 'Call get_backup_run with this runId and waitSeconds=50 until status is no longer "running".',
+    }),
+  }),
+
+  defineTool({
+    name: 'get_backup_run',
+    title: 'Get backup run',
+    description:
+      'Status of a backup run: status, fileName, sizeBytes, steps and a text log. ' +
+      `With waitSeconds (max ${MAX_WAIT_SECONDS}) the call waits until the run is finished or the time is up.`,
+    input: {
+      runId: z.string().describe('runId returned by start_backup.'),
+      waitSeconds: waitSecondsInput,
+    },
+    annotations: READ_ONLY,
+    run: (args, ctx) => waitFor(() => getBackupRun(args.runId, ctx.t), args.waitSeconds ?? 0),
+  }),
+
+  /* ── Einstellungen ── */
+
+  defineTool({
+    name: 'get_settings',
+    title: 'HAPM settings',
+    description:
+      'Settings of HAPM itself: publicUrl (the HAPM address), exposure ("internal": every certificate via DNS-01, "public": HTTP-01), ' +
+      'certificateSource ("acme" or "upload"), acmeDirectory (null: Let\'s Encrypt), acmeHttpReachable, acmeEmail, ' +
+      'automatic HAProxy updates, the SMTP account (smtpPassSet instead of the password), notification recipients and events, mailLocale. ' +
+      'notifications tells whether mail is configured and how the last delivery went.',
+    input: {},
+    annotations: READ_ONLY,
+    run: () => settingsOverview(),
+  }),
+
+  defineTool({
+    name: 'update_settings',
+    title: 'Update HAPM settings',
+    description:
+      'Partial update of the HAPM settings: only the fields you send change. ' +
+      'Not possible here: the HAPM address (moving it is a guided process in the web interface), the SMTP password, and the certificate source ' +
+      '(use update_certificate_settings). Changing exposure changes how future certificates are requested, existing ones stay. ' +
+      'A new acmeEmail is registered with acme.sh; the result is in "acme". Example: {"notifyRecipients":["ops@example.com"]}.',
+    input: {
+      acmeEmail: z.string().nullable().optional().describe('Contact address for the ACME account (Let\'s Encrypt).'),
+      exposure: z.enum(EXPOSURES as [string, ...string[]]).optional().describe('"internal" or "public".'),
+      autoUpdateHaproxy: z.boolean().optional().describe('Install HAProxy updates automatically once a day.'),
+      autoUpdateTime: z.string().optional().describe('Time for automatic updates, HH:MM.'),
+      smtpHost: z.string().nullable().optional(),
+      smtpPort: z.number().int().optional().describe('1 to 65535.'),
+      smtpSecurity: z.enum(['starttls', 'tls', 'none']).optional(),
+      smtpUser: z.string().nullable().optional(),
+      mailFrom: z.string().nullable().optional().describe('Sender address of notification mails.'),
+      notifyRecipients: z.array(z.string()).optional().describe('Replace the list of recipients (max 20 addresses).'),
+      notifyEvents: z
+        .object(Object.fromEntries(NOTIFICATION_EVENT_TYPES.map((type) => [type, z.boolean().optional()])))
+        .optional()
+        .describe('Switch single notification events on or off; events not listed keep their state.'),
+      mailLocale: z.enum(LOCALES as [string, ...string[]]).optional().describe('Language of notification mails.'),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    run: (args, ctx) => changeSettings(readServiceSettingsInput(args), auditActor(ctx.actor)),
+  }),
+
+  defineTool({
+    name: 'update_certificate_settings',
+    title: 'Update certificate source',
+    description:
+      'Where certificates come from: source "acme" (HAPM requests them) or "upload" (only uploaded certificates, HAPM never requests one). ' +
+      'acmeDirectory: URL of an own ACME server, empty or null for Let\'s Encrypt; a new server gets an account registered first, ' +
+      'and nothing is saved if that fails. httpReachable: the ACME server reaches HAPM on port 80, so HTTP-01 works even for an internal installation. ' +
+      'External Account Binding keys are not accepted here (they are secrets): set those in the web interface.',
+    input: {
+      source: z.enum(CERTIFICATE_SOURCES as [string, ...string[]]).describe('"acme" or "upload".'),
+      acmeDirectory: z
+        .string()
+        .nullable()
+        .optional()
+        .describe('ACME directory URL, e.g. "https://acme.internal/directory". Omit or null: Let\'s Encrypt.'),
+      httpReachable: z.boolean().optional().describe('Only with an own acmeDirectory. Default false.'),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    run: (args, ctx) => changeCertificateSettings(args, auditActor(ctx.actor), { allowEab: false }),
+  }),
+
+  defineTool({
+    name: 'send_test_mail',
+    title: 'Send test mail',
+    description:
+      'Sends a test mail through the stored SMTP account to one address. Limited to 5 per 10 minutes. ' +
+      'A rejection by the mail server is not an error of this tool: the result has sent=false and the server message.',
+    input: { to: z.string().describe('Recipient address.') },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    run: (args, ctx) => sendTestMailAs(args.to, auditActor(ctx.actor), null),
+  }),
+
+  defineTool({
+    name: 'check_address',
+    title: 'Check HAPM address',
+    description:
+      'Checks whether a domain could become the address of HAPM: where it resolves, which DNS zone it is in, whether a certificate covers it ' +
+      'and how one would be issued. Read-only. The move itself is only possible in the web interface: it changes the address this MCP server ' +
+      'is reached through and deletes all passkeys.',
+    input: { domain: z.string().describe('Domain, e.g. "hapm.example.com".') },
+    annotations: { ...READ_ONLY, openWorldHint: true },
+    run: (args) => checkAddressMove(args.domain),
+  }),
+
+  /* ── HAProxy, Zertifikate, Grundkonfiguration, Fehlerseiten ── */
+
+  defineTool({
+    name: 'get_haproxy_container',
+    title: 'HAProxy container',
+    description:
+      'State of the HAProxy container (running, restarts, image, version). logs=true adds its last 200 lines of output ' +
+      '(startup errors, configuration warnings), not the access log; that is get_haproxy_log.',
+    input: { logs: z.boolean().optional().describe('Include the last 200 lines of container output. Default false.') },
+    annotations: READ_ONLY,
+    run: (args) => haproxyContainer({ logs: args.logs === true }),
+  }),
+
+  defineTool({
+    name: 'restart_haproxy',
+    title: 'Restart HAProxy',
+    description:
+      'Restarts the HAProxy container (also starts it if it is stopped) and returns its state two seconds later. ' +
+      'All open connections drop. Not needed after a configuration change: every write tool reloads HAProxy itself. ' +
+      'Use it when HAProxy is down or hangs.',
+    input: {},
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    run: (_args, ctx) => restartHaproxy(auditActor(ctx.actor)),
+  }),
+
+  defineTool({
+    name: 'get_haproxy_log',
+    title: 'HAProxy log',
+    description:
+      'The last lines of the HAProxy log (requests and system messages), parsed. ' +
+      'Without filter and query: exactly the last "lines" lines. With a filter or query: a fixed window of recent lines is searched ' +
+      '(window, scanned and matched say how much). exists=false or a follower that is not connected means there is no log, not "no traffic".',
+    input: {
+      lines: z.number().int().min(1).max(2000).optional().describe('How many entries to return, up to 2000. Default 200.'),
+      filter: z.enum(LOG_FILTERS).optional().describe('all, requests, 2xx, 3xx, 4xx, 5xx, system or problems. Default all.'),
+      query: z.string().optional().describe('Case-insensitive text search, e.g. a domain or an IP.'),
+    },
+    annotations: READ_ONLY,
+    run: (args) => readHaproxyLog({ lines: args.lines ?? null, filter: args.filter ?? null, q: args.query ?? null }),
+  }),
+
+  defineTool({
+    name: 'delete_certificate',
+    title: 'Delete certificate',
+    description:
+      'Removes a certificate managed by acme.sh (by its mainDomain from list_certificates): acme.sh forgets it, a deployed PEM file is deleted ' +
+      'and HAProxy reloads. Refused while a target still uses it or one of its domains is covered by it. ' +
+      'Meant for leftovers: usedBy empty, or a request that was never issued. Uploaded certificates can only be removed in the web interface.',
+    input: { mainDomain: z.string().describe('Main domain of the certificate, e.g. "*.example.com" or "old.example.com".') },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    run: (args, ctx) => removeCertificate({ domain: args.mainDomain }, auditActor(ctx.actor), { allowUploaded: false }),
+  }),
+
+  defineTool({
+    name: 'reissue_certificate',
+    title: 'Retry certificate request',
+    description:
+      'Requests a certificate again that acme.sh knows but that was never issued (createdAt null in list_certificates), ' +
+      'typically a wildcard whose DNS challenge failed during setup. Only with its own domains; issued certificates are renewed by acme.sh itself (409). ' +
+      'Returns { runId }; poll get_run, issuing can take up to 5 minutes.',
+    input: {
+      mainDomain: z.string().describe('Main domain of the pending request.'),
+      dnsHook: z.string().optional().describe('acme.sh DNS hook (from get_proxy dnsHooks). Only needed when more than one is set up.'),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    run: async (args, ctx) => started(await reissueCertificate(args, ctx.actor)),
+  }),
+
+  defineTool({
+    name: 'get_base_config_diff',
+    title: 'Base configuration check',
+    description:
+      'Compares haproxy.cfg with the base configuration HAPM would write today (global and defaults sections, TLS, headers, timeouts). ' +
+      'Each difference has an id, a section, missing or changed, and the lines. Nothing is changed. Apply selected ones with apply_base_config.',
+    input: {},
+    annotations: READ_ONLY,
+    run: async (_args, ctx) => (await readBaseConfigRows(ctx.t, ctx.locale))[0] ?? null,
+  }),
+
+  defineTool({
+    name: 'apply_base_config',
+    title: 'Apply base configuration',
+    description:
+      'Applies selected differences from get_base_config_diff by their id. Runs synchronously: rewrites haproxy.cfg, haproxy -c, reload. ' +
+      'If an id no longer exists (the file changed meanwhile), nothing is written. Returns the steps and the new diff.',
+    input: { ids: z.array(z.string()).min(1).max(200).describe('ids from get_base_config_diff.') },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    run: (args, ctx) => applyBaseConfig({ ids: args.ids }, auditActor(ctx.actor)),
+  }),
+
+  defineTool({
+    name: 'get_error_pages',
+    title: 'Error pages',
+    description:
+      'The error pages HAProxy serves (errorfile entries in haproxy.cfg) and the password prompt pages, each with its state compared ' +
+      'to the design stored in HAPM. The design itself is edited only in the web interface.',
+    input: {},
+    annotations: READ_ONLY,
+    run: async (_args, ctx) => (await readErrorPageRows(ctx.t, ctx.locale))[0] ?? null,
+  }),
+
+  defineTool({
+    name: 'redeploy_error_pages',
+    title: 'Redeploy error pages',
+    description:
+      'Rewrites every error page and password prompt page in the stored design, then haproxy -c and reload. ' +
+      'Pages edited by hand on the server are overwritten. Runs synchronously and returns the steps.',
+    input: {},
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    run: (_args, ctx) => redeployErrorPages({}, auditActor(ctx.actor)),
+  }),
+
+  /* ── GeoIP ── */
+
+  defineTool({
+    name: 'get_geoip',
+    title: 'GeoIP table',
+    description:
+      'The country table used for country statistics and blockedCountries: version, origin (bundled, fetched or uploaded), ' +
+      'number of IPv4 and IPv6 ranges, autoRefresh and the last fetch attempt.',
+    input: {},
+    annotations: READ_ONLY,
+    run: () => geoipOverview(),
+  }),
+
+  defineTool({
+    name: 'refresh_geoip',
+    title: 'Refresh GeoIP table',
+    description:
+      'Fetches the current country table from db-ip.com now and waits for it (seconds). changed=false: it was already current. ' +
+      'Fails with 502 when db-ip.com does not deliver; the existing table stays.',
+    input: {},
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    run: (_args, ctx) => refreshGeoipNow(auditActor(ctx.actor)),
+  }),
+
+  defineTool({
+    name: 'set_geoip_auto_refresh',
+    title: 'GeoIP automatic refresh',
+    description: 'Turns the daily automatic refresh of the country table on or off. Returns the GeoIP overview.',
+    input: { autoRefresh: z.boolean().describe('true: fetch once a day.') },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    run: (args, ctx) => changeGeoipAutoRefresh(args.autoRefresh, auditActor(ctx.actor)),
   }),
 ];

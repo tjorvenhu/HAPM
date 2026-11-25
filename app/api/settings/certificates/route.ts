@@ -1,8 +1,7 @@
 import { requireCsrf, requireSession } from '@/lib/session';
 import { ok, handleError, jsonBody } from '@/lib/api';
-import { logAudit, getClientIP } from '@/lib/audit';
-import { settingsView } from '@/lib/settings';
-import { readCertificateSettings, saveCertificateSettings } from '@/lib/certificate-settings';
+import { getClientIP } from '@/lib/audit';
+import { changeCertificateSettings } from '@/lib/settings-actions';
 
 /**
  * Woher Zertifikate kommen und bei welchem ACME-Server beantragt wird
@@ -17,19 +16,14 @@ export async function PUT(request: Request) {
   try {
     await requireCsrf(request);
     const session = await requireSession();
-    const input = readCertificateSettings(await jsonBody(request));
-    const result = await saveCertificateSettings(input);
-
-    await logAudit({
-      userId: session.userId,
-      userEmail: session.email,
-      action: 'settings_updated',
-      resource: 'settings',
-      details: result.audit,
-      ip: getClientIP(request),
-    });
-
-    return ok({ settings: settingsView(result.settings), registered: result.registered });
+    const body = await jsonBody(request);
+    return ok(
+      await changeCertificateSettings(
+        body,
+        { userId: session.userId, userEmail: session.email, ip: getClientIP(request) },
+        { allowEab: true }
+      )
+    );
   } catch (err) {
     return handleError(err);
   }

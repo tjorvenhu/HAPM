@@ -105,7 +105,7 @@ export default function McpAccess({ publicUrl, loading }: { publicUrl: string | 
 
       <div className="alert alert-warning">
         {t(
-          'Jedes Werkzeug läuft mit allen Rechten des Keys: Ziele anlegen, ändern und entfernen. Am besten einen eigenen Key für MCP anlegen.'
+          'Jedes Werkzeug läuft mit allen Rechten des Keys: Ziele entfernen, Updates einspielen, HAProxy neu starten, Einstellungen ändern. Am besten einen eigenen Key für MCP anlegen.'
         )}
       </div>
 

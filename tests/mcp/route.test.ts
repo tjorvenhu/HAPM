@@ -162,6 +162,17 @@ describe('POST /api/mcp', () => {
 
     const list = tools.find((tool) => tool.name === 'list_services')!;
     expect(list.annotations.readOnlyHint).toBe(true);
+
+    // Die Werkzeuge außerhalb des Reverse-Proxys kommen als JSON Schema mit an.
+    const update = tools.find((tool) => tool.name === 'start_update')!;
+    expect(update.inputSchema.properties?.component).toMatchObject({ enum: ['haproxy', 'hapm', 'acme'] });
+    expect(update.annotations.destructiveHint).toBe(true);
+
+    const settings = tools.find((tool) => tool.name === 'update_settings')!;
+    expect(Object.keys(settings.inputSchema.properties ?? {})).not.toContain('publicUrl');
+    expect(settings.inputSchema.properties?.notifyEvents).toBeDefined();
+
+    expect(names).toEqual(expect.arrayContaining(['get_update_run', 'get_backup', 'get_settings', 'get_haproxy_log']));
   });
 
   it('ruft für list_services die Funktion der API und gibt JSON zurück', async () => {

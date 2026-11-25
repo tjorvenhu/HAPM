@@ -22,10 +22,13 @@ export const MCP_SERVER_NAME = 'hapm';
 const INSTRUCTIONS = [
   'HAPM manages exactly one HAProxy reverse proxy with Let\'s Encrypt certificates (acme.sh) and optional DNS records.',
   'Start with get_proxy to learn the scope names and whether certificates can be issued.',
-  'Every write tool (create_*, update_*, delete_*) starts a background run and returns a runId.',
+  'Every write tool for targets, TCP forwards, scopes and proxy settings starts a background run and returns a runId.',
   'Poll get_run with waitSeconds=50 until status is not "running"; issuing a certificate can take up to 5 minutes.',
   'update_service and update_stream replace the whole definition: read with get_service/get_stream first and send every field back.',
   'The target through which HAPM itself is reached (surface=true) cannot be deleted.',
+  'Beyond the proxy: get_system_status for health, get_updates/start_update/get_update_run for image updates ' +
+    '(updating "hapm" restarts this server, the connection drops for about a minute), get_backup/start_backup for backups, ' +
+    'get_settings/update_settings for HAPM settings, plus logs, base configuration, error pages, certificates and the GeoIP table.',
   'Every tool runs with the full rights of the service token; write actions appear in the HAPM audit log under the token name.',
 ].join(' ');
 

@@ -47,6 +47,79 @@ vi.mock('@/lib/haproxy/stats-overview', () => ({
 }));
 vi.mock('@/lib/dns/zone-check', () => ({ checkZones: vi.fn() }));
 
+/** Die Funktionen außerhalb des Reverse-Proxys, die Routen unter `/api/internal` auch rufen. */
+const more = vi.hoisted(() => ({
+  updatesOverview: vi.fn(async () => ({ states: [], runs: [] as { $id: string; steps: unknown[] }[], running: false })),
+  checkUpdatesNow: vi.fn(async () => ({ states: [], runs: [] as { $id: string; steps: unknown[] }[], running: false })),
+  startComponentUpdate: vi.fn(async () => ({ runId: 'u1' })),
+  getUpdateRun: vi.fn(),
+  backupOverview: vi.fn(async () => ({ settings: {}, runs: [{ $id: 'b1', steps: [{ label: 'x' }] }] })),
+  changeBackupSettings: vi.fn(async () => ({})),
+  startBackupRun: vi.fn(async () => ({ runId: 'b1' })),
+  getBackupRun: vi.fn(),
+  settingsOverview: vi.fn(),
+  changeSettings: vi.fn(async () => ({})),
+  readServiceSettingsInput: vi.fn((body: Record<string, unknown>) => ({ ...body })),
+  changeCertificateSettings: vi.fn(async () => ({})),
+  sendTestMailAs: vi.fn(async () => ({ sent: true })),
+  checkAddressMove: vi.fn(),
+  removeCertificate: vi.fn(async () => ({ mainDomain: 'x', reloaded: true })),
+  reissueCertificate: vi.fn(async () => ({ runId: 'c1' })),
+  readBaseConfigRows: vi.fn(async () => [{ $id: 'local', diff: null }]),
+  applyBaseConfig: vi.fn(async () => ({ steps: [] })),
+  readErrorPageRows: vi.fn(async () => [{ $id: 'local', entries: [] }]),
+  redeployErrorPages: vi.fn(async () => ({ steps: [] })),
+  readHaproxyLog: vi.fn(),
+  haproxyContainer: vi.fn(),
+  restartHaproxy: vi.fn(async () => ({ wasRunning: true })),
+  geoipOverview: vi.fn(),
+  refreshGeoipNow: vi.fn(async () => ({ changed: false })),
+  changeGeoipAutoRefresh: vi.fn(async () => ({})),
+}));
+
+vi.mock('@/lib/updates/actions', () => ({
+  UPDATE_COMPONENTS: ['haproxy', 'hapm', 'acme'],
+  updatesOverview: more.updatesOverview,
+  checkUpdatesNow: more.checkUpdatesNow,
+  startComponentUpdate: more.startComponentUpdate,
+  getUpdateRun: more.getUpdateRun,
+}));
+vi.mock('@/lib/backup/actions', () => ({
+  backupOverview: more.backupOverview,
+  changeBackupSettings: more.changeBackupSettings,
+  startBackupRun: more.startBackupRun,
+  getBackupRun: more.getBackupRun,
+}));
+vi.mock('@/lib/settings-actions', () => ({
+  settingsOverview: more.settingsOverview,
+  changeSettings: more.changeSettings,
+  readServiceSettingsInput: more.readServiceSettingsInput,
+  changeCertificateSettings: more.changeCertificateSettings,
+  sendTestMailAs: more.sendTestMailAs,
+}));
+vi.mock('@/lib/settings', () => ({ EXPOSURES: ['internal', 'public'], CERTIFICATE_SOURCES: ['acme', 'upload'] }));
+vi.mock('@/lib/address-move', () => ({ checkAddressMove: more.checkAddressMove }));
+vi.mock('@/lib/haproxy/certificate-actions', () => ({
+  removeCertificate: more.removeCertificate,
+  reissueCertificate: more.reissueCertificate,
+}));
+vi.mock('@/lib/haproxy/maintenance-actions', () => ({
+  readBaseConfigRows: more.readBaseConfigRows,
+  applyBaseConfig: more.applyBaseConfig,
+  readErrorPageRows: more.readErrorPageRows,
+  redeployErrorPages: more.redeployErrorPages,
+}));
+vi.mock('@/lib/haproxy/log-read', () => ({ readHaproxyLog: more.readHaproxyLog }));
+vi.mock('@/lib/system/haproxy-container', () => ({
+  haproxyContainer: more.haproxyContainer,
+  restartHaproxy: more.restartHaproxy,
+}));
+vi.mock('@/lib/geoip/fetch', () => ({ geoipOverview: more.geoipOverview }));
+vi.mock('@/lib/geoip/actions', () => ({
+  refreshGeoipNow: more.refreshGeoipNow,
+  changeGeoipAutoRefresh: more.changeGeoipAutoRefresh,
+}));
+
 const { TOOLS, MAX_WAIT_SECONDS } = await import('@/lib/mcp/tools');
 
 const actor = { userId: 'service:tok1', email: 'deploy-skript', ip: '203.0.113.9' };
@@ -58,8 +131,8 @@ function tool(name: string) {
   return found;
 }
 
-/** Die Werkzeuge, die einen Lauf starten. Eine neue Zeile hier ist eine Entscheidung. */
-const WRITING = [
+/** Die schreibenden Werkzeuge des Reverse-Proxys: sie starten einen Lauf. */
+const RUN_WRITING = [
   'create_service',
   'update_service',
   'delete_service',
@@ -71,8 +144,28 @@ const WRITING = [
   'update_proxy_settings',
 ];
 
+/** Die schreibenden Werkzeuge der übrigen Bereiche. Eine neue Zeile hier ist eine Entscheidung. */
+const OTHER_WRITING = [
+  'start_update',
+  'update_backup_settings',
+  'start_backup',
+  'update_settings',
+  'update_certificate_settings',
+  'send_test_mail',
+  'restart_haproxy',
+  'delete_certificate',
+  'reissue_certificate',
+  'apply_base_config',
+  'redeploy_error_pages',
+  'refresh_geoip',
+  'set_geoip_auto_refresh',
+];
+
+const WRITING = [...RUN_WRITING, ...OTHER_WRITING];
+
 beforeEach(() => {
   for (const fn of Object.values(actions)) fn.mockClear();
+  for (const fn of Object.values(more)) fn.mockClear();
 });
 
 describe('die Werkzeugliste', () => {
@@ -128,8 +221,8 @@ describe('Rechte: schreibende Werkzeuge reichen den Actor des Tokens weiter', ()
     ['update_proxy_settings', { addAdminIps: ['203.0.113.7'] }, 'patchProxySettings'],
   ];
 
-  it('deckt jedes schreibende Werkzeug ab', () => {
-    expect(CALLS.map(([name]) => name).sort()).toEqual([...WRITING].sort());
+  it('deckt jedes schreibende Werkzeug des Reverse-Proxys ab', () => {
+    expect(CALLS.map(([name]) => name).sort()).toEqual([...RUN_WRITING].sort());
   });
 
   it.each(CALLS)('%s', async (name, args, fn) => {
@@ -203,5 +296,113 @@ describe('get_traffic_stats', () => {
       { id: 'b2', requests: 28 },
     ]);
     expect(full.series).toHaveLength(1);
+  });
+});
+
+describe('Rechte: die übrigen schreibenden Werkzeuge schreiben unter dem Namen des Tokens ins Protokoll', () => {
+  /** Was `logAudit` braucht: dieselben Angaben wie `serviceActor`, dazu die Adresse. */
+  const auditActor = { userId: 'service:tok1', userEmail: 'deploy-skript', ip: '203.0.113.9' };
+
+  const CALLS: [string, Record<string, unknown>, keyof typeof more, unknown][] = [
+    ['start_update', { component: 'hapm' }, 'startComponentUpdate', auditActor],
+    ['update_backup_settings', { keep: 7 }, 'changeBackupSettings', auditActor],
+    ['start_backup', {}, 'startBackupRun', auditActor],
+    ['update_settings', { exposure: 'public' }, 'changeSettings', auditActor],
+    ['update_certificate_settings', { source: 'acme' }, 'changeCertificateSettings', { allowEab: false }],
+    ['send_test_mail', { to: 'ops@example.com' }, 'sendTestMailAs', null],
+    ['restart_haproxy', {}, 'restartHaproxy', auditActor],
+    ['delete_certificate', { mainDomain: 'old.example.com' }, 'removeCertificate', { allowUploaded: false }],
+    ['reissue_certificate', { mainDomain: '*.example.com' }, 'reissueCertificate', actor],
+    ['apply_base_config', { ids: ['global|missing|x'] }, 'applyBaseConfig', auditActor],
+    ['redeploy_error_pages', {}, 'redeployErrorPages', auditActor],
+    ['refresh_geoip', {}, 'refreshGeoipNow', auditActor],
+    ['set_geoip_auto_refresh', { autoRefresh: true }, 'changeGeoipAutoRefresh', auditActor],
+  ];
+
+  it('deckt jedes übrige schreibende Werkzeug ab', () => {
+    expect(CALLS.map(([name]) => name).sort()).toEqual([...OTHER_WRITING].sort());
+  });
+
+  it.each(CALLS)('%s ruft seine Funktion mit dem Token', async (name, args, fn, last) => {
+    await tool(name).run(args, ctx);
+    const calls = more[fn].mock.calls as unknown[][];
+    expect(calls).toHaveLength(1);
+    expect(calls[0][calls[0].length - 1]).toEqual(last);
+    // Wo der Actor nicht das letzte Argument ist, steht er davor.
+    if (last !== auditActor && last !== actor) expect(calls[0]).toContainEqual(auditActor);
+  });
+
+  it('start_update sagt, dass die Verbindung bei einem Update von HAPM abbricht', async () => {
+    const result = (await tool('start_update').run({ component: 'hapm' }, ctx)) as { runId: string; next: string };
+    expect(result.runId).toBe('u1');
+    expect(result.next).toContain('get_update_run');
+    expect(tool('start_update').description).toMatch(/CONNECTION BREAKS/);
+  });
+
+  it('send_test_mail weicht ohne Sitzung auf keine Adresse aus', async () => {
+    await tool('send_test_mail').run({ to: 'ops@example.com' }, ctx);
+    expect((more.sendTestMailAs.mock.calls as unknown[][])[0][0]).toBe('ops@example.com');
+  });
+
+  it('update_settings geht durch dieselbe Prüfung wie PATCH /api/internal/settings', async () => {
+    await tool('update_settings').run({ exposure: 'public' }, ctx);
+    expect(more.readServiceSettingsInput).toHaveBeenCalledWith({ exposure: 'public' });
+  });
+
+  it('update_settings kennt weder Adresse noch SMTP-Passwort, der ACME-Server keinen EAB-Schlüssel', () => {
+    const fields = Object.keys(tool('update_settings').input);
+    expect(fields).not.toContain('publicUrl');
+    expect(fields).not.toContain('smtpPass');
+    expect(Object.keys(tool('update_certificate_settings').input)).not.toContain('eabHmacKey');
+  });
+
+  it('die Werkzeuge mit Neustart oder Überschreiben tragen destructiveHint', () => {
+    for (const name of ['start_update', 'restart_haproxy', 'delete_certificate', 'apply_base_config', 'redeploy_error_pages']) {
+      expect(tool(name).annotations.destructiveHint, name).toBe(true);
+    }
+  });
+});
+
+describe('Übersichten ohne Schritte', () => {
+  it('get_updates gibt die Läufe ohne Schritte zurück und prüft nur auf Wunsch', async () => {
+    more.updatesOverview.mockResolvedValueOnce({
+      states: [],
+      runs: [{ $id: 'u1', steps: [{ label: 'Abbild holen' }] }],
+      running: false,
+    });
+    const result = (await tool('get_updates').run({}, ctx)) as { runs: Record<string, unknown>[] };
+    expect(result.runs).toEqual([{ $id: 'u1' }]);
+    expect(more.checkUpdatesNow).not.toHaveBeenCalled();
+
+    await tool('get_updates').run({ check: true }, ctx);
+    expect(more.checkUpdatesNow).toHaveBeenCalledTimes(1);
+  });
+
+  it('get_backup gibt die Läufe ohne Schritte zurück', async () => {
+    const result = (await tool('get_backup').run({}, ctx)) as { runs: Record<string, unknown>[] };
+    expect(result.runs).toEqual([{ $id: 'b1' }]);
+  });
+});
+
+describe('get_update_run und get_backup_run', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('get_update_run wartet wie get_run, bis der Lauf fertig ist', async () => {
+    vi.useFakeTimers();
+    more.getUpdateRun
+      .mockResolvedValueOnce({ id: 'u1', status: 'running' })
+      .mockResolvedValueOnce({ id: 'u1', status: 'success' });
+
+    const pending = tool('get_update_run').run({ runId: 'u1', waitSeconds: 30 }, ctx);
+    await vi.advanceTimersByTimeAsync(2000);
+
+    await expect(pending).resolves.toEqual({ id: 'u1', status: 'success' });
+    expect(more.getUpdateRun).toHaveBeenCalledTimes(2);
+  });
+
+  it('get_backup_run kommt ohne waitSeconds sofort zurück', async () => {
+    more.getBackupRun.mockResolvedValue({ id: 'b1', status: 'running' });
+    await expect(tool('get_backup_run').run({ runId: 'b1' }, ctx)).resolves.toEqual({ id: 'b1', status: 'running' });
+    expect(more.getBackupRun).toHaveBeenCalledTimes(1);
   });
 });

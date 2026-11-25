@@ -18,8 +18,10 @@ Zwei Dinge vorweg:
   Eintrag, seine `id` ist `local`. `serverId` gibt es als Parameter und
   als Feld in jeder Antwort; als Parameter ist es **überall weglassbar**, dann
   gilt die lokale Maschine. Ein anderer Wert als `local` gibt `404`.
-- **Ein Token hat keine Bereiche.** Es gilt für diesen Baum, einen anderen gibt
-  es unter `/api/internal` nicht. Es lässt sich an Adressen binden.
+- **Ein Token hat keine Bereiche.** Es gilt für diesen Baum und alles andere
+  unter `/api/internal` (Updates, Sicherung, Einstellungen, Log,
+  Grundkonfiguration: [`hapm-api.md`](hapm-api.md)). Es lässt sich an
+  Adressen binden.
 
 ## Zugang
 
@@ -145,6 +147,11 @@ Alle unter `/api/internal/haproxy/`.
 | `GET`/`POST`/`DELETE /scopes` | Gruppen |
 | `GET`/`PATCH /settings` | HTTPS-Zeilen und die Admin-Adressliste |
 | `GET /certificates` | was acme.sh führt, samt „benutzt von" |
+| `DELETE /certificates?domain=` | ein übriges Zertifikat von acme.sh entfernen |
+| `POST /certificates/issue` | einen nie ausgestellten Antrag erneut stellen → `{ runId }` |
+
+Grundkonfiguration, Fehlerseiten, Log und Statistik liegen ebenfalls unter
+`/api/internal/haproxy/`, beschrieben in [`hapm-api.md`](hapm-api.md).
 
 ### `GET /proxies`
 
@@ -567,9 +574,19 @@ dann wird die ganze Datei abgelehnt — HAProxy stünde beim nächsten Start.
 
 ### `GET /certificates`
 
-Nur lesend, und das bleibt so. Ein Zertifikat, das kein Ziel mehr hält,
-löscht man in der Oberfläche (Reverse-Proxy, Zertifikate); eine Pipeline legt
-Ziele an und entfernt sie, die Zertifikate folgen ihnen.
+Ein Zertifikat entsteht und vergeht mit seinem Ziel. Was übrig bleibt (von
+einem gelöschten Ziel, von Hand ausgestellt, ein gescheiterter Antrag),
+entfernt `DELETE /certificates?domain=<mainDomain>`, aber nur, solange kein
+Ziel es hält: das prüft `removeAcmeCertificate` im Lock, dieselbe Regel wie
+auf der Zertifikatsseite (`409` mit den Zielen sonst). Synchron, Antwort
+`{ mainDomain, reloaded }`. Hochgeladene Zertifikate entfernt und ersetzt nur
+die Oberfläche, weil nur sie hochladen kann.
+
+`POST /certificates/issue` mit `{ "mainDomain": "*.example.com", "dnsHook"?: "dns_cf" }`
+stellt einen Antrag erneut, den acme.sh führt, der aber nie ausgestellt wurde,
+typisch eine Wildcard, deren DNS-Challenge bei der Einrichtung scheiterte. Nur
+mit seinen eigenen Domains; ein ausgestelltes Zertifikat gibt `409`, das
+erneuert acme.sh selbst. Antwort `{ runId }`, Stand unter `/runs/<runId>`.
 
 ```ts
 type ProxyCertificates = {

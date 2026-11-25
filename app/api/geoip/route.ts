@@ -1,11 +1,11 @@
 import { requireSession, requireCsrf } from '@/lib/session';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
-import { msg } from '@/lib/i18n';
 import { logAudit, getClientIP } from '@/lib/audit';
 import { GeoTableError } from '@/lib/geoip/format';
-import { geoipOverview, setGeoipAutoRefresh } from '@/lib/geoip/fetch';
+import { geoipOverview } from '@/lib/geoip/fetch';
+import { changeGeoipAutoRefresh } from '@/lib/geoip/actions';
 import { importGeoipFile } from '@/lib/geoip/import';
-import { clearGeoipTable, readGeoipRefresh } from '@/lib/geoip/store';
+import { clearGeoipTable } from '@/lib/geoip/store';
 import { followGeoipChange } from '@/lib/geoip/follow';
 
 /**
@@ -81,33 +81,19 @@ export async function POST(request: Request) {
   }
 }
 
-/** Der Schalter „Selbsttätig erneuern". */
+/** Der Schalter „Selbsttätig erneuern" (`changeGeoipAutoRefresh`). */
 export async function PATCH(request: Request) {
   try {
     await requireCsrf(request);
     const session = await requireSession();
     const body = await jsonBody(request);
-
-    if (typeof body.autoRefresh !== 'boolean') {
-      throw new ApiError(msg('Der Schalter für das selbsttätige Erneuern kennt nur an und aus.'));
-    }
-
-    const before = await readGeoipRefresh();
-    await setGeoipAutoRefresh(body.autoRefresh);
-
-    if (before.autoRefresh !== body.autoRefresh) {
-      await logAudit({
+    return ok(
+      await changeGeoipAutoRefresh(body.autoRefresh, {
         userId: session.userId,
         userEmail: session.email,
-        action: 'settings_updated',
-        resource: 'settings',
-        resourceId: 'geoip',
-        details: `Selbsttätiges Erneuern der Länder-Tabelle ${body.autoRefresh ? 'eingeschaltet' : 'abgeschaltet'}`,
         ip: getClientIP(request) ?? undefined,
-      });
-    }
-
-    return ok(await geoipOverview());
+      })
+    );
   } catch (err) {
     return handleError(err);
   }

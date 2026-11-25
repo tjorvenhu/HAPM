@@ -45,11 +45,14 @@ describe('die Reihenfolge der Prüfungen', () => {
         'await savePageDesign',
         'await applyPageDesign',
         'await deliver',
+        'await redeployErrorPages',
       ]) {
         const at = body.indexOf(marker);
         if (at > -1) expect(csrf, `${marker} steht vor der CSRF-Prüfung`).toBeLessThan(at);
       }
-      expect(body).toMatch(/logAudit|audit\(/);
+      // Das Ausliefern im gespeicherten Design protokolliert `redeployErrorPages`
+      // selbst (`lib/haproxy/maintenance-actions.ts`), weil die interne API sie auch ruft.
+      expect(body).toMatch(/logAudit|audit\(|redeployErrorPages\(/);
       expect(body).toContain('handleError(err)');
     }
   );

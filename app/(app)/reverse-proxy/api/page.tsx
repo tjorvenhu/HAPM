@@ -24,9 +24,9 @@ import { useT } from '@/lib/i18n/react';
  * ob es ankommt. Darunter derselbe Zugang über MCP (`McpAccess`): dieselben
  * Schlüssel, ein anderer Endpunkt.
  *
- * Die Schlüssel liegen in `service_tokens` und werden nur hier verwaltet. Unter
- * `/api/internal` gibt es nur den Reverse-Proxy, ein Schlüssel gilt deshalb für
- * die ganze Schnittstelle.
+ * Die Schlüssel liegen in `service_tokens` und werden nur hier verwaltet. Ein
+ * Schlüssel hat keine Bereiche, er gilt für alles unter `/api/internal`
+ * (Reverse-Proxy, Updates, Sicherung, Einstellungen, docs/hapm-api.md).
  */
 
 interface TokenRow {
