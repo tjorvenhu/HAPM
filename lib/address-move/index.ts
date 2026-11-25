@@ -69,7 +69,17 @@ const MOVE_ID = 'current';
 /** Ein Zertifikat darf fünf Minuten brauchen, dazu Prüfung und Neuladen. */
 const RUN_TIMEOUT_MS = 8 * 60_000;
 
-const g = globalThis as typeof globalThis & { __hapm_move_alive?: boolean };
+/**
+ * Wie lange das alte Ziel auf das Fenster wartet. Danach geht es auch, wenn
+ * niemand zusieht (Fenster zu, Browser weg).
+ */
+const CLIENT_WAIT_MS = 90_000;
+
+const g = globalThis as typeof globalThis & {
+  __hapm_move_alive?: boolean;
+  /** Eine Abfrage des Stands hat „Adresse umgestellt“ gesehen, siehe `cleanup`. */
+  __hapm_move_seen?: boolean;
+};
 
 function moveAlive(): boolean {
   return g.__hapm_move_alive === true;
@@ -112,6 +122,11 @@ function settle(move: AddressMoveState): AddressMoveView['move'] {
 
 export async function readAddressMoveView(): Promise<AddressMoveView> {
   const [settings, move] = await Promise.all([getSettings(), readMove()]);
+  // Wer den Stand mit umgestellter Adresse gelesen hat, weiß, wohin es geht:
+  // ab jetzt darf das alte Ziel weg (`cleanup`).
+  if (move?.running && move.stages.some((stage) => stage.key === 'publicUrl' && stage.status === 'ok')) {
+    g.__hapm_move_seen = true;
+  }
   return {
     currentUrl: settings.publicUrl,
     exposure: settings.exposure,
@@ -364,6 +379,16 @@ const STAGES: Record<AddressMoveStageKey, (context: StageContext) => Promise<str
     const oldHost = surfaceHost(context.previousUrl);
     if (!oldHost || !context.previousUrl) return msgid('Es gab keine alte Adresse.');
 
+    /* Erst warten, bis das Fenster den Stand „Adresse umgestellt“ abgeholt hat.
+     * Es fragt über die alte Adresse ab, und ohne dieses Warten ist sie weg,
+     * bevor es davon erfährt: ein ganzer Umzug dauert keine fünfzehn Sekunden,
+     * und jedes Neuladen von HAProxy kostet das Fenster ein, zwei Abfragen. Es
+     * bliebe auf „Zertifikat“ stehen, obwohl alles durch ist. */
+    const deadline = Date.now() + CLIENT_WAIT_MS;
+    while (!g.__hapm_move_seen && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+
     const server = localServer();
     const probe = await probeProxy(server);
     const old = surfaceTarget(probe.services, { publicUrl: context.previousUrl });
@@ -465,6 +490,7 @@ export async function startAddressMove(
   };
 
   g.__hapm_move_alive = true;
+  g.__hapm_move_seen = false;
   try {
     const exists = await readMove();
     if (exists) await updateDocument<AddressMoveState>(COLLECTIONS.ADDRESS_MOVE, MOVE_ID, row);

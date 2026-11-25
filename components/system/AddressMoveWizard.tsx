@@ -42,7 +42,7 @@ const PROVIDER_LABELS: Record<string, string> = { cloudflare: 'Cloudflare', hetz
 /** Eine Abfrage, die länger hängt, gilt als gescheitert. */
 const POLL_TIMEOUT_MS = 6000;
 /** So viele Fehlschläge in Folge, dann sagt das Fenster, dass die Verbindung hakt. */
-const STALL_AFTER = 3;
+const STALL_AFTER = 4;
 /** Nach so vielen gibt es den Weg zur neuen Adresse auch ohne bekannten Stand: etwa eine Minute. */
 const GIVE_WAY_AFTER = 8;
 

@@ -377,11 +377,21 @@ entfernt; lief die alte Adresse über eine Wildcard, bleibt es stehen. Sein
 Zertifikat geht mit, wenn es niemand sonst braucht (wie beim Löschen eines
 Ziels).
 
+**Das alte Ziel geht erst, wenn das Fenster es weiß.** Ein ganzer Umzug
+dauert keine fünfzehn Sekunden (gemessen: Zertifikat über DNS-01 8 s, Ziel
+anlegen 1 s, Ziel entfernen 1 s). Das Fenster fragt alle zwei Sekunden über die
+alte Adresse, und jedes Neuladen von HAProxy kostet es ein, zwei Abfragen. Ohne
+Warten war die alte Adresse weg, bevor eine Abfrage „Adresse umgestellt“
+gesehen hatte, und das Fenster stand auf „Zertifikat“, obwohl alles durch war.
+Deshalb wartet der letzte Schritt, bis eine Abfrage des Stands die umgestellte
+Adresse gelesen hat (`__hapm_move_seen`), höchstens 90 Sekunden; danach geht er
+auch ohne Zuschauer.
+
 **Das Fenster fragt den Stand über die alte Adresse ab, und die geht durch
 jedes Neuladen von HAProxy** (Zertifikat, neues Ziel). Einmal blieb danach
 jede Abfrage ohne Antwort hängen, und die Anzeige stand auf „Zertifikat",
 während der Umzug auf dem Server durchlief. Deshalb hat jede Abfrage ein
-Zeitlimit (6 s), eine neue geht erst los, wenn die alte fertig ist, und drei
+Zeitlimit (6 s), eine neue geht erst los, wenn die alte fertig ist, und vier
 Fehlschläge in Folge heißen „diese Adresse antwortet gerade nicht", nicht
 „gescheitert". Ist das neue Ziel schon da, oder hakt es länger als etwa eine
 Minute, bietet das Fenster „Neue Adresse öffnen" an. Der Abschluss erscheint,
