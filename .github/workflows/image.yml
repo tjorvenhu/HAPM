@@ -53,6 +53,22 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
 
+  # Was nur ein echtes HAProxy zeigen kann: Fehler- und Sperrseiten, Ziele mit
+  # HTTPS. Die Runner haben Docker, lokal fehlt es oft. Blockiert den Bau des
+  # Abbilds (noch) nicht: erst sehen, ob die Skripte hier stabil laufen.
+  haproxy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm haproxy:verify-pages
+      - run: pnpm haproxy:verify-tls
+
   # Jede Architektur baut auf einem Rechner ihrer Art. Zusammen auf einem
   # amd64-Rechner liefe arm64 im Emulator und bräuchte ein Vielfaches der Zeit.
   # Jeder Bau legt sein Abbild nur unter seiner Prüfsumme ab, `merge` fasst
