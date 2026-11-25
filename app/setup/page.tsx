@@ -23,6 +23,7 @@ import {
   X,
 } from 'lucide-react';
 import { AuthCard } from '@/ui/auth/AuthCard';
+import AuthFormSkeleton from '@/ui/auth/AuthFormSkeleton';
 import { SetupStepper } from './SetupStepper';
 import { SetupSuccess } from './SetupSuccess';
 import { InfoHint } from '@/ui/primitives/InfoHint';
@@ -171,8 +172,7 @@ export default function SetupPage() {
   if (shown === null) {
     return (
       <AuthCard standalone className="hapm-setup" title={t('HAPM einrichten')}>
-        <div className="skeleton shell-skeleton--row" />
-        <div className="skeleton shell-skeleton--row" />
+        <AuthFormSkeleton />
       </AuthCard>
     );
   }

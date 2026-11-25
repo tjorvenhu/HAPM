@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { LogIn, ShieldCheck, ArrowLeft } from 'lucide-react';
 import { AuthCard } from '@/ui/auth/AuthCard';
+import AuthFormSkeleton from '@/ui/auth/AuthFormSkeleton';
 import PasskeyLoginButton from '@/components/PasskeyLoginButton';
 import { msgid } from '@/lib/i18n/translate';
 import { useT } from '@/lib/i18n/react';
@@ -146,10 +147,7 @@ export default function LoginPage() {
       subtitle={HEADING[step].subtitle && t(HEADING[step].subtitle)}
     >
       {step === 'checking' && (
-        <>
-          <div className="skeleton shell-skeleton--row" />
-          <div className="skeleton shell-skeleton--row" />
-        </>
+        <AuthFormSkeleton />
       )}
 
       {step === 'credentials' && (
