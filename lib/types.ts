@@ -77,6 +77,8 @@ export type HaproxyAction =
   | 'import';
 
 export type HaproxyPhase =
+  /** Wartet am Lock des Proxys, bis der Vorgang davor fertig ist. */
+  | 'queued'
   | 'dns'
   | 'preflight'
   | 'certificate'

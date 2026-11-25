@@ -225,23 +225,52 @@ const ACME_MS = 300_000;
 
 interface LockState {
   chains: Map<string, Promise<void>>;
+  /** Wie viele Vorgänge je Schlüssel am Lock stehen, der laufende mitgezählt. */
+  queued: Map<string, number>;
 }
 
 const g = globalThis as typeof globalThis & { __hapm_haproxy_locks?: LockState };
-if (!g.__hapm_haproxy_locks) g.__hapm_haproxy_locks = { chains: new Map() };
+if (!g.__hapm_haproxy_locks) g.__hapm_haproxy_locks = { chains: new Map(), queued: new Map() };
 const locks = g.__hapm_haproxy_locks;
+// Ein Zustand aus einem älteren Stand des Moduls (Hot Reload) kennt die Zählung nicht.
+locks.queued ??= new Map();
 
-async function withProxyLock<T>(serverId: string, fn: () => Promise<T>): Promise<T> {
+/**
+ * Den Vorgang hinter alle anderen am selben Proxy stellen.
+ *
+ * Steht schon einer davor, meldet der Lauf die Phase `queued`, bis er dran ist.
+ * Ohne das sah ein wartender Vorgang aus wie einer, der gerade die
+ * Konfiguration liest: dieselbe Phase, keine Schritte, minutenlang, solange
+ * der vor ihm sein Zertifikat holt. Den nächsten Stand meldet `fn` selbst
+ * (`steps.phase('preflight')` als erste Zeile).
+ */
+export function withProxyLock<T>(serverId: string, fn: () => Promise<T>): Promise<T>;
+export function withProxyLock<T>(
+  serverId: string,
+  reporter: ProvisionReporter | undefined,
+  fn: () => Promise<T>
+): Promise<T>;
+export async function withProxyLock<T>(
+  serverId: string,
+  ...args: [() => Promise<T>] | [ProvisionReporter | undefined, () => Promise<T>]
+): Promise<T> {
+  const [reporter, fn] = args.length === 1 ? [undefined, args[0]] : args;
   const previous = locks.chains.get(serverId) ?? Promise.resolve();
   let release!: () => void;
   const held = new Promise<void>((resolve) => {
     release = resolve;
   });
   locks.chains.set(serverId, previous.then(() => held));
-  await previous;
+  const ahead = locks.queued.get(serverId) ?? 0;
+  locks.queued.set(serverId, ahead + 1);
   try {
+    if (ahead > 0) await Promise.resolve(reporter?.onPhase?.('queued')).catch(() => {});
+    await previous;
     return await fn();
   } finally {
+    const left = (locks.queued.get(serverId) ?? 1) - 1;
+    if (left > 0) locks.queued.set(serverId, left);
+    else locks.queued.delete(serverId);
     release();
   }
 }
@@ -1215,7 +1244,7 @@ export async function createService(
   challenge: ChallengeChoice,
   reporter?: ProvisionReporter
 ): Promise<ProvisionResult> {
-  return withProxyLock(server.$id, async () => {
+  return withProxyLock(server.$id, reporter, async () => {
     const steps = new StepLog(reporter);
     await steps.phase('preflight');
 
@@ -1283,7 +1312,7 @@ export async function deleteService(
   protection: SurfaceProtection,
   reporter?: ProvisionReporter
 ): Promise<ProvisionResult> {
-  return withProxyLock(server.$id, async () => {
+  return withProxyLock(server.$id, reporter, async () => {
     const steps = new StepLog(reporter);
     await steps.phase('preflight');
 
@@ -1421,7 +1450,7 @@ export async function updateService(
   protection: SurfaceProtection,
   reporter?: ProvisionReporter
 ): Promise<ProvisionResult> {
-  return withProxyLock(server.$id, async () => {
+  return withProxyLock(server.$id, reporter, async () => {
     const steps = new StepLog(reporter);
     await steps.phase('preflight');
 
@@ -1694,7 +1723,7 @@ export async function issueCertificate(
   const invalid = validateCertificateDomains(domains);
   if (invalid) throw new ApiError(invalid);
 
-  return withProxyLock(server.$id, async () => {
+  return withProxyLock(server.$id, reporter, async () => {
     const steps = new StepLog(reporter);
     await steps.phase('preflight');
 
@@ -1978,7 +2007,7 @@ export async function createStream(
   input: CreateStreamInput,
   reporter?: ProvisionReporter
 ): Promise<ProvisionResult> {
-  return withProxyLock(server.$id, async () => {
+  return withProxyLock(server.$id, reporter, async () => {
     const steps = new StepLog(reporter);
     await steps.phase('preflight');
 
@@ -2009,7 +2038,7 @@ export async function updateStream(
   input: CreateStreamInput,
   reporter?: ProvisionReporter
 ): Promise<ProvisionResult> {
-  return withProxyLock(server.$id, async () => {
+  return withProxyLock(server.$id, reporter, async () => {
     const steps = new StepLog(reporter);
     await steps.phase('preflight');
 
@@ -2042,7 +2071,7 @@ export async function deleteStream(
   id: string,
   reporter?: ProvisionReporter
 ): Promise<ProvisionResult> {
-  return withProxyLock(server.$id, async () => {
+  return withProxyLock(server.$id, reporter, async () => {
     const steps = new StepLog(reporter);
     await steps.phase('preflight');
 
@@ -2221,7 +2250,7 @@ export async function updateGlobalSettings(
   input: GlobalSettingsInput,
   reporter?: ProvisionReporter
 ): Promise<ProvisionResult> {
-  return withProxyLock(server.$id, async () => {
+  return withProxyLock(server.$id, reporter, async () => {
     const steps = new StepLog(reporter);
     await steps.phase('preflight');
 
@@ -2403,7 +2432,7 @@ export async function updateScopes(
   change: ScopeChange,
   reporter?: ProvisionReporter
 ): Promise<ProvisionResult> {
-  return withProxyLock(server.$id, async () => {
+  return withProxyLock(server.$id, reporter, async () => {
     const steps = new StepLog(reporter);
     await steps.phase('preflight');
 

@@ -124,7 +124,9 @@ export default function ActivityIndicator() {
                 <div className="activity-row-text">
                   <span className="activity-row-name">{job.name}</span>
                   <span className="activity-row-sub">
-                    {(job.phase ? HAPROXY_PHASE_LABELS[job.phase] : null) ?? 'Reverse-Proxy'}
+                    {job.phase && HAPROXY_PHASE_LABELS[job.phase]
+                      ? t(HAPROXY_PHASE_LABELS[job.phase])
+                      : 'Reverse-Proxy'}
                   </span>
                 </div>
                 {time}

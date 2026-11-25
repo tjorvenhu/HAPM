@@ -473,7 +473,9 @@ type Run = {
   serviceId: string;
   renamedTo: string | null;
   status: 'running' | 'success' | 'error';
-  phase: 'dns' | 'preflight' | 'certificate' | 'checking' | 'installing' | 'cleanup' | 'done';
+  phase:
+    | 'queued' | 'dns' | 'preflight' | 'certificate'
+    | 'checking' | 'installing' | 'cleanup' | 'done';
   startedAt: string;            // ISO
   completedAt: string | null;
   duration: number | null;      // Sekunden
@@ -485,7 +487,8 @@ type Run = {
 
 `phase` ist für eine Anzeige, nicht für eine Entscheidung. Die trifft `status`.
 Ein `stream-*`-Lauf überspringt `dns` und `certificate` — er beantragt kein
-Zertifikat.
+Zertifikat. `queued` heißt: ein anderer Vorgang am selben HAProxy läuft noch,
+dieser wartet dahinter und beginnt danach mit `preflight`.
 
 `GET /runs` liefert dieselben Felder plus `domains`, `targets` und
 `triggeredBy`, aber kein `log`. Bei einer TCP-Weiterleitung steht in `domains`

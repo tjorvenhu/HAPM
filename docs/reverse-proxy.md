@@ -2108,10 +2108,27 @@ gehört (siehe [`betrieb.md`](betrieb.md)): eine Zeile in `haproxy_runs`, ein Ei
   statt sie zu bemängeln. Der Preis ist eine zweite Probe je Vorgang: der
   Lauf probt innerhalb des Locks noch einmal, weil die Antwort auf „ist die
   Domain frei" nicht aus einer Momentaufnahme von vorhin kommen darf.
-- **Die Seite verfolgt ihren eigenen Vorgang**, aber nur, um in dem Moment
-  nachzuladen, in dem er fertig ist. Ohne das stünde die neue Domain bis zum
-  nächsten 60-Sekunden-Takt nicht in der Liste, und das sieht aus, als wäre
-  nichts passiert.
+- **Die Seite verfolgt ihre eigenen Vorgänge**, um in dem Moment
+  nachzuladen, in dem einer fertig ist. Ohne das stünde die neue Domain bis zum
+  nächsten Takt nicht in der Liste, und das sieht aus, als wäre nichts
+  passiert.
+- **Es sind mehrere, nicht einer** (`components/reverse-proxy/pendingRuns.ts`,
+  getestet in `tests/haproxy/pending-runs.test.ts`). Die Gruppenseite hielt
+  einmal ein einzelnes Feld für den laufenden Vorgang: wer drei Ziele kurz
+  nacheinander anlegte, sah oben eine Platzhalterkarte statt drei, und nur der
+  zuletzt gestartete Lauf bekam seine Meldung. Jetzt gilt: je laufendem Anlegen
+  eine Platzhalterkarte, ein Intervall fragt alle Läufe ab, jeder fertige
+  bekommt seinen eigenen Toast. Der Platzhalter verschwindet erst nach dem
+  Nachladen, sonst stünde der Eintrag ein bis drei Sekunden lang weder als
+  Platzhalter noch als Karte da. Steht die ID schon in der gelesenen
+  Konfiguration, während der Lauf noch läuft, trägt die echte Karte den Lauf
+  und der Platzhalter fällt weg, damit nichts doppelt dasteht.
+- **Ein wartender Vorgang sagt, dass er wartet.** Alle Vorgänge am Proxy gehen
+  durch einen Lock (`withProxyLock`). Steht schon einer davor, meldet der Lauf
+  die Phase `queued` („Wartet"), bis er dran ist, und beginnt dann mit
+  `preflight`. Vorher sah ein wartender Lauf minutenlang aus wie einer, der
+  gerade die Konfiguration liest. `queued` steht nicht in `HAPROXY_PHASES`:
+  Warten ist kein Schritt des Ablaufs, das Overlay zeigt es nur als Zeile.
 
 ### Derselbe Vorgang ohne Dialog: `/api/internal/haproxy/**`
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, use, Suspense } from 'react';
+import { useEffect, useRef, useState, useCallback, use, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -34,6 +34,16 @@ import {
 } from '@/components/reverse-proxy/types';
 import { handOverScopeRun } from '@/components/reverse-proxy/scopeHandover';
 import {
+  addPendingRun,
+  applyRunSnapshot,
+  isQueued,
+  placeholderRuns,
+  removePendingRuns,
+  runForEntry,
+  type PendingRun,
+  type RunSnapshot,
+} from '@/components/reverse-proxy/pendingRuns';
+import {
   KEEP_PASSWORD,
   matchesSearch,
   serviceKind,
@@ -43,7 +53,6 @@ import {
 } from '@/lib/haproxy/config';
 import { matchesStreamSearch, type HaproxyStream } from '@/lib/haproxy/streams';
 import { msgid } from '@/lib/i18n';
-import type { ProvisionStep } from '@/lib/haproxy/provision';
 import { useT } from '@/lib/i18n/react';
 
 /**
@@ -64,33 +73,6 @@ import { useT } from '@/lib/i18n/react';
  * Gelesen wird weiterhin bei jedem Aufruf direkt aus `/etc/haproxy/haproxy.cfg`;
  * es gibt keine Collection dahinter, siehe docs/reverse-proxy.md.
  */
-
-/**
- * Der eigene Vorgang, solange er läuft.
- *
- * Er trägt mehr als seine ID, weil die Liste ihn zeigt: bei einem neuen Eintrag
- * als Platzhalter-Karte, bei einem bestehenden als gelb hinterlegte Karte mit
- * der aktuellen Phase. `serviceId` verbindet beides — die Zeile in der
- * Konfiguration heißt so, und danach wird gesucht.
- */
-interface PendingRun {
-  id: string;
-  label: string;
-  serviceId: string;
-  /** Was auf der Platzhalter-Karte oben steht: die Hauptdomain. */
-  title: string;
-  /** Ein Anlegen hat noch keine Karte in der Liste, alles andere schon. */
-  isNew: boolean;
-  /** Beim Löschen steht die Karte noch da und ist im Begriff zu verschwinden —
-   *  sie wird rot hinterlegt, statt wie beim Schreiben nur einen Spinner zu
-   *  tragen. */
-  kind: 'write' | 'delete';
-  /** Aus dem Lauf nachgezogen: „Zertifikat", „Prüfung", „Einsetzen …". Deutsch,
-   *  wie `HAPROXY_PHASE_LABELS` sie führt: die Karten übersetzen sie selbst. */
-  phase: string | null;
-  /** Die Schritte aus dem Lauf, solange er läuft. Die Platzhalter-Karte zeigt sie. */
-  steps: ProvisionStep[];
-}
 
 export default function ReverseProxyScopePage({
   params,
@@ -163,23 +145,25 @@ function ScopeView({ slug }: { slug: string }) {
   >(null);
 
   /**
-   * Der Vorgang, der gerade läuft.
+   * Die eigenen Vorgänge, solange sie laufen. Eine Liste, kein einzelner Lauf:
+   * wer mehrere Ziele kurz nacheinander anlegt, hat mehrere unterwegs, und jeder
+   * braucht seine Karte und seine Meldung (siehe `pendingRuns.ts`).
    *
    * Anlegen, Ändern und Löschen laufen abgekoppelt (lib/haproxy/runner.ts): der
    * Dialog schließt sich sofort, und was passiert, steht in der Pille unten
-   * rechts. Diese Seite behält trotzdem einen Faden zum eigenen Vorgang — nicht
-   * um ihn anzuzeigen, sondern um die Liste in dem Moment nachzuladen, in dem er
-   * fertig ist. Ohne das stünde die neue Domain bis zum nächsten
-   * 60-Sekunden-Takt nicht da, und das sähe aus, als wäre nichts passiert.
+   * rechts. Diese Seite behält trotzdem einen Faden zu jedem eigenen Vorgang,
+   * um die Liste in dem Moment nachzuladen, in dem er fertig ist. Ohne das
+   * stünde die neue Domain bis zum nächsten Takt nicht da, und das sähe aus,
+   * als wäre nichts passiert.
    */
-  const [pendingRun, setPendingRun] = useState<PendingRun | null>(null);
+  const [pendingRuns, setPendingRuns] = useState<PendingRun[]>([]);
   const [openRunId, setOpenRunId] = useState<string | null>(null);
 
   /** Der Vorgang läuft ab jetzt abgekoppelt: eine Meldung, dass er gestartet
    *  ist, und danach zeigt ihn die Pille unten rechts. Keine Memoisierung — die
    *  Funktion wird nur aus Klick-Handlern gerufen, nie aus einem Effekt. */
   function startRun(run: PendingRun) {
-    setPendingRun(run);
+    setPendingRuns((current) => addPendingRun(current, run));
     notify({
       variant: 'info',
       title: t('{label} läuft', { label: run.label }),
@@ -269,53 +253,83 @@ function ScopeView({ slug }: { slug: string }) {
     });
   }, [deepLinkHandled, requestedService, loading, proxies, slug, router, notify, t]);
 
-  // Den eigenen Vorgang verfolgen, bis er fertig ist, und dann EINMAL nachladen.
-  // Ein eigenes Intervall statt `usePolling`, weil es hier nicht um einen Takt
-  // geht, sondern um ein Ende: der Effekt räumt sich selbst ab.
+  /*
+   * Die eigenen Vorgänge verfolgen, bis sie fertig sind, und dann nachladen.
+   *
+   * EIN Intervall für alle, solange überhaupt einer läuft, und nicht eines je
+   * Lauf: es fragt jeden ab, zieht Phase und Schritte nach und behandelt die
+   * fertigen gemeinsam. Die Liste liest es aus einer Ref, sonst begänne das
+   * Intervall bei jeder neuen Phase von vorn.
+   */
+  const pendingRunsRef = useRef(pendingRuns);
   useEffect(() => {
-    if (!pendingRun) return;
+    pendingRunsRef.current = pendingRuns;
+  }, [pendingRuns]);
+  const tracking = pendingRuns.length > 0;
+
+  useEffect(() => {
+    if (!tracking) return;
     let cancelled = false;
+    // Ein Takt mit Nachladen dauert länger als zwei Sekunden. Der nächste
+    // wartet, sonst meldete er denselben fertigen Lauf ein zweites Mal.
+    let busy = false;
 
     const poll = async () => {
-      const data = await apiFetch(`/api/haproxy/runs/${pendingRun.id}`)
-        .then((r) => r.json())
-        .catch(() => null);
-      if (cancelled || !data?.success) return;
-
-      if (data.data.status === 'running') {
-        // Die Phase auf der Karte mitziehen: „Zertifikat" dauert am längsten,
-        // und ein Spinner ohne Wort sagt nicht, worauf man wartet.
-        const phase = HAPROXY_PHASE_LABELS[data.data.phase] ?? null;
-        const steps: ProvisionStep[] = Array.isArray(data.data.steps) ? data.data.steps : [];
-        setPendingRun((current) =>
-          current &&
-          current.id === pendingRun.id &&
-          (current.phase !== phase || JSON.stringify(current.steps) !== JSON.stringify(steps))
-            ? { ...current, phase, steps }
-            : current
+      if (busy) return;
+      busy = true;
+      try {
+        const runs = pendingRunsRef.current;
+        const snapshots = await Promise.all(
+          runs.map((run) =>
+            apiFetch(`/api/haproxy/runs/${run.id}`)
+              .then((r) => r.json())
+              .then((data) => (data?.success ? (data.data as RunSnapshot) : null))
+              .catch(() => null)
+          )
         );
-        return;
-      }
-      setPendingRun(null);
+        if (cancelled) return;
 
-      /* ERST nachladen, dann melden.
-       *
-       * Andersherum stand die Erfolgsmeldung da, während die Karte noch den
-       * alten Zustand zeigte: zwischen „Lauf fertig" und „Liste aktuell" liegt
-       * eine Runde Kommandos, also ein bis drei Sekunden. Wer in dieser Zeit
-       * hinsah, hielt das Schloss für kaputt und drückte F5. Die Meldung meint
-       * jetzt beides: der Vorgang ist durch UND die Liste zeigt es. */
-      const ok = data.data.status === 'success';
-      await load(true);
-      if (cancelled) return;
-      notify({
-        variant: ok ? 'success' : 'error',
-        title: pendingRun.label,
-        message: ok
-          ? t('Durchgelaufen, HAProxy hat die neue Konfiguration übernommen.')
-          : t('Nicht durchgelaufen. Der erste fehlgeschlagene Schritt steht im Protokoll.'),
-        action: { label: t('Protokoll'), onClick: () => setOpenRunId(pendingRun.id) },
-      });
+        const running: [string, RunSnapshot][] = [];
+        const finished: { run: PendingRun; ok: boolean }[] = [];
+        runs.forEach((run, index) => {
+          const snapshot = snapshots[index];
+          if (!snapshot) return;
+          if (snapshot.status === 'running') running.push([run.id, snapshot]);
+          else finished.push({ run, ok: snapshot.status === 'success' });
+        });
+        // Die Phase auf der Karte mitziehen: „Zertifikat" dauert am längsten,
+        // und ein Spinner ohne Wort sagt nicht, worauf man wartet. Als
+        // Funktion von `current`: ein Lauf, der während der Abfrage gestartet
+        // wurde, steht noch nicht in `runs` und darf nicht verloren gehen.
+        setPendingRuns((current) =>
+          running.reduce((acc, [id, snapshot]) => applyRunSnapshot(acc, id, snapshot), current)
+        );
+        if (finished.length === 0) return;
+
+        /* ERST nachladen, dann Platzhalter abräumen und melden.
+         *
+         * Andersherum stand die Erfolgsmeldung da, während die Karte noch den
+         * alten Zustand zeigte, und ein neuer Eintrag war ein bis drei Sekunden
+         * lang weder Platzhalter noch Karte: zwischen „Lauf fertig" und „Liste
+         * aktuell" liegt eine Runde Kommandos. Die Meldung meint jetzt beides:
+         * der Vorgang ist durch UND die Liste zeigt es. */
+        await load(true);
+        if (cancelled) return;
+        const done = new Set(finished.map(({ run }) => run.id));
+        setPendingRuns((current) => removePendingRuns(current, done));
+        for (const { run, ok } of finished) {
+          notify({
+            variant: ok ? 'success' : 'error',
+            title: run.label,
+            message: ok
+              ? t('Durchgelaufen, HAProxy hat die neue Konfiguration übernommen.')
+              : t('Nicht durchgelaufen. Der erste fehlgeschlagene Schritt steht im Protokoll.'),
+            action: { label: t('Protokoll'), onClick: () => setOpenRunId(run.id) },
+          });
+        }
+      } finally {
+        busy = false;
+      }
     };
 
     const interval = setInterval(poll, 2000);
@@ -323,7 +337,7 @@ function ScopeView({ slug }: { slug: string }) {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [pendingRun, apiFetch, load, notify, t]);
+  }, [tracking, apiFetch, load, notify, t]);
 
   /** Eigener Zustand statt `loading`: die Liste soll stehen bleiben, der Knopf
    *  trotzdem antworten. Die Mindestdauer verhindert ein Spinner-Flackern. */
@@ -535,6 +549,13 @@ function ScopeView({ slug }: { slug: string }) {
   const page = scopePageFor(proxies, slug);
   const entries = page ? servicesInScope(proxies, page.scope) : [];
   const streamEntries = page ? streamsInScope(proxies, page.scope) : [];
+  const placeholders = placeholderRuns(
+    pendingRuns,
+    new Set([
+      ...entries.map(({ service }) => service.id),
+      ...streamEntries.map(({ stream }) => stream.id),
+    ])
+  );
 
   /**
    * Die Gruppe entfernen: ihre Marker-Paare.
@@ -799,15 +820,20 @@ function ScopeView({ slug }: { slug: string }) {
           Anlegen dauert Minuten (Zertifikat), und eine Liste, die sich nach dem
           Klick auf „Anlegen" nicht rührt, sieht aus, als wäre der Klick
           verlorengegangen. Der Fortschritt selbst steht in der Pille unten
-          rechts — hier steht nur, dass es ihn gibt. */}
-      {pendingRun?.isNew && (
+          rechts. Je Anlegen eine Karte, auch wenn mehrere hintereinander am
+          Lock warten. */}
+      {placeholders.length > 0 && (
         <div className="sys-block">
           <EntityGrid size="compact">
-            <PendingCard
-              title={pendingRun.title}
-              phase={pendingRun.phase}
-              steps={pendingRun.steps}
-            />
+            {placeholders.map((run) => (
+              <PendingCard
+                key={run.id}
+                title={run.title}
+                phase={run.phase}
+                steps={run.steps}
+                queued={isQueued(run)}
+              />
+            ))}
           </EntityGrid>
         </div>
       )}
@@ -852,30 +878,27 @@ function ScopeView({ slug }: { slug: string }) {
                 </div>
               )}
               <EntityGrid size="compact">
-                {items.map(({ proxy, service }) => (
-                  <ServiceCard
-                    key={`${proxy.$id}:${service.id}`}
-                    proxy={proxy}
-                    service={service}
-                    savedTargets={savedTargets}
-                    busy={lockingId === `${proxy.$id}:${service.id}`}
-                    health={proxy.health[service.id] ?? 'unknown'}
-                    pendingPhase={
-                      pendingRun && !pendingRun.isNew && pendingRun.serviceId === service.id
-                        ? (pendingRun.phase ?? msgid('Wird geschrieben'))
-                        : null
-                    }
-                    pendingKind={
+                {items.map(({ proxy, service }) => {
+                  const run = runForEntry(pendingRuns, service.id);
+                  return (
+                    <ServiceCard
+                      key={`${proxy.$id}:${service.id}`}
+                      proxy={proxy}
+                      service={service}
+                      savedTargets={savedTargets}
+                      busy={lockingId === `${proxy.$id}:${service.id}`}
+                      health={proxy.health[service.id] ?? 'unknown'}
+                      pendingPhase={run ? (run.phase ?? msgid('Wird geschrieben')) : null}
                       // Nur für die Karte, um die es geht: `busy` (das Schloss)
                       // macht jede Karte kurz „pending", und die dürfte dabei
                       // nicht rot werden, weil daneben etwas gelöscht wird.
-                      pendingRun?.serviceId === service.id ? pendingRun.kind : 'write'
-                    }
-                    onToggleLock={() => toggleLock(proxy, service)}
-                    onEdit={() => setDialog({ kind: null, edit: { proxy, service } })}
-                    onDelete={() => handleDelete(proxy, service)}
-                  />
-                ))}
+                      pendingKind={run?.kind ?? 'write'}
+                      onToggleLock={() => toggleLock(proxy, service)}
+                      onEdit={() => setDialog({ kind: null, edit: { proxy, service } })}
+                      onDelete={() => handleDelete(proxy, service)}
+                    />
+                  );
+                })}
               </EntityGrid>
             </div>
           )
@@ -899,22 +922,21 @@ function ScopeView({ slug }: { slug: string }) {
             </span>
           </div>
           <EntityGrid size="compact">
-            {streamMatches.map(({ proxy, stream }) => (
-              <StreamCard
-                key={`${proxy.$id}:${stream.id}`}
-                stream={stream}
-                savedTargets={savedTargets}
-                health={proxy.health[stream.id] ?? 'unknown'}
-                pendingPhase={
-                  pendingRun && !pendingRun.isNew && pendingRun.serviceId === stream.id
-                    ? (pendingRun.phase ?? msgid('Wird geschrieben'))
-                    : null
-                }
-                pendingKind={pendingRun?.serviceId === stream.id ? pendingRun.kind : 'write'}
-                onEdit={() => setStreamDialog({ edit: { proxy, stream } })}
-                onDelete={() => handleDeleteStream(proxy, stream)}
-              />
-            ))}
+            {streamMatches.map(({ proxy, stream }) => {
+              const run = runForEntry(pendingRuns, stream.id);
+              return (
+                <StreamCard
+                  key={`${proxy.$id}:${stream.id}`}
+                  stream={stream}
+                  savedTargets={savedTargets}
+                  health={proxy.health[stream.id] ?? 'unknown'}
+                  pendingPhase={run ? (run.phase ?? msgid('Wird geschrieben')) : null}
+                  pendingKind={run?.kind ?? 'write'}
+                  onEdit={() => setStreamDialog({ edit: { proxy, stream } })}
+                  onDelete={() => handleDeleteStream(proxy, stream)}
+                />
+              );
+            })}
           </EntityGrid>
         </div>
       )}

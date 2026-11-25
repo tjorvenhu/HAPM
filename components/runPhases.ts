@@ -31,6 +31,9 @@ export const HAPROXY_PHASE_LABELS: Record<string, string> = {
   // Der DNS-Eintrag steht vorn, weil er vor dem Zertifikat gesetzt sein muss.
   // Beim Entfernen läuft er unter „Aufräumen" — dorthin gehört er, und die
   // Liste bliebe sonst nicht monoton.
+  // Nicht in `HAPROXY_PHASES`: Warten ist kein Schritt des Ablaufs, sondern
+  // die Zeit davor. Im Overlay steht es nur als Zeile unter dem Stepper.
+  queued: msgid('Wartet'),
   dns: msgid('DNS-Eintrag'),
   preflight: msgid('Konfiguration lesen'),
   certificate: msgid('Zertifikat'),

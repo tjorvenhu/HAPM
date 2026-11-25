@@ -73,6 +73,8 @@ export const proxyForms: Dictionary = {
   'Wird eingerichtet': 'Setting up',
   'Zertifikat, Prüfung und Reload laufen. Der Eintrag erscheint vollständig, sobald HAProxy die neue Konfiguration übernommen hat.':
     'Certificate, check and reload are running. The entry appears in full once HAProxy has taken over the new configuration.',
+  'Ein anderer Vorgang an HAProxy läuft noch. Dieser beginnt, sobald er fertig ist.':
+    'Another HAProxy task is still running. This one starts as soon as it has finished.',
   'HAProxy erreicht alle Ziele dieses Eintrags': 'HAProxy reaches all targets of this entry',
   'HAProxy erreicht kein Ziel dieses Eintrags': 'HAProxy reaches no target of this entry',
   'HAProxy prüft die Ziele. Ihr Zustand ist hier nicht bekannt: kein stats socket in der Konfiguration, kein socat oder kein check auf der server-Zeile.':

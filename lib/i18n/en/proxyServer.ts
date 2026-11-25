@@ -417,6 +417,7 @@ export const proxyServer: Dictionary = {
   'Es wurde keine Gruppe angegeben.': 'No group was given.',
   'Es wurde kein HAProxy-Log gefunden. HAPM schreibt das Log des HAProxy-Containers nach /var/log/haproxy/haproxy.log mit. Liegt dort nichts, hat HAProxy noch keine Anfrage protokolliert oder läuft nicht.': 'No HAProxy log was found. HAPM copies the log of the HAProxy container to /var/log/haproxy/haproxy.log. If nothing is there, HAProxy has not logged a request yet or is not running.',
   'Auf "{server}" gibt es kein Ziel mit der ID "{id}".': 'There is no target with the ID "{id}" on "{server}".',
+  'Wartet': 'Waiting',
   'DNS-Eintrag': 'DNS record',
   'Konfiguration lesen': 'Read configuration',
   'Prüfung': 'Check',

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import {
   Globe, Activity, GitBranch, Server, Lock, LockOpen, Pencil, Trash2, Loader2, ArrowRight,
   EyeOff, ChevronDown, ChevronRight, CornerUpRight, Scale, Cookie, BarChart3, KeyRound, ShieldCheck,
-  SlidersHorizontal, LockKeyhole, Check, X,
+  SlidersHorizontal, LockKeyhole, Check, X, Hourglass,
 } from 'lucide-react';
 import {
   BALANCE_LABELS,
@@ -87,11 +87,14 @@ export function PendingCard({
   title,
   phase,
   steps,
+  queued = false,
 }: {
   title: string;
   phase: string | null;
   /** Die Schritte aus dem Lauf, mit dem gerade laufenden am Ende. */
   steps: ProvisionStep[];
+  /** Der Lauf steht am Lock hinter einem anderen und hat noch nicht begonnen. */
+  queued?: boolean;
 }) {
   const { t } = useT();
   return (
@@ -106,14 +109,16 @@ export function PendingCard({
       </div>
       <div className="rp-tags">
         <span className="rp-tag is-pending">
-          <Loader2 size={14} className="spin" />
+          {queued ? <Hourglass size={14} /> : <Loader2 size={14} className="spin" />}
           {phase ? t(phase) : t('Wird eingerichtet')}
         </span>
       </div>
       <div className="rp-section">
         {steps.length === 0 ? (
           <div className="rp-empty-line">
-            {t('Zertifikat, Prüfung und Reload laufen. Der Eintrag erscheint vollständig, sobald HAProxy die neue Konfiguration übernommen hat.')}
+            {queued
+              ? t('Ein anderer Vorgang an HAProxy läuft noch. Dieser beginnt, sobald er fertig ist.')
+              : t('Zertifikat, Prüfung und Reload laufen. Der Eintrag erscheint vollständig, sobald HAProxy die neue Konfiguration übernommen hat.')}
           </div>
         ) : (
           <ul className="hapm-steps">
