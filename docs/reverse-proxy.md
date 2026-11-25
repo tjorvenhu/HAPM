@@ -183,6 +183,22 @@ danach die Adresse selbst und keine Kennung: eine Verknüpfung müsste
 zu löschen fasst deshalb keinen Eintrag an. Die Auswahl zeigt beim Öffnen das
 Ziel, dessen Adresse im Feld steht (`findSavedTarget`, mit Port vor ohne).
 
+### Lange Verbindungen und `timeout tunnel`
+
+WebSockets reicht HAProxy im HTTP-Modus ohne Zusatz durch. Was abbricht, ist die
+offene Verbindung ohne Daten: ohne `timeout tunnel` gilt `timeout client` bzw.
+`timeout server` aus `defaults`, in der Grundkonfiguration 50 Sekunden. Der
+Schalter „Lange Verbindungen“ schreibt `TUNNEL_LINE` in die Backends eines
+Ziels. In die globalen Einstellungen gehört es nicht: die stehen im Frontend,
+und dort erlaubt HAProxy `timeout tunnel` nicht.
+
+Steht `timeout tunnel` schon im `defaults`-Block, der für die Backends von HAPM
+gilt (der letzte vor dem ersten Backend-Block, `parseDefaultsTunnel`), meldet
+`/api/haproxy/services` den Wert als `defaultsTunnel`. Der Schalter steht dann
+an und gesperrt mit „Gilt schon für alle Ziele“, solange das Ziel keine eigene
+Zeile hat; eingeschaltet schriebe er dieselbe Wirkung ein zweites Mal hin. Hat
+ein Ziel trotzdem eine, bleibt er bedienbar, damit sie sich entfernen lässt.
+
 ### Gruppen
 
 **Welche Gruppen es gibt, sagt die Datei und nicht der Code.** Eine Gruppe ist

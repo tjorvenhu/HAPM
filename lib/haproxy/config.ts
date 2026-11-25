@@ -2848,6 +2848,39 @@ export function parseGlobalHeaders(text: string): Record<HeaderDirection, string
   return found;
 }
 
+/**
+ * Das `timeout tunnel` aus dem `defaults`-Abschnitt, der für die Backends von
+ * HAPM gilt, oder `null`.
+ *
+ * HAProxy wendet auf einen Abschnitt den letzten `defaults` davor an. Gezählt
+ * wird deshalb der letzte vor dem ersten Backend-Block einer Gruppe (ohne
+ * Gruppe: vor dem ersten `backend`). Steht dort schon eine Zeile, ist der
+ * Schalter „Lange Verbindungen“ für jedes Ziel überflüssig: die Zeile im
+ * Backend schriebe dieselbe Wirkung ein zweites Mal hin. Ein `timeout tunnel`
+ * im Frontend gibt es nicht, HAProxy erlaubt es nur in `defaults`, `listen`
+ * und `backend`.
+ */
+export function parseDefaultsTunnel(text: string): string | null {
+  const lines = text.split('\n');
+  let limit = scopeMarkers(lines).find((marker) => marker.kind === 'backends')?.index ?? -1;
+  if (limit === -1) limit = lines.findIndex((line) => /^backend\s/.test(clean(line)));
+  if (limit === -1) limit = lines.length;
+
+  let section = -1;
+  for (let i = 0; i < limit; i++) {
+    if (/^defaults(\s|$)/.test(clean(lines[i]))) section = i;
+  }
+  if (section === -1) return null;
+
+  for (let i = section + 1; i < lines.length; i++) {
+    const line = clean(lines[i]);
+    if (SECTION_KEYWORDS.test(line)) break;
+    const match = /^timeout\s+tunnel\s+(\S+)/.exec(line);
+    if (match) return match[1];
+  }
+  return null;
+}
+
 /** Ob sich die Einstellungen überhaupt schreiben lassen. Anders als bei einem
  *  Dienst hängt das nicht am Inhalt: der Block ist Text und wird als Text
  *  zurückgeschrieben. Es fehlt nur der Fall, in dem der Marker gar nicht da ist

@@ -551,6 +551,8 @@ export default function ServiceFormModal({
   const healthcheckAllowed = healthcheckPossible(input.domains);
   const selectedProxy = proxies.find((p) => p.$id === serverId) ?? null;
   const hasWildcard = input.domains.some(isWildcardDomain);
+  /** `timeout tunnel` aus dem defaults-Block: dann gilt „Lange Verbindungen“ schon für alle. */
+  const globalTunnel = selectedProxy?.defaultsTunnel ?? null;
   const dnsHooks = selectedProxy?.dnsHooks ?? [];
   /** Ob ein Zertifikat fällig wäre: beim Anlegen immer, beim Bearbeiten nur bei geänderten Domains. */
   const certificateDue = input.domains.length > 0 && (!editingId || certNeeded);
@@ -2115,17 +2117,27 @@ export default function ServiceFormModal({
                           />
                         </div>
                         <div className="form-section-sub">
-                          {t(
-                            tunnel
-                              ? 'Eine offene Verbindung bleibt bis zu einer Stunde bestehen.'
-                              : 'Es gilt die Zeit aus der Grundkonfiguration.'
-                          )}
+                          {globalTunnel && !tunnel
+                            ? t('Gilt schon für alle Ziele: „timeout tunnel {value}“ im defaults-Block.', { value: globalTunnel })
+                            : globalTunnel
+                              ? t('Gilt schon für alle Ziele. Die eigene Zeile dieses Ziels ist doppelt und lässt sich ausschalten.')
+                              : t(
+                                  tunnel
+                                    ? 'Eine offene Verbindung bleibt bis zu einer Stunde bestehen.'
+                                    : 'Es gilt die Zeit aus der Grundkonfiguration.'
+                                )}
                         </div>
                       </div>
+                      {/* Gilt es schon global und hat das Ziel keine eigene
+                          Zeile, steht der Schalter an und gesperrt: eingeschaltet
+                          schriebe er dieselbe Wirkung ein zweites Mal hin. Was
+                          das Formular nicht zeigt, schickt es nicht: `tunnel`
+                          bleibt dabei false. */}
                       <label className="toggle-switch">
                         <input
                           type="checkbox"
-                          checked={tunnel}
+                          checked={tunnel || !!globalTunnel}
+                          disabled={!!globalTunnel && !tunnel}
                           onChange={(e) => setTunnel(e.target.checked)}
                           aria-label={t('Lange Verbindungen')}
                         />

@@ -261,6 +261,10 @@ export const proxyForms: Dictionary = {
   'Löst noch nicht auf. Der DNS-Eintrag fehlt.': 'Does not resolve yet. The DNS record is missing.',
   'Die DNS-Abfrage ist gescheitert.': 'The DNS lookup failed.',
   'DNS wird abgefragt…': 'Looking up DNS…',
+  'Gilt schon für alle Ziele: „timeout tunnel {value}“ im defaults-Block.':
+    'Already applies to all targets: “timeout tunnel {value}” in the defaults block.',
+  'Gilt schon für alle Ziele. Die eigene Zeile dieses Ziels ist doppelt und lässt sich ausschalten.':
+    'Already applies to all targets. This target’s own line is redundant and can be switched off.',
   'Backend-Server legen Sie auf der Seite Ziele an.': 'Add backend servers on the Targets page.',
   '{host}, Port frei': '{host}, any port',
   'Der Server {name} ist hinterlegt.': 'The server {name} has been added.',

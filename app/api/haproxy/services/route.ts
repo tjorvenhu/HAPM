@@ -11,6 +11,7 @@ import {
   validateNewService,
   withoutLockSecret,
   parseGlobalHeaders,
+  parseDefaultsTunnel,
   parseGlobalSettings,
   parseScopes,
   serviceHealth,
@@ -76,6 +77,8 @@ interface ProxyRow {
    *  sagt damit, ob ein Header am Ziel den globalen ersetzt (Anfrage) oder
    *  von ihm überschrieben wird (Antwort), siehe `parseGlobalHeaders`. */
   globalHeaders: Record<HeaderDirection, string[]>;
+  /** `timeout tunnel` aus dem `defaults`-Block, siehe `parseDefaultsTunnel`. */
+  defaultsTunnel: string | null;
   /**
    * Die TCP-Weiterleitungen derselben Datei.
    *
@@ -127,6 +130,7 @@ export async function GET() {
               scopes: [],
               adminIps: [],
               globalHeaders: { request: [], response: [] },
+              defaultsTunnel: null,
               health: {},
               error: t('Die HAProxy-Konfiguration ist nicht lesbar.'),
             };
@@ -145,6 +149,7 @@ export async function GET() {
             scopes: parseScopes(probe.raw),
             adminIps: parseGlobalSettings(probe.raw).adminIps,
             globalHeaders: parseGlobalHeaders(probe.raw),
+            defaultsTunnel: parseDefaultsTunnel(probe.raw),
             health: Object.fromEntries([
               ...probe.services.map((service) => [
                 service.id,
@@ -172,6 +177,7 @@ export async function GET() {
             scopes: [],
             adminIps: [],
             globalHeaders: { request: [], response: [] },
+              defaultsTunnel: null,
             health: {},
             error: err instanceof Error ? err.message : t('HAProxy ist nicht erreichbar.'),
           };

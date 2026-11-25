@@ -48,6 +48,8 @@ export interface ProxyRow {
   adminIps: string[];
   /** Die Header, die das Frontend schon für alle Ziele setzt, je Richtung. */
   globalHeaders: Record<HeaderDirection, string[]>;
+  /** `timeout tunnel` aus dem `defaults`-Block, oder `null`: dann gilt es nicht für alle. */
+  defaultsTunnel: string | null;
   /** Was HAProxy über die Ziele weiß, je Dienst-ID. Ein fehlender Eintrag heißt
    *  „nicht bekannt" und nicht „in Ordnung". */
   health: Record<string, ServiceHealth>;
