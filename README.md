@@ -340,7 +340,7 @@ neuen Stack an und fügen Sie den Inhalt von
 ## Erste Schritte
 
 Nach dem Start öffnet `http://<IP-des-Servers>:7080` den Assistenten. Er hat
-sechs Schritte:
+sieben Schritte:
 
 | Schritt | Was passiert |
 |---|---|
@@ -348,8 +348,9 @@ sechs Schritte:
 | **2. Erreichbarkeit** | Aus dem Internet erreichbar oder nur im eigenen Netz? Davon hängt ab, wie Zertifikate entstehen |
 | **3. DNS** | Cloudflare oder Hetzner mit einem API-Token, dann legt HAPM DNS-Einträge selbst an. Oder **eigener DNS-Server**: HAPM nennt Ihnen jeden Eintrag, den Sie selbst setzen |
 | **4. Zertifikate** | **Let's Encrypt** (Vorgabe), ein **eigener ACME-Server** mit Directory-URL, etwa step-ca im eigenen Netz, oder **hochladen**: HAPM beantragt nichts, Sie laden Zertifikat und Schlüssel hoch |
-| **5. Adresse der Oberfläche** | Die Domain für HAPM selbst, etwa `hapm.example.org`. HAPM zeigt den nötigen DNS-Eintrag und legt ihn beim Anbieter an, wenn einer verbunden ist |
-| **6. Einrichten** | HAPM stellt das Zertifikat aus und trägt sich selbst als Ziel ein. Danach ist die Oberfläche per HTTPS erreichbar |
+| **5. E-Mail** | Das SMTP-Konto, über das HAPM Mails verschickt: für Passkeys, „Passwort vergessen“ und Benachrichtigungen. Lässt sich überspringen und später unter „Benachrichtigungen“ einrichten |
+| **6. Adresse der Oberfläche** | Die Domain für HAPM selbst, etwa `hapm.example.org`. HAPM zeigt den nötigen DNS-Eintrag und legt ihn beim Anbieter an, wenn einer verbunden ist |
+| **7. Einrichten** | HAPM stellt das Zertifikat aus und trägt sich selbst als Ziel ein. Danach ist die Oberfläche per HTTPS erreichbar |
 
 <p align="center">
   <img src="docs/images/einrichtung-fertig.jpg" alt="Der letzte Schritt des Assistenten: HAPM ist eingerichtet" width="70%">

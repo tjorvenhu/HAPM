@@ -5,7 +5,7 @@ import { readSetupView } from '@/lib/setup';
 import { startSetupExecution } from '@/lib/setup/run';
 
 /**
- * Schritt 5 der Einrichtung: ausführen.
+ * Schritt 7 der Einrichtung: ausführen.
  *
  * Die Antwort kommt, sobald die Folge gestartet ist. Gruppe, Zertifikat und
  * Ziel sind gewöhnliche Läufe und dauern Minuten; die Seite liest den

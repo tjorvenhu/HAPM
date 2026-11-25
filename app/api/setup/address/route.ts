@@ -17,7 +17,7 @@ import { connectZone } from '@/lib/dns/connect';
 import { dnsProviderForHook } from '@/lib/dns/zones';
 
 /**
- * Schritt 4 der Einrichtung: die Domain, unter der die Oberfläche stehen soll.
+ * Schritt 6 der Einrichtung: die Domain, unter der die Oberfläche stehen soll.
  *
  * GET fragt das DNS, worauf die Domain zeigt, und sagt, ob das eine Adresse
  * dieses Servers ist. Das Ergebnis hält niemanden auf: bei einer internen

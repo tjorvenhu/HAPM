@@ -2,14 +2,13 @@ import { requireCsrf, requireSession } from '@/lib/session';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
 import { msg } from '@/lib/i18n';
 import { logAudit, getClientIP } from '@/lib/audit';
-import { getSettings, settingsView as view, updateSettings, type SettingsInput } from '@/lib/settings';
+import { getSettings, readSmtpInput, settingsView as view, updateSettings, type SettingsInput } from '@/lib/settings';
 import { ensureAcme } from '@/lib/acme';
 import {
   NOTIFICATION_EVENT_TYPES,
   type Exposure,
   type NotificationEventType,
   type Settings,
-  type SmtpSecurity,
 } from '@/lib/types';
 
 export async function GET() {
@@ -21,7 +20,7 @@ export async function GET() {
   }
 }
 
-const TEXT_FIELDS = ['acmeEmail', 'publicUrl', 'smtpHost', 'smtpUser', 'mailFrom'] as const;
+const TEXT_FIELDS = ['acmeEmail', 'publicUrl'] as const;
 
 const FIELD_LABELS: Record<keyof SettingsInput, string> = {
   acmeEmail: 'E-Mail für Let\'s Encrypt',
@@ -54,6 +53,7 @@ function readInput(body: Record<string, unknown>): SettingsInput {
     if (value !== null && typeof value !== 'string') throw new ApiError(msg('Das Feld {field} erwartet einen Text.', { field }));
     input[field] = value;
   }
+  Object.assign(input, readSmtpInput(body));
   if ('autoUpdateHaproxy' in body) {
     if (typeof body.autoUpdateHaproxy !== 'boolean') {
       throw new ApiError(msg('Der Schalter für selbsttätige Updates kennt nur an und aus.'));
@@ -63,21 +63,6 @@ function readInput(body: Record<string, unknown>): SettingsInput {
   if ('autoUpdateTime' in body) {
     if (typeof body.autoUpdateTime !== 'string') throw new ApiError(msg('Die Uhrzeit hat nicht die Form HH:MM.'));
     input.autoUpdateTime = body.autoUpdateTime;
-  }
-  if ('smtpPort' in body) {
-    if (typeof body.smtpPort !== 'number') throw new ApiError(msg('Der SMTP-Port ist eine Zahl zwischen 1 und 65535.'));
-    input.smtpPort = body.smtpPort;
-  }
-  if ('smtpSecurity' in body) {
-    if (typeof body.smtpSecurity !== 'string') throw new ApiError(msg('Die Verschlüsselung ist STARTTLS, TLS oder keine.'));
-    input.smtpSecurity = body.smtpSecurity as SmtpSecurity;
-  }
-  // Leer heißt unverändert, `null` heißt löschen.
-  if ('smtpPass' in body && body.smtpPass !== '') {
-    if (body.smtpPass !== null && typeof body.smtpPass !== 'string') {
-      throw new ApiError(msg('Das SMTP-Passwort muss ein Text sein.'));
-    }
-    input.smtpPass = body.smtpPass;
   }
   if ('notifyRecipients' in body) {
     if (!Array.isArray(body.notifyRecipients)) throw new ApiError(msg('Die Empfänger sind eine Liste von Adressen.'));

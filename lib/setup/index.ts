@@ -3,7 +3,7 @@ import { probeProxy, readCertificateInventory } from '../haproxy/provision';
 import { findCertificateFor } from '../haproxy/certs';
 import { uploadedCoverage } from '../haproxy/cert-upload';
 import { getSettings, publicOrigin } from '../settings';
-import type { CertificateSource, Exposure, SetupExecution, SetupStatus } from '../types';
+import type { CertificateSource, Exposure, SetupExecution, SetupStatus, SmtpSecurity } from '../types';
 import { serverAddresses } from './address';
 import {
   certificateDomains,
@@ -55,6 +55,18 @@ export interface SetupView extends Omit<SetupChoices, 'execution'> {
    * ACME kommen oder die Domain noch fehlt).
    */
   presentCertificate: { mainDomain: string; domains: string[]; notAfter: string | null } | null;
+  /**
+   * Das SMTP-Konto aus den Einstellungen, für den Schritt dazu. Das Passwort
+   * nie, nur ob eines gesetzt ist (wie `SettingsView`).
+   */
+  mailAccount: {
+    smtpHost: string | null;
+    smtpPort: number;
+    smtpSecurity: SmtpSecurity;
+    smtpUser: string | null;
+    smtpPassSet: boolean;
+    mailFrom: string | null;
+  };
 }
 
 export async function readSetupView(): Promise<SetupView> {
@@ -102,5 +114,13 @@ export async function readSetupView(): Promise<SetupView> {
     acmeDirectory: settings.acmeDirectory,
     acmeHttpReachable: settings.acmeHttpReachable,
     presentCertificate,
+    mailAccount: {
+      smtpHost: settings.smtpHost,
+      smtpPort: settings.smtpPort,
+      smtpSecurity: settings.smtpSecurity,
+      smtpUser: settings.smtpUser,
+      smtpPassSet: Boolean(settings.smtpPass),
+      mailFrom: settings.mailFrom,
+    },
   };
 }

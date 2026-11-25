@@ -8,11 +8,13 @@ import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { usePolling } from '@/components/usePolling';
 import { useNow } from '@/components/useNow';
-import Select, { type SelectOption } from '@/components/Select';
+import Select from '@/components/Select';
 import { SkeletonDetail, SkeletonRows } from '@/components/Skeleton';
 import { formatAgo, formatDateTime } from '@/components/system/format';
 import { useT } from '@/lib/i18n/react';
-import { msgid, LOCALES, LOCALE_NAMES, type Locale } from '@/lib/i18n';
+import { LOCALES, LOCALE_NAMES, type Locale } from '@/lib/i18n';
+// Rein: Ports und Beschriftungen der Verschlüsselung.
+import { SMTP_DEFAULT_PORTS, SMTP_SECURITY_CHOICES } from '@/lib/mail/config';
 // Rein: nur Namen und Sätze der Ereignisse.
 import { NOTIFICATION_EVENT_GROUPS, NOTIFICATION_EVENT_LABELS } from '@/lib/notifications/events';
 // Nur Typen: die Dateien dahinter erreichen `lib/db` und `nodemailer`.
@@ -29,15 +31,6 @@ interface SmtpForm {
   mailFrom: string;
 }
 
-/** Der übliche Port je Verschlüsselung. Wechselt die eine, zieht der andere mit, solange er der übliche war. */
-const DEFAULT_PORTS: Record<SmtpSecurity, string> = { starttls: '587', tls: '465', none: '25' };
-
-/** Beschriftung und Hinweis sind Schlüssel (`msgid`), übersetzt beim Zeigen. */
-const SECURITY_OPTIONS: SelectOption<SmtpSecurity>[] = [
-  { value: 'starttls', label: 'STARTTLS', hint: msgid('Üblich auf Port 587') },
-  { value: 'tls', label: 'TLS', hint: msgid('Üblich auf Port 465') },
-  { value: 'none', label: msgid('Keine'), hint: msgid('Unverschlüsselt, nur im eigenen Netz') },
-];
 
 const POLL_MS = 30_000;
 
@@ -413,16 +406,19 @@ export default function NotificationsPage() {
               <Select
                 id="smtp-security"
                 value={form.smtpSecurity}
-                options={SECURITY_OPTIONS.map((option) => ({
+                options={SMTP_SECURITY_CHOICES.map((option) => ({
                   ...option,
                   label: t(option.label),
-                  hint: option.hint ? t(option.hint) : undefined,
+                  hint: t(option.hint),
                 }))}
                 disabled={saving}
                 onChange={(value) =>
                   edit({
                     smtpSecurity: value,
-                    smtpPort: form.smtpPort === DEFAULT_PORTS[form.smtpSecurity] ? DEFAULT_PORTS[value] : form.smtpPort,
+                    smtpPort:
+                      form.smtpPort === String(SMTP_DEFAULT_PORTS[form.smtpSecurity])
+                        ? String(SMTP_DEFAULT_PORTS[value])
+                        : form.smtpPort,
                   })
                 }
               />

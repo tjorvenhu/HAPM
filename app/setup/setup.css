@@ -111,6 +111,27 @@
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 16%, transparent);
 }
 
+/* Die Auswahl steht zwischen Feldern (SMTP-Konto) und hat ihre Höhe und Rundung. */
+.hapm-setup.auth-page .auth-field .custom-select-trigger { min-height: 3rem; border-radius: 14px; border-color: var(--border); }
+
+.hapm-setup.auth-page .auth-field .custom-select-trigger:focus,
+.hapm-setup.auth-page .auth-field .custom-select-trigger.open {
+  border-color: var(--accent); background: var(--surface);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+/* Drei Felder nebeneinander (SMTP-Konto): zwei Reihen statt drei Paaren, damit der Schritt ohne Scrollen passt. */
+.hapm-setup-trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: inherit; }
+
+@media (max-width: 640px) {
+  .hapm-setup-trio { grid-template-columns: 1fr; }
+}
+
+/* Testmail: ein Satz und der Knopf in einer Zeile, damit der Schritt ohne Scrollen passt. */
+.hapm-setup-test { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+
+.hapm-setup-test .auth-hint { margin: 0; }
+
 .hapm-setup.auth-page .hapm-choice {
   border-color: var(--border); border-radius: 18px; background: var(--surface);
 }

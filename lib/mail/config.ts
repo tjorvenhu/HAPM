@@ -7,10 +7,25 @@
  */
 
 import { validateEmail } from '../validation';
+import { msgid } from '../i18n/translate';
 import type { Settings, SmtpSecurity } from '../types';
 
 export const SMTP_SECURITIES: SmtpSecurity[] = ['starttls', 'tls', 'none'];
 export const DEFAULT_SMTP_PORT = 587;
+
+/**
+ * Der übliche Port je Verschlüsselung. Die Formulare (Benachrichtigungen,
+ * Assistent) ziehen ihn beim Wechsel der Verschlüsselung mit, solange im Feld
+ * noch der übliche der vorigen stand.
+ */
+export const SMTP_DEFAULT_PORTS: Record<SmtpSecurity, number> = { starttls: 587, tls: 465, none: 25 };
+
+/** Beschriftung und Hinweis der Verschlüsselung für die Auswahl. Schlüssel (`msgid`), übersetzt beim Zeigen. */
+export const SMTP_SECURITY_CHOICES: { value: SmtpSecurity; label: string; hint: string }[] = [
+  { value: 'starttls', label: 'STARTTLS', hint: msgid('Üblich auf Port 587') },
+  { value: 'tls', label: 'TLS', hint: msgid('Üblich auf Port 465') },
+  { value: 'none', label: msgid('Keine'), hint: msgid('Unverschlüsselt, nur im eigenen Netz') },
+];
 
 /** Der Name, unter dem die Mails im Postfach stehen, wenn der Absender keinen eigenen trägt. */
 export const MAIL_SENDER_NAME = 'HAPM';

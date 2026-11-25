@@ -15,6 +15,7 @@ import {
   Play,
   RefreshCw,
   Search,
+  Send,
   Server,
   ShieldCheck,
   Upload,
@@ -27,6 +28,7 @@ import AuthFormSkeleton from '@/ui/auth/AuthFormSkeleton';
 import { SetupStepper } from './SetupStepper';
 import { SetupSuccess } from './SetupSuccess';
 import { InfoHint } from '@/ui/primitives/InfoHint';
+import Select from '@/components/Select';
 import { LONG_TEXT } from '@/ui/primitives/hint-text';
 import { usePolling } from '@/components/usePolling';
 import CertificateUploadDialog, { type UploadBody } from '@/components/reverse-proxy/CertificateUploadDialog';
@@ -36,6 +38,7 @@ import { formatDate } from '@/lib/i18n/format';
 import { DNS_PROVIDERS, findDnsProvider, validateDnsCredentials } from '@/lib/haproxy/dns-credentials';
 import { needsDnsChallenge } from '@/lib/haproxy/challenge';
 import { normalizeAcmeDirectory, validateAcmeDirectory, validateEab } from '@/lib/acme-server';
+import { SMTP_DEFAULT_PORTS, SMTP_SECURITY_CHOICES } from '@/lib/mail/config';
 import {
   SETUP_SCOPE,
   SETUP_STEPS,
@@ -55,11 +58,12 @@ import {
 // Nur die Typen: die Dateien dahinter erreichen `lib/db`.
 import type { SetupView } from '@/lib/setup';
 import type { AddressCheck } from '@/lib/setup/address';
-import type { Exposure } from '@/lib/types';
+import type { TestMailResult } from '@/lib/notifications';
+import type { Exposure, SmtpSecurity } from '@/lib/types';
 
 /**
- * Die Einrichtung: Konto, Erreichbarkeit, DNS-Anbieter, Zertifikate, Adresse
- * der Oberfläche, Ausführen. Eine Seite, damit ein Neuladen an derselben Stelle weitergeht:
+ * Die Einrichtung: Konto, Erreichbarkeit, DNS-Anbieter, Zertifikate,
+ * SMTP-Konto, Adresse der Oberfläche, Ausführen. Eine Seite, damit ein Neuladen an derselben Stelle weitergeht:
  * welcher Schritt dran ist, sagt `GET /api/setup` (`resumeStep`), nicht ein
  * Zustand im Browser.
  *
@@ -77,6 +81,7 @@ const STEP_LABELS: Record<Shown, string> = {
   exposure: msgid('Erreichbarkeit'),
   dns: msgid('DNS'),
   certificates: msgid('Zertifikate'),
+  mail: msgid('E-Mail'),
   address: msgid('Adresse'),
   run: msgid('Einrichten'),
 };
@@ -86,6 +91,7 @@ const TITLES: Record<Shown, string> = {
   exposure: msgid('Erreichbarkeit'),
   dns: msgid('DNS-Anbieter'),
   certificates: msgid('Zertifikate'),
+  mail: msgid('SMTP-Konto'),
   address: msgid('Adresse der Oberfläche'),
   run: msgid('Einrichten'),
 };
@@ -264,10 +270,32 @@ export default function SetupPage() {
     );
   }
 
+  if (shown === 'mail') {
+    return (
+      <Frame
+        step={shown}
+        motion={motion}
+        progress={progress}
+        subtitle={
+          <>
+            {t('Für Passkeys, „Passwort vergessen“ und Benachrichtigungen.')}
+            <InfoHint
+              text={t(
+                'Über dieses Konto verschickt HAPM alle Mails. Passkeys gibt es nur mit SMTP-Konto: wird einer hinterlegt oder entfernt, erfährt es der Inhaber per Mail, und wer sein Gerät verliert, setzt sein Passwort per Mail zurück. Ohne Server geht es mit „Überspringen“ weiter. Einrichten lässt sich das Konto jederzeit unter „Benachrichtigungen“.'
+              )}
+            />
+          </>
+        }
+      >
+        <MailStep setup={setup} csrf={csrf} onSaved={advance} onChanged={setSetup} back={back('certificates')} />
+      </Frame>
+    );
+  }
+
   if (shown === 'address') {
     return (
       <Frame step={shown} motion={motion} progress={progress} subtitle={t('Unter dieser Domain ist HAPM danach per HTTPS erreichbar.')}>
-        <AddressStep setup={setup} csrf={csrf} onSaved={advance} back={back('certificates')} />
+        <AddressStep setup={setup} csrf={csrf} onSaved={advance} back={back('mail')} />
       </Frame>
     );
   }
@@ -296,7 +324,7 @@ function Frame({
 }: {
   step: Shown;
   title?: string;
-  subtitle: string;
+  subtitle: ReactNode;
   progress: ReactNode;
   motion?: 'forward' | 'back';
   children: ReactNode;
@@ -983,7 +1011,225 @@ function CertificatesStep({
   );
 }
 
-/* ── Schritt 5: Adresse der Oberfläche ── */
+/* ── Schritt 5: SMTP-Konto ── */
+
+function MailStep({
+  setup,
+  csrf,
+  onSaved,
+  onChanged,
+  back,
+}: {
+  setup: SetupView;
+  csrf: string;
+  onSaved: (next: SetupView) => void;
+  /** Den Stand übernehmen, ohne weiterzugehen: nach dem Speichern für die Testmail. */
+  onChanged: (next: SetupView) => void;
+  back: ReactNode;
+}) {
+  const { t } = useT();
+  const account = setup.mailAccount;
+  const [host, setHost] = useState(account.smtpHost ?? '');
+  const [port, setPort] = useState(String(account.smtpPort));
+  const [security, setSecurity] = useState<SmtpSecurity>(account.smtpSecurity);
+  const [user, setUser] = useState(account.smtpUser ?? '');
+  const [pass, setPass] = useState('');
+  const [from, setFrom] = useState(account.mailFrom ?? '');
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<TestMailResult | null>(null);
+
+  /** Ohne Server ist „Weiter“ das Überspringen: ein leeres Formular ist keine Eingabe. */
+  const skipping = host.trim() === '';
+  const busy = saving || testing;
+
+  /** Was gespeichert wird, oder `null` mit der Meldung im Schritt. */
+  function fields(): Record<string, unknown> | null {
+    const portNumber = Number(port);
+    if (!Number.isInteger(portNumber) || portNumber < 1 || portNumber > 65535) {
+      setError(t('Der Port ist eine Zahl zwischen 1 und 65535.'));
+      return null;
+    }
+    if (!from.trim()) {
+      setError(t('Bitte geben Sie den Absender ein.'));
+      return null;
+    }
+    return {
+      smtpHost: host.trim(),
+      smtpPort: portNumber,
+      smtpSecurity: security,
+      smtpUser: user.trim() || null,
+      // Leer heißt: das gespeicherte Passwort bleibt.
+      ...(pass ? { smtpPass: pass } : {}),
+      mailFrom: from.trim(),
+    };
+  }
+
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    setError('');
+    const body = skipping ? { skip: true } : fields();
+    if (!body) return;
+    setSaving(true);
+    try {
+      const data = await call<{ setup: SetupView }>(csrf, '/api/setup/mail', {
+        method: 'PUT',
+        body: JSON.stringify(body),
+      });
+      onSaved(data.setup);
+    } catch (err: unknown) {
+      setError(message(err, msgid('Das SMTP-Konto ließ sich nicht speichern.'), t));
+      setSaving(false);
+    }
+  }
+
+  /** Erst speichern: die Testmail geht über das gespeicherte Konto (`/api/mail/test`). */
+  async function sendTest() {
+    setError('');
+    setTestResult(null);
+    const body = fields();
+    if (!body) return;
+    setTesting(true);
+    try {
+      const data = await call<{ setup: SetupView }>(csrf, '/api/setup/mail', {
+        method: 'PUT',
+        body: JSON.stringify({ ...body, advance: false }),
+      });
+      onChanged(data.setup);
+      // Ohne Adresse an das eigene Konto.
+      setTestResult(
+        await call<TestMailResult>(csrf, '/api/mail/test', { method: 'POST', body: JSON.stringify({ to: null }) })
+      );
+    } catch (err: unknown) {
+      setError(message(err, msgid('Die Testmail ließ sich nicht verschicken.'), t));
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  return (
+    <form className="auth-form" onSubmit={save}>
+      <div className="hapm-setup-trio">
+        <div className="auth-field">
+          <label htmlFor="smtp-host">{t('Server')}</label>
+          <input
+            id="smtp-host"
+            type="text"
+            value={host}
+            onChange={(e) => setHost(e.target.value)}
+            placeholder="smtp.example.org"
+            disabled={busy}
+            autoComplete="off"
+            spellCheck={false}
+            autoFocus
+          />
+        </div>
+        <div className="auth-field">
+          <label htmlFor="smtp-port">{t('Port')}</label>
+          <input
+            id="smtp-port"
+            type="text"
+            inputMode="numeric"
+            value={port}
+            onChange={(e) => setPort(e.target.value.replace(/\D/g, '').slice(0, 5))}
+            disabled={busy}
+            autoComplete="off"
+          />
+        </div>
+        <div className="auth-field">
+          <label htmlFor="smtp-security">{t('Verschlüsselung')}</label>
+          <Select
+            id="smtp-security"
+            value={security}
+            options={SMTP_SECURITY_CHOICES.map((option) => ({ ...option, label: t(option.label), hint: t(option.hint) }))}
+            disabled={busy}
+            onChange={(value) => {
+              setSecurity(value);
+              if (port === String(SMTP_DEFAULT_PORTS[security])) setPort(String(SMTP_DEFAULT_PORTS[value]));
+            }}
+          />
+        </div>
+      </div>
+      <div className="hapm-setup-trio">
+        <div className="auth-field">
+          <label htmlFor="mail-from">
+            {t('Absender')}
+            <InfoHint text={t('Eine Adresse, die das SMTP-Konto verschicken darf. Wahlweise mit Namen davor: HAPM <hapm@example.org>. Ohne Namen steht im Postfach „HAPM“.')} />
+          </label>
+          <input
+            id="mail-from"
+            type="text"
+            value={from}
+            onChange={(e) => setFrom(e.target.value)}
+            placeholder="hapm@example.org"
+            disabled={busy}
+            autoComplete="off"
+            spellCheck={false}
+          />
+        </div>
+        <div className="auth-field">
+          <label htmlFor="smtp-user">
+            {t('Benutzername')} {t('(optional)')}
+          </label>
+          <input
+            id="smtp-user"
+            type="text"
+            value={user}
+            onChange={(e) => setUser(e.target.value)}
+            disabled={busy}
+            autoComplete="off"
+            spellCheck={false}
+          />
+        </div>
+        <div className="auth-field">
+          <label htmlFor="smtp-pass">
+            {t('Passwort')} {t('(optional)')}
+            <InfoHint text={t('Das Passwort liegt verschlüsselt in der Datenbank und wird nach dem Speichern nicht mehr angezeigt.')} />
+          </label>
+          <input
+            id="smtp-pass"
+            type="password"
+            value={pass}
+            onChange={(e) => setPass(e.target.value)}
+            // Gesetzt, aber nie angezeigt. Leer gelassen bleibt es (siehe `fields`).
+            placeholder={account.smtpPassSet ? '••••••••' : ''}
+            disabled={busy}
+            autoComplete="new-password"
+          />
+        </div>
+      </div>
+
+      <div className="hapm-setup-test">
+        <span className="auth-hint">{t('Die Testmail geht an die Adresse Ihres Kontos.')}</span>
+        <button className="btn btn-secondary btn-sm" type="button" disabled={busy || skipping} onClick={() => void sendTest()}>
+          {testing ? <Loader2 size={14} strokeWidth={1.5} className="spin" /> : <Send size={14} strokeWidth={1.5} />}
+          {t('Testmail senden')}
+        </button>
+      </div>
+
+      {testResult &&
+        (testResult.sent ? (
+          <div className="alert alert-success">
+            {t('Der Mailserver hat die Testmail an {to} angenommen.', { to: testResult.to })}
+          </div>
+        ) : (
+          <div className="alert alert-danger">{testResult.error ?? t('Die Testmail wurde nicht verschickt.')}</div>
+        ))}
+      {error && <div className="auth-error">{error}</div>}
+
+      <div className="hapm-setup-nav">
+        {back}
+        <button className="auth-submit" type="submit" disabled={busy}>
+          {saving ? <span className="btn-spinner" aria-hidden="true" /> : <ArrowRight size={15} />}
+          {skipping ? t('Überspringen') : t('Speichern und weiter')}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/* ── Schritt 6: Adresse der Oberfläche ── */
 
 /** Wie das Zertifikat der Oberfläche entsteht: über DNS, über HTTP auf Port 80, oder hochgeladen. */
 type Issuance = 'dns' | 'http' | 'upload';
@@ -1341,7 +1587,7 @@ function AddressStep({
   );
 }
 
-/* ── Schritt 6: Ausführen ── */
+/* ── Schritt 7: Ausführen ── */
 
 function RunStep({
   setup,

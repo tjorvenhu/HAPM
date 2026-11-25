@@ -194,7 +194,7 @@ an und in der Gruppe das erste Ziel. Eine Gruppe ist ein Marker-Paar in
 
 ### Der Assistent: `/setup`, `lib/setup/`
 
-Sechs Schritte in einer Seite. Nach dem ersten besteht das Konto, alles danach
+Sieben Schritte in einer Seite. Nach dem ersten besteht das Konto, alles danach
 sind angemeldete Aufrufe unter `/api/setup/*` und darf scheitern oder liegen
 bleiben.
 
@@ -238,7 +238,26 @@ bleiben.
    [`reverse-proxy.md`](reverse-proxy.md), „Ein eigener ACME-Server").
    `resumeStep` zählt die Antwort nur, solange sie einen Weg zum Zertifikat
    hat: wer danach auf „intern" umstellt, landet wieder hier.
-5. **Adresse der Oberfläche:** die Domain für HAPM, auf Wunsch mit einem
+5. **SMTP-Konto** (`PUT /api/setup/mail`): Server, Port, Verschlüsselung,
+   Absender, Benutzer und Passwort, gespeichert in den Einstellungen über
+   dieselbe Regel wie unter „Benachrichtigungen" (`readSmtpInput`,
+   `updateSettings`, das Passwort verschlüsselt und nie zurückgegeben). Der
+   Grund für den Schritt: ohne SMTP-Konto gibt es keine Passkeys
+   (`lib/auth/passkey-rules.ts`), und das Fenster „Konto absichern" böte
+   keinen an. **Er lässt sich überspringen:** solange kein Server eingetragen
+   ist, heißt „Weiter" „Überspringen" (`skip: true`, `mail: 'skipped'`), und
+   übersprungen gilt als erledigt. Gespeichert wird nur mit Server und
+   Absender, sonst verschickte HAPM nichts (`isMailConfigured`). „Testmail
+   senden" speichert zuerst (`advance: false`, der Schritt bleibt offen) und
+   schickt dann über `/api/mail/test` an die Adresse des Kontos.
+   Der Schritt steht vor der Adresse und nicht dahinter: eine öffentliche
+   Installation ohne Adresse endet mit der Adresse (`/api/setup/address`,
+   `skip`), ein Schritt danach käme nie dran. Zeilen von vor dem Schritt
+   kennen das Feld `mail` nicht (`mailAnswerOf`): wer dort die Adresse schon
+   beantwortet oder das Ausführen begonnen hat, wird nicht zurückgeschickt, der
+   Schritt gilt als übersprungen. Nach der Einrichtung nimmt die Route nichts
+   mehr an, das Konto gehört dann der Seite „Benachrichtigungen".
+6. **Adresse der Oberfläche:** die Domain für HAPM, auf Wunsch mit einem
    Wildcard-Zertifikat für die Basis darüber. Die Basis ist kein Feld, sondern
    immer die Domain eine Ebene über der Oberfläche (`wildcardBaseOf`: aus
    `hapm.example.org` wird `*.example.org`). Eine andere Basis deckte die
@@ -251,7 +270,7 @@ bleiben.
    niemand.
    Die Wildcard gibt es nur über ACME mit einem DNS-Anbieter
    (`wildcardPossible`); hochgeladen wird, was das Zertifikat abdeckt.
-6. **Ausführen** (`lib/setup/run.ts`): Gruppe `HAPM`, Zertifikat, Ziel `hapm`
+7. **Ausführen** (`lib/setup/run.ts`): Gruppe `HAPM`, Zertifikat, Ziel `hapm`
    auf `127.0.0.1:<PORT>`, `publicUrl`. Jeder Schritt ist ein gewöhnlicher Lauf
    mit derselben Vorabprüfung wie in der Oberfläche und steht in der Historie.
    **Bei „nur hochladen" stellt der Schritt das Zertifikat nicht aus**, er kann
@@ -264,7 +283,7 @@ bleiben.
 
 **Das Token liegt für die Dauer der Einrichtung beim Assistenten**
 (`SetupState.dnsAccess`, verschlüsselt wie die Tokens der Zonen). Der Grund ist
-die Reihenfolge: das Token kommt in Schritt 3, die Domain in Schritt 4, und
+die Reihenfolge: das Token kommt in Schritt 3, die Domain in Schritt 6, und
 erst mit der Domain steht fest, welche Zone gemeint ist. Mit dem Speichern der
 Adresse richtet der Assistent diese Zone unter „DNS" ein (`connectZone`), wo
 das Token danach wie bei jeder Zone liegt, und der Knopf setzt den Eintrag über
@@ -276,8 +295,8 @@ es erreicht den Browser also nie, und mit dem Ende der Einrichtung
 („Mit Cloudflare weiter") bringt kein Token mit: dann gibt es den Knopf nicht.
 
 **Der Zustand liegt in der Datenbank**, in einer Zeile der Collection
-`setup_state`: Art, gewählter Hook, Domain, Wildcard und der Stand des
-Ausführens. Welcher Schritt dran ist, wird daraus abgeleitet (`resumeStep`) und
+`setup_state`: Art, gewählter Hook, ob Zertifikate und SMTP-Konto beantwortet
+sind, Domain, Wildcard und der Stand des Ausführens. Welcher Schritt dran ist, wird daraus abgeleitet (`resumeStep`) und
 nicht gespeichert. Ein Neuladen oder eine Rückkehr nach Tagen landet deshalb
 dort, wo noch etwas fehlt.
 

@@ -1,8 +1,8 @@
 /**
  * Die Regeln des Assistenten der Einrichtung, ohne Datenbank und ohne Netz.
  *
- * Der Assistent fragt nach dem ersten Konto vier Dinge ab (Erreichbarkeit,
- * DNS-Anbieter, Zertifikate, Adresse der Oberfläche) und führt sie aus. Was er weiß, steht
+ * Der Assistent fragt nach dem ersten Konto fünf Dinge ab (Erreichbarkeit,
+ * DNS-Anbieter, Zertifikate, SMTP-Konto, Adresse der Oberfläche) und führt sie aus. Was er weiß, steht
  * in einer Zeile (`SetupState`), und welcher Schritt als Nächstes kommt, wird
  * daraus abgeleitet und nicht daneben gespeichert: ein gemerkter Schritt wäre
  * nach einem Abbruch genau dann falsch, wenn sich dazwischen etwas geändert
@@ -33,7 +33,7 @@ export const DEFAULT_LISTEN_PORT = 7080;
 
 export type SetupChoices = Pick<
   SetupState,
-  'exposure' | 'dns' | 'dnsHook' | 'certificates' | 'address' | 'domain' | 'wildcard' | 'wildcardBase' | 'execution'
+  'exposure' | 'dns' | 'dnsHook' | 'certificates' | 'mail' | 'address' | 'domain' | 'wildcard' | 'wildcardBase' | 'execution'
 >;
 
 export const EMPTY_SETUP: SetupChoices = {
@@ -41,6 +41,7 @@ export const EMPTY_SETUP: SetupChoices = {
   dns: 'pending',
   dnsHook: null,
   certificates: 'pending',
+  mail: 'pending',
   address: 'pending',
   domain: null,
   wildcard: false,
@@ -50,14 +51,22 @@ export const EMPTY_SETUP: SetupChoices = {
 
 /* ── Welcher Schritt als Nächstes ── */
 
-export type SetupStep = 'account' | 'exposure' | 'dns' | 'certificates' | 'address' | 'run' | 'done';
+export type SetupStep = 'account' | 'exposure' | 'dns' | 'certificates' | 'mail' | 'address' | 'run' | 'done';
 
-/** Die Schritte in der Reihenfolge der Anzeige („Schritt 2 von 5"). */
+/**
+ * Die Schritte in der Reihenfolge der Anzeige („Schritt 2 von 7").
+ *
+ * Das SMTP-Konto steht vor der Adresse und nicht dahinter: eine öffentliche
+ * Installation ohne Adresse endet mit der Adresse (`/api/setup/address`,
+ * `skip`), ein Schritt danach käme dort nie dran. Adresse und Ausführen
+ * gehören ohnehin zusammen, das Ausführen richtet genau die Adresse ein.
+ */
 export const SETUP_STEPS: readonly Exclude<SetupStep, 'done'>[] = [
   'account',
   'exposure',
   'dns',
   'certificates',
+  'mail',
   'address',
   'run',
 ];
@@ -140,12 +149,34 @@ export function resumeStep(state: SetupChoices, facts: SetupFacts): SetupStep {
   const certificates = facts.certificates ?? DEFAULT_CERTIFICATE_FACTS;
   if (state.certificates !== 'set' || !certificatePathOpen(state, certificates)) return 'certificates';
 
+  // Übersprungen ist eine Antwort: das SMTP-Konto hält die Einrichtung nicht auf.
+  if (state.mail !== 'set' && state.mail !== 'skipped') return 'mail';
+
   if (state.address === 'skipped' && state.exposure === 'public') return 'done';
   if (state.address !== 'set' || !state.domain || validateSetupDomain(state.domain)) return 'address';
   // Eine Wildcard ohne DNS-Anbieter lässt sich nicht ausstellen.
   if (state.wildcard && !wildcardPossible(state, certificates)) return 'address';
 
   return 'run';
+}
+
+/**
+ * Die Antwort zum SMTP-Konto aus einer gespeicherten Zeile.
+ *
+ * Zeilen von vor diesem Schritt kennen das Feld nicht. Wer dort die Adresse
+ * schon beantwortet oder das Ausführen begonnen hat, ist am Platz des Schritts
+ * vorbei und wird nicht zurückgeschickt, auch nicht mitten aus einem laufenden
+ * Ausführen: der Schritt gilt dann als übersprungen, das SMTP-Konto steht
+ * weiter unter „Benachrichtigungen". Alle anderen bekommen ihn noch.
+ */
+export function mailAnswerOf(row: {
+  mail?: unknown;
+  address?: unknown;
+  execution?: unknown;
+}): SetupChoices['mail'] {
+  if (row.mail === 'pending' || row.mail === 'set' || row.mail === 'skipped') return row.mail;
+  const passed = row.address === 'set' || row.address === 'skipped' || Boolean(row.execution);
+  return passed ? 'skipped' : 'pending';
 }
 
 /** Ob `step` schon erreicht ist, also angezeigt werden darf. */

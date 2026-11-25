@@ -10,7 +10,7 @@ import { normalizeSetupDomain, validateSetupDomain } from '@/lib/setup/rules';
 import { getDnsAccess, getSetupState } from '@/lib/setup/store';
 
 /**
- * Schritt 4 der Einrichtung, der Knopf „Eintrag anlegen": setzt den DNS-Eintrag
+ * Schritt 6 der Einrichtung, der Knopf „Eintrag anlegen": setzt den DNS-Eintrag
  * der Oberfläche beim gewählten Anbieter.
  *
  * Das Token dafür liegt seit Schritt 3 verschlüsselt beim Assistenten

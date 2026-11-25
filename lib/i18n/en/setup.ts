@@ -163,4 +163,10 @@ export const setup: Dictionary = {
   "Konto absichern": "Secure your account",
   "Ein Code aus einer Authenticator-App zusätzlich zum Passwort.": "A code from an authenticator app in addition to the password.",
   "Später": "Later",
+  // Schritt „SMTP-Konto" (app/setup/page.tsx, app/api/setup/mail)
+  "Für Passkeys, „Passwort vergessen“ und Benachrichtigungen.": "For passkeys, \"Forgot password\" and notifications.",
+  "Über dieses Konto verschickt HAPM alle Mails. Passkeys gibt es nur mit SMTP-Konto: wird einer hinterlegt oder entfernt, erfährt es der Inhaber per Mail, und wer sein Gerät verliert, setzt sein Passwort per Mail zurück. Ohne Server geht es mit „Überspringen“ weiter. Einrichten lässt sich das Konto jederzeit unter „Benachrichtigungen“.": "HAPM sends all email through this account. Passkeys require an SMTP account: when one is added or removed, the owner is notified by email, and anyone who loses their device resets their password by email. Without a server, \"Skip\" moves on. You can set up the account at any time under \"Notifications\".",
+  "Die Testmail geht an die Adresse Ihres Kontos.": "The test email goes to your account's address.",
+  "Bitte geben Sie den SMTP-Server ein oder überspringen Sie den Schritt.": "Please enter the SMTP server or skip this step.",
+  "Bitte geben Sie den Absender ein.": "Please enter the sender.",
 };
