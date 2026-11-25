@@ -1,20 +1,20 @@
 ---
-title: "HAPM: Aufbau (Compose, Docker-Socket, Postgres, Übernahme aus dem VSM) und Stolperfallen der Docker-Schicht"
-summary: "Wie HAPM aus dem Reverse-Proxy-Teil des VSM entstanden ist, welche Nahtstellen es gibt und welche Fehler beim Prüfen gegen echtes Docker, HAProxy, Postgres und acme.sh aufgefallen sind."
+title: "HAPM: Aufbau (Compose, Docker-Socket, Postgres) und Stolperfallen der Docker-Schicht"
+summary: "Grundentscheidungen des Aufbaus und Fehler, die erst beim Prüfen gegen echtes Docker, HAProxy, Postgres und acme.sh aufgefallen sind."
 tags: ["architektur","docker","stolperfalle","updates","acme"]
-updated: "2026-11-24T16:22:28.511Z"
+updated: "2026-11-25T17:47:58.992Z"
 ---
 
 Stand 2026-11-24. Einzelheiten stehen in `CLAUDE.md` und `docs/betrieb.md`. Hier steht, was man nicht aus dem Code liest.
 
-## Wie es entstanden ist
-- `lib/haproxy/`, `components/reverse-proxy/`, `app/(app)/reverse-proxy/`, `app/api/haproxy/`, `lib/dns/`, `lib/geoip/` sind aus `internal-manager` (VSM) kopiert. Damit sie ohne Umbau laufen, liegen unter denselben Importpfaden HAPM-Fassungen: `lib/ssh.ts` (`sshExec` führt lokal per bash aus), `lib/helpers.ts` (genau ein Server `local`), `lib/db` (dieselbe Fassade), `lib/session.ts`, `lib/audit.ts`, `lib/types.ts`. Wer etwas aus dem VSM nachzieht, kopiert die Datei und lässt `tsc` sagen, was fehlt.
-- Die kopierten Dateien haben CRLF, neu geschriebene LF. Skripte, die mehrzeilige Stellen ersetzen, müssen das Zeilenende der Datei erkennen. Im Bash-Werkzeug gehen Rückstriche in Heredocs verloren: Skripte mit dem Write-Werkzeug anlegen.
-- Entscheidungen: ein Knoten (kein SSH, keine Serverliste); **Postgres für alles** (dritter Container `postgres:17-alpine`, ohne Netz und Port, nur Unix-Socket im Volume `postgres-run`, `trust`, kleine Werte: leer 24 bis 26 MiB); die Datenbank ist ein Dokumentenspeicher (`lib/db/postgres-driver.ts`: eine Tabelle je Collection mit `jsonb`, kein Schema je Feld, neue Collection in `COLLECTIONS` eintragen); zweiter Faktor freiwillig; Passkeys nur mit eingerichteter Adresse von HAPM (`publicUrl`, https) UND SMTP-Konto; Geheimnisse entstehen beim Start (`lib/secrets.ts`); HAPM und HAProxy im Netz des Hosts. Ein früher Stand mit SQLite wurde verworfen, weil die Anmeldung aus `@vanturis/auth` Postgres braucht und der Nutzer eine Datenbank für alles will.
-- Die Grundkonfiguration (`lib/haproxy/base-config.ts`) folgt der Konfiguration der Vanturis-Proxys: TLS-Verfahren, Zeitgrenzen, `chroot`, `strict-sni`, HTTP/3 (`bind quic4@:443`), HSTS, `X-Forwarded-*`. Abweichungen wegen des Containers: kein `daemon`, `log … format raw` (HAPM schneidet das Log selbst mit), kein `limited-quic` (das offizielle Abbild kann QUIC nativ). Sie wird nur geschrieben, wenn `haproxy.cfg` fehlt.
+## Aufbau
+- `lib/ssh.ts` (`sshExec` führt lokal per bash aus), `lib/helpers.ts` (genau ein Server `local`), `lib/db`, `lib/session.ts`, `lib/audit.ts`, `lib/types.ts` halten die Schnittstellen, gegen die `lib/haproxy/`, `lib/dns/` und `lib/geoip/` geschrieben sind. Wer dort etwas umbaut, lässt `tsc` sagen, was fehlt.
+- Ältere Dateien haben CRLF, neu geschriebene LF. Skripte, die mehrzeilige Stellen ersetzen, müssen das Zeilenende der Datei erkennen. Im Bash-Werkzeug gehen Rückstriche in Heredocs verloren: Skripte mit dem Write-Werkzeug anlegen.
+- Entscheidungen: ein Knoten (kein SSH, keine Serverliste); **Postgres für alles** (dritter Container `postgres:17-alpine`, ohne Netz und Port, nur Unix-Socket, `trust`, kleine Werte: leer 24 bis 26 MiB); die Datenbank ist ein Dokumentenspeicher (`lib/db/postgres-driver.ts`: eine Tabelle je Collection mit `jsonb`, neue Collection in `COLLECTIONS` eintragen); zweiter Faktor freiwillig; Passkeys nur mit eingerichteter Adresse von HAPM (`publicUrl`, https) UND SMTP-Konto; Geheimnisse entstehen beim Start (`lib/secrets.ts`); HAPM und HAProxy im Netz des Hosts. Ein früher Stand mit SQLite wurde verworfen: die Anmeldung braucht Postgres, und es soll eine Datenbank für alles geben.
+- Die Grundkonfiguration (`lib/haproxy/base-config.ts`) folgt der Referenzkonfiguration (eigener Eintrag): TLS-Verfahren, Zeitgrenzen, `chroot`, `strict-sni`, HTTP/3 (`bind quic4@:443`), HSTS, `X-Forwarded-*`. Abweichungen wegen des Containers: kein `daemon`, `log … format raw` (HAPM schneidet das Log selbst mit). Sie wird nur geschrieben, wenn `haproxy.cfg` fehlt.
 
 ## Fehler, die erst gegen echte Dienste auffielen
-- **acme.sh hat eine Spalte `Profile` in `--list --listraw` eingefügt.** `parseAcmeList` findet die Spalten über die Kopfzeile. Im VSM ebenfalls behoben (dort noch nicht committet).
+- **acme.sh hat eine Spalte `Profile` in `--list --listraw` eingefügt.** `parseAcmeList` findet die Spalten über die Kopfzeile.
 - **Ein gescheiterter Antrag bleibt in der Liste von acme.sh** (`Created` leer) und galt als vorhandenes Zertifikat. `findCertificateFor` nimmt nur Einträge mit `createdAt`.
 - **Nach `docker pull` unter demselben Tag kann das alte Abbild sofort weg sein** (containerd-Image-Store). `recreateBody` braucht es, um Einstellungen des Containers von Vorgaben des Abbilds zu trennen: es wird VOR dem Holen gelesen und dem Helfer über `HAPM_OLD_IMAGE` mitgegeben.
 - **`network_mode: service:x` wird zu `container:<kennung>`.** Wird x ersetzt, hängt der andere Container an einem toten Netz. `reattachDependents` legt ihn neu an (betrifft nur `docker-compose.dev.yml`).
