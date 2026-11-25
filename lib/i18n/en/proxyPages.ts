@@ -143,8 +143,9 @@ export const proxyPages: Dictionary = {
   'Noch keine Messung. HAPM liest die Zähler von HAProxy jede Minute.': 'No measurement yet. HAPM reads the HAProxy counters every minute.',
   'Letzte Messung {ago}. Seitdem kam keine neue.': 'Last measurement {ago}. None since.',
   'Messung von {time}': 'Measured at {time}',
-  'HAPM liest die Zähler von HAProxy jede Minute. Die Werte gelten für die letzte Minute, die Fehlerquoten für die letzten {minutes} Minuten. Die Linie zeigt die letzte halbe Stunde.':
-    'HAPM reads the HAProxy counters every minute. The figures cover the last minute, the error rates the last {minutes} minutes. The line shows the last half hour.',
+  'Sekundenwerte, Stand {time}': 'Per-second figures as of {time}',
+  'Solange diese Seite offen ist, liest HAPM die Zähler von HAProxy jede Sekunde. Anfragen und Datenrate gelten für die letzten {seconds} Sekunden, die Fehlerquoten für die letzten {minutes} Minuten. Fehlt ein Sekundenwert, steht der aus der letzten Minute da. Die Linie zeigt die letzte halbe Stunde, ein Punkt je Minute.':
+    'While this page is open, HAPM reads the HAProxy counters every second. Requests and data rates cover the last {seconds} seconds, the error rates the last {minutes} minutes. If a per-second figure is missing, the one from the last minute is shown. The line shows the last half hour, one point per minute.',
   'Anfragen pro Sekunde': 'Requests per second',
   'Ausgehend, an die Besucher': 'Outgoing, to visitors',
   'Eingehend, von den Besuchern': 'Incoming, from visitors',

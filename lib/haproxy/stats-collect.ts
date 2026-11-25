@@ -147,12 +147,7 @@ async function probeProxyStats(server: Server): Promise<Probe> {
     socketOf.delete(server.$id);
   }
 
-  const config = await sshExec(
-    ssh,
-    `${buildCommand(['cat', HAPROXY_CFG])} 2>/dev/null || true`,
-    PROBE_MS
-  );
-  const socket = parseStatsSocket(config.stdout);
+  const socket = await readConfiguredStatsSocket(server);
   // Kein Socket heißt: HAProxy sagt hier nichts. Das ist eine Auskunft, die es
   // nicht gibt, und kein Fehler — dieselbe Regel wie beim Zustand der Ziele.
   if (!socket) return { rows: [], uptimeSec: null };
@@ -160,6 +155,24 @@ async function probeProxyStats(server: Server): Promise<Probe> {
   const probe = await askSocket(ssh, socket);
   if (probe.rows.length > 0) socketOf.set(server.$id, socket);
   return probe;
+}
+
+/**
+ * Der Pfad des Stats-Sockets, wie er in `haproxy.cfg` steht. `null`, wenn dort
+ * keiner steht oder die Datei nicht lesbar ist.
+ */
+export async function readConfiguredStatsSocket(server: Server): Promise<string | null> {
+  const config = await sshExec(
+    await getSSHConfig(server),
+    `${buildCommand(['cat', HAPROXY_CFG])} 2>/dev/null || true`,
+    PROBE_MS
+  );
+  return parseStatsSocket(config.stdout);
+}
+
+/** Der Pfad, über den die letzte Runde geantwortet hat. Für den Sampler (`stats-sampler.ts`). */
+export function rememberedStatsSocket(serverId: string): string | null {
+  return socketOf.get(serverId) ?? null;
 }
 
 /** `show stat` und `show info` über EINEN Socket, in einem Kommando. */

@@ -2078,11 +2078,11 @@ Zahl herauskommt.
   oben auf der Übersicht und auf dieser Seite, eine Komponente für beide:
   Anfragen und Datenrate pro Sekunde, Antwortzeit der Ziele, offene
   Verbindungen, Anteil 5xx und 4xx, je mit der letzten halben Stunde als
-  Verlaufslinie (`ui/charts/Sparkline.tsx`). Die Route
-  `/api/haproxy/stats/live` liest dieselbe Tabelle wie die Zeitreihe und fragt
-  HAProxy **nicht**: neue Zahlen gibt es nur, wenn der Sammler seine Runde
-  dreht, einmal je Minute. Gepollt wird alle 15 s (`LIVE_POLL_MS`), damit eine
-  neue Runde höchstens so spät erscheint.
+  Verlaufslinie (`ui/charts/Sparkline.tsx`). Zwei Quellen: die **Zahlen** sind
+  Sekundenwerte (nächster Punkt), die **Linien** und der Rückfall kommen aus
+  `/api/haproxy/stats/live`, das dieselbe Tabelle wie die Zeitreihe liest und
+  HAProxy nicht fragt. Die Route wird alle 15 s gepollt (`LIVE_POLL_MS`), damit
+  eine neue Runde des Sammlers höchstens so spät erscheint.
   - **Gerechnet wird nach Runden, nicht nach Raster** (`lib/haproxy/stats-live.ts`).
     Eine Runde schreibt alle Zeilen mit demselben `collectedAt`, ihre
     Differenzen gelten seit der vorigen Runde, also ist deren Abstand das
@@ -2098,6 +2098,68 @@ Zahl herauskommt.
   - „Ziele erreichbar" ist keine Live-Kachel: der Zustand kommt aus
     `probeProxy` (Konfiguration und Socket) und steht auf der Übersicht als
     Kachel „Backend nicht erreichbar" darunter, im Takt der Übersicht.
+- **Die Sekundenwerte** (`lib/haproxy/stats-sampler.ts`, gerechnet in
+  `stats-seconds.ts`, Route `/api/haproxy/stats/live/now`). Mit nur dem
+  Minutensammler war die Zahl auf einer Kachel, die „Live" heißt, bis zu einer
+  Minute alt.
+  - **Nachfragegetrieben.** Jede Abfrage der Kacheln (alle 2 s,
+    `SECONDS_POLL_MS`) hält den Sampler am Leben, er liest HAProxy dann jede
+    Sekunde (`SECONDS_SAMPLE_MS`). Kommt 30 s keine Abfrage (`SECONDS_IDLE_MS`),
+    hört er auf. Ohne offene Seite bleibt es bei einer Abfrage je Minute.
+    Versteckte Tabs fragen nicht (`usePolling`).
+  - **Eine Schleife je Prozess, auf `globalThis`.** Fünf offene Tabs lesen
+    denselben Puffer, HAProxy wird trotzdem einmal je Sekunde gefragt. Die
+    Schleife wartet jede Probe ab, bevor sie die nächste plant: zwei Abfragen
+    des Samplers am Socket gleichzeitig gibt es nicht. Die Runde des
+    Minutensammlers kann daneben laufen, sie ist eine eigene Verbindung und
+    stört nicht.
+  - **`node:net` statt `socat`.** Der Stats-Socket liegt im geteilten Volume
+    `/run/haproxy`, HAPM erreicht ihn direkt wie `hapm-ctl` den Master-Socket
+    (`stats-socket.ts`). `show info;show stat` geht in **einer** Verbindung,
+    damit zwischen Laufzeit und Zählern kein Reload liegt. Gemessen gegen
+    HAProxy 3.0 mit 80 Abschnitten (40 Frontends, 40 Backends, 33 KB
+    Antwort): **2,3 ms** je Probe im Median, rund 1 ms CPU in Node. Der Weg
+    des Minutensammlers (bash, zweimal `socat`) braucht 9 ms und drei
+    Prozesse; im Minutentakt egal, im Sekundentakt der größte Posten. Eine
+    dauerhaft offene Verbindung (`prompt`) spart daneben nichts Messbares und
+    hinge nach einem Reload am alten Prozess. Der Pfad kommt vom
+    Minutensammler (`rememberedStatsSocket`) oder aus `haproxy.cfg`, gelesen
+    höchstens alle 30 s, solange er fehlt; nach einem Fehlschlag wartet der
+    Sampler 5 s.
+  - **Nur im Speicher.** Die Proben bleiben fünf Minuten
+    (`SECONDS_BUFFER_MS`, genau das Fenster der Fehlerquote) und gehen nicht
+    nach `haproxy_metrics`. Die Zeitreihe bleibt beim Minutensammler: 86 400
+    Zeilen je Abschnitt und Tag wären eine Tabelle für niemanden.
+  - **Gerechnet aus Zählerständen, nicht aus Differenzen je Probe.** Eine
+    Probe hält die rohen Zähler, jedes Fenster ist die Differenz zweier
+    beliebiger Proben, und eine Pause des Samplers ändert an der Summe nichts.
+    Ungültig macht sie nur ein Neustart von HAProxy dazwischen, und der wird
+    strenger geprüft als beim Minutensammler: die Laufzeit muss mindestens um
+    die vergangene Zeit gewachsen sein (`sameProcess`). Nach einer Pause von
+    fünf Minuten kann ein neuer Prozess schon länger laufen, als der alte bei
+    der vorigen Probe lief, und „Laufzeit gesunken" sähe das nicht.
+  - **Raten über 5 s** (`SECONDS_RATE_MS`), geteilt durch den echten Abstand
+    der Proben. Eine einzelne Sekunde springt bei wenig Verkehr zwischen 0 und
+    2 Anfragen, die Ziffern flackerten. Eine 0 ist hier eine Messung („keine
+    Anfrage in fünf Sekunden") und wird angezeigt.
+  - **Die Antwortzeit** gewichtet mit den Anfragen über die ganze Spanne der
+    Proben, nicht über 5 s: in 5 s antwortet bei wenig Verkehr kein Ziel, und
+    die Zahl fiele dauernd zurück.
+  - **Die Fehlerquote** erst, wenn die Proben die fünf Minuten der Beschriftung
+    abdecken. Vorher wäre eine 503 unter zwanzig Anfragen fünf Prozent; bis
+    dahin steht die Quote aus den Minutenrunden da.
+  - **Rückfall je Kennzahl** (`mergeLive`): Sekundenwert, sonst der aus der
+    letzten Minutenrunde, sonst Strich. Ohne Socket zeigen die Kacheln genau
+    das, was sie vor den Sekundenwerten zeigten. Ist die letzte Probe älter
+    als 10 s (`SECONDS_STALE_MS`), gilt sie nicht mehr. Der Kopf sagt, welche
+    Quelle gerade steht („Sekundenwerte, Stand …" gegen „Messung von …").
+  - **Die Linien bleiben bei den Minutenrunden über 30 Minuten**, nicht beim
+    Puffer. Eine Linie aus Sekundenwerten wäre bei wenig Verkehr ein Kamm aus
+    Ausschlägen, finge nach jeder Pause leer an und reichte nur fünf Minuten
+    zurück. Die halbe Stunde zeigt, ob gerade mehr los ist als vorhin, und
+    das ist die Frage, die eine Linie neben einer Zahl beantworten soll.
+  - Im Drilldown dieselbe Regel wie oben: alles aus der Backend-Zeile des
+    Dienstes, nie aus dem gleichnamigen Frontend eines `listen`-Abschnitts.
 - **Nachladen ist leise.** Die Zeitreihe hat keinen eigenen Takt mehr:
   `LiveTraffic` meldet eine neue Runde (`onRound`), und erst dann lädt die
   Seite sie nach. Ein Zeitraum von dreißig Tagen wird so einmal je Minute

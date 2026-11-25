@@ -2,10 +2,10 @@
  * Die Live-Kennzahlen: was gerade über HAProxy läuft.
  *
  * Gelesen wird dieselbe Zeitreihe wie auf der Statistik-Seite
- * (`haproxy_metrics`), nur die letzte halbe Stunde und nicht gerastert. Der
- * Socket wird dafür nicht gefragt: der Sammler (`stats-collect.ts`) liest ihn
- * ohnehin jede Minute, und eine eigene Abfrage je Poll wäre eine zweite
- * Zählung neben der ersten, die bei jedem Reload anders zurückspringt.
+ * (`haproxy_metrics`), nur die letzte halbe Stunde und nicht gerastert. Daraus
+ * kommen die Verlaufslinien der Kacheln und ihre Zahl, solange es keinen
+ * Sekundenwert gibt. Die Sekundenwerte selbst rechnet `stats-seconds.ts` aus
+ * den Proben des Samplers, nicht aus dieser Tabelle.
  *
  * Rein und ohne Laufzeit-Importe außer zwei reinen Modulen: die Seiten
  * importieren von hier den Takt.
@@ -33,8 +33,8 @@ export const LIVE_WINDOW_MINUTES = 30;
  *
  * Ein Viertel des Erfassungstakts: eine neue Runde steht damit höchstens
  * fünfzehn Sekunden später da. Schneller hieße, die Datenbank viermal mehr für
- * dieselbe Antwort zu fragen. Die Frage ist billig (eine halbe Stunde Zeilen),
- * die teure Arbeit macht der Sammler einmal je Minute.
+ * dieselbe Antwort zu fragen. Die Zahlen der Kacheln kommen ohnehin im
+ * Sekundentakt aus `stats-seconds.ts`, von hier nur Linie und Rückfall.
  */
 export const LIVE_POLL_MS = 15_000;
 

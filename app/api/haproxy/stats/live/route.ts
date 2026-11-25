@@ -7,9 +7,9 @@ import { readLiveStats } from '@/lib/haproxy/stats-overview';
  * Verbindungen, Fehlerquote, dazu die letzte halbe Stunde als Verlauf.
  *
  * Wie `/api/haproxy/stats` nur aus der Datenbank. Die Übersicht und die
- * Statistik-Seite fragen hier alle fünfzehn Sekunden (`LIVE_POLL_MS`); den
- * Socket fragt weiter nur der Sammler, einmal je Minute. Gerechnet wird in
- * `lib/haproxy/stats-live.ts`.
+ * Statistik-Seite fragen hier alle fünfzehn Sekunden (`LIVE_POLL_MS`) nach
+ * Verlauf und Minutenwerten; die Sekundenwerte kommen aus
+ * `/api/haproxy/stats/live/now`. Gerechnet wird in `lib/haproxy/stats-live.ts`.
  */
 export async function GET(request: Request) {
   try {

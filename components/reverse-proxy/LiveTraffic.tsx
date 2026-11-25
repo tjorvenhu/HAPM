@@ -21,16 +21,21 @@ import {
   type LiveRound,
   type LiveStats,
 } from '@/lib/haproxy/stats-live';
+import { mergeLive, SECONDS_POLL_MS, SECONDS_RATE_MS, type SecondStats } from '@/lib/haproxy/stats-seconds';
 
 /**
  * Die Live-Kennzahlen des Reverse-Proxys, auf der Übersicht und oben auf der
  * Statistik-Seite. Eine Komponente für beide, damit dieselbe Zahl an beiden
  * Stellen dieselbe ist.
  *
- * Gefragt wird `/api/haproxy/stats/live` im Takt `LIVE_POLL_MS`. Das ist die
- * Datenbank, nicht HAProxy: neue Zahlen gibt es einmal je Minute, wenn der
- * Sammler seine Runde gedreht hat. `onRound` meldet genau diesen Moment, damit
- * die Statistik-Seite ihre Zeitreihe dann nachlädt und nicht auf Verdacht.
+ * Zwei Quellen, zwei Takte:
+ *  - `/api/haproxy/stats/live/now` im Takt `SECONDS_POLL_MS`: die Sekundenwerte
+ *    aus dem Speicher. Jede Abfrage hält den Sampler am Leben, der HAProxy dann
+ *    jede Sekunde liest. Sie sind die Zahlen der Kacheln.
+ *  - `/api/haproxy/stats/live` im Takt `LIVE_POLL_MS`: die Runden des
+ *    Minutensammlers aus der Datenbank. Daraus kommen die Verlaufslinien, die
+ *    Zahl, wenn es (noch) keinen Sekundenwert gibt, und `onRound`: der Moment,
+ *    in dem die Statistik-Seite ihre Zeitreihe nachlädt.
  */
 export default function LiveTraffic({
   scope,
@@ -80,28 +85,51 @@ export default function LiveTraffic({
   useMountedLoad(load);
   usePolling(load, LIVE_POLL_MS);
 
+  // Ohne Meldung: schlägt sie fehl, stehen die Minutenwerte da.
+  const [fast, setFast] = useState<SecondStats | null>(null);
+  const loadFast = useCallback(async () => {
+    try {
+      const params = new URLSearchParams();
+      if (scope) params.set('scope', scope);
+      const res = await apiFetch(`/api/haproxy/stats/live/now${params.size ? `?${params}` : ''}`);
+      const body = await res.json();
+      if (!body.success) throw new Error(body.error);
+      setFast(body.data as SecondStats);
+    } catch {
+      setFast(null);
+    }
+  }, [apiFetch, scope]);
+
+  useMountedLoad(loadFast);
+  usePolling(loadFast, SECONDS_POLL_MS);
+
+  const fresh = fast && !fast.stale ? fast : null;
+  const fastAt = fresh?.latestAt ?? null;
+
   const head = (
     <div className="live-kpis-head">
       <span
-        className={`live-kpis-dot${live && !live.stale ? ' is-live' : live?.latestAt ? ' is-stale' : ''}`}
+        className={`live-kpis-dot${fastAt || (live && !live.stale) ? ' is-live' : live?.latestAt ? ' is-stale' : ''}`}
         aria-hidden="true"
       />
       <strong>{t('Live')}</strong>
       <span className="live-kpis-stamp">
-        {error && !live
-          ? error
-          : !live
-            ? ''
-            : !live.latestAt
-              ? t('Noch keine Messung. HAPM liest die Zähler von HAProxy jede Minute.')
-              : live.stale
-                ? t('Letzte Messung {ago}. Seitdem kam keine neue.', { ago: formatAgo(now, live.latestAt, locale) })
-                : t('Messung von {time}', { time: formatTime(locale, live.latestAt, true) })}
+        {fastAt
+          ? t('Sekundenwerte, Stand {time}', { time: formatTime(locale, fastAt, true) })
+          : error && !live
+            ? error
+            : !live
+              ? ''
+              : !live.latestAt
+                ? t('Noch keine Messung. HAPM liest die Zähler von HAProxy jede Minute.')
+                : live.stale
+                  ? t('Letzte Messung {ago}. Seitdem kam keine neue.', { ago: formatAgo(now, live.latestAt, locale) })
+                  : t('Messung von {time}', { time: formatTime(locale, live.latestAt, true) })}
       </span>
       <InfoHint
         text={t(
-          'HAPM liest die Zähler von HAProxy jede Minute. Die Werte gelten für die letzte Minute, die Fehlerquoten für die letzten {minutes} Minuten. Die Linie zeigt die letzte halbe Stunde.',
-          { minutes: LIVE_ERROR_MINUTES }
+          'Solange diese Seite offen ist, liest HAPM die Zähler von HAProxy jede Sekunde. Anfragen und Datenrate gelten für die letzten {seconds} Sekunden, die Fehlerquoten für die letzten {minutes} Minuten. Fehlt ein Sekundenwert, steht der aus der letzten Minute da. Die Linie zeigt die letzte halbe Stunde, ein Punkt je Minute.',
+          { seconds: SECONDS_RATE_MS / 1000, minutes: LIVE_ERROR_MINUTES }
         )}
       />
     </div>
@@ -120,7 +148,8 @@ export default function LiveTraffic({
     );
   }
 
-  const { current, rounds } = live;
+  const { rounds } = live;
+  const current = mergeLive(live.current, fresh?.current ?? null);
   const to = live.latestAt ? Date.parse(live.latestAt) : now;
   const from = to - live.windowMinutes * 60_000;
   const line = (pick: (round: LiveRound) => number | null) =>
