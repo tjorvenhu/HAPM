@@ -23,7 +23,7 @@ HAProxy, Let's Encrypt und die Grundkonfiguration richtet HAPM selbst ein.
 ---
 
 <p align="center">
-  <img src="docs/images/einrichtung-adresse.jpg" alt="Der Einrichtungsassistent von HAPM, Schritt Adresse der Oberfläche" width="49%">
+  <img src="docs/images/einrichtung-zertifikate.jpg" alt="Der Einrichtungsassistent von HAPM, Schritt Zertifikate" width="49%">
   <img src="docs/images/fehlerseiten.jpg" alt="Die Fehlerseiten in HAPM mit Vorschau" width="49%">
 </p>
 
@@ -89,6 +89,9 @@ Konfiguration, prüft sie mit HAProxy, lädt neu und holt die Zertifikate.
 - DNS-Eintrag zu einem Ziel auf Wunsch gleich mit anlegen
 - Im Dialog sehen, worauf eine Domain gerade zeigt
 - Server nur im eigenen Netz: jedes Zertifikat über DNS-01
+- Eigener ACME-Server, etwa step-ca im eigenen Netz
+- Zertifikate hochladen, wenn HAPM nichts beantragen soll
+- Eigener DNS-Server: HAPM nennt die Einträge, statt sie anzulegen
 
 </td>
 </tr>
@@ -336,15 +339,16 @@ neuen Stack an und fügen Sie den Inhalt von
 ## Erste Schritte
 
 Nach dem Start öffnet `http://<IP-des-Servers>:7080` den Assistenten. Er hat
-fünf Schritte:
+sechs Schritte:
 
 | Schritt | Was passiert |
 |---|---|
 | **1. Konto** | Sie legen das erste Konto an, mit dem Sie HAPM verwalten |
 | **2. Erreichbarkeit** | Aus dem Internet erreichbar oder nur im eigenen Netz? Davon hängt ab, wie Zertifikate entstehen |
-| **3. DNS-Anbieter** | Cloudflare oder Hetzner mit einem API-Token. Bei einem Server im Internet lässt sich der Schritt überspringen, er ist dann nur für Wildcards nötig |
-| **4. Adresse der Oberfläche** | Die Domain für HAPM selbst, etwa `hapm.example.org`. HAPM zeigt den nötigen DNS-Eintrag und legt ihn beim Anbieter an, wenn einer verbunden ist |
-| **5. Einrichten** | HAPM stellt das Zertifikat aus und trägt sich selbst als Ziel ein. Danach ist die Oberfläche per HTTPS erreichbar |
+| **3. DNS** | Cloudflare oder Hetzner mit einem API-Token, dann legt HAPM DNS-Einträge selbst an. Oder **eigener DNS-Server**: HAPM nennt Ihnen jeden Eintrag, den Sie selbst setzen |
+| **4. Zertifikate** | **Let's Encrypt** (Vorgabe), ein **eigener ACME-Server** mit Directory-URL, etwa step-ca im eigenen Netz, oder **hochladen**: HAPM beantragt nichts, Sie laden Zertifikat und Schlüssel hoch |
+| **5. Adresse der Oberfläche** | Die Domain für HAPM selbst, etwa `hapm.example.org`. HAPM zeigt den nötigen DNS-Eintrag und legt ihn beim Anbieter an, wenn einer verbunden ist |
+| **6. Einrichten** | HAPM stellt das Zertifikat aus und trägt sich selbst als Ziel ein. Danach ist die Oberfläche per HTTPS erreichbar |
 
 <p align="center">
   <img src="docs/images/einrichtung-fertig.jpg" alt="Der letzte Schritt des Assistenten: HAPM ist eingerichtet" width="70%">
@@ -375,7 +379,7 @@ mit Erklärungen steht in [`.env.example`](.env.example). Nach einer Änderung:
 | `HAPM_BIND` | `0.0.0.0` | Adresse, auf der die Oberfläche lauscht. Mit `127.0.0.1` ist sie nur noch über ihre Domain erreichbar |
 | `HAPM_STORAGE` | `./data` | Ordner aller Daten auf dem Server |
 | `TZ` | `Europe/Berlin` | Zeitzone für Anzeigen und geplante Updates |
-| `HAPM_ACME_SERVER` | `letsencrypt` | Zertifizierungsstelle: `letsencrypt`, `letsencrypt_test`, `zerossl` oder die Adresse eines ACME-Verzeichnisses |
+| `HAPM_ACME_SERVER` | `letsencrypt` | Vorgabe der Zertifizierungsstelle: `letsencrypt`, `letsencrypt_test`, `zerossl` oder die Adresse eines ACME-Verzeichnisses. Ein eigener ACME-Server unter „Allgemein“ geht vor |
 | `HAPROXY_IMAGE` | `haproxy:lts` | Abbild von HAProxy. `haproxy:latest` folgt dem neuesten Zweig |
 | `HAPM_IMAGE` | `ghcr.io/tjorvenhu/hapm:latest` | Abbild von HAPM |
 
@@ -632,8 +636,11 @@ etwa mit `systemctl disable --now apache2`. Danach `docker compose up -d`.
 - **Zeigt die Domain auf diesen Server?** Der Dialog eines Ziels zeigt, worauf
   sie auflöst. Ein neuer DNS-Eintrag braucht manchmal einige Minuten.
 - **Ist Port 80 aus dem Internet erreichbar?** Let's Encrypt prüft darüber.
-  Steht der Server nur im eigenen Netz, stellen Sie unter „Allgemein“ die
-  Erreichbarkeit auf „Nur im eigenen Netz“ und richten einen DNS-Anbieter ein.
+  Steht der Server nur im eigenen Netz, gibt es drei Wege: einen DNS-Anbieter
+  mit API (Cloudflare, Hetzner), einen eigenen ACME-Server im Netz oder
+  hochgeladene Zertifikate. Den DNS-Anbieter tragen Sie unter „Reverse-Proxy,
+  Einstellungen“ ein, ACME-Server und Herkunft der Zertifikate unter
+  „Allgemein“, hochgeladen wird unter „Zertifikate“.
 - **Zu viele Versuche?** Let's Encrypt begrenzt fehlgeschlagene Anträge. Zum
   Testen `HAPM_ACME_SERVER=letsencrypt_test` verwenden.
 - Die Schritte jedes Vorgangs mit der genauen Meldung stehen unter „Logs“.

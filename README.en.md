@@ -23,7 +23,7 @@ HAPM sets up HAProxy, Let's Encrypt and the base configuration by itself.
 ---
 
 <p align="center">
-  <img src="docs/images/setup-address.en.jpg" alt="The HAPM setup wizard, step web interface address" width="49%">
+  <img src="docs/images/setup-certificates.en.jpg" alt="The HAPM setup wizard, step certificates" width="49%">
   <img src="docs/images/error-pages.en.jpg" alt="Error pages in HAPM with preview" width="49%">
 </p>
 
@@ -93,6 +93,9 @@ has HAProxy check it, reloads and fetches the certificates.
 - Create the DNS record for a target in the same step
 - See in the dialog where a domain currently points
 - Servers on a private network only: every certificate via DNS-01
+- Your own ACME server, for example step-ca on your network
+- Upload certificates if HAPM should not request any
+- Your own DNS server: HAPM tells you the records instead of creating them
 
 </td>
 </tr>
@@ -336,15 +339,16 @@ contents of [`docker-compose.yml`](docker-compose.yml).
 
 ## First steps
 
-After the start, `http://<server-ip>:7080` opens the wizard. It has five steps:
+After the start, `http://<server-ip>:7080` opens the wizard. It has six steps:
 
 | Step | What happens |
 |---|---|
 | **1. Account** | You create the first account to manage HAPM |
 | **2. Reachability** | Reachable from the internet or only on your private network? This decides how certificates are issued |
-| **3. DNS provider** | Cloudflare or Hetzner with an API token. For a server on the internet you can skip this step, it is then only needed for wildcards |
-| **4. Web interface address** | The domain for HAPM itself, for example `hapm.example.org`. HAPM shows the required DNS record and creates it at the provider if one is connected |
-| **5. Set up** | HAPM issues the certificate and adds itself as a target. Afterwards the web interface is reachable over HTTPS |
+| **3. DNS** | Cloudflare or Hetzner with an API token, then HAPM creates DNS records itself. Or **your own DNS server**: HAPM tells you every record to set yourself |
+| **4. Certificates** | **Let's Encrypt** (default), **your own ACME server** with a directory URL, for example step-ca on your network, or **upload**: HAPM requests nothing, you upload certificate and key |
+| **5. Web interface address** | The domain for HAPM itself, for example `hapm.example.org`. HAPM shows the required DNS record and creates it at the provider if one is connected |
+| **6. Set up** | HAPM issues the certificate and adds itself as a target. Afterwards the web interface is reachable over HTTPS |
 
 <p align="center">
   <img src="docs/images/setup-done.en.jpg" alt="The last step of the wizard: HAPM is set up" width="70%">
@@ -373,7 +377,7 @@ After a change: `docker compose up -d`.
 | `HAPM_BIND` | `0.0.0.0` | Address the web interface listens on. With `127.0.0.1` it is only reachable through its domain |
 | `HAPM_STORAGE` | `./data` | Folder for all data on the server |
 | `TZ` | `Europe/Berlin` | Time zone for display and scheduled updates |
-| `HAPM_ACME_SERVER` | `letsencrypt` | Certificate authority: `letsencrypt`, `letsencrypt_test`, `zerossl` or the URL of an ACME directory |
+| `HAPM_ACME_SERVER` | `letsencrypt` | Default certificate authority: `letsencrypt`, `letsencrypt_test`, `zerossl` or the URL of an ACME directory. An ACME server set under "General" takes precedence |
 | `HAPROXY_IMAGE` | `haproxy:lts` | HAProxy image. `haproxy:latest` follows the newest branch |
 | `HAPM_IMAGE` | `ghcr.io/tjorvenhu/hapm:latest` | HAPM image |
 
@@ -626,8 +630,11 @@ with `systemctl disable --now apache2`. Then `docker compose up -d`.
 - **Does the domain point to this server?** The target dialog shows what it
   resolves to. A new DNS record can take a few minutes.
 - **Is port 80 reachable from the internet?** Let's Encrypt validates through
-  it. If the server is only on your private network, set reachability to
-  "Only on my own network" under "General" and set up a DNS provider.
+  it. If the server is only on your private network, there are three ways: a DNS
+  provider with an API (Cloudflare, Hetzner), your own ACME server on the
+  network, or uploaded certificates. The DNS provider goes under "Reverse proxy,
+  Settings", the ACME server and the certificate source under "General",
+  uploads under "Certificates".
 - **Too many attempts?** Let's Encrypt limits failed requests. Use
   `HAPM_ACME_SERVER=letsencrypt_test` for testing.
 - The steps of every operation, with the exact message, are under "Logs".

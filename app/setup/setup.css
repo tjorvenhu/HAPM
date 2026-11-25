@@ -10,17 +10,12 @@
 
 /* ── Seite und Karte ── */
 
-.hapm-setup.auth-page {
-  background:
-    radial-gradient(1100px 620px at 8% -8%, color-mix(in srgb, var(--success) 12%, transparent), transparent 62%),
-    radial-gradient(900px 560px at 105% 108%, color-mix(in srgb, var(--success) 10%, transparent), transparent 60%),
-    var(--bg);
-}
-
-/* `clip` und nicht `hidden`: die Wellen ragen über den Rand, und eine Karte mit
- * `hidden` ließe sich darüber scrollen, sobald der Browser ein Feld in den Blick holt. */
+/* `clip` und nicht `hidden`: eine Karte mit `hidden` ließe sich scrollen, sobald
+ * der Browser ein Feld in den Blick holt und etwas über den Rand ragt. */
 .hapm-setup.auth-page .auth-card {
   position: relative; isolation: isolate; overflow: clip;
+  /* Breiter als die 46rem aus hapm.css: drei Auswahlkarten nebeneinander brauchen den Platz. */
+  max-width: 52rem;
   border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
   border-radius: clamp(20px, 3vh, 28px);
   background: color-mix(in srgb, var(--surface) 94%, transparent);
@@ -29,27 +24,6 @@
     0 1px 0 color-mix(in srgb, var(--surface) 80%, transparent) inset,
     0 30px 70px -28px color-mix(in srgb, var(--accent) 32%, transparent),
     0 2px 8px color-mix(in srgb, var(--text) 5%, transparent);
-}
-
-/* Zwei weiche Wellen in den Ecken der Karte, jede mit einer zweiten als Schatten dahinter. */
-.hapm-setup.auth-page .auth-card::before,
-.hapm-setup.auth-page .auth-card::after {
-  content: ""; position: absolute; z-index: -1; width: 420px; height: 300px; pointer-events: none;
-  border-radius: 46% 54% 58% 42% / 52% 44% 56% 48%;
-  animation: hapm-setup-wave 16s ease-in-out infinite alternate;
-}
-
-.hapm-setup.auth-page .auth-card::before {
-  top: -170px; left: -190px; transform: rotate(-16deg);
-  background: linear-gradient(140deg, color-mix(in srgb, var(--success) 20%, transparent), color-mix(in srgb, var(--success) 5%, transparent));
-  box-shadow: 46px 34px 0 -16px color-mix(in srgb, var(--success) 8%, transparent);
-}
-
-.hapm-setup.auth-page .auth-card::after {
-  right: -200px; bottom: -190px; transform: rotate(-16deg);
-  background: linear-gradient(320deg, color-mix(in srgb, var(--success) 22%, transparent), color-mix(in srgb, var(--success) 5%, transparent));
-  box-shadow: -46px -30px 0 -16px color-mix(in srgb, var(--success) 9%, transparent);
-  animation-duration: 20s; animation-direction: alternate-reverse;
 }
 
 .hapm-setup.auth-page .auth-title {
@@ -281,11 +255,6 @@
 
 /* ── Bewegung ── */
 
-@keyframes hapm-setup-wave {
-  from { translate: 0 0; }
-  to { translate: 24px 18px; }
-}
-
 @keyframes hapm-stepper-pulse {
   50% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent) 6%, transparent); }
 }
@@ -324,8 +293,6 @@
 @keyframes hapm-done-pop { from { transform: scale(0); } }
 
 @media (prefers-reduced-motion: reduce) {
-  .hapm-setup.auth-page .auth-card::before,
-  .hapm-setup.auth-page .auth-card::after,
   .hapm-setup.auth-page .hapm-step-enter,
   .hapm-stepper li.is-current .hapm-stepper-dot,
   .hapm-done-tile,

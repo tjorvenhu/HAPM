@@ -9,7 +9,6 @@ import {
   ArrowRight,
   Check,
   Circle,
-  ExternalLink,
   Globe,
   Home,
   Loader2,
@@ -24,6 +23,8 @@ import {
   X,
 } from 'lucide-react';
 import { AuthCard } from '@/ui/auth/AuthCard';
+import { SetupStepper } from './SetupStepper';
+import { SetupSuccess } from './SetupSuccess';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import { LONG_TEXT } from '@/ui/primitives/hint-text';
 import { usePolling } from '@/components/usePolling';
@@ -68,6 +69,16 @@ import type { Exposure } from '@/lib/types';
 type Shown = Exclude<SetupStep, 'done'>;
 
 const POLL_MS = 3000;
+
+/** Die kurzen Namen der Schritte in der Schrittanzeige. */
+const STEP_LABELS: Record<Shown, string> = {
+  account: msgid('Konto'),
+  exposure: msgid('Erreichbarkeit'),
+  dns: msgid('DNS'),
+  certificates: msgid('Zertifikate'),
+  address: msgid('Adresse'),
+  run: msgid('Einrichten'),
+};
 
 const TITLES: Record<Shown, string> = {
   account: msgid('HAPM einrichten'),
@@ -168,19 +179,7 @@ export default function SetupPage() {
 
   const index = SETUP_STEPS.indexOf(shown);
   const progress = (
-    <div className="hapm-setup-progress">
-      <span>{t('Schritt {step} von {total}', { step: index + 1, total: SETUP_STEPS.length })}</span>
-      <ol className="hapm-setup-bar" aria-hidden="true">
-        {SETUP_STEPS.map((step, position) => (
-          <li
-            key={position === index ? `current-${step}` : step}
-            className={position < index ? 'is-done' : position === index ? 'is-current' : undefined}
-          >
-            <i />
-          </li>
-        ))}
-      </ol>
-    </div>
+    <SetupStepper labels={SETUP_STEPS.map((step) => t(STEP_LABELS[step]))} current={index} />
   );
 
   const back = (to: Shown) => (
@@ -1383,7 +1382,6 @@ function RunStep({
 
   const outcome = executionOutcome(setup.execution);
   const domain = setup.domain ?? '';
-  const exposure = setup.exposure ?? 'public';
   const domains = certificateDomains(setup);
   const issuance = issuanceOf(setup, domains);
   const providerLabel =
@@ -1425,33 +1423,7 @@ function RunStep({
     }
   }
 
-  if (outcome === 'succeeded') {
-    // Ohne Fortschrittsbalken und mit eigener Überschrift: das Zeichen steht über ihr.
-    return (
-      <AuthCard standalone className="hapm-setup" title="">
-        <div className="hapm-success">
-          <SuccessMark />
-          <h1 className="auth-title">{t('HAPM ist eingerichtet')}</h1>
-          <p className="auth-subtitle">{t('Unter der neuen Adresse melden Sie sich einmal neu an.')}</p>
-        </div>
-        <div className="auth-form hapm-success-body">
-          <Stages setup={setup} />
-          <a className="auth-submit" href={`https://${domain}`}>
-            <ExternalLink size={15} />
-            {t('HAPM unter {url} öffnen', { url: `https://${domain}` })}
-          </a>
-          {exposure === 'internal' && (
-            <p className="auth-hint">
-              {t('Öffnet sich die Adresse nicht, fehlt der Eintrag für {domain} im DNS-Server Ihres Netzes.', { domain })}
-            </p>
-          )}
-          <p className="auth-footer">
-            <Link href="/dashboard">{t('Weiter mit der bisherigen Adresse')}</Link>
-          </p>
-        </div>
-      </AuthCard>
-    );
-  }
+  if (outcome === 'succeeded') return <SetupSuccess setup={setup} />;
 
   const verdict = check && check.domain === domain ? verdictText(check, issuance, t) : null;
 
@@ -1579,24 +1551,6 @@ function RunStep({
         />
       )}
     </Frame>
-  );
-}
-
-const BURST = 12;
-
-/** Der Haken nach einer gelungenen Einrichtung: Kreis, Haken und ein Kranz von Punkten, gezeichnet in CSS. */
-function SuccessMark() {
-  return (
-    <div className="hapm-success-mark" aria-hidden="true">
-      {Array.from({ length: BURST }, (_, i) => (
-        <i key={i} style={{ '--angle': `${(360 / BURST) * i}deg` } as CSSProperties} />
-      ))}
-      <svg viewBox="0 0 88 88">
-        <circle className="hapm-success-disc" cx="44" cy="44" r="40" />
-        <circle className="hapm-success-ring" cx="44" cy="44" r="40" pathLength={1} />
-        <path className="hapm-success-check" d="M27 45.5 L39 57 L62 32" pathLength={1} />
-      </svg>
-    </div>
   );
 }
 
