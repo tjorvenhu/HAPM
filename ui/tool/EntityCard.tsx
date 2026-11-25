@@ -98,11 +98,17 @@ export default function EntityCard({
 export function EntityGrid({
   children,
   align = 'stretch',
+  size = 'regular',
 }: {
   children: ReactNode;
   align?: 'stretch' | 'start';
+  /** `compact`: schmalere Spalten, mehr Karten je Reihe (die Karten der Ziele). */
+  size?: 'regular' | 'compact';
 }) {
-  return <div className={align === 'start' ? 'entity-grid align-start' : 'entity-grid'}>{children}</div>;
+  const classes = ['entity-grid', align === 'start' ? 'align-start' : '', size === 'compact' ? 'is-compact' : '']
+    .filter(Boolean)
+    .join(' ');
+  return <div className={classes}>{children}</div>;
 }
 
 /**

@@ -793,7 +793,7 @@ function ScopeView({ slug }: { slug: string }) {
           rechts — hier steht nur, dass es ihn gibt. */}
       {pendingRun?.isNew && (
         <div className="sys-block">
-          <EntityGrid>
+          <EntityGrid size="compact">
             <PendingCard
               title={pendingRun.title}
               subtitle={pendingRun.serviceId}
@@ -842,7 +842,7 @@ function ScopeView({ slug }: { slug: string }) {
                   <span className="section-hint">{hint}</span>
                 </div>
               )}
-              <EntityGrid>
+              <EntityGrid size="compact">
                 {items.map(({ proxy, service }) => (
                   <ServiceCard
                     key={`${proxy.$id}:${service.id}`}
@@ -889,7 +889,7 @@ function ScopeView({ slug }: { slug: string }) {
               {t('Ports dieses Servers, durchgereicht ohne HTTP und ohne Zertifikat')}
             </span>
           </div>
-          <EntityGrid>
+          <EntityGrid size="compact">
             {streamMatches.map(({ proxy, stream }) => (
               <StreamCard
                 key={`${proxy.$id}:${stream.id}`}

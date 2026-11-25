@@ -460,6 +460,10 @@ a:hover { color: var(--accent-hover); }
   gap: 14px; align-items: stretch;
 }
 
+/* Die Karten der Ziele tragen kurze Zeilen (Domain, Adresse, Knöpfe): mit 22rem
+   standen auf einem gewöhnlichen Bildschirm zwei breite Spalten mit viel Leere. */
+.entity-grid.is-compact { grid-template-columns: repeat(auto-fill, minmax(min(18rem, 100%), 1fr)); }
+
 /* Karten wachsen einzeln (aufgeklappte Bearbeitung), ohne die Nachbarn der
    Zeile mitzudehnen. */
 .entity-grid.align-start { align-items: start; }
