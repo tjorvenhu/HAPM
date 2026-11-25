@@ -45,6 +45,7 @@ import {
   type CreateServiceInput,
 } from '@/lib/haproxy/config';
 import { needsDnsChallenge } from '@/lib/haproxy/challenge';
+import { certCovers } from '@/lib/haproxy/certs';
 import { refuseSurfaceUpdate } from '@/lib/haproxy/protected';
 import type { DomainMatch } from '@/lib/dns/zones';
 import { msgid } from '@/lib/i18n';
@@ -551,8 +552,25 @@ export default function ServiceFormModal({
   const selectedProxy = proxies.find((p) => p.$id === serverId) ?? null;
   const hasWildcard = input.domains.some(isWildcardDomain);
   const dnsHooks = selectedProxy?.dnsHooks ?? [];
+  /** Ob ein Zertifikat fällig wäre: beim Anlegen immer, beim Bearbeiten nur bei geänderten Domains. */
+  const certificateDue = input.domains.length > 0 && (!editingId || certNeeded);
+  /**
+   * Liegt schon ein gültiges Zertifikat für alle Domains da (eine Wildcard von
+   * früher, ein hochgeladenes), wird nichts beantragt: dann braucht es weder
+   * einen Hook noch ein Hochladen. Dieselbe Regel wie `findCertificateFor`.
+   */
+  const certificatePresent =
+    input.domains.length > 0 &&
+    (selectedProxy?.presentCertificates ?? []).some((names) =>
+      input.domains.every((domain) => names.some((pattern) => certCovers(pattern, domain)))
+    );
+  const uploadOnly = selectedProxy?.certificateSource === 'upload';
+  /** „Nur hochladen" und nichts da: erst hochladen, dann anlegen. */
+  const uploadMissing = uploadOnly && certificateDue && !certificatePresent;
   const dnsHookNeeded =
-    needsDnsChallenge(input.domains, selectedProxy?.exposure ?? 'public') &&
+    !uploadOnly &&
+    !certificatePresent &&
+    needsDnsChallenge(input.domains, selectedProxy?.exposure ?? 'public', selectedProxy?.httpChallenge ?? false) &&
     (!editingId || certNeeded);
   const dnsHookMissing = dnsHookNeeded && dnsHooks.length === 0;
   /**
@@ -708,6 +726,12 @@ export default function ServiceFormModal({
     // Dieselbe Bedingung, die `assertIssuable` auf dem Server prüft. Hier
     // vorweg, damit die Eingabe nicht für eine Meldung weggeworfen wird, die
     // ein Feld daneben beantwortet.
+    if (uploadMissing) {
+      setFormError(
+        t('Diese Installation stellt keine Zertifikate selbst aus. Laden Sie zuerst unter Reverse-Proxy, Zertifikate eins hoch, das die Domains abdeckt.')
+      );
+      return;
+    }
     if (dnsHookNeeded && !effectiveDnsHook) {
       setFormError(
         dnsHooks.length === 0
@@ -935,6 +959,20 @@ export default function ServiceFormModal({
                       )}
                     </span>
                   </div>
+                )}
+
+                {uploadMissing && (
+                  <div className="alert alert-warning">
+                    <span>
+                      {rich(
+                        'Diese Installation stellt keine Zertifikate selbst aus, und für diese Domains liegt keins vor. Laden Sie es zuerst unter {page} hoch.',
+                        { page: <Link href="/reverse-proxy/zertifikate">{t('Zertifikate')}</Link> }
+                      )}
+                    </span>
+                  </div>
+                )}
+                {certificateDue && certificatePresent && (uploadOnly || needsDnsChallenge(input.domains, selectedProxy?.exposure ?? 'public', selectedProxy?.httpChallenge ?? false)) && (
+                  <p className="form-hint">{t('Ein vorhandenes Zertifikat deckt diese Domains ab. Es wird keins beantragt.')}</p>
                 )}
 
                 {/* ── DNS-Hook ──

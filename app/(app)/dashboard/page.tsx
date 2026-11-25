@@ -496,6 +496,7 @@ function CertificatesCard({ certificates }: { certificates: SystemCertificates }
                       {cert.expiresAt
                         ? t('Gültig bis {date}', { date: formatDate(cert.expiresAt, locale) })
                         : t('Ablaufdatum nicht lesbar')}
+                      {cert.uploaded && `, ${t('hochgeladen')}`}
                       {cert.domains.length > 1 &&
                         `, ${plural(cert.domains.length - 1, {
                           one: '{count} weitere Domain',

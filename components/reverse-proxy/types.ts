@@ -7,7 +7,7 @@ import type {
 } from '@/lib/haproxy/config';
 import type { HaproxyStream } from '@/lib/haproxy/streams';
 import type { SurfaceTarget } from '@/lib/haproxy/protected';
-import type { Exposure } from '@/lib/types';
+import type { CertificateSource, Exposure } from '@/lib/types';
 
 /**
  * HAProxy mit dem, was gerade in seiner `haproxy.cfg` steht.
@@ -27,6 +27,12 @@ export interface ProxyRow {
   dnsHooks: string[];
   /** Intern oder öffentlich. Bei `internal` geht jedes Zertifikat über DNS-01. */
   exposure: Exposure;
+  /** `upload`: HAPM beantragt nie selbst, ein Ziel braucht ein vorhandenes Zertifikat. */
+  certificateSource: CertificateSource;
+  /** Ein eigener ACME-Server erreicht HAPM über Port 80: HTTP-01 auch intern. */
+  httpChallenge: boolean;
+  /** Die Domains jeder gültigen PEM-Datei auf der Maschine. */
+  presentCertificates: string[][];
   services: HaproxyService[];
   /** Das Ziel, über das die Adresse von HAPM läuft. Es und seine Gruppe lassen
    *  sich nicht entfernen (`lib/haproxy/protected.ts`). `null`: es gibt keins. */

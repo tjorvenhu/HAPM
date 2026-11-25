@@ -1,11 +1,17 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, type ReactNode } from 'react';
 import Link from 'next/link';
-import { ShieldCheck, Loader2, RefreshCw, Network, Info } from 'lucide-react';
+import { ShieldCheck, Loader2, RefreshCw, Network, Info, Upload, Replace, Trash2 } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { usePolling } from '@/components/usePolling';
+import { useNow } from '@/components/useNow';
+import { useToast } from '@/components/Toast';
+import { useConfirm } from '@/components/ConfirmDialog';
+import CertificateUploadDialog, { type UploadBody } from '@/components/reverse-proxy/CertificateUploadDialog';
 import type { AcmeCertificate } from '@/lib/haproxy/certs';
+import type { UploadedCertificate } from '@/lib/haproxy/cert-upload';
+import type { CertificateSource } from '@/lib/types';
 import { SkeletonRows } from '@/components/Skeleton';
 import { formatDate } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
@@ -17,33 +23,37 @@ import { useT } from '@/lib/i18n/react';
  *
  * Bis zu den Wildcards gehörte ein Zertifikat genau einem Dienst, und damit
  * stand alles Wissenswerte über es auf dessen Karte. Ein Wildcard-Zertifikat
- * bedient mehrere Dienste — das ist sein Sinn —, und damit gibt es zum ersten
- * Mal etwas, das keinem Eintrag gehört. Wer `app.kunde.example` löscht, soll sehen
- * können, dass `*.kunde.example` weiter gebraucht wird.
- *
- * Der zweite Grund stand schon vorher da und war unsichtbar: ein von Hand auf
- * der Maschine ausgestelltes Zertifikat kannte dieses Werkzeug nicht. Hier
+ * bedient mehrere Dienste, und damit gibt es etwas, das keinem Eintrag gehört.
+ * Wer `app.kunde.example` löscht, soll sehen können, dass `*.kunde.example`
+ * weiter gebraucht wird. Dazu kommt, was von Hand ausgestellt wurde: hier
  * steht es, mit „von keinem Eintrag benutzt" daneben.
  *
- * ── Nur lesend ──
+ * ── Zwei Herkünfte, zwei Regeln ──
  *
- * Kein Löschen-Knopf. Ein Zertifikat entsteht und vergeht mit einem Dienst;
- * es hier einzeln zu entfernen hieße, dem Reverse-Proxy das PEM unter einer
- * laufenden Domain wegzuziehen — und das fiele nicht heute auf, sondern beim
- * nächsten Start von HAProxy. Was weg soll, geht über den Dienst weg.
+ * Was acme.sh führt, ist hier nur lesend. Es entsteht und vergeht mit einem
+ * Dienst; es hier einzeln zu entfernen hieße, dem Reverse-Proxy das PEM unter
+ * einer laufenden Domain wegzuziehen.
  *
- * Eine Tabelle und keine Karten: hier wird verglichen (welche Domains, wann
- * erneuert, wer benutzt es), und das ist die Trennlinie aus CLAUDE.md.
+ * Hochgeladene Zertifikate entstehen dagegen nur hier, also werden sie hier
+ * ersetzt und entfernt. Entfernen geht nur, solange danach kein Ziel ohne
+ * Zertifikat dastünde; das prüft die Route, die Seite zeigt den Grund.
+ *
+ * Tabellen und keine Karten: hier wird verglichen (welche Domains, wann
+ * erneuert oder abgelaufen, wer benutzt es).
  */
 
 interface CertificateUser {
   id: string;
   /** Der Adressteil seiner Gruppe. `null` heißt: der Eintrag liegt außerhalb
-   *  aller Marker und hat keine Seite — dann steht sein Name ohne Link da. */
+   *  aller Marker und hat keine Seite, dann steht sein Name ohne Link da. */
   slug: string | null;
 }
 
 interface CertificateRow extends AcmeCertificate {
+  usedBy: CertificateUser[];
+}
+
+interface UploadedRow extends UploadedCertificate {
   usedBy: CertificateUser[];
 }
 
@@ -53,18 +63,31 @@ interface ProxyCertificates {
   host: string;
   acmeReady: boolean;
   dnsHooks: string[];
+  source: CertificateSource;
   certificates: CertificateRow[];
+  uploaded: UploadedRow[];
   error: string | null;
 }
 
+/** Ab hier wird ein hochgeladenes Zertifikat als bald ablaufend markiert, wie in der Übersicht. */
+const UPLOAD_WARN_DAYS = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 export default function ReverseProxyCertificatesPage() {
   const { apiFetch } = useApp();
+  const { notify } = useToast();
+  const confirm = useConfirm();
   const { t, plural, rich, locale } = useT();
+  // Stündlich genügt: daran hängt nur, ob „läuft bald ab" oder „abgelaufen" dasteht.
+  const now = useNow(60 * 60 * 1000);
 
   const [rows, setRows] = useState<ProxyCertificates[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  /** Offen: `null` heißt neu hochladen, sonst die Zeile, die ersetzt wird. */
+  const [uploading, setUploading] = useState<{ replace: UploadedRow | null } | null>(null);
+  const [removing, setRemoving] = useState<string | null>(null);
 
   const load = useCallback(
     async (quiet = false) => {
@@ -93,9 +116,7 @@ export default function ReverseProxyCertificatesPage() {
   usePolling(() => load(true), 120_000);
 
   /** Ein eigener Zustand für den Knopf, damit die Liste beim Aktualisieren
-   *  stehen bleibt statt hinter einem Overlay zu verschwinden — mit
-   *  Mindestdauer, sonst blitzt der Spinner nur auf und das sieht aus wie ein
-   *  Fehler. */
+   *  stehen bleibt, mit Mindestdauer, sonst blitzt der Spinner nur auf. */
   async function refresh() {
     setRefreshing(true);
     try {
@@ -105,19 +126,105 @@ export default function ReverseProxyCertificatesPage() {
     }
   }
 
+  async function upload(body: UploadBody) {
+    const res = await apiFetch('/api/haproxy/certificates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || t('Das Zertifikat ließ sich nicht hochladen.'));
+    setUploading(null);
+    notify({
+      variant: 'success',
+      message: body.replace
+        ? t('Das Zertifikat für {domains} ist ersetzt. HAProxy ist neu geladen.', { domains: data.data.certificate.domains.join(', ') })
+        : t('Das Zertifikat für {domains} ist hochgeladen. HAProxy ist neu geladen.', { domains: data.data.certificate.domains.join(', ') }),
+    });
+    await load(true);
+  }
+
+  async function remove(cert: UploadedRow) {
+    const confirmed = await confirm({
+      title: t('Zertifikat entfernen?'),
+      message: t(
+        'Die Datei {file} wird gelöscht und HAProxy neu geladen. Für {domains} liefert HAProxy danach ein anderes passendes Zertifikat oder den Platzhalter.',
+        { file: cert.file, domains: cert.domains.join(', ') || cert.file }
+      ),
+      confirmLabel: t('Entfernen'),
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+    setRemoving(cert.file);
+    try {
+      const res = await apiFetch(`/api/haproxy/certificates?file=${encodeURIComponent(cert.file)}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+      notify({ variant: 'success', message: t('Das Zertifikat {file} ist entfernt.', { file: cert.file }) });
+      await load(true);
+    } catch (err: unknown) {
+      notify({
+        variant: 'error',
+        message: err instanceof Error && err.message ? err.message : t('Das Zertifikat ließ sich nicht entfernen.'),
+      });
+    } finally {
+      setRemoving(null);
+    }
+  }
+
+  const usersCell = (usedBy: CertificateUser[]): ReactNode =>
+    usedBy.length > 0 ? (
+      /* Der Name ist der Weg dorthin: `?dienst=` öffnet den Bearbeiten-Dialog
+         auf der Gruppenseite. Ohne das müsste man die Gruppe raten, die Seite
+         suchen und dort die Karte finden. */
+      usedBy.map((user, index) => (
+        <span key={user.id}>
+          {index > 0 && ', '}
+          {user.slug ? (
+            <Link href={`/reverse-proxy/${user.slug}?dienst=${encodeURIComponent(user.id)}`}>{user.id}</Link>
+          ) : (
+            user.id
+          )}
+        </span>
+      ))
+    ) : (
+      /* Der Befund, für den es diese Spalte gibt: ein Zertifikat ohne Eintrag
+         ist von Hand ausgestellt, im Voraus hochgeladen oder von einem
+         gelöschten Dienst übrig. Beides gehört gesehen und nicht automatisch
+         aufgeräumt. */
+      <span style={{ color: 'var(--text-secondary)' }}>{t('Von keinem Eintrag benutzt')}</span>
+    );
+
+  function expiryCell(cert: UploadedRow): ReactNode {
+    if (!cert.notAfter) return <span style={{ color: 'var(--text-secondary)' }}>{t('Nicht lesbar')}</span>;
+    const days = Math.floor((Date.parse(cert.notAfter) - now) / DAY_MS);
+    const date = formatDate(locale, cert.notAfter);
+    if (days < 0) return <span className="badge-status badge-danger"><span className="dot" />{t('Abgelaufen am {date}', { date })}</span>;
+    if (days < UPLOAD_WARN_DAYS) {
+      return <span className="badge-status badge-warning"><span className="dot" />{t('Läuft am {date} ab', { date })}</span>;
+    }
+    return date;
+  }
+
+  const source = rows[0]?.source ?? 'acme';
+
   return (
     <>
       <div className="page-header">
         <div>
           <h1 className="page-title">{t('Zertifikate')}</h1>
           <p className="page-subtitle">
-            {t('Was acme.sh an Zertifikaten führt. Gelesen bei jedem Aufruf, nicht aus einer Kopie.')}
+            {t('Was acme.sh führt und was hochgeladen ist. Gelesen bei jedem Aufruf, nicht aus einer Kopie.')}
           </p>
         </div>
         <div className="page-actions">
           <button className="btn btn-secondary" onClick={refresh} disabled={refreshing}>
             {refreshing ? <Loader2 size={16} className="spin" /> : <RefreshCw size={16} />}
             {t('Aktualisieren')}
+          </button>
+          <button className="btn btn-primary" onClick={() => setUploading({ replace: null })} disabled={loading || rows.length === 0}>
+            <Upload size={16} />
+            {t('Hochladen')}
           </button>
         </div>
       </div>
@@ -141,110 +248,160 @@ export default function ReverseProxyCertificatesPage() {
           <div className="form-note sys-block">
             <Info size={14} />
             <span>
-              {t(
-                'Angelegt und entfernt werden Zertifikate über den zugehörigen Eintrag unter „Ziele“. Ein Zertifikat hier einzeln zu löschen nähme einer laufenden Domain ihr PEM.'
-              )}
+              {source === 'upload'
+                ? rich(
+                    'Diese Installation stellt keine Zertifikate selbst aus. Ein neues Ziel braucht ein hochgeladenes Zertifikat, das seine Domains abdeckt. Umstellen lässt sich das unter {general}.',
+                    { general: <Link href="/system">{t('Allgemein')}</Link> }
+                  )
+                : t(
+                    'Zertifikate von acme.sh entstehen und vergehen mit ihrem Ziel. Hochgeladene ersetzen und entfernen Sie hier, acme.sh beantragt dann für ihre Domains keins.'
+                  )}
             </span>
           </div>
 
           {rows.map((row) => (
-            <div key={row.$id} className="sys-block">
-              <div className="section-header">
-                <h2 className="section-title">
-                  {t('Ausgestellt')}
-                  <span className="section-count">
-                    {plural(row.certificates.length, {
-                      one: '{count} Zertifikat',
-                      other: '{count} Zertifikate',
-                    })}
-                  </span>
-                </h2>
-                <span className="section-hint">
-                  {row.dnsHooks.length > 0
-                    ? t('DNS-Hooks: {hooks}', { hooks: row.dnsHooks.join(', ') })
-                    : t('Kein DNS-Hook eingerichtet, keine Wildcard ausstellbar')}
-                </span>
+            <div key={row.$id}>
+              {row.error && <div className="alert alert-danger sys-block">{row.error}</div>}
+
+              <div className="sys-block">
+                <div className="section-header">
+                  <h2 className="section-title">
+                    {t('Hochgeladen')}
+                    <span className="section-count">
+                      {plural(row.uploaded.length, { one: '{count} Zertifikat', other: '{count} Zertifikate' })}
+                    </span>
+                  </h2>
+                  <span className="section-hint">{t('Erneuert niemand von selbst. HAPM erinnert vor dem Ablauf.')}</span>
+                </div>
+
+                {row.uploaded.length === 0 ? (
+                  <div className="empty-state">
+                    <Upload size={32} />
+                    <h3>{t('Kein hochgeladenes Zertifikat')}</h3>
+                    <p>{t('Ein eigenes Zertifikat laden Sie mit dem Knopf oben hoch: PEM mit Kette und den privaten Schlüssel.')}</p>
+                  </div>
+                ) : (
+                  <div className="table-wrap">
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>{t('Datei')}</th>
+                          <th>{t('Abgedeckte Domains')}</th>
+                          <th>{t('Ausgestellt von')}</th>
+                          <th>{t('Gültig bis')}</th>
+                          <th>{t('Benutzt von')}</th>
+                          <th aria-label={t('Aktionen')} />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {row.uploaded.map((cert) => (
+                          <tr key={cert.file}>
+                            <td>
+                              <code>{cert.file}</code>
+                            </td>
+                            <td>{cert.domains.join(', ') || '—'}</td>
+                            <td>{cert.issuer ?? '—'}</td>
+                            <td>{expiryCell(cert)}</td>
+                            <td>{usersCell(cert.usedBy)}</td>
+                            <td>
+                              <div className="hapm-form-actions">
+                                <button
+                                  className="btn btn-ghost btn-icon btn-sm"
+                                  data-tooltip={t('Ersetzen')}
+                                  aria-label={t('Ersetzen')}
+                                  onClick={() => setUploading({ replace: cert })}
+                                >
+                                  <Replace size={16} />
+                                </button>
+                                <button
+                                  className="btn btn-ghost btn-icon btn-sm"
+                                  data-tooltip={t('Entfernen')}
+                                  aria-label={t('Entfernen')}
+                                  disabled={removing === cert.file}
+                                  onClick={() => void remove(cert)}
+                                >
+                                  {removing === cert.file ? <Loader2 size={16} className="spin" /> : <Trash2 size={16} />}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
 
-              {row.error ? (
-                <div className="alert alert-danger">{row.error}</div>
-              ) : !row.acmeReady ? (
-                <div className="alert alert-warning">
-                  <span>
-                    {rich(
-                      'acme.sh oder das Zertifikatsverzeichnis fehlt. HAPM richtet beides beim Start selbst ein, der Zustand steht in der {overview}. Solange das so ist, lässt sich kein Zertifikat ausstellen, und diese Liste ist leer, weil nicht gefragt werden konnte, nicht weil es keine gibt.',
-                      { overview: <Link href="/dashboard">{t('Übersicht')}</Link> }
-                    )}
+              <div className="sys-block">
+                <div className="section-header">
+                  <h2 className="section-title">
+                    {t('Von acme.sh')}
+                    <span className="section-count">
+                      {plural(row.certificates.length, { one: '{count} Zertifikat', other: '{count} Zertifikate' })}
+                    </span>
+                  </h2>
+                  <span className="section-hint">
+                    {row.dnsHooks.length > 0
+                      ? t('DNS-Hooks: {hooks}', { hooks: row.dnsHooks.join(', ') })
+                      : t('Kein DNS-Hook eingerichtet, keine Wildcard ausstellbar')}
                   </span>
                 </div>
-              ) : row.certificates.length === 0 ? (
-                <div className="empty-state">
-                  <ShieldCheck size={32} />
-                  <h3>{t('Noch kein Zertifikat')}</h3>
-                  <p>{t('acme.sh führt keins.')}</p>
-                </div>
-              ) : (
-                <div className="table-wrap">
-                  <table className="table">
-                    <thead>
-                      <tr>
-                        <th>{t('Hauptdomain')}</th>
-                        <th>{t('Abgedeckte Domains')}</th>
-                        <th>{t('Schlüssel')}</th>
-                        <th>{t('Erneuerung')}</th>
-                        <th>{t('Benutzt von')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {row.certificates.map((cert) => (
-                        <tr key={cert.mainDomain}>
-                          <td>
-                            <code>{cert.mainDomain}</code>
-                          </td>
-                          <td>{cert.domains.join(', ')}</td>
-                          <td>{cert.keyLength ?? '—'}</td>
-                          <td>{cert.renewAt ? formatDate(locale, cert.renewAt) : '—'}</td>
-                          <td>
-                            {cert.usedBy.length > 0 ? (
-                              /* Der Name ist der Weg dorthin: `?dienst=` öffnet
-                                 den Bearbeiten-Dialog auf der Gruppenseite. Ohne
-                                 das müsste man die Gruppe raten, die Seite
-                                 suchen und dort die Karte finden — bei dreißig
-                                 Einträgen ist das der Umweg, den niemand geht. */
-                              cert.usedBy.map((user, index) => (
-                                <span key={user.id}>
-                                  {index > 0 && ', '}
-                                  {user.slug ? (
-                                    <Link
-                                      href={`/reverse-proxy/${user.slug}?dienst=${encodeURIComponent(user.id)}`}
-                                    >
-                                      {user.id}
-                                    </Link>
-                                  ) : (
-                                    user.id
-                                  )}
-                                </span>
-                              ))
-                            ) : (
-                              /* Der Befund, für den es diese Spalte gibt: ein
-                                 Zertifikat ohne Eintrag ist entweder von Hand
-                                 ausgestellt oder von einem gelöschten Dienst
-                                 übrig. Beides gehört gesehen und nicht
-                                 automatisch aufgeräumt. */
-                              <span style={{ color: 'var(--text-secondary)' }}>
-                                {t('Von keinem Eintrag benutzt')}
-                              </span>
-                            )}
-                          </td>
+
+                {row.error ? null : !row.acmeReady ? (
+                  <div className="alert alert-warning">
+                    <span>
+                      {rich(
+                        'acme.sh oder das Zertifikatsverzeichnis fehlt. HAPM richtet beides beim Start selbst ein, der Zustand steht in der {overview}. Solange das so ist, lässt sich kein Zertifikat ausstellen, und diese Liste ist leer, weil nicht gefragt werden konnte, nicht weil es keine gibt.',
+                        { overview: <Link href="/dashboard">{t('Übersicht')}</Link> }
+                      )}
+                    </span>
+                  </div>
+                ) : row.certificates.length === 0 ? (
+                  <div className="empty-state">
+                    <ShieldCheck size={32} />
+                    <h3>{t('Noch kein Zertifikat')}</h3>
+                    <p>{t('acme.sh führt keins.')}</p>
+                  </div>
+                ) : (
+                  <div className="table-wrap">
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>{t('Hauptdomain')}</th>
+                          <th>{t('Abgedeckte Domains')}</th>
+                          <th>{t('Schlüssel')}</th>
+                          <th>{t('Erneuerung')}</th>
+                          <th>{t('Benutzt von')}</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                      </thead>
+                      <tbody>
+                        {row.certificates.map((cert) => (
+                          <tr key={cert.mainDomain}>
+                            <td>
+                              <code>{cert.mainDomain}</code>
+                            </td>
+                            <td>{cert.domains.join(', ')}</td>
+                            <td>{cert.keyLength ?? '—'}</td>
+                            <td>{cert.renewAt ? formatDate(locale, cert.renewAt) : '—'}</td>
+                            <td>{usersCell(cert.usedBy)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             </div>
           ))}
         </>
+      )}
+
+      {uploading && (
+        <CertificateUploadDialog
+          replace={uploading.replace ? { file: uploading.replace.file, domains: uploading.replace.domains } : null}
+          onUpload={upload}
+          onClose={() => setUploading(null)}
+        />
       )}
     </>
   );

@@ -8,6 +8,7 @@ import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { SkeletonDetail } from '@/components/Skeleton';
+import CertificateSourceCard from '@/components/system/CertificateSourceCard';
 import { msgid } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
 // Nur der Typ: die Datei dahinter erreicht `lib/db`.
@@ -19,7 +20,7 @@ const EXPOSURE_CHOICES: { value: Exposure; title: string; text: string }[] = [
   {
     value: 'internal',
     title: msgid('Nur im eigenen Netz'),
-    text: msgid('Jedes neue Zertifikat wird über den DNS-Anbieter ausgestellt. Dafür müssen unter Reverse-Proxy, Einstellungen DNS-Zugangsdaten hinterlegt sein.'),
+    text: msgid("Let's Encrypt erreicht den Server nicht. Neue Zertifikate gehen über den DNS-Anbieter, über einen eigenen ACME-Server, der HAPM über Port 80 erreicht, oder werden hochgeladen."),
   },
   {
     value: 'public',
@@ -148,7 +149,7 @@ export default function GeneralSettingsPage() {
       message:
         next === 'internal'
           ? t(
-              'Jedes neue Zertifikat wird danach über den DNS-Anbieter ausgestellt. Ohne hinterlegte DNS-Zugangsdaten lässt sich dann kein Ziel mehr anlegen. Bestehende Zertifikate behalten ihre Methode, auch bei der Erneuerung.'
+              'Jedes neue Zertifikat wird danach über den DNS-Anbieter ausgestellt, außer ein eigener ACME-Server erreicht HAPM über Port 80 oder Zertifikate werden hochgeladen. Ohne einen dieser Wege lässt sich kein Ziel mehr anlegen. Bestehende Zertifikate behalten ihre Methode, auch bei der Erneuerung.'
             )
           : t(
               "Neue Zertifikate werden danach über Port 80 geprüft. Erreicht Let's Encrypt den Server nicht, scheitert jeder neue Antrag. Bestehende Zertifikate behalten ihre Methode, auch bei der Erneuerung."
@@ -176,7 +177,7 @@ export default function GeneralSettingsPage() {
     <div className="page-header">
       <div>
         <h1 className="page-title">{t('Allgemein')}</h1>
-        <p className="page-subtitle">{t("Adresse, Art der Installation und der Kontakt bei Let's Encrypt.")}</p>
+        <p className="page-subtitle">{t('Adresse, Art der Installation, Zertifikate und der Kontakt beim ACME-Server.')}</p>
       </div>
     </div>
   );
@@ -299,6 +300,8 @@ export default function GeneralSettingsPage() {
           </div>
         </div>
       </div>
+
+      <CertificateSourceCard settings={settings} onSaved={setSettings} />
 
       <div className="card sys-block">
         <div className="card-header">

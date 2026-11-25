@@ -282,6 +282,11 @@
 /* In der Einrichtung nebeneinander, solange jede Karte 15rem behält. */
 .hapm-setup .hapm-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
 
+/* Drei Karten (DNS-Anbieter, Zertifikate) passen nur schmaler in eine Zeile. */
+.hapm-setup .hapm-choices.hapm-choices-three { grid-template-columns: repeat(auto-fit, minmax(11.5rem, 1fr)); }
+
+.hapm-setup .hapm-choices-three .hapm-choice { padding: 14px 32px 14px 14px; }
+
 /* Knöpfe unter einem Schritt: der Hauptknopf oben, die Nebenwege darunter in einer Zeile. */
 .hapm-setup-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
 
@@ -529,3 +534,6 @@
 
 /* Die Wahl der Sprache unter „Konto": zwei Einträge brauchen keine volle Breite. */
 .hapm-locale-field { max-width: 20rem; margin-bottom: 0; }
+
+/* PEM im Dialog „Zertifikat hochladen": Spalten wie in der Datei. */
+.form-textarea.mono { font-family: var(--font-mono); font-size: 0.8125rem; }

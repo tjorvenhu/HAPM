@@ -16,28 +16,38 @@ import {
   Play,
   RefreshCw,
   Search,
+  Server,
+  ShieldCheck,
+  Upload,
   UserPlus,
+  Waypoints,
   X,
 } from 'lucide-react';
 import { AuthCard } from '@/ui/auth/AuthCard';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import { LONG_TEXT } from '@/ui/primitives/hint-text';
 import { usePolling } from '@/components/usePolling';
+import CertificateUploadDialog, { type UploadBody } from '@/components/reverse-proxy/CertificateUploadDialog';
 import { useT } from '@/lib/i18n/react';
 import { msgid, type Translatable } from '@/lib/i18n/translate';
+import { formatDate } from '@/lib/i18n/format';
 import { DNS_PROVIDERS, findDnsProvider, validateDnsCredentials } from '@/lib/haproxy/dns-credentials';
 import { needsDnsChallenge } from '@/lib/haproxy/challenge';
+import { normalizeAcmeDirectory, validateAcmeDirectory, validateEab } from '@/lib/acme-server';
 import {
   SETUP_SCOPE,
   SETUP_STEPS,
   STAGE_LABELS,
   certificateDomains,
+  certificateFactsOf,
+  certificatePathOpen,
   executionOutcome,
   normalizeSetupDomain,
   stepReached,
   validateSetupDomain,
   validateWildcardBase,
   wildcardBaseOf,
+  wildcardPossible,
   type SetupStep,
 } from '@/lib/setup/rules';
 // Nur die Typen: die Dateien dahinter erreichen `lib/db`.
@@ -46,8 +56,8 @@ import type { AddressCheck } from '@/lib/setup/address';
 import type { Exposure } from '@/lib/types';
 
 /**
- * Die Einrichtung: Konto, Erreichbarkeit, DNS-Anbieter, Adresse der Oberfläche,
- * Ausführen. Eine Seite, damit ein Neuladen an derselben Stelle weitergeht:
+ * Die Einrichtung: Konto, Erreichbarkeit, DNS-Anbieter, Zertifikate, Adresse
+ * der Oberfläche, Ausführen. Eine Seite, damit ein Neuladen an derselben Stelle weitergeht:
  * welcher Schritt dran ist, sagt `GET /api/setup` (`resumeStep`), nicht ein
  * Zustand im Browser.
  *
@@ -63,6 +73,7 @@ const TITLES: Record<Shown, string> = {
   account: msgid('HAPM einrichten'),
   exposure: msgid('Erreichbarkeit'),
   dns: msgid('DNS-Anbieter'),
+  certificates: msgid('Zertifikate'),
   address: msgid('Adresse der Oberfläche'),
   run: msgid('Einrichten'),
 };
@@ -232,11 +243,7 @@ export default function SetupPage() {
         step={shown}
         motion={motion}
         progress={progress}
-        subtitle={
-          setup.exposure === 'internal'
-            ? t('Über ihn stellt HAPM jedes Zertifikat aus.')
-            : t('Nur nötig für Wildcard-Zertifikate.')
-        }
+        subtitle={t('Wo die DNS-Einträge Ihrer Domains stehen.')}
       >
         {acmeWarning}
         <DnsStep setup={setup} csrf={csrf} onSaved={advance} back={back('exposure')} />
@@ -245,10 +252,19 @@ export default function SetupPage() {
     );
   }
 
+  if (shown === 'certificates') {
+    return (
+      <Frame step={shown} motion={motion} progress={progress} subtitle={t('Woher HAPM die Zertifikate für Ihre Domains bekommt.')}>
+        <CertificatesStep setup={setup} csrf={csrf} onSaved={advance} back={back('dns')} />
+        {later}
+      </Frame>
+    );
+  }
+
   if (shown === 'address') {
     return (
       <Frame step={shown} motion={motion} progress={progress} subtitle={t('Unter dieser Domain ist HAPM danach per HTTPS erreichbar.')}>
-        <AddressStep setup={setup} csrf={csrf} onSaved={advance} back={back('dns')} />
+        <AddressStep setup={setup} csrf={csrf} onSaved={advance} back={back('certificates')} />
         {later}
       </Frame>
     );
@@ -524,8 +540,9 @@ function DnsStep({
 }) {
   const { t } = useT();
   const configured = setup.dnsHooks ?? [];
+  /** Ein Hook aus `DNS_PROVIDERS` oder `MANUAL_DNS` für den eigenen DNS-Server. */
   const [hook, setHook] = useState<string>(
-    setup.dnsHook && findDnsProvider(setup.dnsHook) ? setup.dnsHook : ''
+    setup.dns === 'manual' ? MANUAL_DNS : setup.dnsHook && findDnsProvider(setup.dnsHook) ? setup.dnsHook : ''
   );
   const [values, setValues] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
@@ -550,6 +567,10 @@ function DnsStep({
 
   function save(e: FormEvent) {
     e.preventDefault();
+    if (hook === MANUAL_DNS) {
+      void send({ manual: true }, msgid('Die Auswahl ließ sich nicht speichern.'));
+      return;
+    }
     if (!provider) {
       setError(t('Bitte wählen Sie einen DNS-Anbieter.'));
       return;
@@ -591,7 +612,7 @@ function DnsStep({
         </div>
       )}
 
-      <div className="hapm-choices">
+      <div className="hapm-choices hapm-choices-three">
         {DNS_PROVIDERS.map((option) => (
           <button
             key={option.hook}
@@ -617,7 +638,37 @@ function DnsStep({
             )}
           </button>
         ))}
+        <button
+          type="button"
+          className={`hapm-choice${hook === MANUAL_DNS ? ' is-selected' : ''}`}
+          aria-pressed={hook === MANUAL_DNS}
+          disabled={saving}
+          onClick={() => {
+            setHook(MANUAL_DNS);
+            setValues({});
+            setError('');
+          }}
+        >
+          <Server size={18} strokeWidth={1.5} />
+          <span className="hapm-choice-text">
+            <strong>{t('Eigener DNS-Server')}</strong>
+            <span>{t('HAPM legt keine Einträge an und nennt Ihnen, was Sie eintragen.')}</span>
+          </span>
+          {hook === MANUAL_DNS && (
+            <span className="hapm-choice-check">
+              <Check size={12} strokeWidth={3} />
+            </span>
+          )}
+        </button>
       </div>
+
+      {hook === MANUAL_DNS && (
+        <p className="auth-hint">
+          {setup.exposure === 'internal'
+            ? t("Ohne Anbieter mit API erreicht Let's Encrypt diesen Server nicht. Im nächsten Schritt wählen Sie einen eigenen ACME-Server oder hochgeladene Zertifikate.")
+            : t("Zertifikate kommen weiter von Let's Encrypt über Port 80. Eine Wildcard geht ohne Anbieter mit API nur als hochgeladenes Zertifikat.")}
+        </p>
+      )}
 
       {provider && (
         <>
@@ -655,26 +706,21 @@ function DnsStep({
 
       {error && <div className="auth-error">{error}</div>}
 
-      <button className="auth-submit" type="submit" disabled={saving || !provider}>
+      <button className="auth-submit" type="submit" disabled={saving || !hook}>
         {saving ? <span className="btn-spinner" aria-hidden="true" /> : <ArrowRight size={15} />}
-        {saving ? t('Wird geprüft…') : t('Speichern und weiter')}
+        {saving && provider ? t('Wird geprüft…') : hook === MANUAL_DNS ? t('Weiter') : t('Speichern und weiter')}
       </button>
-      <div className="hapm-setup-actions">
-        {back}
-        {setup.exposure === 'public' && (
-          <button
-            className="btn btn-ghost"
-            type="button"
-            disabled={saving}
-            onClick={() => void send({ skip: true }, msgid('Der Schritt ließ sich nicht überspringen.'))}
-          >
-            {t('Überspringen')}
-          </button>
-        )}
-      </div>
+      <div className="hapm-setup-actions">{back}</div>
     </form>
   );
 }
+
+/**
+ * Der eigene DNS-Server als dritte Karte. Kein Hook: HAPM richtet dann bei
+ * keinem Anbieter etwas ein und nennt die Einträge (`dns: 'manual'`). Er
+ * ersetzt „Überspringen", das dasselbe hieß, nur ohne es zu sagen.
+ */
+const MANUAL_DNS = 'manual';
 
 /** Das Zeichen des Anbieters. Ein Hook ohne Datei (von Hand eingerichtet) bekommt keines. */
 function ProviderLogo({ hook, size }: { hook: string; size: number }) {
@@ -683,11 +729,260 @@ function ProviderLogo({ hook, size }: { hook: string; size: number }) {
   return <Image src={logo} alt="" width={size} height={size} className="hapm-provider-logo" unoptimized />;
 }
 
-/* ── Schritt 4: Adresse der Oberfläche ── */
+/* ── Schritt 4: Zertifikate ── */
+
+type CertificateChoice = 'letsencrypt' | 'custom' | 'upload';
+
+function CertificatesStep({
+  setup,
+  csrf,
+  onSaved,
+  back,
+}: {
+  setup: SetupView;
+  csrf: string;
+  onSaved: (next: SetupView) => void;
+  back: ReactNode;
+}) {
+  const { t } = useT();
+  const internal = setup.exposure === 'internal';
+  const dnsReady = setup.dns === 'configured';
+  // Let's Encrypt erreicht eine interne Installation nur über DNS-01.
+  const letsEncryptPossible = !internal || dnsReady;
+  const providerLabel = (setup.dnsHook && findDnsProvider(setup.dnsHook)?.label) || setup.dnsHook || '';
+
+  const [choice, setChoice] = useState<CertificateChoice | null>(
+    setup.certificateSource === 'upload'
+      ? 'upload'
+      : setup.acmeDirectory
+        ? 'custom'
+        : letsEncryptPossible
+          ? 'letsencrypt'
+          : null
+  );
+  const [directory, setDirectory] = useState(setup.acmeDirectory ?? '');
+  const [eabKeyId, setEabKeyId] = useState('');
+  const [eabHmacKey, setEabHmacKey] = useState('');
+  const [httpReachable, setHttpReachable] = useState(setup.acmeHttpReachable);
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const custom = choice === 'custom';
+  const facts = certificateFactsOf({
+    certificateSource: choice === 'upload' ? 'upload' : 'acme',
+    acmeDirectory: custom ? normalizeAcmeDirectory(directory) || 'pending' : null,
+    acmeHttpReachable: httpReachable,
+  });
+  const pathOpen = choice !== null && certificatePathOpen(setup, facts);
+
+  const options: { value: CertificateChoice; title: string; text: string; icon: ReactNode; disabled?: boolean }[] = [
+    {
+      value: 'letsencrypt',
+      title: "Let's Encrypt",
+      text: internal
+        ? dnsReady
+          ? t('Über DNS bei {provider}. Erneuert sich von selbst.', { provider: providerLabel })
+          : t('Erreicht eine interne Installation nur über einen DNS-Anbieter mit API.')
+        : dnsReady
+          ? t('Über Port 80, Wildcards über DNS bei {provider}.', { provider: providerLabel })
+          : t('Über Port 80. Eine Wildcard geht ohne DNS-Anbieter mit API nicht.'),
+      icon: <ShieldCheck size={18} strokeWidth={1.5} />,
+      disabled: !letsEncryptPossible,
+    },
+    {
+      value: 'custom',
+      title: t('Eigener ACME-Server'),
+      text: t('Eine CA mit ACME, etwa step-ca im eigenen Netz. Auf Wunsch mit External Account Binding.'),
+      icon: <Waypoints size={18} strokeWidth={1.5} />,
+    },
+    {
+      value: 'upload',
+      title: t('Zertifikate hochladen'),
+      text: t('HAPM beantragt nichts. Sie laden Zertifikat und Schlüssel hoch und ersetzen sie vor dem Ablauf.'),
+      icon: <Upload size={18} strokeWidth={1.5} />,
+    },
+  ];
+
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    if (!choice) {
+      setError(t('Bitte wählen Sie, woher die Zertifikate kommen.'));
+      return;
+    }
+    const url = normalizeAcmeDirectory(directory);
+    const invalid = custom ? (validateAcmeDirectory(url) ?? validateEab({ keyId: eabKeyId, hmacKey: eabHmacKey })) : null;
+    if (invalid) {
+      setError(t(invalid));
+      return;
+    }
+    setError('');
+    setSaving(true);
+    try {
+      const data = await call<{ setup: SetupView }>(csrf, '/api/setup/certificates', {
+        method: 'PUT',
+        body: JSON.stringify({
+          source: choice === 'upload' ? 'upload' : 'acme',
+          acmeDirectory: custom ? url : null,
+          httpReachable: custom && internal && httpReachable,
+          eabKeyId: custom ? eabKeyId : '',
+          eabHmacKey: custom ? eabHmacKey : '',
+        }),
+      });
+      onSaved(data.setup);
+    } catch (err: unknown) {
+      setError(message(err, msgid('Die Auswahl ließ sich nicht speichern.'), t));
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form className="auth-form" onSubmit={save}>
+      <div className="hapm-choices hapm-choices-three">
+        {options.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            className={`hapm-choice${choice === option.value ? ' is-selected' : ''}`}
+            aria-pressed={choice === option.value}
+            disabled={saving || option.disabled}
+            onClick={() => {
+              setChoice(option.value);
+              setError('');
+            }}
+          >
+            {option.icon}
+            <span className="hapm-choice-text">
+              <strong>{option.title}</strong>
+              <span>{option.text}</span>
+            </span>
+            {choice === option.value && (
+              <span className="hapm-choice-check">
+                <Check size={12} strokeWidth={3} />
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {custom && (
+        <>
+          <div className="auth-field">
+            <label htmlFor="acme-directory">
+              {t('Directory-URL')}
+              <InfoHint
+                text={t(
+                  'Die Adresse, unter der der ACME-Server sein Verzeichnis anbietet. Bei step-ca etwa https://ca.example.org/acme/acme/directory. acme.sh muss sie über HTTPS mit einem Zertifikat erreichen, dem es vertraut.'
+                )}
+              />
+            </label>
+            <input
+              id="acme-directory"
+              type="text"
+              inputMode="url"
+              value={directory}
+              onChange={(e) => setDirectory(e.target.value)}
+              placeholder="https://ca.example.org/acme/acme/directory"
+              disabled={saving}
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </div>
+          <div className="hapm-setup-pair">
+            <div className="auth-field">
+              <label htmlFor="eab-kid">
+                {t('EAB Key-ID')} {t('(freiwillig)')}
+                <InfoHint
+                  text={t(
+                    'External Account Binding: nur nötig, wenn die CA es verlangt. Sie zeigt Key-ID und HMAC-Schlüssel beim Anlegen des Zugangs an.'
+                  )}
+                />
+              </label>
+              <input
+                id="eab-kid"
+                type="text"
+                value={eabKeyId}
+                onChange={(e) => setEabKeyId(e.target.value)}
+                disabled={saving}
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </div>
+            <div className="auth-field">
+              <label htmlFor="eab-hmac">
+                {t('EAB HMAC-Schlüssel')} {t('(freiwillig)')}
+                <InfoHint text={t('Geht an acme.sh und wird in HAPM nicht gespeichert.')} />
+              </label>
+              <input
+                id="eab-hmac"
+                type="password"
+                value={eabHmacKey}
+                onChange={(e) => setEabHmacKey(e.target.value)}
+                disabled={saving}
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </div>
+          </div>
+          {internal && (
+            <label className="hapm-switch-row">
+              <span className="hapm-switch-text">
+                <span>
+                  {t('Dieser ACME-Server erreicht HAPM über HTTP (Port 80)')}
+                  <InfoHint
+                    text={t(
+                      "Dann prüft er jede Domain über Port 80, wie Let's Encrypt es im Internet tut. Typisch für eine CA im selben Netz. Wildcards gehen weiter nur über DNS."
+                    )}
+                  />
+                </span>
+              </span>
+              <span className="toggle-switch">
+                <input
+                  type="checkbox"
+                  checked={httpReachable}
+                  disabled={saving}
+                  onChange={(e) => setHttpReachable(e.target.checked)}
+                />
+                <span className="toggle-slider" />
+              </span>
+            </label>
+          )}
+        </>
+      )}
+
+      {choice !== null && !pathOpen && (
+        <div className="alert alert-warning">
+          {t('Ohne HTTP über Port 80 und ohne DNS-Anbieter mit API kann der ACME-Server keine Domain prüfen. Schalten Sie HTTP ein oder laden Sie Zertifikate hoch.')}
+        </div>
+      )}
+      {choice === 'upload' && (
+        <p className="auth-hint">{t('Das Zertifikat der Oberfläche laden Sie im letzten Schritt hoch, bevor HAPM sie einrichtet.')}</p>
+      )}
+
+      {error && <div className="auth-error">{error}</div>}
+
+      <button className="auth-submit" type="submit" disabled={saving || !choice || !pathOpen}>
+        {saving ? <span className="btn-spinner" aria-hidden="true" /> : <ArrowRight size={15} />}
+        {saving && custom ? t('Konto wird angemeldet…') : t('Weiter')}
+      </button>
+      <div className="hapm-setup-actions">{back}</div>
+    </form>
+  );
+}
+
+/* ── Schritt 5: Adresse der Oberfläche ── */
+
+/** Wie das Zertifikat der Oberfläche entsteht: über DNS, über HTTP auf Port 80, oder hochgeladen. */
+type Issuance = 'dns' | 'http' | 'upload';
+
+function issuanceOf(setup: SetupView, domains: string[]): Issuance {
+  if (setup.certificateSource === 'upload') return 'upload';
+  const facts = certificateFactsOf(setup);
+  return needsDnsChallenge(domains, setup.exposure ?? 'public', facts.httpReachable) ? 'dns' : 'http';
+}
 
 function verdictText(
   check: AddressCheck,
-  exposure: Exposure | null,
+  issuance: Issuance,
   t: (text: Translatable, params?: Record<string, string | number>) => string
 ): { tone: 'alert-success' | 'alert-warning' | 'alert-info'; text: string } {
   const where = check.resolved?.join(', ') ?? '';
@@ -707,15 +1002,19 @@ function verdictText(
       return {
         tone: 'alert-warning',
         text:
-          exposure === 'internal'
+          issuance === 'dns'
             ? t(
                 'Für {domain} sieht dieser Server keinen DNS-Eintrag. Das Zertifikat entsteht trotzdem, es wird über den DNS-Anbieter ausgestellt. Erreichbar ist die Oberfläche erst mit dem Eintrag.',
                 { domain }
               )
-            : t(
-                "Für {domain} sieht dieser Server keinen DNS-Eintrag. Ohne den Eintrag scheitert das Zertifikat: Let's Encrypt ruft die Domain auf.",
-                { domain }
-              ),
+            : issuance === 'upload'
+              ? t('Für {domain} sieht dieser Server keinen DNS-Eintrag. Erreichbar ist die Oberfläche erst mit dem Eintrag.', {
+                  domain,
+                })
+              : t(
+                  'Für {domain} sieht dieser Server keinen DNS-Eintrag. Ohne den Eintrag scheitert das Zertifikat: der ACME-Server ruft die Domain auf.',
+                  { domain }
+                ),
       };
     default:
       return { tone: 'alert-info', text: t('Die DNS-Abfrage ist gescheitert. Ob der Eintrag stimmt, ließ sich nicht prüfen.') };
@@ -735,7 +1034,8 @@ function AddressStep({
 }) {
   const { t } = useT();
   const internal = setup.exposure === 'internal';
-  const dnsReady = setup.dns === 'configured';
+  /** Eine Wildcard stellt nur acme.sh über einen DNS-Anbieter aus. */
+  const dnsReady = wildcardPossible(setup, certificateFactsOf(setup));
 
   const [domainDraft, setDomainDraft] = useState(setup.domain ?? '');
   // Bei „intern" vorbelegt an: weitere Ziele unter der Basis brauchen dann kein neues Zertifikat.
@@ -850,7 +1150,10 @@ function AddressStep({
     void send({ domain, wildcard: wildcardOn, wildcardBase: wildcardOn ? base : null });
   }
 
-  const verdict = check && check.domain === domain ? verdictText(check, setup.exposure, t) : null;
+  const verdict =
+    check && check.domain === domain
+      ? verdictText(check, issuanceOf(setup, certificateDomains({ domain, wildcard: wildcardOn, wildcardBase: base })), t)
+      : null;
   const shownDomain = domain || 'hapm.example.org';
 
   return (
@@ -1003,7 +1306,11 @@ function AddressStep({
             </dd>
           ) : (
             <dd>
-              {recordProvider ? t('Bei {provider}', { provider: recordProvider.label }) : t('Bei Ihrem DNS-Anbieter')}
+              {recordProvider
+                ? t('Bei {provider}', { provider: recordProvider.label })
+                : setup.dns === 'manual'
+                  ? t('In Ihrem DNS-Server')
+                  : t('Bei Ihrem DNS-Anbieter')}
               <InfoHint
                 text={
                   recordProvider
@@ -1042,7 +1349,7 @@ function AddressStep({
   );
 }
 
-/* ── Schritt 5: Ausführen ── */
+/* ── Schritt 6: Ausführen ── */
 
 function RunStep({
   setup,
@@ -1063,18 +1370,29 @@ function RunStep({
   later: ReactNode;
   acmeWarning: ReactNode;
 }) {
-  const { t } = useT();
+  const { t, locale } = useT();
   const [error, setError] = useState('');
   const [starting, setStarting] = useState(false);
   const [check, setCheck] = useState<AddressCheck | null>(null);
+
+  const [uploading, setUploading] = useState(false);
 
   const outcome = executionOutcome(setup.execution);
   const domain = setup.domain ?? '';
   const exposure = setup.exposure ?? 'public';
   const domains = certificateDomains(setup);
-  const overDns = needsDnsChallenge(domains, exposure);
+  const issuance = issuanceOf(setup, domains);
   const providerLabel =
     (setup.dnsHook && findDnsProvider(setup.dnsHook)?.label) || setup.dnsHook || t('Ihrem DNS-Anbieter');
+  /** Bei „nur hochladen" geht es erst los, wenn ein Zertifikat die Domain abdeckt. */
+  const uploadMissing = issuance === 'upload' && !setup.presentCertificate;
+
+  async function upload(body: UploadBody) {
+    await call(csrf, '/api/haproxy/certificates', { method: 'POST', body: JSON.stringify(body) });
+    setUploading(false);
+    const status = await call<{ setup?: SetupView }>(csrf, '/api/setup');
+    if (status.setup) onChanged(status.setup);
+  }
 
   // Vor dem Ausführen noch einmal sagen, worauf die Domain zeigt.
   useEffect(() => {
@@ -1131,7 +1449,7 @@ function RunStep({
     );
   }
 
-  const verdict = check && check.domain === domain ? verdictText(check, setup.exposure, t) : null;
+  const verdict = check && check.domain === domain ? verdictText(check, issuance, t) : null;
 
   return (
     <Frame
@@ -1157,15 +1475,33 @@ function RunStep({
               </dd>
               <dt>{t('Ausstellung')}</dt>
               <dd>
-                {overDns ? (
+                {issuance === 'upload' ? (
+                  setup.presentCertificate ? (
+                    setup.presentCertificate.notAfter ? (
+                      t('hochgeladen, gültig bis {date}', { date: formatDate(locale, setup.presentCertificate.notAfter) })
+                    ) : (
+                      t('liegt schon vor: {domains}', { domains: setup.presentCertificate.domains.join(', ') })
+                    )
+                  ) : (
+                    t('noch nicht hochgeladen')
+                  )
+                ) : issuance === 'dns' ? (
                   <span className="hapm-provider">
                     {setup.dnsHook && <ProviderLogo hook={setup.dnsHook} size={18} />}
                     {t('über DNS bei {provider}', { provider: providerLabel })}
                   </span>
+                ) : setup.acmeDirectory ? (
+                  t('über HTTP auf Port 80, der ACME-Server ruft die Domain auf')
                 ) : (
                   t("über HTTP auf Port 80, Let's Encrypt ruft die Domain auf")
                 )}
               </dd>
+              {setup.acmeDirectory && issuance !== 'upload' && (
+                <>
+                  <dt>{t('ACME-Server')}</dt>
+                  <dd>{setup.acmeDirectory}</dd>
+                </>
+              )}
               {setup.dnsZone && (
                 <>
                   <dt>{t('DNS-Zone')}</dt>
@@ -1189,6 +1525,17 @@ function RunStep({
           {verdict && verdict.tone !== 'alert-success' && (
             <div className={`alert ${verdict.tone}`}>{verdict.text}</div>
           )}
+          {uploadMissing && (
+            <div className="hapm-setup-note">
+              <div className="hapm-setup-note-head">
+                <span>{t('HAPM stellt in dieser Installation keine Zertifikate aus. Laden Sie das für {domain} hoch.', { domain })}</span>
+                <button className="btn btn-secondary btn-sm" type="button" onClick={() => setUploading(true)}>
+                  <Upload size={14} />
+                  {t('Zertifikat hochladen')}
+                </button>
+              </div>
+            </div>
+          )}
         </>
       )}
 
@@ -1205,7 +1552,7 @@ function RunStep({
 
       {outcome !== 'running' && (
         <>
-          <button className="auth-submit" type="button" disabled={starting} onClick={start}>
+          <button className="auth-submit" type="button" disabled={starting || (outcome === 'idle' && uploadMissing)} onClick={start}>
             {starting ? (
               <span className="btn-spinner" aria-hidden="true" />
             ) : outcome === 'failed' ? (
@@ -1219,6 +1566,14 @@ function RunStep({
         </>
       )}
       {later}
+      {uploading && (
+        <CertificateUploadDialog
+          replace={null}
+          expected={domains}
+          onUpload={upload}
+          onClose={() => setUploading(false)}
+        />
+      )}
     </Frame>
   );
 }
