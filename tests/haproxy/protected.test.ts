@@ -3,6 +3,7 @@ import { germanText, type Message } from '@/lib/i18n/translate';
 import {
   WITHOUT_SURFACE_PROTECTION,
   refuseSurfaceDelete,
+  refuseSurfaceScopeEntry,
   refuseSurfaceScopeRemoval,
   refuseSurfaceUpdate,
   surfaceHost,
@@ -170,5 +171,29 @@ describe('refuseSurfaceScopeRemoval', () => {
   it('schützt keine Gruppe, wenn das Ziel außerhalb aller Gruppen steht', () => {
     const services = [{ id: 'von_hand', scope: null, domains: ['hapm.example.org'] }];
     expect(refuseSurfaceScopeRemoval(target(services), 'HAPM')).toBeNull();
+  });
+});
+
+describe('refuseSurfaceScopeEntry', () => {
+  it('lehnt ein neues Ziel in der Gruppe der Oberfläche ab, gleich in welcher Schreibweise', () => {
+    expect(refuseSurfaceScopeEntry(target(), 'HAPM', null, null)).not.toBeNull();
+    expect(refuseSurfaceScopeEntry(target(), ' hapm ', null, null)).not.toBeNull();
+  });
+
+  it('lässt jede andere Gruppe zu', () => {
+    expect(refuseSurfaceScopeEntry(target(), 'KUNDEN', null, null)).toBeNull();
+  });
+
+  it('lehnt den Umzug eines anderen Ziels hinein ab', () => {
+    expect(refuseSurfaceScopeEntry(target(), 'HAPM', 'shop', 'KUNDEN')).not.toBeNull();
+  });
+
+  it('lässt das Ziel der Oberfläche selbst und alles, was schon darin liegt, weiter zu', () => {
+    expect(refuseSurfaceScopeEntry(target(), 'HAPM', 'hapm', 'HAPM')).toBeNull();
+    expect(refuseSurfaceScopeEntry(target(), 'HAPM', 'alt', 'HAPM')).toBeNull();
+  });
+
+  it('sperrt nichts ohne Adresse von HAPM', () => {
+    expect(refuseSurfaceScopeEntry(target(SERVICES, null), 'HAPM', null, null)).toBeNull();
   });
 });

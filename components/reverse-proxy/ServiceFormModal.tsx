@@ -237,12 +237,20 @@ export default function ServiceFormModal({
   /** Es gibt genau einen HAProxy. Die Kennung geht weiter im Rumpf mit, weil
    *  die Routen und die Historie sie tragen. */
   const serverId = edit?.proxy.$id ?? usable[0]?.$id ?? '';
-  const [scope, setScope] = useState<HaproxyScope>(edit?.service.scope ?? defaultScope);
 
   /** Die Gruppen aus der Konfiguration. Unvollständige (nur einer der beiden
    *  Marker) stehen nicht zur Wahl: der Block landete sonst irgendwo. */
+  /** Die Gruppe der Oberfläche steht nicht zur Wahl, außer der Eintrag liegt
+   *  schon darin (`refuseSurfaceScopeEntry`, dieselbe Regel wie die Route). */
+  const surfaceScope = proxies.find((p) => p.$id === serverId)?.surface?.scope?.toUpperCase() ?? null;
   const scopeOptions = (proxies.find((p) => p.$id === serverId)?.scopes ?? []).filter(
-    (s) => s.complete
+    (s) =>
+      s.complete &&
+      (surfaceScope === null || s.name.toUpperCase() !== surfaceScope || edit?.service.scope?.toUpperCase() === surfaceScope)
+  );
+  const [scope, setScope] = useState<HaproxyScope>(
+    edit?.service.scope ??
+      (scopeOptions.some((s) => s.name === defaultScope) ? defaultScope : (scopeOptions[0]?.name ?? defaultScope))
   );
   /**
    * Welcher acme.sh-DNS-Hook die Challenge setzt. Nur nötig, sobald eine
@@ -641,12 +649,13 @@ export default function ServiceFormModal({
    * Je Domain und nicht ein Schalter für alle: ein Dienst bedient oft
    * `kunde.example` und `app.example.org`, und gemeint ist manchmal nur die zweite.
    *
-   * **Ein fehlender Eintrag heißt AN.** Der Schalter erscheint nur für Domains
-   * in einer Zone, die hier eingerichtet ist — und die richtet man ein, damit
-   * genau das passiert. Deshalb steht hier nur, wer ihn AUSgeschaltet hat, und
-   * nicht, wer ihn angelassen hat: mit `false` als Vorgabe müsste der Zustand
-   * beim Eintreffen der Antwort nachgezogen werden, und das wäre einen Render
-   * lang eine Zeile mit Haken, die beim Speichern nicht mitzählt.
+   * **Ein fehlender Eintrag heißt: die Vorgabe** (`dnsChosen`). Sie ist AN:
+   * der Schalter erscheint nur für Domains in einer Zone, die hier
+   * eingerichtet ist, und die richtet man ein, damit genau das passiert. AUS
+   * ist sie nur, wenn die Domain schon woanders auflöst (`resolvesElsewhere`,
+   * meist intern). Hier steht deshalb nur, was jemand selbst gewählt hat: eine
+   * Vorgabe in den Zustand zu schreiben, wenn die Antwort eintrifft, wäre einen
+   * Render lang eine Zeile, deren Haken beim Speichern nicht mitzählt.
    */
   const [dnsWanted, setDnsWanted] = useState<Record<string, boolean>>({});
 
@@ -707,10 +716,38 @@ export default function ServiceFormModal({
    * HAPM den Eintrag setzen, ist das der Vorschlag dazu: der Schalter daneben
    * steht dann schon an.
    */
+  /**
+   * Löst die Domain schon auf, ohne in der angebundenen Zone zu stehen, kommt
+   * die Antwort von woanders, meist vom DNS-Server im eigenen Netz. Ein Eintrag
+   * in der Zone machte sie dann im ganzen Internet auflösbar, und das will, wer
+   * sie bewusst nur intern führt, gerade nicht. Deshalb steht der Schalter dann
+   * aus und muss ausdrücklich eingeschaltet werden.
+   */
+  function resolvesElsewhere(match: DomainMatch): boolean {
+    const verdict = match.resolution?.verdict;
+    return !!match.zone && !!match.plan && !match.existing && !match.error && (verdict === 'matches' || verdict === 'elsewhere');
+  }
+
+  /** Ob der Eintrag gesetzt werden soll: was jemand gewählt hat, sonst die Vorgabe. */
+  function dnsChosen(match: DomainMatch): boolean {
+    return dnsWanted[match.domain] ?? !resolvesElsewhere(match);
+  }
+
   function resolutionText(match: DomainMatch): string | null {
     const resolution = match.resolution;
     if (!resolution) return null;
     const addresses = (resolution.addresses ?? []).join(', ');
+    if (resolvesElsewhere(match) && match.zone) {
+      return dnsChosen(match)
+        ? t('Löst schon auf ({addresses}), aber nicht über {zone}. Mit dem Eintrag ist die Domain im ganzen Internet auflösbar.', {
+            addresses,
+            zone: match.zone.name,
+          })
+        : t('Löst schon auf ({addresses}), aber nicht über {zone}, etwa über den DNS-Server Ihres Netzes. Eingeschaltet wird sie im ganzen Internet auflösbar.', {
+            addresses,
+            zone: match.zone.name,
+          });
+    }
     switch (resolution.verdict) {
       case 'matches':
         return t('Zeigt auf {addresses}, diesen Server.', { addresses });
@@ -724,9 +761,9 @@ export default function ServiceFormModal({
         return t('Die DNS-Abfrage ist gescheitert.');
     }
   }
-  /** Was mitgeschickt wird: möglich, noch nicht vorhanden und nicht abgewählt. */
+  /** Was mitgeschickt wird: möglich, noch nicht vorhanden und gewählt (siehe `dnsChosen`). */
   const dnsDomains = dnsRows
-    .filter((m) => m.plan && !m.existing && !m.error && dnsWanted[m.domain] !== false)
+    .filter((m) => m.plan && !m.existing && !m.error && dnsChosen(m))
     .map((m) => m.domain);
 
   async function handleSubmit(e: FormEvent) {
@@ -1134,14 +1171,16 @@ export default function ServiceFormModal({
                             <span className="toggle-switch">
                               <input
                                 type="checkbox"
-                                checked={settled || (!locked && dnsWanted[match.domain] !== false)}
+                                checked={settled || (!locked && dnsChosen(match))}
                                 disabled={locked}
-                                onChange={(e) =>
-                                  setDnsWanted((current) => ({
-                                    ...current,
-                                    [match.domain]: e.target.checked,
-                                  }))
-                                }
+                                onChange={(e) => {
+                                  // Den Wert JETZT lesen, nicht in der Update-Funktion: React setzt das
+                                  // kontrollierte Feld nach dem Ereignis auf den alten Stand zurück, und
+                                  // läuft die Funktion erst danach, läse sie wieder „an“. Dann blieb der
+                                  // Eintrag gewählt, obwohl der Haken herausgenommen war.
+                                  const checked = e.target.checked;
+                                  setDnsWanted((current) => ({ ...current, [match.domain]: checked }));
+                                }}
                                 aria-label={t('DNS-Eintrag für {domain}', { domain: match.domain })}
                               />
                               <span className="toggle-slider" />

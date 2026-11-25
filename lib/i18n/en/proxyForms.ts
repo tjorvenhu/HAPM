@@ -261,6 +261,10 @@ export const proxyForms: Dictionary = {
   'Löst noch nicht auf. Der DNS-Eintrag fehlt.': 'Does not resolve yet. The DNS record is missing.',
   'Die DNS-Abfrage ist gescheitert.': 'The DNS lookup failed.',
   'DNS wird abgefragt…': 'Looking up DNS…',
+  'Löst schon auf ({addresses}), aber nicht über {zone}. Mit dem Eintrag ist die Domain im ganzen Internet auflösbar.':
+    'Already resolves ({addresses}), but not via {zone}. With the record, the domain resolves on the whole internet.',
+  'Löst schon auf ({addresses}), aber nicht über {zone}, etwa über den DNS-Server Ihres Netzes. Eingeschaltet wird sie im ganzen Internet auflösbar.':
+    'Already resolves ({addresses}), but not via {zone}, for example via your network’s DNS server. Switched on, it resolves on the whole internet.',
   'Gilt schon für alle Ziele: „timeout tunnel {value}“ im defaults-Block.':
     'Already applies to all targets: “timeout tunnel {value}” in the defaults block.',
   'Gilt schon für alle Ziele. Die eigene Zeile dieses Ziels ist doppelt und lässt sich ausschalten.':

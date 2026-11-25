@@ -271,9 +271,10 @@ export async function createServiceRun(
   // Nicht Teil der Eingabe: der Hook steht in keiner Zeile der Konfiguration.
   const dnsHook = String(body.dnsHook ?? '').trim() || null;
   // Intern oder öffentlich: davon hängt ab, ob HTTP-01 überhaupt geht (`challenge.ts`).
-  const challenge = challengeFor(await getSettings(), dnsHook);
+  const settings = await getSettings();
+  const challenge = challengeFor(settings, dnsHook);
 
-  const input = await asConflict(() => precheckCreate(server, draft, challenge));
+  const input = await asConflict(() => precheckCreate(server, draft, challenge, { publicUrl: settings.publicUrl }));
 
   const run = await startHaproxyRun({
     server,
@@ -470,7 +471,8 @@ export async function createStreamRun(
   const invalid = validateNewStream(draft);
   if (invalid) throw new ApiError(invalid);
 
-  const input = await asConflict(() => precheckStreamCreate(server, draft));
+  const protection = { publicUrl: (await getSettings()).publicUrl };
+  const input = await asConflict(() => precheckStreamCreate(server, draft, protection));
 
   const run = await startHaproxyRun({
     server,
@@ -495,7 +497,8 @@ export async function updateStreamRun(
   const invalid = validateStreamInput(input);
   if (invalid) throw new ApiError(invalid);
 
-  await asConflict(() => precheckStreamUpdate(server, id, input));
+  const protection = { publicUrl: (await getSettings()).publicUrl };
+  await asConflict(() => precheckStreamUpdate(server, id, input, protection));
 
   const run = await startHaproxyRun({
     server,

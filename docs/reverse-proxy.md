@@ -275,6 +275,12 @@ HAPM das ab (`lib/haproxy/protected.ts`, rein, `tests/haproxy/protected.test.ts`
   möglich: Server, Healthcheck, weitere Domains, Sperren, auch der Umzug in eine
   andere Gruppe und, über die API, ein neuer Name. Der Schutz der Gruppe folgt
   dem Ziel.
+- **In die Gruppe der Oberfläche legt niemand von Hand an**
+  (`refuseSurfaceScopeEntry`): kein neues Ziel, keine TCP-Weiterleitung, kein
+  Umzug hinein, auch nicht über Import, API oder MCP. Was schon darin liegt,
+  bleibt änderbar. Die Gruppenseite zeigt dort kein „Ziel anlegen“, und die
+  Dialoge bieten die Gruppe nicht an. Nur die Einrichtung legt dort an: sie ruft
+  die Vorabprüfung ohne `SurfaceProtection` auf.
 - **Der Ausweg** steht in jeder Meldung: unter „Allgemein" die Adresse von HAPM
   ändern. Danach trifft kein Ziel mehr die alte Adresse, und der Schutz greift
   dort nicht mehr. Die Einrichtung lässt sich nicht erneut öffnen und ist kein

@@ -39,6 +39,7 @@ import {
 import type { ChallengeChoice } from './challenge';
 import { createTranslator, msgid, type Translator } from '../i18n/translate';
 import type { Server } from '../types';
+import { getSettings } from '../settings';
 
 export interface ImportItem {
   key: string;
@@ -149,6 +150,9 @@ export async function runImport(
   const failed: string[] = [];
   const total = plan.items.length;
 
+  // Auch der Import legt nichts in die Gruppe der Oberfläche (`refuseSurfaceScopeEntry`).
+  const protection = { publicUrl: (await getSettings()).publicUrl };
+
   for (const [index, item] of plan.items.entries()) {
     const title = `${index + 1}/${total} ${item.title}`;
     try {
@@ -156,11 +160,11 @@ export async function runImport(
       let result: ProvisionResult;
       try {
         if (item.service) {
-          const input = await precheckCreate(server, { ...item.service, scope: plan.scope, id: '' }, challenge);
+          const input = await precheckCreate(server, { ...item.service, scope: plan.scope, id: '' }, challenge, protection);
           id = input.id;
           result = await createService(server, input, challenge, inner(title));
         } else if (item.stream) {
-          const input = await precheckStreamCreate(server, { ...item.stream, scope: plan.scope, id: '' });
+          const input = await precheckStreamCreate(server, { ...item.stream, scope: plan.scope, id: '' }, protection);
           id = input.id;
           result = await createStream(server, input, inner(title));
         } else {

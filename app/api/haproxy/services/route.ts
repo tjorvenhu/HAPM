@@ -232,11 +232,13 @@ export async function POST(request: Request) {
     // siehe `RunOptions.dnsHook`.
     const dnsHook = String(body.dnsHook ?? '').trim() || null;
     // Intern oder öffentlich: davon hängt ab, ob HTTP-01 überhaupt geht (`challenge.ts`).
-    const challenge = challengeFor(await getSettings(), dnsHook);
+    const settings = await getSettings();
+    const challenge = challengeFor(settings, dnsHook);
 
     let input;
     try {
-      input = await precheckCreate(server, draft, challenge);
+      // Mit der Adresse von HAPM: in die Gruppe der Oberfläche legt niemand von Hand an.
+      input = await precheckCreate(server, draft, challenge, { publicUrl: settings.publicUrl });
     } catch (err) {
       // Ein Namens- oder Domainkonflikt ist eine Auskunft an den Benutzer und
       // kein 500er.

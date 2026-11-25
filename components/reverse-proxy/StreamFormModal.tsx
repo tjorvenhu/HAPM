@@ -120,7 +120,6 @@ export default function StreamFormModal({
   /** Es gibt genau einen HAProxy. Die Kennung geht weiter im Rumpf mit, weil
    *  die Routen und die Historie sie tragen. */
   const serverId = edit?.proxy.$id ?? usable[0]?.$id ?? '';
-  const [scope, setScope] = useState<HaproxyScope>(edit?.stream.scope ?? defaultScope);
   const [port, setPort] = useState(edit?.stream.port ? String(edit.stream.port) : '');
   const savedTargets = useSavedTargets();
   const [servers, setServers] = useState<ServerRow[]>(
@@ -141,8 +140,17 @@ export default function StreamFormModal({
     edit?.stream.allowedSources ?? []
   );
 
+  /** Die Gruppe der Oberfläche steht nicht zur Wahl, außer der Eintrag liegt
+   *  schon darin (`refuseSurfaceScopeEntry`, dieselbe Regel wie die Route). */
+  const surfaceScope = proxies.find((p) => p.$id === serverId)?.surface?.scope?.toUpperCase() ?? null;
   const scopeOptions = (proxies.find((p) => p.$id === serverId)?.scopes ?? []).filter(
-    (s) => s.complete
+    (s) =>
+      s.complete &&
+      (surfaceScope === null || s.name.toUpperCase() !== surfaceScope || edit?.stream.scope?.toUpperCase() === surfaceScope)
+  );
+  const [scope, setScope] = useState<HaproxyScope>(
+    edit?.stream.scope ??
+      (scopeOptions.some((s) => s.name === defaultScope) ? defaultScope : (scopeOptions[0]?.name ?? defaultScope))
   );
 
   /** Ab dem zweiten Ziel wird verteilt, und erst dann bedeutet eine Gewichtung

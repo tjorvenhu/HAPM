@@ -10,6 +10,7 @@ import { startHaproxyRun } from '@/lib/haproxy/runner';
 import { HaproxyConfigError } from '@/lib/haproxy/config';
 import { readStreamInput, validateStreamInput } from '@/lib/haproxy/streams';
 import { LOCAL_SERVER_ID } from '@/lib/helpers';
+import { getSettings } from '@/lib/settings';
 
 interface Params {
   params: Promise<{ id: string }>;
@@ -43,7 +44,7 @@ export async function PATCH(request: Request, { params }: Params) {
     if (invalid) throw new ApiError(invalid);
 
     try {
-      await precheckStreamUpdate(server, id, input);
+      await precheckStreamUpdate(server, id, input, { publicUrl: (await getSettings()).publicUrl });
     } catch (err) {
       if (err instanceof HaproxyConfigError) throw new ApiError(err, 409);
       throw err;

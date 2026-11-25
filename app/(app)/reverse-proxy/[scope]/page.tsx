@@ -617,7 +617,8 @@ function ScopeView({ slug }: { slug: string }) {
    * sagen, statt den ganzen Knopf wegzunehmen. */
   const usable = proxies.filter((p) => !p.error && p.acmeReady);
   const reachable = proxies.filter((p) => !p.error);
-  const canCreate = !!page && reachable.length > 0;
+  // In der Gruppe der Oberfläche legt niemand von Hand an (`refuseSurfaceScopeEntry`).
+  const canCreate = !!page && reachable.length > 0 && !page.surface;
   /** Entfernen geht nur, solange nichts drinsteht — und nur bei einer Gruppe,
    *  die dieses Werkzeug angelegt hat (BEGIN- und END-Marker, siehe config.ts).
    *  Eine TCP-Weiterleitung zählt dabei mit: sie liegt im selben Marker-Block. */

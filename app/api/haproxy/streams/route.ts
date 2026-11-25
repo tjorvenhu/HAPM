@@ -8,6 +8,7 @@ import { startHaproxyRun } from '@/lib/haproxy/runner';
 import { HaproxyConfigError } from '@/lib/haproxy/config';
 import { readStreamInput, validateNewStream } from '@/lib/haproxy/streams';
 import { LOCAL_SERVER_ID } from '@/lib/helpers';
+import { getSettings } from '@/lib/settings';
 
 /**
  * TCP-Weiterleitungen: ein Port dieses Servers, durchgereicht an ein Ziel
@@ -83,7 +84,7 @@ export async function POST(request: Request) {
     // und wird hier vergeben, wo die Datei vorliegt.
     let input;
     try {
-      input = await precheckStreamCreate(server, draft);
+      input = await precheckStreamCreate(server, draft, { publicUrl: (await getSettings()).publicUrl });
     } catch (err) {
       if (err instanceof HaproxyConfigError) throw new ApiError(err, 409);
       throw err;

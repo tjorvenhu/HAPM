@@ -85,6 +85,33 @@ export function surfaceTarget(
  * wird (docs/i18n.md).
  */
 
+/**
+ * Die Gruppe der Oberfläche trägt nur das Ziel der Oberfläche. Ein weiteres
+ * Ziel oder eine TCP-Weiterleitung darin legt niemand von Hand an, und es zieht
+ * auch nichts dorthin um: die Gruppe lässt sich nicht entfernen, solange die
+ * Oberfläche darin liegt, und alles andere darin hinge an ihrem Schutz.
+ *
+ * `id` ist der Eintrag, um den es geht (`null` beim Anlegen), `currentScope`
+ * seine bisherige Gruppe. Was schon dort liegt, darf bleiben: ein Ziel, das
+ * jemand früher von Hand hineingelegt hat, soll sich weiter ändern lassen.
+ */
+export function refuseSurfaceScopeEntry(
+  surface: SurfaceTarget | null,
+  scope: string,
+  id: string | null,
+  currentScope: string | null
+): Message | null {
+  if (!surface || surface.scope === null) return null;
+  const target = surface.scope.toUpperCase();
+  if (scope.trim().toUpperCase() !== target) return null;
+  if (id !== null && id === surface.serviceId) return null;
+  if (currentScope !== null && currentScope.toUpperCase() === target) return null;
+  return msg(
+    'Die Gruppe {scope} gehört der Oberfläche von HAPM. Weitere Ziele und Weiterleitungen kommen in eine andere Gruppe.',
+    { scope: surface.scope }
+  );
+}
+
 /** Die Meldung, wenn dieses Ziel nicht entfernt werden darf, sonst `null`. */
 export function refuseSurfaceDelete(surface: SurfaceTarget | null, id: string): Message | null {
   if (!surface || surface.serviceId !== id) return null;

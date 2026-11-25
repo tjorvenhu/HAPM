@@ -327,7 +327,14 @@ wird parallel zum Lesen der Zone, eine gescheiterte Abfrage heißt unbekannt und
 nicht „kein Eintrag". Eine Wildcard wird nicht aufgelöst, sie hat keine eigene
 Adresse.
 
-Vier Zustände, und jeder sagt etwas anderes:
+**Löst die Domain schon auf, ohne in der Zone zu stehen, ist der Schalter aus.**
+Die Antwort kommt dann von woanders, meist vom DNS-Server im eigenen Netz, und
+die Domain ist absichtlich nur dort bekannt. Ein Eintrag in der angebundenen
+Zone machte sie im ganzen Internet auflösbar. Der Schalter lässt sich trotzdem
+einschalten, und die Zeile sagt genau das dazu (`resolvesElsewhere`,
+`dnsChosen` im Dialog).
+
+Fünf Zustände, und jeder sagt etwas anderes:
 
 | Was gefunden wird | Schalter | Grund |
 |---|---|---|
@@ -335,6 +342,7 @@ Vier Zustände, und jeder sagt etwas anderes:
 | ein anderer Eintrag | aus, gesperrt | wird nicht angefasst, Tooltip nennt Art und Wert |
 | die Zone selbst | aus, gesperrt | dort gehört ein A-Eintrag hin, beim Anbieter gepflegt |
 | nichts | frei, Vorgabe **an** | der Schalter erscheint nur für angebundene Zonen, und die bindet man an, damit genau das passiert |
+| nichts, aber die Domain löst schon auf | frei, Vorgabe **aus** | sie ist woanders eingetragen, meist intern; der Eintrag machte sie öffentlich |
 
 **Der Zustand hält fest, wer den Schalter AUSgeschaltet hat, nicht wer ihn angelassen
 hat** (`dnsWanted[domain] !== false`). Mit `false` als Vorgabe müsste ein Effekt den

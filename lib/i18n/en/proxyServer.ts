@@ -570,4 +570,6 @@ export const proxyServer: Dictionary = {
   'Farbschema des Besuchers': "Visitor's color scheme",
   'Hell': 'Light',
   'Dunkel': 'Dark',
+  'Die Gruppe {scope} gehört der Oberfläche von HAPM. Weitere Ziele und Weiterleitungen kommen in eine andere Gruppe.':
+    'The group {scope} belongs to the HAPM web interface. Put other targets and forwards into another group.',
 };

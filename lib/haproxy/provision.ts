@@ -127,6 +127,7 @@ import {
   refuseSurfaceDelete,
   refuseSurfaceUpdate,
   refuseSurfaceScopeRemoval,
+  refuseSurfaceScopeEntry,
   type SurfaceProtection,
 } from './protected';
 import type { Server, HaproxyPhase } from '../types';
@@ -1452,9 +1453,14 @@ function assertSurfaceKept(refusal: string | Message | null): void {
 export async function precheckCreate(
   server: Server,
   input: CreateServiceInput,
-  challenge: ChallengeChoice
+  challenge: ChallengeChoice,
+  /** Ohne Angabe keine Sperre der Gruppe der Oberfläche: nur die Einrichtung legt dort an. */
+  protection?: SurfaceProtection
 ): Promise<CreateServiceInput> {
   const probe = await readableProbe(server);
+  if (protection) {
+    assertSurfaceKept(refuseSurfaceScopeEntry(surfaceTarget(probe.services, protection), input.scope, null, null));
+  }
   await assertIssuable(await getSSHConfig(server), probe, input.domains, challenge);
   assertLockSupported(server, probe, input);
 
@@ -1490,6 +1496,9 @@ export async function precheckUpdate(
   if (!current) throw new ApiError(msg('Der Dienst "{id}" steht nicht in {file}.', { id: oldId, file: HAPROXY_CFG }), 404);
   assertSurfaceKept(
     refuseSurfaceUpdate(surfaceTarget(probe.services, protection), oldId, input.domains)
+  );
+  assertSurfaceKept(
+    refuseSurfaceScopeEntry(surfaceTarget(probe.services, protection), input.scope, oldId, current.scope)
   );
   if (!current.editable) {
     throw new ApiError(serviceNotEditable(oldId, current.extras));
@@ -1932,9 +1941,13 @@ function notRemovable(stream: HaproxyStream): Message {
  *  vergebene (`assignStreamId`). */
 export async function precheckStreamCreate(
   server: Server,
-  input: CreateStreamInput
+  input: CreateStreamInput,
+  protection?: SurfaceProtection
 ): Promise<CreateStreamInput> {
   const probe = await readableProbe(server);
+  if (protection) {
+    assertSurfaceKept(refuseSurfaceScopeEntry(surfaceTarget(probe.services, protection), input.scope, null, null));
+  }
   const assigned =
     input.id === ''
       ? { ...input, id: assignStreamId(probe.raw, input.port, currentlyReserved()) }
@@ -1957,12 +1970,18 @@ export async function precheckStreamCreate(
 export async function precheckStreamUpdate(
   server: Server,
   oldId: string,
-  input: CreateStreamInput
+  input: CreateStreamInput,
+  protection?: SurfaceProtection
 ): Promise<HaproxyStream> {
   const probe = await readableProbe(server);
   const current = probe.streams.find((s) => s.id === oldId);
   if (!current) {
     throw new ApiError(msg('Die TCP-Weiterleitung "{id}" steht nicht in {file}.', { id: oldId, file: HAPROXY_CFG }), 404);
+  }
+  if (protection) {
+    assertSurfaceKept(
+      refuseSurfaceScopeEntry(surfaceTarget(probe.services, protection), input.scope, null, current.scope)
+    );
   }
   if (!current.editable) throw new ApiError(notEditable(current));
 
