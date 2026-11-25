@@ -130,6 +130,7 @@ import {
   type SurfaceProtection,
 } from './protected';
 import type { Server, HaproxyPhase } from '../types';
+import { explainAcmeFailure } from './acme-errors';
 
 /**
  * HAProxy neu laden. Das Kommando kommt aus `bin/hapm-ctl.mjs`: es lädt über
@@ -954,10 +955,14 @@ async function issueAndDeploy(
   // 2 heißt bei acme.sh „das vorhandene Zertifikat ist noch gültig". Das ist
   // kein Fehlschlag, sondern der zweite Normalfall.
   if (issue.code !== 0 && issue.code !== 2) {
+    // Eine bekannte Ablehnung (Limit) zuerst in einem Satz, darunter die
+    // Ausgabe von acme.sh, die man beim Nachfragen braucht.
+    const output = issue.stderr || issue.stdout;
+    const explained = explainAcmeFailure(output);
     await steps.push({
       label: msgid('Zertifikat ausstellen'),
       ok: false,
-      detail: tail(issue.stderr || issue.stdout),
+      detail: explained ? `${explained}\n\n${tail(output)}` : tail(output),
     });
     return false;
   }
