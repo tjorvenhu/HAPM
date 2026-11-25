@@ -4,7 +4,9 @@
  * Läuft bei jedem Start von HAPM und tut nur, was fehlt: Verzeichnisse,
  * Fehlerseiten, ein Platzhalter-Zertifikat, die Grundkonfiguration und acme.sh.
  * Danach kann HAProxy starten, und in der Oberfläche lässt sich das erste Ziel
- * anlegen. Vorhandenes wird nie überschrieben.
+ * anlegen. Vorhandenes wird hier nie überschrieben. Danach zieht
+ * `followPagesAfterStart` die Fehlerseiten nach, die HAPM selbst geschrieben
+ * hat und die nach einem Update anders aussähen.
  *
  * Geschrieben wird hier direkt über `fs` und nicht über Kommandos: `/etc/haproxy`
  * ist ein Volume dieses Containers.
@@ -17,6 +19,8 @@ import { ERROR_DIR, renderBaseConfig } from './haproxy/base-config';
 import { errorFiles } from './haproxy/error-pages';
 import { defaultPageDesign, type PageDesign } from './haproxy/page-design';
 import { loadPageDesign } from './haproxy/page-design-store';
+import { rememberWrittenPages } from './haproxy/page-files';
+import { loadMailBranding } from './mail/branding';
 import { ensureAcme } from './acme';
 import { localExec } from './ssh';
 import { buildCommand } from './shell';
@@ -101,23 +105,56 @@ async function storedDesign(): Promise<{ design: PageDesign; note: string }> {
 function ensureErrorFiles(stored: { design: PageDesign; note: string }): {
   step: BootstrapStep;
   statuses: number[];
+  written: { path: string; content: string }[];
 } {
   const files = errorFiles(stored.design);
-  let written = 0;
+  const written: { path: string; content: string }[] = [];
   for (const file of files) {
     const target = path.posix.join(ERROR_DIR, `${file.status}.http`);
     if (fs.existsSync(target)) continue;
     fs.writeFileSync(target, file.content);
-    written++;
+    written.push({ path: target, content: file.content });
   }
   return {
     step: {
       label: msgid('Fehlerseiten'),
       ok: true,
-      detail: (written ? `${written} Fehlerseiten angelegt.` : msgid('Alle Fehlerseiten liegen vor.')) + stored.note,
+      detail:
+        (written.length ? `${written.length} Fehlerseiten angelegt.` : msgid('Alle Fehlerseiten liegen vor.')) +
+        stored.note,
     },
     statuses: files.map((file) => file.status),
+    written,
   };
+}
+
+/** Wie lange das Nachziehen nach dem Start wartet: HAProxy soll stehen, bevor es neu lädt. */
+const FOLLOW_DELAY_MS = 20_000;
+
+/**
+ * Die Fehlerseiten nachziehen, die HAPM selbst geschrieben hat und die nach
+ * einem Update anders aussähen (`followPageChanges`). Mit Abstand zum Start
+ * und ohne ihn aufzuhalten: beim allerersten `compose up` startet HAProxy erst,
+ * wenn HAPM bereit ist, und ein Reload davor scheiterte. Scheitert es trotzdem,
+ * stehen die Dateien wie vorher, und der nächste Start versucht es wieder.
+ */
+function followPagesAfterStart(): void {
+  setTimeout(() => {
+    void (async () => {
+      try {
+        const [{ followPageChanges }, { getProxyServer }, { systemActor }, { LOCAL_SERVER_ID }] = await Promise.all([
+          import('./haproxy/page-design-apply'),
+          import('./haproxy/provision'),
+          import('./audit'),
+          import('./helpers'),
+        ]);
+        await loadPageDesign();
+        await followPageChanges(await getProxyServer(LOCAL_SERVER_ID), systemActor(), 'Start');
+      } catch (err) {
+        console.error('[fehlerseiten] Nachziehen nach dem Start gescheitert:', err instanceof Error ? err.message : err);
+      }
+    })();
+  }, FOLLOW_DELAY_MS);
 }
 
 function ensureBaseConfig(errorStatuses: number[]): BootstrapStep {
@@ -158,6 +195,8 @@ export async function runBootstrap(acmeEmail: string | null): Promise<BootstrapS
   if (state.status === 'running') return state;
 
   const design = await storedDesign();
+  // Die Mails lesen die Darstellung nicht selbst: ihr Rahmen ist synchron.
+  await loadMailBranding().catch((err) => console.error('[bootstrap] Darstellung für die Mails nicht lesbar:', err));
 
   // Auf einem Entwicklungsrechner ohne Container gibt es nichts einzurichten.
   if (process.platform !== 'linux' || process.env.HAPM_BOOTSTRAP === '0') {
@@ -181,6 +220,7 @@ export async function runBootstrap(acmeEmail: string | null): Promise<BootstrapS
 
     const errors = ensureErrorFiles(design);
     add(errors.step);
+    await rememberWrittenPages(errors.written);
     add(await ensureFallbackCertificate());
     add(ensureBaseConfig(errors.statuses));
 
@@ -188,6 +228,7 @@ export async function runBootstrap(acmeEmail: string | null): Promise<BootstrapS
     add({ label: 'acme.sh', ok: acme.ok, detail: acme.detail });
 
     add(await ensureHaproxyRunning());
+    followPagesAfterStart();
   } catch (err) {
     add({ label: msgid('Einrichtung'), ok: false, detail: err instanceof Error ? err.message : String(err) });
   }

@@ -80,8 +80,10 @@ import {
   errorPageDigestCommand,
   errorPageWriteCommand,
   errorPageRestoreCommand,
+  followableErrorPages,
   type ErrorPageEntry,
 } from './error-pages';
+import { rememberWrittenPages, writtenPageDigests } from './page-files';
 import {
   addStream,
   removeStream,
@@ -2272,15 +2274,18 @@ export async function precheckDelete(
 const errorPageDigest = (content: string): string =>
   createHash('sha256').update(content, 'utf8').digest('hex');
 
-async function probeErrorPages(
+/** Die Einträge und die Prüfsumme jeder lesbaren Datei. */
+async function probeErrorFiles(
   ssh: Awaited<ReturnType<typeof getSSHConfig>>,
   config: string
-): Promise<ErrorPageEntry[]> {
+): Promise<{ entries: ErrorPageEntry[]; digests: Map<string, string> }> {
   const refs = parseErrorFiles(config);
   // Gelesen wird nur, was dieses Werkzeug auch anfassen würde. Ein Pfad
   // außerhalb von /etc/haproxy geht in kein Kommando, auch in kein lesendes.
   const paths = [...new Set(refs.map((ref) => ref.path))].filter(isManageableErrorFile);
-  if (paths.length === 0) return planErrorPages(refs, new Map(), new Map(), errorPageDigest);
+  if (paths.length === 0) {
+    return { entries: planErrorPages(refs, new Map(), new Map(), errorPageDigest), digests: new Map() };
+  }
 
   const res = await sshExec(
     ssh,
@@ -2288,13 +2293,30 @@ async function probeErrorPages(
     SHORT_MS
   );
   const [lines, sums] = splitSections(res.stdout, 2);
-  return planErrorPages(refs, parseFirstLines(lines), parseDigests(sums), errorPageDigest);
+  const digests = parseDigests(sums);
+  return { entries: planErrorPages(refs, parseFirstLines(lines), digests, errorPageDigest), digests };
+}
+
+async function probeErrorPages(
+  ssh: Awaited<ReturnType<typeof getSSHConfig>>,
+  config: string
+): Promise<ErrorPageEntry[]> {
+  return (await probeErrorFiles(ssh, config)).entries;
 }
 
 /** Welche Fehlerdateien die Maschine hat und in welchem Zustand sie sind. */
 export async function readErrorPages(server: Server): Promise<ErrorPageEntry[]> {
   const probe = await readableProbe(server);
   return probeErrorPages(await getSSHConfig(server), probe.raw);
+}
+
+export interface ErrorPagesUpdate {
+  steps: ProvisionStep[];
+  entries: ErrorPageEntry[];
+  /** Die Pfade, die neu geschrieben wurden und jetzt so stehen. */
+  written: string[];
+  /** Bei `onlyOwn`: Dateien, die abweichen, aber nicht von HAPM stammen. Sie blieben, wie sie sind. */
+  skipped: string[];
 }
 
 /**
@@ -2309,16 +2331,29 @@ export async function readErrorPages(server: Server): Promise<ErrorPageEntry[]> 
  * Zurück kommt neben den Schritten, was die Maschine DANACH über ihre Dateien
  * sagt, nicht was gerade geschickt wurde. Dieselbe Regel wie bei den
  * DNS-Zugangsdaten.
+ *
+ * `onlyOwn` ist das Nachziehen ohne Rückfrage (nach einem Update, einer
+ * geänderten Darstellung): geschrieben wird dann nur, was HAPM selbst dort
+ * hinterlassen hat (`isOwnErrorFile`). Eine Seite von Hand bleibt stehen und
+ * kommt in `skipped` zurück.
  */
 export async function updateErrorPages(
-  server: Server
-): Promise<{ steps: ProvisionStep[]; entries: ErrorPageEntry[] }> {
+  server: Server,
+  options: { onlyOwn?: boolean } = {}
+): Promise<ErrorPagesUpdate> {
   return withProxyLock(server.$id, async () => {
     const steps: ProvisionStep[] = [];
     const ssh = await getSSHConfig(server);
     const probe = await readableProbe(server);
-    const before = await probeErrorPages(ssh, probe.raw);
-    const targets = writableErrorPages(before);
+    const { entries: before, digests } = await probeErrorFiles(ssh, probe.raw);
+    let targets = writableErrorPages(before);
+    let skipped: string[] = [];
+
+    if (options.onlyOwn && targets.length > 0) {
+      const follow = followableErrorPages(before, digests, await writtenPageDigests());
+      skipped = follow.skipped.map((entry) => entry.path);
+      targets = follow.targets;
+    }
 
     if (targets.length === 0) {
       steps.push({
@@ -2326,8 +2361,9 @@ export async function updateErrorPages(
         ok: true,
         detail: msgid('Keine Fehlerdatei weicht von der Vorlage ab.'),
       });
-      return { steps, entries: before };
+      return { steps, entries: before, written: [], skipped };
     }
+    const contents = new Map(targets.map((target) => [target.path, renderErrorFile(target.status!)]));
 
     const written: string[] = [];
     const restore = async () => {
@@ -2337,11 +2373,7 @@ export async function updateErrorPages(
     };
 
     for (const target of targets) {
-      const write = await sshExec(
-        ssh,
-        errorPageWriteCommand(target.path, renderErrorFile(target.status!)),
-        SHORT_MS
-      );
+      const write = await sshExec(ssh, errorPageWriteCommand(target.path, contents.get(target.path)!), SHORT_MS);
       if (write.code !== 0) {
         // Auch die gerade angefangene Datei: `tee` kann sie halb geschrieben haben.
         written.push(target.path);
@@ -2351,7 +2383,7 @@ export async function updateErrorPages(
           ok: false,
           detail: `${tail(write.stderr)}. Alle Fehlerdateien sind wieder auf dem Stand von vorher.`,
         });
-        return { steps, entries: await probeErrorPages(ssh, probe.raw) };
+        return { steps, entries: await probeErrorPages(ssh, probe.raw), written: [], skipped };
       }
       written.push(target.path);
     }
@@ -2369,7 +2401,7 @@ export async function updateErrorPages(
         ok: false,
         detail: `${tail(check.stderr || check.stdout)}. Alle Fehlerdateien sind wieder auf dem Stand von vorher.`,
       });
-      return { steps, entries: await probeErrorPages(ssh, probe.raw) };
+      return { steps, entries: await probeErrorPages(ssh, probe.raw), written: [], skipped };
     }
     steps.push({ label: msgid('Konfiguration geprüft'), ok: true });
 
@@ -2382,10 +2414,11 @@ export async function updateErrorPages(
         ok: false,
         detail: `${tail(reload.stderr || reload.stdout)}. Alle Fehlerdateien sind wieder auf dem Stand von vorher.`,
       });
-      return { steps, entries: await probeErrorPages(ssh, probe.raw) };
+      return { steps, entries: await probeErrorPages(ssh, probe.raw), written: [], skipped };
     }
     steps.push({ label: msgid('HAProxy neu geladen'), ok: true });
+    await rememberWrittenPages(written.map((path) => ({ path, content: contents.get(path)! })));
 
-    return { steps, entries: await probeErrorPages(ssh, probe.raw) };
+    return { steps, entries: await probeErrorPages(ssh, probe.raw), written, skipped };
   });
 }

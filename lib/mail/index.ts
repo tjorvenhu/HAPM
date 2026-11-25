@@ -12,8 +12,11 @@ import path from 'node:path';
 import nodemailer from 'nodemailer';
 import { decrypt } from '../crypto';
 import { getSettings } from '../settings';
-import { MAIL_LOGO_CID, MAIL_LOGO_DARK_CID } from './layout';
+import { MAIL_BRAND_LOGO_CID, MAIL_BRAND_LOGO_DARK_CID, MAIL_LOGO_CID, MAIL_LOGO_DARK_CID } from './layout';
 import { isMailConfigured, smtpConfig, smtpError, transportOptions } from './config';
+import { knownMailBranding } from './installation';
+import { loadBrandingImage } from '../branding/store';
+import type { BrandingImageSlot } from '../branding/branding';
 
 export { MailError } from './config';
 
@@ -32,6 +35,7 @@ interface Attachment {
   filename: string;
   content: Buffer;
   cid: string;
+  contentType?: string;
 }
 
 const LOGOS = [
@@ -62,9 +66,39 @@ function logoAttachments(html: string): Attachment[] {
   return logoCache.filter((logo) => html.includes(`cid:${logo.cid}`));
 }
 
+const BRAND_LOGOS: { slot: BrandingImageSlot; cid: string; name: string }[] = [
+  { slot: 'logo', cid: MAIL_BRAND_LOGO_CID, name: 'logo' },
+  { slot: 'logoDark', cid: MAIL_BRAND_LOGO_DARK_CID, name: 'logo-dark' },
+];
+
+const EXTENSIONS: Record<string, string> = { 'image/png': 'png', 'image/webp': 'webp', 'image/svg+xml': 'svg' };
+
+/**
+ * Das eigene Logo aus der Darstellung als Anhang, wenn der Rahmen darauf
+ * verweist (`lib/mail/branding.ts`: warum Anhang und nicht Adresse). Gelesen
+ * bei jedem Versand aus der Datenbank: ein Speicher im Prozess zeigte nach dem
+ * Ändern das alte. Fehlt das Bild, geht die Mail ohne es raus.
+ */
+async function brandLogoAttachments(html: string): Promise<Attachment[]> {
+  const out: Attachment[] = [];
+  for (const logo of BRAND_LOGOS) {
+    if (!html.includes(`cid:${logo.cid}`)) continue;
+    const image = await loadBrandingImage(logo.slot);
+    if (!image) continue;
+    out.push({
+      filename: `${logo.name}.${EXTENSIONS[image.mime] ?? 'img'}`,
+      content: Buffer.from(image.data, 'base64'),
+      cid: logo.cid,
+      contentType: image.mime,
+    });
+  }
+  return out;
+}
+
 /** Verschickt eine Mail. Wirft `MailError`, wenn nichts eingerichtet ist oder der Server ablehnt. */
 export async function sendMail(mail: OutgoingMail): Promise<void> {
-  const config = smtpConfig(await getSettings(), decrypt);
+  // Ohne eigenen Namen im Absender steht dort der Name aus der Darstellung.
+  const config = smtpConfig(await getSettings(), decrypt, knownMailBranding()?.name);
   const transport = nodemailer.createTransport(transportOptions(config));
   try {
     await transport.sendMail({
@@ -73,7 +107,7 @@ export async function sendMail(mail: OutgoingMail): Promise<void> {
       subject: mail.subject,
       text: mail.text,
       html: mail.html,
-      attachments: logoAttachments(mail.html),
+      attachments: [...logoAttachments(mail.html), ...(await brandLogoAttachments(mail.html))],
     });
   } catch (err) {
     throw smtpError(err, config);

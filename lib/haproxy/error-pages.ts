@@ -42,12 +42,15 @@
  * echtes HAProxy eine so erzeugte Datei ausliefern.
  */
 
-import { ERROR_PAGE_STATUSES, ERROR_PAGE_TEXTS, renderErrorPage } from '@/ui/static/page';
+import { ERROR_PAGE_STATUSES, ERROR_PAGE_TEXTS, renderErrorPage, type StaticTheme } from '@/ui/static/page';
 import { DEFAULT_LOCALE, msgid, translate, type Locale } from '@/lib/i18n';
 import { buildCommand, withStdin } from '../shell';
 import { clean, HAPROXY_CFG } from './config';
-import { activeDesign, builtInDesign, designTheme, PAGE_MAX_BYTES, type PageDesign } from './page-design';
+import { activeDesign, builtInDesign, PAGE_MAX_BYTES, type PageDesign } from './page-design';
+import { activeBrand, type PageBrand } from './page-brand';
+import { pageTheme } from './page-theme';
 import { renderCustomPage } from './custom-page';
+import { isFormerStandardPage } from './page-history';
 
 /** Eine `errorfile`-Zeile der Konfiguration. */
 export interface ErrorFileRef {
@@ -176,10 +179,20 @@ export function errorPageStatuses(): number[] {
  * sie beim Laden aus, und eine hingeschriebene Zahl wäre die eine Stelle, an
  * der die Datei nach der nächsten Textänderung nicht mehr stimmt.
  *
- * Ohne `design` gilt das gespeicherte (`activeDesign`): so vergleicht
- * `planErrorPages` die Datei auf der Platte mit dem, was jetzt entstünde.
+ * Ohne `design` gilt das gespeicherte (`activeDesign`), ohne `brand` die
+ * Darstellung, die gerade gilt (`activeBrand`): so vergleicht `planErrorPages`
+ * die Datei auf der Platte mit dem, was jetzt entstünde.
  */
-export function renderErrorFile(status: number, design: PageDesign = activeDesign()): string {
+export function renderErrorFile(
+  status: number,
+  design: PageDesign = activeDesign(),
+  brand: PageBrand | null = activeBrand()
+): string {
+  return errorFileWithTheme(status, design, pageTheme(design, brand));
+}
+
+/** Dieselbe Datei mit einem fertigen Aussehen. Für `page-theme.ts`, das daran misst. */
+export function errorFileWithTheme(status: number, design: PageDesign, theme: StaticTheme): string {
   if (!hasErrorPage(status)) throw new Error(`Für den Status ${status} gibt es keine Fehlerseite.`);
   return (
     `HTTP/1.1 ${status} ${REASONS[status]}\r\n` +
@@ -187,27 +200,30 @@ export function renderErrorFile(status: number, design: PageDesign = activeDesig
     'Connection: close\r\n' +
     'Content-Type: text/html; charset=utf-8\r\n' +
     '\r\n' +
-    errorPageDocument(status, design)
+    errorPageDocument(status, design, theme)
   );
 }
 
-function errorPageDocument(status: number, design: PageDesign): string {
-  // Die eigene Datei geht für jeden Status unverändert hinaus.
+function errorPageDocument(status: number, design: PageDesign, theme: StaticTheme): string {
+  // Die eigene Datei geht für jeden Status unverändert hinaus, ohne Darstellung.
   if (design.mode === 'custom') return renderCustomPage(design.custom);
   const built = builtInDesign(design);
   return renderErrorPage(
     status,
     { ...proxyTexts(status, built.locale), ...(built.errors[status] ?? {}), locale: built.locale },
-    designTheme(built)
+    theme
   );
 }
 
 /** Alle Fehlerdateien, die HAPM schreiben kann. Für den ersten Start, für
  *  Tests und für die Prüfung gegen ein echtes HAProxy. */
-export function errorFiles(design: PageDesign = activeDesign()): { status: number; content: string }[] {
+export function errorFiles(
+  design: PageDesign = activeDesign(),
+  brand: PageBrand | null = activeBrand()
+): { status: number; content: string }[] {
   return errorPageStatuses().map((status) => ({
     status,
-    content: renderErrorFile(status, design),
+    content: renderErrorFile(status, design, brand),
   }));
 }
 
@@ -277,6 +293,37 @@ export function planErrorPages(
 /** Die Einträge, die ein Schreibvorgang anfasst. */
 export function writableErrorPages(entries: ErrorPageEntry[]): ErrorPageEntry[] {
   return entries.filter((entry) => entry.state === 'other');
+}
+
+/**
+ * Ob HAPM eine Datei ohne Rückfrage ersetzen darf: nach einem Update, einer
+ * geänderten Darstellung oder beim Start.
+ *
+ * `digest` ist die Prüfsumme der Datei auf der Platte, `written` die dessen,
+ * was HAPM zuletzt unter diesem Pfad geschrieben hat (Collection `page_files`).
+ * Gibt es diesen Eintrag, entscheidet nur er: jede Abweichung davon hat jemand
+ * anderes geschrieben, und eine Seite von Hand wird nicht ohne Rückfrage
+ * ersetzt. Ohne Eintrag (geschrieben vor dieser Fassung) gilt nur eine Datei,
+ * die Byte für Byte eine Standardseite von HAPM ist (`page-history.ts`).
+ */
+export function isOwnErrorFile(digest: string | undefined, written: string | undefined): boolean {
+  if (!digest) return false;
+  return written !== undefined ? digest === written : isFormerStandardPage(digest);
+}
+
+/**
+ * Was das Nachziehen ohne Rückfrage schreibt (`targets`) und was es stehen
+ * lässt, weil es eine Seite von Hand ist (`skipped`). Nur unter den Dateien,
+ * die ein Schreibvorgang überhaupt anfasst (`writableErrorPages`).
+ */
+export function followableErrorPages(
+  entries: ErrorPageEntry[],
+  digests: Map<string, string>,
+  written: Map<string, string>
+): { targets: ErrorPageEntry[]; skipped: ErrorPageEntry[] } {
+  const writable = writableErrorPages(entries);
+  const targets = writable.filter((entry) => isOwnErrorFile(digests.get(entry.path), written.get(entry.path)));
+  return { targets, skipped: writable.filter((entry) => !targets.includes(entry)) };
 }
 
 /* ── Kommandos ──

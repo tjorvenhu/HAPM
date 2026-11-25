@@ -72,8 +72,10 @@ export interface StaticTheme {
   /**
    * `undefined`: das Logo von HAPM. `null`: keines. Sonst ein Bild als Data-URI. Es
    * steht in einem `<img>`: ein SVG führt dort kein Skript aus und lädt nichts nach.
+   * `darkSrc` ist die Fassung für dunkle Flächen, nur auf einer Fehlerseite, die hell
+   * und dunkel dem System folgt. `alt` gilt ohne Schriftzug daneben, Vorgabe „Logo“.
    */
-  logo?: { src: string } | null
+  logo?: { src: string; darkSrc?: string; alt?: string } | null
   /** Schriftzug neben dem Logo. */
   brand?: string
   /** Kleine Zeile am Fuß, etwa ein Kontakt. */
@@ -220,18 +222,31 @@ function staticStyle(theme: StaticTheme): string {
 }
 
 /** Nur ein eingebettetes Bild: alles andere wäre eine zweite Anfrage an eine fremde Stelle. */
-function themeLogoSrc(theme: StaticTheme): string | null {
-  const src = theme.logo?.src
+function embeddedImage(src: unknown): string | null {
   return typeof src === "string" && /^data:image\/(?:svg\+xml|png|jpeg|webp)[;,]/.test(src) ? src : null
 }
 
+function themeLogoSrc(theme: StaticTheme): string | null {
+  return embeddedImage(theme.logo?.src)
+}
+
+/** Die Fassung für dunkle Flächen, nur wo die Seite hell und dunkel kennt. */
+function themeLogoDarkSrc(theme: StaticTheme, adaptive: boolean): string | null {
+  return adaptive && themeLogoSrc(theme) ? embeddedImage(theme.logo?.darkSrc) : null
+}
+
 /** Das Logo einer Seite: das von HAPM, ein eigenes Bild oder nichts. */
-function themeLogo(theme: StaticTheme, hidden: boolean): string {
+function themeLogo(theme: StaticTheme, hidden: boolean, adaptive = false): string {
   if (hidden || theme.logo === null) return ""
   if (theme.logo === undefined) return STATIC_LOGO_SVG
   const src = themeLogoSrc(theme)
+  if (!src) return ""
   // Steht der Schriftzug daneben, ist das Bild Schmuck und wird nicht vorgelesen.
-  return src ? `<img src="${escapeHtml(src)}" alt="${theme.brand ? "" : "Logo"}">` : ""
+  const alt = escapeHtml(theme.brand ? "" : (theme.logo.alt ?? "Logo"))
+  const dark = themeLogoDarkSrc(theme, adaptive)
+  if (!dark) return `<img src="${escapeHtml(src)}" alt="${alt}">`
+  // Beide Bilder stehen in der Seite, CSS zeigt eines: nachladen kann die Seite nichts.
+  return `<img class="ll" src="${escapeHtml(src)}" alt="${alt}"><img class="ld" src="${escapeHtml(dark)}" alt="${alt}">`
 }
 
 export interface StaticPage {
@@ -368,6 +383,11 @@ const SITE_DARK = [
   "--glow:rgba(92,197,168,.10)",
 ].join(";")
 
+/** Ob die Fehlerseite hell und dunkel dem System folgt: nur ohne eigene Farben. */
+function siteAdaptive(theme: StaticTheme): boolean {
+  return !isHexColor(theme.accent) && !isHexColor(theme.background) && !isHexColor(theme.text)
+}
+
 function siteStyle(theme: StaticTheme): string {
   const accent = accentColors(theme, { accent: "#1a5c4c", accentHover: "#237a65", onAccent: "#fff" })
   const customAccent = isHexColor(theme.accent)
@@ -392,7 +412,7 @@ function siteStyle(theme: StaticTheme): string {
     `--accent-text:${accentText}`,
     `--glow:${customAccent || custom ? rgba(accent.accent, ".08") : "rgba(26,92,76,.06)"}`,
   ].join(";")
-  const adaptive = !custom && !customAccent
+  const adaptive = siteAdaptive(theme)
   // Das Logo von HAPM ist dunkelgrün gezeichnet. Auf dunklem Grund werden Schriftzug
   // und dunkle Fläche hell, über CSS: das schlägt die Farbe im Attribut.
   const lightLogo = '.logo path[fill="#042d20"]{fill:#e6ece9}.logo path[fill="#044b39"]{fill:#4fae93}'
@@ -437,6 +457,9 @@ function siteStyle(theme: StaticTheme): string {
     adaptive ? `@media(prefers-color-scheme:dark){:root{${SITE_DARK}}${lightLogo}}` : "",
     theme.logo === undefined && luminance(bg) <= 0.4 ? lightLogo : "",
     themeLogoSrc(theme) ? ".logo img{display:block;width:auto;height:30px;max-width:200px}" : "",
+    themeLogoDarkSrc(theme, adaptive)
+      ? ".logo .ld{display:none}@media(prefers-color-scheme:dark){.logo .ll{display:none}.logo .ld{display:block}}"
+      : "",
     theme.brand ? ".logo span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" : "",
     theme.footer ? ".foot{margin-top:2.5rem;color:var(--text-secondary);font-size:.8125rem;line-height:1.5}.desc+.foot{margin-top:0}" : "",
   ].join("")
@@ -579,7 +602,7 @@ export function renderErrorPage(
         ? `<a class="btn" href="/">${escapeHtml(t("Zur Startseite"))}${ARROW}</a>`
         : ""
   const logo =
-    themeLogo(theme, override.logo === false) +
+    themeLogo(theme, override.logo === false, siteAdaptive(theme)) +
     (theme.brand ? `<span>${escapeHtml(theme.brand)}</span>` : "")
 
   return (

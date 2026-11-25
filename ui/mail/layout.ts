@@ -42,11 +42,59 @@ export interface MailSender {
   reason?: string
   /** Sprache der Mail. Vorgabe `de`. */
   locale?: Locale
+  /** Eigenes Aussehen der Installation. Ohne es entsteht Byte für Byte die Mail von HAPM. */
+  brand?: MailBrand
+}
+
+/**
+ * Das eigene Aussehen: Name, Logo und Akzentfarbe aus der Darstellung.
+ *
+ * Der Name steht fett im Fuß und als Alternativtext am Logo. Der Satz zur
+ * Herkunft („Diese Mail kommt von der HAPM-Installation …") bleibt bei
+ * `MailSender.name`: er meint die Software.
+ */
+export interface MailBrand {
+  name?: string
+  /** Ein eigenes Logo, als Anhang wie das von HAPM (`MAIL_BRAND_LOGO_CID`). */
+  logo?: MailBrandLogo
+  /** Farben, die das Grün ersetzen. Fertig berechnet, siehe `MailAccent`. */
+  accent?: MailAccent
+}
+
+export interface MailBrandLogo {
+  /** Anzeigegröße in Pixeln. */
+  width: number
+  height: number
+  /** Ob eine helle Fassung für dunkles Design anhängt (`MAIL_BRAND_LOGO_DARK_CID`). */
+  dark: boolean
+}
+
+/**
+ * Die Farben, die an die Stelle des Grüns treten. Der Rahmen rechnet nicht,
+ * er setzt ein: berechnet werden sie in `lib/mail/layout.ts` mit derselben
+ * Regel wie in der Oberfläche (weiße Schrift auf dem Akzent mindestens 4,5:1).
+ */
+export interface MailAccent {
+  /** Knöpfe, Links, Stichwort. Weiß darauf und der Akzent auf Weiß je mindestens 4,5:1. */
+  accent: string
+  /** Fläche eines Hinweises im Akzent. */
+  accentTint: string
+  /** Schrift auf dieser Fläche. */
+  accentTintText: string
+  /** Knopf in dunklem Design, weiße Schrift. */
+  darkAccent: string
+  /** Akzent als Schrift auf dunklem Grund. */
+  darkAccentText: string
+  /** Fläche eines Hinweises in dunklem Design. */
+  darkAccentTint: string
 }
 
 /** Verweise auf die beiden Logo-Anhänge, die der Versand an jede Mail hängt. */
 export const MAIL_LOGO_CID = "hapm-logo"
 export const MAIL_LOGO_DARK_CID = "hapm-logo-dark"
+/** Dasselbe für ein eigenes Logo aus der Darstellung. */
+export const MAIL_BRAND_LOGO_CID = "brand-logo"
+export const MAIL_BRAND_LOGO_DARK_CID = "brand-logo-dark"
 
 /**
  * Anzeigegröße des Logos (Dateien unter `public/email/`, 228 × 64, erzeugt mit
@@ -446,7 +494,7 @@ function footer(sender: MailSender, note?: string): string {
   }
   return [
     note ? p(note.replace(/<a href="([^"]*)">/g, `<a href="$1" ${link}>`), "0 0 16px") : "",
-    `<p class="v-text" style="margin:0 0 4px;${type(14, 22)};font-weight:600;color:${light.text}">${escapeHtml(sender.name)}</p>`,
+    `<p class="v-text" style="margin:0 0 4px;${type(14, 22)};font-weight:600;color:${light.text}">${escapeHtml(sender.brand?.name || sender.name)}</p>`,
     p(lines.join("<br>"), "0"),
   ].join("")
 }
@@ -520,14 +568,22 @@ export function renderMailHtml(frame: MailFrame, sender: MailSender): string {
   }
 
   // Die Farbe am Bild gilt dem Alternativtext, wenn Bilder blockiert sind.
+  const own = sender.brand?.logo
+  const size = own ?? LOGO_SIZE
+  const alt = escapeHtml(sender.brand?.name || sender.name)
   const logoImg = (cid: string, cls: string, color: string) =>
-    `<img${cls ? ` class="${cls}"` : ""} src="cid:${cid}" width="${LOGO_SIZE.width}" height="${LOGO_SIZE.height}" alt="${escapeHtml(sender.name)}" style="display:block;border:0;outline:none;text-decoration:none;width:${LOGO_SIZE.width}px;height:${LOGO_SIZE.height}px;${type(20, LOGO_SIZE.height)};font-weight:600;color:${color}">`
-  const logo = [
-    logoImg(MAIL_LOGO_CID, "v-logo-light", light.text),
-    `<!--[if !mso]><!--><div class="v-logo-dark" style="display:none;max-height:0;overflow:hidden">${logoImg(MAIL_LOGO_DARK_CID, "", dark.text)}</div><!--<![endif]-->`,
-  ].join("")
+    `<img${cls ? ` class="${cls}"` : ""} src="cid:${cid}" width="${size.width}" height="${size.height}" alt="${alt}" style="display:block;border:0;outline:none;text-decoration:none;width:${size.width}px;height:${size.height}px;${type(20, size.height)};font-weight:600;color:${color}">`
+  const lightCid = own ? MAIL_BRAND_LOGO_CID : MAIL_LOGO_CID
+  // Ein eigenes Logo ohne helle Fassung steht auch in dunklem Design: ein weißes zu raten ginge schief.
+  const darkCid = own ? (own.dark ? MAIL_BRAND_LOGO_DARK_CID : null) : MAIL_LOGO_DARK_CID
+  const logo = darkCid
+    ? [
+        logoImg(lightCid, "v-logo-light", light.text),
+        `<!--[if !mso]><!--><div class="v-logo-dark" style="display:none;max-height:0;overflow:hidden">${logoImg(darkCid, "", dark.text)}</div><!--<![endif]-->`,
+      ].join("")
+    : logoImg(lightCid, "", light.text)
 
-  return [
+  const html = [
     "<!doctype html>",
     `<html lang="${locale}" dir="ltr" xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">`,
     "<head>",
@@ -567,6 +623,33 @@ export function renderMailHtml(frame: MailFrame, sender: MailSender): string {
     "</body>",
     "</html>",
   ].join("\n")
+  return sender.brand?.accent ? withAccent(html, sender.brand.accent) : html
+}
+
+/**
+ * Das Grün durch die Farben der Darstellung ersetzen.
+ *
+ * Die Bausteine (`mailLink`, `mailButtons`, `mailNote` …) entstehen vor dem
+ * Rahmen und wissen nichts vom Absender: sie schreiben die Farben von HAPM als
+ * feste Werte in `style`, `bgcolor` und `fillcolor`. Statt jedem Baustein den
+ * Absender mitzugeben, tauscht der Rahmen diese Werte am Ende, und zwar nur
+ * dort, wo sie als Wert stehen (`:#…` und `="#…"`): ein Text in der Mail, der
+ * zufällig einen Farbwert nennt, bleibt. Die getauschten Werte kommen
+ * ausschließlich in den Akzentfarben vor.
+ */
+function withAccent(html: string, accent: MailAccent): string {
+  const swaps: [string, string][] = [
+    [light.accent, accent.accent],
+    [light.accentTint, accent.accentTint],
+    [light.accentTintText, accent.accentTintText],
+    [dark.accent, accent.darkAccent],
+    [dark.accentText, accent.darkAccentText],
+    [dark.accentTint, accent.darkAccentTint],
+  ]
+  return swaps.reduce(
+    (out, [from, to]) => out.split(`:${from}`).join(`:${to}`).split(`="${from}"`).join(`="${to}"`),
+    html,
+  )
 }
 
 /* ── Text-Alternative ──────────────────────────────────────────────────── */

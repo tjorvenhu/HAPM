@@ -23,6 +23,7 @@ import {
   base64ToBytes,
   bytesToBase64,
   defaultPageDesign,
+  builtInDesign,
   isDefaultDesign,
   parsePageDesign,
   sniffLogoType,
@@ -48,6 +49,8 @@ import {
   type DesignPage,
 } from '@/lib/haproxy/design-pages';
 import { defaultErrorPageText } from '@/lib/haproxy/error-pages';
+import { brandedTheme, usesBrandLogo, type PageBrand } from '@/lib/haproxy/page-brand';
+import { brandLogoFit } from '@/lib/haproxy/page-theme';
 import { lockPageDefaults } from '@/lib/haproxy/lock-page';
 import type { ErrorPageEntry } from '@/lib/haproxy/error-pages';
 import type { ProvisionStep } from '@/lib/haproxy/provision';
@@ -236,6 +239,8 @@ export default function ErrorPagesDesignPage() {
   const number = (value: number) => formatNumber(locale, value);
 
   const [saved, setSaved] = useState<PageDesign | null>(null);
+  /** Logo, Name und Farbe aus der Darstellung. Die Vorschau rechnet damit wie der Server. */
+  const [brand, setBrand] = useState<PageBrand | null>(null);
   /** Erst beim Ändern belegt: ein Nachladen überschreibt sonst, was jemand tippt. */
   const [draft, setDraft] = useState<PageDesign | null>(null);
   const [row, setRow] = useState<ErrorPagesRow | null>(null);
@@ -253,6 +258,7 @@ export default function ErrorPagesDesignPage() {
       const data = await res.json();
       if (!data.success) throw new Error(data.error || t('Das Design ließ sich nicht laden.'));
       setSaved(data.data.design as PageDesign);
+      setBrand((data.data.brand ?? null) as PageBrand | null);
       setLoadError('');
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : t('Das Design ließ sich nicht laden.'));
@@ -292,9 +298,56 @@ export default function ErrorPagesDesignPage() {
   const parsed = useMemo(() => (current ? parsePageDesign(current, locale) : null), [current, locale]);
   const preview = useMemo(() => (current ? previewable(current) : defaultPageDesign()), [current]);
   const problem =
-    parsed && !parsed.ok ? parsed.error : parsed?.ok ? designSizeError(parsed.design, locale) : null;
+    parsed && !parsed.ok ? parsed.error : parsed?.ok ? designSizeError(parsed.design, locale, brand) : null;
 
   const page = DESIGN_PAGES.find((entry) => entry.id === pageId) ?? DESIGN_PAGES[0];
+
+  /**
+   * Was die Seiten aus der Darstellung übernehmen, und was davon nicht passt.
+   * Ein Logo, das nicht hineinpasst, wird nicht still weggelassen: hier steht,
+   * was stattdessen kommt.
+   */
+  const brandNotes = useMemo(() => {
+    const notes: { text: string; tone: 'info' | 'warning'; link?: boolean }[] = [];
+    if (!brand) return notes;
+    notes.push({
+      tone: 'info',
+      link: true,
+      text:
+        preview.mode === 'custom'
+          ? t('Die eigene HTML-Datei bleibt, wie sie ist. Die Passwortabfrage zeigt Logo, Name und Akzentfarbe aus der Darstellung.')
+          : preview.mode === 'designed'
+            ? t('Was hier leer bleibt, kommt aus der Darstellung: Logo, Name und Akzentfarbe.')
+            : t('Die Seiten zeigen Logo, Name und Akzentfarbe aus der Darstellung.'),
+    });
+    if (!usesBrandLogo(builtInDesign(preview), brand)) return notes;
+    const fit = brandLogoFit(preview, brand);
+    if (brand.logoTooLarge || fit === 'name') {
+      const max = number(PAGE_MAX_BYTES);
+      notes.push({
+        tone: 'warning',
+        text: brand.logoTooLarge
+          ? brand.name
+            ? t('Das Logo aus der Darstellung ist allein größer als eine ganze Seite ({max} Bytes). Statt seiner steht der Name.', { max })
+            : t('Das Logo aus der Darstellung ist allein größer als eine ganze Seite ({max} Bytes). Die Seiten zeigen deshalb kein Logo, und einen Namen gibt es in der Darstellung nicht.', { max })
+          : brand.name
+            ? t('Das Logo aus der Darstellung passt mit den jetzigen Texten nicht in die Seiten, die höchstens {max} Bytes haben dürfen. Statt seiner steht der Name.', { max })
+            : t('Das Logo aus der Darstellung passt mit den jetzigen Texten nicht in die Seiten, die höchstens {max} Bytes haben dürfen. Die Seiten zeigen deshalb kein Logo, und einen Namen gibt es in der Darstellung nicht.', { max }),
+      });
+    } else if (fit === 'light' && brand.logoDark && preview.mode !== 'custom') {
+      // Die helle Fassung braucht nur eine Fehlerseite, die hell und dunkel kennt.
+      const theme = brandedTheme(builtInDesign(preview), brand, 'both');
+      if (!theme.accent && !theme.background && !theme.text) {
+        notes.push({
+          tone: 'warning',
+          text: t('Die helle Fassung des Logos passt nicht zusätzlich in die Seiten. Im dunklen Modus steht deshalb das Logo selbst.'),
+        });
+      }
+    }
+    return notes;
+    // `number` hängt nur an `locale`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brand, preview, t, locale]);
 
   function edit(patch: Partial<PageDesign>) {
     if (!current) return;
@@ -363,7 +416,7 @@ export default function ErrorPagesDesignPage() {
         title: t('Logo zu groß'),
         message: t(
           'Die Datei hat {size} Bytes. Mit den jetzigen Texten passt ein Logo bis {budget} Bytes. Bitte wählen Sie eine kleinere Datei, etwa ein SVG.',
-          { size: number(file.size), budget: number(logoByteBudget(preview)) }
+          { size: number(file.size), budget: number(logoByteBudget(preview, brand)) }
         ),
       });
       return;
@@ -379,7 +432,7 @@ export default function ErrorPagesDesignPage() {
       return;
     }
     const logo = { kind: 'custom' as const, mime, data: bytesToBase64(bytes) };
-    const tooLarge = designSizeError({ ...preview, logo }, locale);
+    const tooLarge = designSizeError({ ...preview, logo }, locale, brand);
     if (tooLarge) {
       notify({ variant: 'error', title: t('Logo zu groß'), message: tooLarge });
       return;
@@ -596,6 +649,15 @@ export default function ErrorPagesDesignPage() {
                 ))}
               </div>
 
+              {brandNotes.map((note) => (
+                <div key={note.text} className={`alert ${note.tone === 'warning' ? 'alert-warning' : 'alert-info'}`}>
+                  <span>
+                    {note.text}{' '}
+                    {note.link && <Link href="/system/darstellung">{t('Zur Darstellung')}</Link>}
+                  </span>
+                </div>
+              ))}
+
               <div className="form-group">
                 <div className="form-label-row">
                   <label className="form-label" htmlFor="design-locale">
@@ -670,7 +732,11 @@ export default function ErrorPagesDesignPage() {
                     </span>
                     <div>
                       <div className="form-section-title">{t('Farben')}</div>
-                      <div className="form-section-sub">{t('Leer heißt: die Farbe von HAPM.')}</div>
+                      <div className="form-section-sub">
+                        {brand?.accent
+                          ? t('Leer heißt: die Akzentfarbe aus der Darstellung, sonst die Farbe von HAPM.')
+                          : t('Leer heißt: die Farbe von HAPM.')}
+                      </div>
                     </div>
                   </div>
                   {COLOR_FIELDS.map((field) => (
@@ -679,7 +745,7 @@ export default function ErrorPagesDesignPage() {
                       label={t(field.label)}
                       hint={t(field.hint)}
                       value={current.colors[field.key]}
-                      fallback={STATIC_THEME_DEFAULTS[field.key]}
+                      fallback={(field.key === 'accent' ? brand?.accent : null) ?? STATIC_THEME_DEFAULTS[field.key]}
                       onChange={(value) => setColor(field.key, value)}
                     />
                   ))}
@@ -702,7 +768,7 @@ export default function ErrorPagesDesignPage() {
                   <div className="choice-group" role="group" aria-label={t('Logo')}>
                     {(
                       [
-                        ['hapm', msgid('Logo von HAPM')],
+                        ['hapm', brand ? msgid('Aus der Darstellung') : msgid('Logo von HAPM')],
                         ['custom', msgid('Eigenes')],
                         ['none', msgid('Keines')],
                       ] as const
@@ -751,7 +817,7 @@ export default function ErrorPagesDesignPage() {
                   )}
                   <span className="form-hint">
                     {t('Mit den jetzigen Texten passt eine Logo-Datei bis {bytes} Bytes.', {
-                      bytes: number(logoByteBudget(preview)),
+                      bytes: number(logoByteBudget(preview, brand)),
                     })}
                   </span>
 
@@ -863,7 +929,7 @@ export default function ErrorPagesDesignPage() {
             )}
           </div>
 
-          <DesignPreview design={preview} pageId={page.id} onPageChange={setPageId} />
+          <DesignPreview design={preview} brand={brand} pageId={page.id} onPageChange={setPageId} />
         </div>
       )}
 

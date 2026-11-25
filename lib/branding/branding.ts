@@ -15,12 +15,12 @@
  * Seite und lässt die Favicons aus `public/` stehen. Die Oberfläche sieht dann
  * aus wie vor dieser Einstellung, Byte für Byte.
  *
- * ── Was nicht dazugehört ──
+ * ── Wer sonst folgt ──
  *
- * Mails (`ui/mail/`, `lib/mail/`) und die Fehlerseiten von HAProxy
- * (`lib/haproxy/page-design.ts`) haben ihr eigenes Aussehen: eine Mail geht
- * auch an Empfänger, für die die Oberfläche keine Rolle spielt, und eine
- * Fehlerseite sieht der Besucher eines Ziels, nicht der Betreiber.
+ * Die Mails (`lib/mail/branding.ts`) und die Seiten von HAProxy
+ * (`lib/haproxy/page-brand.ts`) nehmen Name, Logo und Akzentfarbe mit. Nicht
+ * folgen der Name in Authenticator-Apps und bei Passkeys und die Palette der
+ * Diagramme, siehe `docs/betrieb.md`, „Darstellung“.
  */
 
 import { sniffLogoType, base64ToBytes, type LogoMime } from '@/lib/haproxy/page-design';
@@ -187,6 +187,43 @@ export function imageTooLargeMessage(locale: Locale = DEFAULT_LOCALE): string {
   return createTranslator(locale).t('Das Bild ist zu groß. Erlaubt sind bis {max} KB.', {
     max: formatNumber(locale, BRANDING_IMAGE_MAX_BYTES / 1024),
   });
+}
+
+/**
+ * Breite und Höhe eines Bildes aus seinem Kopf, ohne es zu dekodieren. Die
+ * Mail braucht sie: das klassische Outlook zeigt ein Bild ohne Maße in seiner
+ * natürlichen Größe. `null`, wenn sie sich nicht lesen lassen.
+ */
+export function imageDimensions(bytes: Uint8Array, mime: LogoMime): { width: number; height: number } | null {
+  const u32be = (at: number) => ((bytes[at] << 24) | (bytes[at + 1] << 16) | (bytes[at + 2] << 8) | bytes[at + 3]) >>> 0;
+  const u24le = (at: number) => bytes[at] | (bytes[at + 1] << 8) | (bytes[at + 2] << 16);
+  const chunk = () => String.fromCharCode(bytes[12], bytes[13], bytes[14], bytes[15]);
+  let size: { width: number; height: number } | null = null;
+
+  if (mime === 'image/png' && bytes.length >= 24) {
+    size = { width: u32be(16), height: u32be(20) };
+  } else if (mime === 'image/webp' && bytes.length >= 30) {
+    if (chunk() === 'VP8X') size = { width: u24le(24) + 1, height: u24le(27) + 1 };
+    else if (chunk() === 'VP8 ') {
+      size = { width: (bytes[26] | (bytes[27] << 8)) & 0x3fff, height: (bytes[28] | (bytes[29] << 8)) & 0x3fff };
+    } else if (chunk() === 'VP8L') {
+      const bits = (bytes[21] | (bytes[22] << 8) | (bytes[23] << 16) | (bytes[24] << 24)) >>> 0;
+      size = { width: (bits & 0x3fff) + 1, height: ((bits >>> 14) & 0x3fff) + 1 };
+    }
+  } else if (mime === 'image/svg+xml') {
+    const tag = /<svg\b[^>]*>/i.exec(new TextDecoder().decode(bytes))?.[0] ?? '';
+    const attr = (name: string) => new RegExp(`\\s${name}\\s*=\\s*["']([^"']*)["']`, 'i').exec(tag)?.[1];
+    const length = (value: string | undefined) => {
+      const match = value ? /^\s*([\d.]+)\s*(px)?\s*$/.exec(value) : null;
+      return match ? Number(match[1]) : null;
+    };
+    const width = length(attr('width'));
+    const height = length(attr('height'));
+    const box = attr('viewBox')?.trim().split(/[\s,]+/).map(Number);
+    if (width && height) size = { width, height };
+    else if (box && box.length === 4 && box.every(Number.isFinite)) size = { width: box[2], height: box[3] };
+  }
+  return size && size.width > 0 && size.height > 0 ? size : null;
 }
 
 /** FNV-1a über den Inhalt. Kein Schutz, nur ein Name für den Cache. */

@@ -21,9 +21,7 @@ export const branding: Dictionary = {
   "Logo und Symbol": "Logo and icon",
   "Erlaubt sind SVG, PNG und WebP bis {max} KB, geprüft am Inhalt der Datei. Ein SVG mit Skripten oder eingebetteten Dokumenten wird abgelehnt. HAPM verkleinert keine Bilder.": "SVG, PNG and WebP up to {max} KB are allowed, checked by the content of the file. An SVG with scripts or embedded documents is rejected. HAPM does not resize images.",
   "Ohne eigenes Bild gilt das von HAPM.": "Without your own image, the one from HAPM applies.",
-  "In der Seitenleiste, bei der Anmeldung und im Einrichtungsassistenten. Am besten ein SVG oder ein PNG mit durchsichtigem Grund, quer, etwa 4:1.": "In the sidebar, on the sign-in page and in the setup assistant. Ideally an SVG or a PNG with a transparent background, landscape, about 4:1.",
   "Helle Fassung": "Light version",
-  "Für dunkle Flächen, etwa ein Logo in Weiß. Ohne eigene Fassung steht dort das Logo selbst.": "For dark surfaces, such as a logo in white. Without a version of its own, the logo itself is shown there.",
   "Wie das Logo": "Same as the logo",
   "Symbol im Tab": "Tab icon",
   "Quadratisch, etwa 64 × 64 Pixel oder ein SVG. Ohne Symbol zeigt der Tab mit Namen dessen Anfangsbuchstaben auf der Akzentfarbe, sonst das Zeichen von HAPM in der Akzentfarbe.": "Square, about 64 × 64 pixels or an SVG. Without an icon, the tab shows the first letter of the name on the accent color if a name is set, otherwise the HAPM mark in the accent color.",
@@ -45,7 +43,6 @@ export const branding: Dictionary = {
   "Text der Pille": "Pill text",
   "Name des Werkzeugs": "Tool name",
   "Steht im Browser-Tab statt HAPM. Vorleser nennen ihn als Namen des Logos.": "Shown in the browser tab instead of HAPM. Screen readers announce it as the name of the logo.",
-  "Mails, die Fehlerseiten von HAProxy und die Anzeige in Authenticator-Apps behalten ihren eigenen Namen. Die Mails stellen Sie unter Benachrichtigungen ein, die Fehlerseiten unter Reverse-Proxy.": "Emails, the HAProxy error pages and the entry in authenticator apps keep their own name. You configure emails under Notifications and error pages under Reverse proxy.",
 
   // Farbe
   "Akzentfarbe": "Accent color",
@@ -81,4 +78,12 @@ export const branding: Dictionary = {
   "Das Bild ist kein SVG, PNG oder WebP. Geprüft wird der Inhalt der Datei, nicht ihre Endung.": "The image is not an SVG, PNG or WebP. The content of the file is checked, not its extension.",
   "Das SVG enthält Skripte, Ereignisse oder eingebettete Dokumente. Ein Logo braucht davon nichts.": "The SVG contains scripts, event handlers or embedded documents. A logo needs none of these.",
   "Das Bild ist zu groß. Erlaubt sind bis {max} KB.": "The image is too large. Up to {max} KB are allowed.",
+
+  // Seiten von HAProxy und Mails folgen der Darstellung
+  "In der Seitenleiste, bei der Anmeldung, im Einrichtungsassistenten, in Mails und auf den Seiten von HAProxy. Am besten ein PNG mit durchsichtigem Grund, quer, etwa 4:1: Gmail und Outlook zeigen in Mails kein SVG. Auf den Seiten von HAProxy steht es nur, wenn die ganze Seite samt Logo unter 15.000 Bytes bleibt, sonst steht dort der Name.": "In the sidebar, at sign-in, in the setup wizard, in emails and on the pages served by HAProxy. Best is a PNG with a transparent background, landscape, about 4:1: Gmail and Outlook do not show SVG in emails. On the HAProxy pages it only appears if the whole page including the logo stays below 15,000 bytes, otherwise the name is shown there.",
+  "Für dunkle Flächen, etwa ein Logo in Weiß: Mails in dunklem Design und Fehlerseiten im dunklen Modus. Ohne eigene Fassung steht dort das Logo selbst.": "For dark surfaces, for example a white logo: emails in a dark theme and error pages in dark mode. Without a version of its own, the logo itself is shown there.",
+  "Name, Logo und Farbe stehen auch in den Mails und auf den Seiten von HAProxy, soweit unter Reverse-Proxy, Fehlerseiten nichts anderes eingestellt ist. Authenticator-Apps und Passkeys zeigen weiter HAPM: ein neuer Name passte dort nicht mehr zu eingerichteten Geräten.": "Name, logo and color also appear in emails and on the pages served by HAProxy, unless something else is set under Reverse proxy, Error pages. Authenticator apps and passkeys keep showing HAPM: a new name would no longer match devices already set up.",
+  "Gespeichert, aber die Fehlerseiten blieben, wie sie waren": "Saved, but the error pages stayed as they were",
+  "{count} Fehlerseite von HAProxy neu geschrieben.": "{count} HAProxy error page rewritten.",
+  "{count} Fehlerseiten von HAProxy neu geschrieben.": "{count} HAProxy error pages rewritten.",
 };

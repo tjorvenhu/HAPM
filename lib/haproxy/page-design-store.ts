@@ -14,11 +14,31 @@
  */
 
 import { COLLECTIONS, getSingleton, updateDocument } from '../db';
+import { loadBrandingImage, loadBrandingSafe } from '../branding/store';
 import { defaultPageDesign, parsePageDesign, setActiveDesign, type PageDesign } from './page-design';
+import { pageBrandFrom, setActiveBrand, type PageBrand } from './page-brand';
 
 export const PAGE_DESIGN_ID = 'main';
 
+/**
+ * Was die Seiten aus der Darstellung übernehmen, und setzt es für den Prozess
+ * (`setActiveBrand`). Scheitert nie: ohne lesbare Darstellung entstehen die
+ * Seiten wie ohne.
+ */
+export async function loadPageBrand(): Promise<PageBrand | null> {
+  const branding = await loadBrandingSafe();
+  const [logo, logoDark] = await Promise.all([
+    branding.images.logo ? loadBrandingImage('logo') : null,
+    branding.images.logoDark ? loadBrandingImage('logoDark') : null,
+  ]);
+  const brand = pageBrandFrom(branding, { logo, logoDark });
+  setActiveBrand(brand);
+  return brand;
+}
+
+/** Liest auch die Darstellung (`loadPageBrand`): der Zustand jeder Datei ist ein Vergleich mit beidem. */
 export async function loadPageDesign(): Promise<PageDesign> {
+  await loadPageBrand();
   const row = await getSingleton<PageDesign>(COLLECTIONS.PAGE_DESIGN, PAGE_DESIGN_ID, defaultPageDesign());
   const parsed = parsePageDesign(row);
   if (!parsed.ok) {

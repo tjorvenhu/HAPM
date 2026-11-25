@@ -396,7 +396,37 @@ Die Mails tragen den Rahmen aus `ui/mail/layout.ts` (`lib/mail/layout.ts`,
 der Oberfläche). Links in die Oberfläche gibt es nur, wenn unter „Allgemein"
 die Adresse von HAPM eingetragen ist. Alle
 Mails ansehen, ohne etwas zu verschicken:
-`node node_modules/tsx/dist/cli.mjs scripts/preview-mail.ts`.
+`node node_modules/tsx/dist/cli.mjs scripts/preview-mail.ts`, mit einer
+Darstellung `… scripts/preview-mail.ts de --brand` (Name, Farbe und Logo
+einzeln mit `--brand-name=`, `--brand-color=`, `--brand-logo=`).
+
+**Die Mails folgen der Darstellung** (`lib/mail/branding.ts`, `mailBrand` und
+`mailAccent` in `lib/mail/layout.ts`):
+
+- **Logo als Anhang, nicht als Adresse.** Ein eigenes Logo hängt wie das von
+  HAPM mit `cid:` an der Mail (`brand-logo`, die helle Fassung
+  `brand-logo-dark` für dunkles Design). Erwogen war ein Bild über
+  `publicUrl` + `/api/branding/logo/light?v=…`. Dagegen sprach: der Rahmen lädt
+  bewusst nichts nach (das Öffnen überträgt sonst die IP des Empfängers), viele
+  Programme zeigen Bilder von außen erst nach einem Klick, und bei einer
+  internen Installation erreicht ein Telefon unterwegs die Adresse nicht. Der
+  Preis: das Logo reist mit jeder Mail. SVG zeigen Gmail und das klassische
+  Outlook auf keinem der beiden Wege, die Seite „Darstellung“ rät zu PNG.
+- **Größe.** Aus dem Kopf der Datei gelesen (`imageDimensions`), angezeigt 32
+  Pixel hoch und höchstens 200 breit, mit `width` und `height` für Outlook.
+  Lässt sie sich nicht lesen, bleibt der Kopf von HAPM.
+- **Name** fett im Fuß und als Alternativtext am Logo, und als Anzeigename des
+  Absenders, wenn der eingetragene Absender keinen eigenen nennt. Der Satz
+  „Diese Mail kommt von der HAPM-Installation …“ bleibt: er meint die Software.
+- **Farbe.** Dieselbe Regel wie in der Oberfläche (`deriveAccent`): Weiß auf dem
+  Akzent mindestens 4,5:1, dazu Töne für Hinweisflächen und dunkles Design,
+  jeweils mit 4,5:1 für die Schrift darauf. Die Bausteine schreiben das Grün als
+  feste Werte; der Rahmen tauscht sie am Ende aus, aber nur, wo sie als Wert
+  stehen (`:#…`, `="#…"`), nie im Text.
+- **Ohne Darstellung Byte für Byte wie vorher**, die Tests in `tests/mail/`
+  blieben dafür unverändert. Der Rahmen ist synchron: die Darstellung liegt am
+  Prozessobjekt (`knownMailBranding`), gelesen beim Start und nach dem
+  Speichern unter „Darstellung“, das Logo selbst erst beim Versand.
 
 ## Darstellung: `lib/branding/`
 
@@ -438,6 +468,14 @@ Layout schreibt dann nichts in den Kopf der Seite und lässt die Favicons aus
 - **Symbol im Tab.** Ein hochgeladenes gilt immer. Sonst mit Namen dessen
   Anfangsbuchstabe auf dem Akzent, mit Farbe allein das Zeichen von HAPM in
   der Farbe. Aus einem breiten Logo wird kein Quadrat geschnitten.
+- **Mails und Fehlerseiten folgen.** Die Mails nehmen Name, Logo und Farbe
+  (siehe „Benachrichtigungen“), die Fehlerseiten von HAProxy und die
+  Passwortabfrage ebenso, soweit dort unter „Selbst gestalten“ nichts anderes
+  gesetzt ist ([`reverse-proxy.md`](reverse-proxy.md), „Die Fehlerseiten“).
+  Speichern schreibt die Fehlerdateien neu, die HAPM selbst geschrieben hat,
+  mit Sicherung, `haproxy -c` und Reload; eine Seite von Hand bleibt stehen.
+  Die Route antwortet mit `pages` (geschrieben, stehen geblieben, Fehler), und
+  die Seite meldet ein Scheitern in einem eigenen Toast.
 - **Logo in Bausteinen.** `ui/primitives/Logo.tsx` liest `useBrand()`
   (`ui/primitives/brand.tsx`, Provider im Wurzel-Layout) und zeigt das eigene
   Logo samt Pille. Seitenleiste, Anmeldung, Assistent und die Fehlerseiten der
@@ -447,13 +485,12 @@ Layout schreibt dann nichts in den Kopf der Seite und lässt die Favicons aus
 - **Der Name** steht im Tab (`DocumentTitle`, `generateMetadata` der Seiten
   außerhalb der Hülle) und als Alternativtext des Logos. Texte, die „HAPM"
   sagen, bleiben: sie meinen die Software.
-- **Was nicht folgt.** Mails (`ui/mail/`) und die Fehlerseiten von HAProxy
-  haben eigene Einstellungen: eine Mail geht auch an Empfänger ohne Bezug zur
-  Oberfläche, eine Fehlerseite sieht der Besucher eines Ziels. Ebenso bleiben
-  der Name in Authenticator-Apps (`lib/totp.ts`) und bei Passkeys: ein
-  geänderter Name dort passte nicht mehr zu schon eingerichteten Geräten. Die
-  Palette der Diagramme (`--viz-*` in `ui/css/charts.css`) ist gegen
-  Farbsehschwächen geprüft und bleibt ebenfalls.
+- **Was nicht folgt.** Der Name in Authenticator-Apps (`lib/totp.ts`) und bei
+  Passkeys: ein geänderter Name dort passte nicht mehr zu schon eingerichteten
+  Geräten. Die Palette der Diagramme (`--viz-*` in `ui/css/charts.css`) ist
+  gegen Farbsehschwächen geprüft und bleibt ebenfalls. Eine eigene HTML-Datei
+  für die Fehlerseiten geht unverändert hinaus. Bis 0.6 folgten auch Mails und
+  Fehlerseiten nicht; gewünscht ist inzwischen, dass sie es tun.
 
 ## Sicherung: `lib/backup/`
 

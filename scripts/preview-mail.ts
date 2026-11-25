@@ -3,6 +3,10 @@
  *
  *   node node_modules/tsx/dist/cli.mjs scripts/preview-mail.ts          (beide Sprachen)
  *   node node_modules/tsx/dist/cli.mjs scripts/preview-mail.ts en       (nur Englisch)
+ *   node node_modules/tsx/dist/cli.mjs scripts/preview-mail.ts de --brand
+ *       mit einer Darstellung: Name, Farbe und Logo. Einzeln setzbar mit
+ *       --brand-name=…, --brand-color=#rrggbb und --brand-logo=datei.png
+ *       (ohne Datei ein Beispiel-SVG).
  *
  * Ruft dieselben Funktionen auf wie der Versand (`notificationMail`,
  * `testMail`, `authMail`, `passkeyChangeMail`). Je Mail und Sprache entstehen
@@ -16,7 +20,10 @@
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { MAIL_LOGO_CID, MAIL_LOGO_DARK_CID } from '../lib/mail/layout';
+import { MAIL_BRAND_LOGO_CID, MAIL_LOGO_CID, MAIL_LOGO_DARK_CID } from '../lib/mail/layout';
+import { rememberMailBranding } from '../lib/mail/installation';
+import { mailLogoSize } from '../lib/mail/branding';
+import { imageDimensions, checkImageBytes } from '../lib/branding/branding';
 import { authMail, passkeyChangeMail } from '../lib/auth/mail';
 import { resetPasswordMail } from '../lib/auth/core/mail';
 import { LOCALES, isLocale, type Locale } from '../lib/i18n';
@@ -93,8 +100,36 @@ function logo(name: string): string {
   return `data:image/png;base64,${readFileSync(resolve(process.cwd(), 'public', 'email', name)).toString('base64')}`;
 }
 
+/* ── Darstellung, nur mit --brand… ── */
+
+const option = (name: string) =>
+  process.argv.find((arg) => arg.startsWith(`--${name}=`))?.slice(name.length + 3) ?? null;
+const branded = process.argv.some((arg) => arg.startsWith('--brand'));
+
+const SAMPLE_LOGO =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 60"><rect width="60" height="60" rx="14" fill="#c2410c"/>' +
+  '<text x="76" y="41" font-family="Helvetica,Arial,sans-serif" font-size="30" font-weight="700" fill="#1f2937">Beispiel</text></svg>';
+
+let brandLogoUri: string | null = null;
+if (branded) {
+  const file = option('brand-logo');
+  const bytes = new Uint8Array(file ? readFileSync(resolve(process.cwd(), file)) : Buffer.from(SAMPLE_LOGO));
+  const image = checkImageBytes(bytes);
+  if ('error' in image) throw new Error(image.error);
+  const natural = imageDimensions(bytes, image.value.mime);
+  brandLogoUri = `data:${image.value.mime};base64,${image.value.data}`;
+  rememberMailBranding({
+    name: option('brand-name') ?? 'Beispiel GmbH',
+    accent: option('brand-color') ?? '#c2410c',
+    logo: natural ? mailLogoSize(natural) : null,
+    logoDark: false,
+  });
+}
+
 function forBrowser(html: string): string {
   return html
+    .split(`cid:${MAIL_BRAND_LOGO_CID}`)
+    .join(brandLogoUri ?? '')
     .split(`cid:${MAIL_LOGO_DARK_CID}`)
     .join(logo('hapm-logo-dark.png'))
     .split(`cid:${MAIL_LOGO_CID}`)

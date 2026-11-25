@@ -14,6 +14,7 @@ import { createTranslator, DEFAULT_LOCALE, formatNumber, msgid, type Locale } fr
 import { defaultErrorPageText, errorPageStatuses, renderErrorFile } from './error-pages';
 import { renderLockPage, type LockPageKind } from './lock-page';
 import { PAGE_MAX_BYTES, type PageDesign } from './page-design';
+import { activeBrand, type PageBrand } from './page-brand';
 
 /**
  * Eine Seite für die Auswahl in Formular und Vorschau. `label` und `hint` sind
@@ -86,14 +87,17 @@ export const DESIGN_PAGES: DesignPage[] = [
 ];
 
 /** Was für diese Seite auf der Platte stünde: bei einer Fehlerseite die ganze
- *  HTTP-Antwort, bei der Passwortabfrage das Dokument. */
-export function designPageFile(page: DesignPage, design: PageDesign): string {
-  return page.kind === 'error' ? renderErrorFile(page.status, design) : renderLockPage(page.lock, design);
+ *  HTTP-Antwort, bei der Passwortabfrage das Dokument. `brand` ist die
+ *  Darstellung: auf dem Server die, die gilt, im Browser die mitgeschickte. */
+export function designPageFile(page: DesignPage, design: PageDesign, brand: PageBrand | null = activeBrand()): string {
+  return page.kind === 'error'
+    ? renderErrorFile(page.status, design, brand)
+    : renderLockPage(page.lock, design, brand);
 }
 
 /** Das Dokument allein, für die Vorschau. */
-export function designPageHtml(page: DesignPage, design: PageDesign): string {
-  const file = designPageFile(page, design);
+export function designPageHtml(page: DesignPage, design: PageDesign, brand: PageBrand | null = activeBrand()): string {
+  const file = designPageFile(page, design, brand);
   if (page.kind === 'lock') return file;
   return file.slice(file.indexOf('\r\n\r\n') + 4);
 }
@@ -108,8 +112,8 @@ export interface DesignPageSize {
 }
 
 /** Die Größe jeder Seite, die größte zuerst. */
-export function designPageSizes(design: PageDesign): DesignPageSize[] {
-  return DESIGN_PAGES.map((page) => ({ page, bytes: byteLength(designPageFile(page, design)) })).sort(
+export function designPageSizes(design: PageDesign, brand: PageBrand | null = activeBrand()): DesignPageSize[] {
+  return DESIGN_PAGES.map((page) => ({ page, bytes: byteLength(designPageFile(page, design, brand)) })).sort(
     (a, b) => b.bytes - a.bytes
   );
 }
@@ -123,14 +127,14 @@ export function designPageSizes(design: PageDesign): DesignPageSize[] {
  * die Zahl also die sichere Seite, für die anderen Typen genau die Grenze.
  * Ohne eigenes Logo gilt der längste Kopf einer Data-URI, der eines SVG.
  */
-export function logoByteBudget(design: PageDesign): number {
+export function logoByteBudget(design: PageDesign, brand: PageBrand | null = activeBrand()): number {
   // Die Seiten mit einem leeren Bild: Rahmen, Texte, `<img>` und der Kopf der
   // Data-URI. Jede Seite bekommt dasselbe Logo, die größte bleibt die größte.
   // Ein Logo gibt es nur in „Selbst gestalten“. Gerechnet wird für diese Art,
   // auch wenn gerade eine andere gewählt ist: das Formular zeigt die Zahl dort.
   const mime = design.logo.kind === 'custom' ? design.logo.mime : 'image/svg+xml';
   const empty: PageDesign = { ...design, mode: 'designed', logo: { kind: 'custom', mime, data: '' } };
-  const free = PAGE_MAX_BYTES - designPageSizes(empty)[0].bytes;
+  const free = PAGE_MAX_BYTES - designPageSizes(empty, brand)[0].bytes;
   return Math.max(0, Math.floor(free / 4) * 3);
 }
 
@@ -142,8 +146,14 @@ export function logoByteBudget(design: PageDesign): number {
  * wird die fertige Datei samt Kopfzeilen, bei eigenem HTML also mit dem
  * längsten Titel und Text, die die Platzhalter einsetzen.
  */
-export function designSizeError(design: PageDesign, messages: Locale = DEFAULT_LOCALE): string | null {
-  const largest = designPageSizes(design)[0];
+export function designSizeError(
+  design: PageDesign,
+  messages: Locale = DEFAULT_LOCALE,
+  brand: PageBrand | null = activeBrand()
+): string | null {
+  // Ein Logo der Darstellung, das nicht passt, ist kein Fehler: an seiner
+  // Stelle steht der Name (`page-theme.ts`).
+  const largest = designPageSizes(design, brand)[0];
   if (largest.bytes <= PAGE_MAX_BYTES) return null;
 
   const { t } = createTranslator(messages);
@@ -158,7 +168,7 @@ export function designSizeError(design: PageDesign, messages: Locale = DEFAULT_L
   if (design.mode === 'designed' && design.logo.kind === 'custom') {
     return t(
       'Das Logo passt nicht in die Seite. Mit ihm hätte „{page}“ {bytes} Bytes, HAProxy lädt höchstens {max}. Mit den jetzigen Texten darf die Logo-Datei höchstens {budget} Bytes groß sein.',
-      { ...values, budget: formatNumber(messages, logoByteBudget(design)) }
+      { ...values, budget: formatNumber(messages, logoByteBudget(design, brand)) }
     );
   }
   return t('„{page}“ hätte {bytes} Bytes, HAProxy lädt höchstens {max}. Kürzen Sie die Texte.', values);

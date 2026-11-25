@@ -175,8 +175,6 @@ export const mail: Dictionary = {
   'Am größten ist „{page}“.': 'The largest is “{page}”.',
   'Die Datei trägt das gespeicherte Design.': 'The file carries the saved design.',
   'Andere Seite': 'Other page',
-  'Eine eigene Seite, die von HAProxy oder ein älterer Stand. Wird beim Schreiben ersetzt, das Original bleibt daneben liegen.':
-    'A custom page, the one from HAProxy, or an older version. Replaced when writing, the original stays next to it.',
   'Wird nicht angefasst': 'Left alone',
   'Liegt außerhalb von /etc/haproxy oder heißt ungewöhnlich.': 'Located outside /etc/haproxy or has an unusual name.',
   'Nicht lesbar': 'Not readable',
@@ -467,4 +465,18 @@ export const mail: Dictionary = {
   "Unter 14 Tage gültig, ein hochgeladenes unter 30. Einmal am Tag.": "Valid for under 14 days, an uploaded one under 30. Once a day.",
   "Was zu tun ist: hochgeladene Zertifikate erneuert niemand von selbst. Beantragen Sie bei Ihrer CA ein neues und ersetzen Sie das alte unter Reverse-Proxy, Zertifikate. Nach dem Ablauf zeigen Browser für die Domain eine Warnung.": "What to do: nobody renews uploaded certificates automatically. Request a new one from your CA and replace the old one under Reverse proxy, Certificates. After expiry, browsers show a warning for the domain.",
   "Was zu tun ist: acme.sh erneuert seine Zertifikate von selbst vor dem Ablauf. Steht eines davon hier, ist das bisher nicht gelungen, die Ausgabe der letzten Erneuerung steht in der Übersicht. Hochgeladene erneuert niemand: ersetzen Sie sie unter Reverse-Proxy, Zertifikate. Nach dem Ablauf zeigen Browser für die Domain eine Warnung.": "What to do: acme.sh renews its certificates automatically before they expire. If one of them is listed here, that has not worked so far; the output of the last renewal is on the overview. Nobody renews uploaded ones: replace them under Reverse proxy, Certificates. After expiry, browsers show a warning for the domain.",
+
+  /* ── Fehlerseiten: was aus der Darstellung kommt ── */
+  "Eine Seite von Hand, die von HAProxy oder ein Stand, den HAPM nicht nachziehen konnte. Wird beim Schreiben ersetzt, das Original bleibt daneben liegen.": "A page written by hand, the one from HAProxy or a version HAPM could not update. Replaced when writing, the original stays next to it.",
+  "Leer heißt: die Akzentfarbe aus der Darstellung, sonst die Farbe von HAPM.": "Empty means the accent color from Appearance, otherwise the color from HAPM.",
+  "Aus der Darstellung": "From Appearance",
+  "Zur Darstellung": "Go to Appearance",
+  "Die eigene HTML-Datei bleibt, wie sie ist. Die Passwortabfrage zeigt Logo, Name und Akzentfarbe aus der Darstellung.": "Your own HTML file stays as it is. The password prompt shows logo, name and accent color from Appearance.",
+  "Was hier leer bleibt, kommt aus der Darstellung: Logo, Name und Akzentfarbe.": "Whatever stays empty here comes from Appearance: logo, name and accent color.",
+  "Die Seiten zeigen Logo, Name und Akzentfarbe aus der Darstellung.": "The pages show logo, name and accent color from Appearance.",
+  "Das Logo aus der Darstellung ist allein größer als eine ganze Seite ({max} Bytes). Statt seiner steht der Name.": "The logo from Appearance alone is larger than a whole page ({max} bytes). The name is shown instead.",
+  "Das Logo aus der Darstellung ist allein größer als eine ganze Seite ({max} Bytes). Die Seiten zeigen deshalb kein Logo, und einen Namen gibt es in der Darstellung nicht.": "The logo from Appearance alone is larger than a whole page ({max} bytes). The pages therefore show no logo, and Appearance has no name set.",
+  "Das Logo aus der Darstellung passt mit den jetzigen Texten nicht in die Seiten, die höchstens {max} Bytes haben dürfen. Statt seiner steht der Name.": "With the current texts, the logo from Appearance does not fit into the pages, which may have at most {max} bytes. The name is shown instead.",
+  "Das Logo aus der Darstellung passt mit den jetzigen Texten nicht in die Seiten, die höchstens {max} Bytes haben dürfen. Die Seiten zeigen deshalb kein Logo, und einen Namen gibt es in der Darstellung nicht.": "With the current texts, the logo from Appearance does not fit into the pages, which may have at most {max} bytes. The pages therefore show no logo, and Appearance has no name set.",
+  "Die helle Fassung des Logos passt nicht zusätzlich in die Seiten. Im dunklen Modus steht deshalb das Logo selbst.": "The light version of the logo does not fit into the pages as well. In dark mode the logo itself is shown.",
 };

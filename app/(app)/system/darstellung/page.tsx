@@ -55,12 +55,12 @@ const SUGGESTIONS: { color: string; label: string }[] = [
 const SLOT_TEXT: Record<BrandingImageSlot, { title: string; hint: string; empty: string }> = {
   logo: {
     title: msgid('Logo'),
-    hint: msgid('In der Seitenleiste, bei der Anmeldung und im Einrichtungsassistenten. Am besten ein SVG oder ein PNG mit durchsichtigem Grund, quer, etwa 4:1.'),
+    hint: msgid('In der Seitenleiste, bei der Anmeldung, im Einrichtungsassistenten, in Mails und auf den Seiten von HAProxy. Am besten ein PNG mit durchsichtigem Grund, quer, etwa 4:1: Gmail und Outlook zeigen in Mails kein SVG. Auf den Seiten von HAProxy steht es nur, wenn die ganze Seite samt Logo unter 15.000 Bytes bleibt, sonst steht dort der Name.'),
     empty: msgid('Logo von HAPM'),
   },
   logoDark: {
     title: msgid('Helle Fassung'),
-    hint: msgid('Für dunkle Flächen, etwa ein Logo in Weiß. Ohne eigene Fassung steht dort das Logo selbst.'),
+    hint: msgid('Für dunkle Flächen, etwa ein Logo in Weiß: Mails in dunklem Design und Fehlerseiten im dunklen Modus. Ohne eigene Fassung steht dort das Logo selbst.'),
     empty: msgid('Wie das Logo'),
   },
   icon: {
@@ -69,6 +69,13 @@ const SLOT_TEXT: Record<BrandingImageSlot, { title: string; hint: string; empty:
     empty: msgid('Erzeugt'),
   },
 };
+
+/** Was die Route nach dem Speichern über die Seiten von HAProxy sagt. */
+interface PagesResult {
+  written: number;
+  skipped: number;
+  error: { label: string; detail: string } | null;
+}
 
 type ImageState =
   | { kind: 'saved'; url: string; mime: string; bytes: number }
@@ -118,7 +125,7 @@ export default function AppearancePage() {
   const { notify } = useToast();
   const confirm = useConfirm();
   const router = useRouter();
-  const { t, locale } = useT();
+  const { t, plural, locale } = useT();
   const number = (value: number, digits = 0) => formatNumber(locale, value, digits);
 
   const [saved, setSaved] = useState<BrandingView | null>(null);
@@ -250,7 +257,24 @@ export default function AppearancePage() {
       setDraft(fromView(body.data as BrandingView));
       // Farben, Logo, Symbol und Titel kommen aus dem Wurzel-Layout: neu vom Server holen.
       router.refresh();
-      notify({ variant: 'success', message });
+      const pages = (body.data as { pages: PagesResult | null }).pages;
+      if (pages?.error) {
+        notify({
+          variant: 'error',
+          title: t('Gespeichert, aber die Fehlerseiten blieben, wie sie waren'),
+          message: `${t(pages.error.label)}: ${pages.error.detail ? t(pages.error.detail) : t('fehlgeschlagen')}`,
+        });
+      } else if (pages && pages.written > 0) {
+        notify({
+          variant: 'success',
+          message: `${message} ${plural(pages.written, {
+            one: '{count} Fehlerseite von HAProxy neu geschrieben.',
+            other: '{count} Fehlerseiten von HAProxy neu geschrieben.',
+          })}`,
+        });
+      } else {
+        notify({ variant: 'success', message });
+      }
     } catch (err: unknown) {
       notify({
         variant: 'error',
@@ -462,7 +486,7 @@ export default function AppearancePage() {
                 {t('Name')}
                 <InfoHint
                   text={t(
-                    'Mails, die Fehlerseiten von HAProxy und die Anzeige in Authenticator-Apps behalten ihren eigenen Namen. Die Mails stellen Sie unter Benachrichtigungen ein, die Fehlerseiten unter Reverse-Proxy.'
+                    'Name, Logo und Farbe stehen auch in den Mails und auf den Seiten von HAProxy, soweit unter Reverse-Proxy, Fehlerseiten nichts anderes eingestellt ist. Authenticator-Apps und Passkeys zeigen weiter HAPM: ein neuer Name passte dort nicht mehr zu eingerichteten Geräten.'
                   )}
                 />
               </label>

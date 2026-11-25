@@ -52,8 +52,9 @@ export function parseSender(value: string): Sender | null {
   return validateEmail(raw) ? { name: null, address: raw } : null;
 }
 
-export function formatSender(sender: Sender): string {
-  return `"${sender.name ?? MAIL_SENDER_NAME}" <${sender.address}>`;
+/** `fallback` gilt, wenn der Absender keinen Namen nennt: der Name aus der Darstellung oder HAPM. */
+export function formatSender(sender: Sender, fallback: string = MAIL_SENDER_NAME): string {
+  return `"${(sender.name ?? fallback).replace(/["\\\r\n]/g, '')}" <${sender.address}>`;
 }
 
 /** Eingerichtet heißt: es gibt einen Server und einen Absender. */
@@ -71,7 +72,11 @@ export interface SmtpConfig {
 }
 
 /** Wirft `MailError`, wenn mit den Einstellungen nichts zu verschicken ist. */
-export function smtpConfig(settings: MailSettings, decryptPass: (ciphertext: string) => string): SmtpConfig {
+export function smtpConfig(
+  settings: MailSettings,
+  decryptPass: (ciphertext: string) => string,
+  senderName?: string | null
+): SmtpConfig {
   const host = settings.smtpHost?.trim();
   const sender = settings.mailFrom ? parseSender(settings.mailFrom) : null;
   if (!host || !sender) {
@@ -97,7 +102,7 @@ export function smtpConfig(settings: MailSettings, decryptPass: (ciphertext: str
     security: SMTP_SECURITIES.includes(settings.smtpSecurity) ? settings.smtpSecurity : 'starttls',
     user: settings.smtpUser?.trim() || null,
     pass,
-    from: formatSender(sender),
+    from: formatSender(sender, senderName || MAIL_SENDER_NAME),
   };
 }
 

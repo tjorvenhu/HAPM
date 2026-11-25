@@ -35,6 +35,7 @@ import { HAPROXY_CFG, LOCK_PAGE_DIR, usesLockPages } from './config';
 import { parseDigests, type ErrorPageEntry } from './error-pages';
 import { lockPages, lockPageDigestCommand, lockPageWriteCommand } from './lock-page';
 import { updateErrorPages, type ProvisionStep } from './provision';
+import { logAudit } from '../audit';
 
 const SHORT_MS = 30_000;
 const RELOAD_MS = 60_000;
@@ -133,4 +134,58 @@ export async function applyPageDesign(
   const errors = await updateErrorPages(server);
   if (errors.steps.some((step) => !step.ok)) return errors;
   return { steps: [...errors.steps, ...(await updateLockPages(server))], entries: errors.entries };
+}
+
+/**
+ * Die Seiten nachziehen, ohne zu fragen: beim Start (ein Update von HAPM kann
+ * die Standardseite geändert haben) und nach dem Speichern der Darstellung.
+ *
+ * Geschrieben wird nur, was HAPM selbst hinterlassen hat (`onlyOwn`, Regel in
+ * `isOwnErrorFile`): eine Seite von Hand bleibt, wie sie ist, und steht danach
+ * auf der Seite „Fehlerseiten“ als „Andere Seite“. Eine eigene HTML-Datei
+ * ändert sich mit der Darstellung nicht und gilt deshalb gar nicht erst als
+ * abweichend. Danach die Seiten der Passwortabfrage, die HAPM ohnehin bei jeder
+ * Abweichung schreibt.
+ *
+ * Derselbe Weg wie der Knopf: Sicherung, `haproxy -c`, Reload, bei einem
+ * Fehlschlag zurück. Was geschrieben wurde, steht im Audit und im Log.
+ * Der Aufrufer hat Design und Darstellung vorher geladen (`loadPageDesign`).
+ */
+export async function followPageChanges(
+  server: Server,
+  actor: { userId: string; userEmail: string },
+  reason: string
+): Promise<{ steps: ProvisionStep[]; written: string[]; skipped: string[] }> {
+  const errors = await updateErrorPages(server, { onlyOwn: true });
+  const failed = errors.steps.find((step) => !step.ok);
+  const lock = failed ? [] : await updateLockPages(server);
+  const steps = [...errors.steps, ...lock];
+  const lockFailed = lock.find((step) => !step.ok);
+  const lockWritten = lock.length > 0 && !lockFailed;
+
+  if (errors.skipped.length > 0) {
+    console.log(`[fehlerseiten] ${reason}: von Hand, nicht angefasst: ${errors.skipped.join(', ')}`);
+  }
+  if (errors.written.length === 0 && !lockWritten && !failed && !lockFailed) {
+    return { steps, written: [], skipped: errors.skipped };
+  }
+
+  const problem = failed ?? lockFailed;
+  const summary = [
+    errors.written.length > 0 ? `neu geschrieben: ${errors.written.join(', ')}` : '',
+    lockWritten ? 'Seiten der Passwortabfrage neu geschrieben' : '',
+    errors.skipped.length > 0 ? `von Hand, nicht angefasst: ${errors.skipped.join(', ')}` : '',
+    problem ? `fehlgeschlagen: ${problem.label}${problem.detail ? ` (${problem.detail})` : ''}` : '',
+  ]
+    .filter(Boolean)
+    .join('; ');
+  console.log(`[fehlerseiten] ${reason}: ${summary}`);
+  await logAudit({
+    ...actor,
+    action: problem ? 'haproxy_error_pages_failed' : 'haproxy_error_pages_updated',
+    resource: 'server',
+    resourceId: server.$id,
+    details: `Fehlerseiten nachgezogen (${reason}): ${summary}`,
+  });
+  return { steps, written: errors.written, skipped: errors.skipped };
 }

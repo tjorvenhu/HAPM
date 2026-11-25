@@ -205,3 +205,33 @@ export function accentVariables(chosen: string): Record<string, string> {
     '--overlay': palette.hue === null ? 'oklch(0.145 0 0 / 0.32)' : `oklch(0.145 0.003 ${palette.hue} / 0.32)`,
   };
 }
+
+/** Dieselbe Farbe in OKLCH mit anderer Helligkeit, die Buntheit höchstens `chroma`. */
+export function accentTone(hex: string, lightness: number, chroma: number): string {
+  const base = rgbToOklch(hexToRgb(hex));
+  return oklchToHex({ l: lightness, c: Math.min(base.c, chroma), h: base.h });
+}
+
+/**
+ * Die hellste Fassung von `hex`, die auf `background` mindestens `MIN_CONTRAST`
+ * erreicht, gesucht in OKLCH nach unten. Wie `readableAccent`, nur gegen eine
+ * beliebige helle Fläche.
+ */
+export function readableOn(hex: string, background: string): string {
+  if (contrastRatio(hex, background) >= MIN_CONTRAST) return hex;
+  const start = rgbToOklch(hexToRgb(hex));
+  let low = 0;
+  let high = start.l;
+  let best = oklchToHex({ ...start, l: 0 });
+  for (let i = 0; i < 30; i++) {
+    const mid = (low + high) / 2;
+    const candidate = oklchToHex({ ...start, l: mid });
+    if (contrastRatio(candidate, background) >= MIN_CONTRAST) {
+      best = candidate;
+      low = mid;
+    } else {
+      high = mid;
+    }
+  }
+  return best;
+}

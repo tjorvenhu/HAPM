@@ -8,6 +8,7 @@ import { useT } from '@/lib/i18n/react';
 import { formatNumber } from '@/lib/i18n';
 import { DESIGN_PAGES, designPageHtml, designPageLabel, designPageSizes } from '@/lib/haproxy/design-pages';
 import { PAGE_MAX_BYTES, type PageDesign } from '@/lib/haproxy/page-design';
+import type { PageBrand } from '@/lib/haproxy/page-brand';
 
 /**
  * Die Vorschau einer Fehlerseite oder der Passwortabfrage.
@@ -61,11 +62,13 @@ type Scheme = 'light' | 'dark';
 
 interface DesignPreviewProps {
   design: PageDesign;
+  /** Die Darstellung, aus der die Seiten Logo, Name und Farbe nehmen. */
+  brand: PageBrand | null;
   pageId: string;
   onPageChange: (id: string) => void;
 }
 
-export default function DesignPreview({ design, pageId, onPageChange }: DesignPreviewProps) {
+export default function DesignPreview({ design, brand, pageId, onPageChange }: DesignPreviewProps) {
   const { t, locale } = useT();
   const [viewport, setViewport] = useState<Viewport>('wide');
   const [scheme, setScheme] = useState<Scheme>('light');
@@ -81,8 +84,8 @@ export default function DesignPreview({ design, pageId, onPageChange }: DesignPr
   }, []);
 
   const page = DESIGN_PAGES.find((entry) => entry.id === pageId) ?? DESIGN_PAGES[0];
-  const html = useDeferredValue(useMemo(() => designPageHtml(page, design), [page, design]));
-  const largest = useMemo(() => designPageSizes(design)[0], [design]);
+  const html = useDeferredValue(useMemo(() => designPageHtml(page, design, brand), [page, design, brand]));
+  const largest = useMemo(() => designPageSizes(design, brand)[0], [design, brand]);
 
   const { width, height } = VIEWPORTS[viewport];
   const scale = Math.min(1, available / width);

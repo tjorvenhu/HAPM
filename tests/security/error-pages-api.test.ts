@@ -79,6 +79,7 @@ vi.mock('@/lib/haproxy/provision', () => ({
 
 vi.mock('@/lib/haproxy/page-design-store', () => ({
   loadPageDesign: async () => defaultPageDesign(),
+  loadPageBrand: async () => null,
   savePageDesign: async (design: unknown) => {
     calls.saved.push(design);
     return design;

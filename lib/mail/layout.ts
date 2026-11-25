@@ -13,21 +13,29 @@
  * Die Sprache gehört zur Installation (`MailInstallation.locale`): die
  * Einstellung „Sprache der Mails", gelesen von dem, der die Mail verschickt.
  * Ohne Angabe Deutsch.
+ *
+ * Ebenso die Darstellung (`MailInstallation.branding`): Name, Logo und
+ * Akzentfarbe. Ohne sie ist jede Mail Byte für Byte die von HAPM.
  */
 
 import { createTranslator, msgid, type Locale } from '../i18n';
+import { accentTone, deriveAccent, readableOn } from '../branding/color';
 
 import {
   htmlToText,
   mailSenderLines,
   renderMailHtml,
+  type MailAccent,
   type MailAction,
+  type MailBrand,
   type MailSender,
 } from '@/ui/mail/layout';
 import { localServer } from '../helpers';
-import { knownPublicUrl } from './installation';
+import { knownMailBranding, knownPublicUrl, type MailBranding } from './installation';
 
 export {
+  MAIL_BRAND_LOGO_CID,
+  MAIL_BRAND_LOGO_DARK_CID,
   MAIL_LOGO_CID,
   MAIL_LOGO_DARK_CID,
   escapeHtml,
@@ -79,10 +87,47 @@ export interface MailInstallation {
   publicUrl: string | null;
   /** Sprache der Mail. Vorgabe `de`. */
   locale?: Locale;
+  /**
+   * Name, Logo und Akzentfarbe aus der Darstellung. `undefined`: die zuletzt
+   * gelesene (`knownMailBranding`), `null`: keine.
+   */
+  branding?: MailBranding | null;
 }
 
 export function currentInstallation(): MailInstallation {
   return { nodeName: localServer().name, publicUrl: knownPublicUrl() };
+}
+
+/**
+ * Die Farben der Mail zu einer Akzentfarbe. Dieselbe Regel wie in der
+ * Oberfläche (`deriveAccent`): reicht Weiß auf der Farbe nicht für 4,5:1, gilt
+ * die hellste dunklere Fassung, die es schafft. Damit steht sie auch als Link
+ * auf der weißen Karte mit 4,5:1. Die Flächen der Hinweise sind Töne derselben
+ * Farbe, die Schrift darauf wird so weit abgedunkelt, bis sie wieder 4,5:1
+ * erreicht. In dunklem Design steht der Akzent als heller Ton auf der Karte.
+ */
+export function mailAccent(chosen: string): MailAccent {
+  const palette = deriveAccent(chosen);
+  const tint = accentTone(palette.accent, 0.955, 0.03);
+  return {
+    accent: palette.accent,
+    accentTint: tint,
+    accentTintText: readableOn(palette.accent, tint),
+    darkAccent: palette.hover,
+    darkAccentText: accentTone(palette.accent, 0.86, 0.08),
+    darkAccentTint: accentTone(palette.accent, 0.27, 0.05),
+  };
+}
+
+/** Was der Rahmen aus der Darstellung bekommt, oder nichts. */
+export function mailBrand(branding: MailBranding | null): MailBrand | undefined {
+  if (!branding) return undefined;
+  const brand: MailBrand = {
+    ...(branding.name ? { name: branding.name } : {}),
+    ...(branding.logo ? { logo: { ...branding.logo, dark: branding.logoDark } } : {}),
+    ...(branding.accent ? { accent: mailAccent(branding.accent) } : {}),
+  };
+  return Object.keys(brand).length > 0 ? brand : undefined;
 }
 
 const isHttpUrl = (value: string) => /^https?:\/\//i.test(value);
@@ -100,12 +145,14 @@ export function renderHapmMail(
 ): { html: string; text: string } {
   const action = content.action && isHttpUrl(content.action.url) ? content.action : undefined;
   const { t, locale } = createTranslator(installation.locale);
+  const brand = mailBrand(installation.branding === undefined ? knownMailBranding() : installation.branding);
   const sender: MailSender = {
     name: MAIL_PRODUCT,
     nodeName: installation.nodeName,
     url: installation.publicUrl,
     reason: t(MAIL_REASON),
     locale,
+    ...(brand ? { brand } : {}),
   };
 
   const html = renderMailHtml(

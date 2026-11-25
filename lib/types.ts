@@ -434,4 +434,5 @@ export const COLLECTIONS = {
   SETUP_STATE: 'setup_state',
   SAVED_TARGETS: 'saved_targets',
   BRANDING: 'branding',
+  PAGE_FILES: 'page_files',
 } as const;

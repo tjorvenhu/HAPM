@@ -22,9 +22,10 @@ import type { ErrorPageEntry, ErrorPageState } from '@/lib/haproxy/error-pages';
  * Gründe im Einzelnen stehen in `lib/haproxy/error-pages.ts`.
  *
  * Gebraucht wird der Knopf, wenn eine Datei von dem abweicht, was aus dem
- * gespeicherten Design entstünde: nach einem Update von HAPM mit einer neuen
- * Fassung der Vorlage, nach einer Änderung von Hand, oder wenn das Ausliefern
- * beim Speichern gescheitert ist. Geladen wird die Liste von der Seite
+ * gespeicherten Design entstünde und HAPM sie nicht selbst nachzieht: nach
+ * einer Änderung von Hand, oder wenn das Ausliefern gescheitert ist. Dateien,
+ * die HAPM selbst geschrieben hat, zieht es nach einem Update und nach einer
+ * geänderten Darstellung selbst nach (`followPageChanges`). Geladen wird die Liste von der Seite
  * (`/reverse-proxy/fehlerseiten`), die sie auch nach dem Speichern erneuert.
  */
 
@@ -46,7 +47,7 @@ const STATE: Record<ErrorPageState, { label: string; className: string; hint: st
   other: {
     label: msgid('Andere Seite'),
     className: 'badge-warning',
-    hint: msgid('Eine eigene Seite, die von HAProxy oder ein älterer Stand. Wird beim Schreiben ersetzt, das Original bleibt daneben liegen.'),
+    hint: msgid('Eine Seite von Hand, die von HAProxy oder ein Stand, den HAPM nicht nachziehen konnte. Wird beim Schreiben ersetzt, das Original bleibt daneben liegen.'),
   },
   foreign: {
     label: msgid('Wird nicht angefasst'),

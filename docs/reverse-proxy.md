@@ -58,7 +58,7 @@ Backend-Adresse (`matchesSearch`, rein und getestet).
   Collection eine Tabelle mit dem Dokument als `jsonb`
   (`lib/db/postgres-driver.ts`, siehe [`betrieb.md`](betrieb.md)). Collections des
   Bereichs: `haproxy_runs`, `haproxy_metrics`, `geoip_table`, `dns_zones`,
-  `service_tokens`, `page_design`.
+  `service_tokens`, `page_design`, `page_files`.
 - **Service-Token ohne Bereiche.** Ein Token gilt für die Reverse-Proxy-API
   (`/api/internal/haproxy/**`), andere Teilbäume gibt es nicht. Er lässt sich an
   Adressen binden. Siehe [`reverse-proxy-api.md`](reverse-proxy-api.md).
@@ -1418,8 +1418,10 @@ Wer durchgelassen ist, erreicht das Ziel, als gäbe es die Sperre nicht.
 Versuche). **Ihr Aufbau kommt aus `ui/static/page.ts`** und wird dort
 geändert; `lib/haproxy/lock-page.ts` gibt die Texte und den Namen des Feldes
 herein. Farben, Logo, Name, Fußzeile, Überschrift, Text und Knopf kommen aus dem
-Design unter „Reverse-Proxy → Fehlerseiten" (nächster Abschnitt), die Hinweise
-„Das Passwort stimmt nicht." und „Zu viele Versuche" bleiben fest. HAProxy liest
+Design unter „Reverse-Proxy → Fehlerseiten" (nächster Abschnitt), Logo, Name
+und Akzentfarbe sonst aus der Darstellung, auch wenn die Fehlerseiten eine
+eigene HTML-Datei sind. Die Hinweise „Das Passwort stimmt nicht." und „Zu
+viele Versuche" bleiben fest. HAProxy liest
 die Dateien beim Laden der Konfiguration ein, und daraus folgt:
 
 - **Eine Datei, nichts zum Nachladen, kein JavaScript.** Vor der Sperre bekäme
@@ -1432,11 +1434,14 @@ die Dateien beim Laden der Konfiguration ein, und daraus folgt:
   warnt `haproxy -c`, nimmt die Seite aber an, und ab rund 16.160 Bytes
   antwortet HAProxy dem Besucher mit 500. Diese zweite Grenze sieht keine
   Prüfung von HAProxy, deshalb prüft HAPM jede Seite vor dem Speichern selbst.
-- **Ein geändertes Design wirkt sofort.** Speichern schreibt die drei Seiten mit
-  (`page-design-apply.ts`), wenn die Konfiguration auf sie verweist, mit
-  Sicherung, `haproxy -c`, Reload und Rückstellen bei einem Fehlschlag. Eine
-  neue Fassung des Aufbaus kommt dagegen mit einem neuen Abbild von HAPM und dem
-  nächsten Schreibvorgang an, siehe den nächsten Punkt.
+- **Ein geändertes Design wirkt sofort, eine geänderte Darstellung auch.**
+  Speichern schreibt die drei Seiten mit (`page-design-apply.ts`), wenn die
+  Konfiguration auf sie verweist, mit Sicherung, `haproxy -c`, Reload und
+  Rückstellen bei einem Fehlschlag. Dasselbe tut das Speichern unter
+  „Darstellung" und der Start von HAPM (`followPageChanges`, siehe „Nachziehen
+  ohne Rückfrage" bei den Fehlerseiten). Die Seiten der Passwortabfrage gehören
+  immer HAPM: von Hand geändert werden sie nicht, und jede Abweichung wird
+  ersetzt.
 - **Die Dateien müssen liegen, bevor `haproxy -c` läuft.** Fehlt eine, lehnt
   HAProxy die ganze Konfiguration ab. `stageAndCheck` stellt sie deshalb vor
   JEDER Prüfung sicher, sobald die Konfiguration darauf verweist, nicht nur beim
@@ -1482,12 +1487,15 @@ Karte. Die Passwortabfrage aus demselben Modul ist dagegen die Anmeldekarte.
 
 **Drei Arten** (`PageDesign.mode`, oben auf der Seite als Karten):
 
-- **Standard** (`standard`, Vorgabe): die Seite von HAPM. Wählbar ist nur die
+- **Standard** (`standard`, Vorgabe): die Seite von HAPM, mit Logo, Name und
+  Akzentfarbe aus der Darstellung, siehe „Die Darstellung". Wählbar ist nur die
   Sprache der Vorgabetexte.
 - **Selbst gestalten** (`designed`): dieselbe Seite mit eigenen Farben, Logo,
-  Name, Fußzeile und Texten, siehe „Das Design“.
+  Name, Fußzeile und Texten, siehe „Das Design“. Was dort nicht gesetzt ist,
+  kommt aus der Darstellung.
 - **Eigene HTML-Datei** (`custom`, `lib/haproxy/custom-page.ts`): eine Datei
-  für alle Fehlerseiten, unverändert ausgeliefert, siehe unten.
+  für alle Fehlerseiten, unverändert ausgeliefert, ohne Darstellung, siehe
+  unten.
 
 Die Felder der anderen Arten bleiben beim Wechsel gespeichert, was gilt, sagt
 nur `mode` (`builtInDesign`). Eine Zeile ohne `mode` (von vor der Wahl) ist
@@ -1503,9 +1511,47 @@ Akzent setzt, hat eine Fassung gewählt. In der dunklen Fassung (und auf einem
 eigenen dunklen Hintergrund) färbt CSS den Schriftzug des Logos hell. Die
 Vorschau zeigt beide Fassungen über `color-scheme` am `iframe`, unabhängig vom
 Rechner, an dem jemand HAPM bedient. Mit dieser Fassung haben sich die
-Prüfsummen der Fehlerseiten geändert (die der Passwortabfrage nicht): eine
-bestehende Installation sieht ihre Fehlerdateien nach dem Update als „Andere
-Seite“, und der Knopf schreibt sie neu.
+Prüfsummen der Fehlerseiten geändert (die der Passwortabfrage nicht). Seitdem
+zieht HAPM eine solche Änderung selbst nach, siehe „Nachziehen ohne
+Rückfrage“.
+
+**Die Darstellung** (`lib/haproxy/page-brand.ts`, `page-theme.ts`): Logo, Name
+und Akzentfarbe unter „System → Darstellung“ gelten auch hier.
+
+- **Wer gewinnt.** „Standard“ nimmt alles aus der Darstellung. Bei „Selbst
+  gestalten“ gewinnt, was dort gesetzt ist: eine eigene Akzentfarbe, ein
+  eigenes Logo, „Kein Logo“, ein eigener Schriftzug. Steht das Logo auf der
+  Vorgabe, heißt der Knopf dafür „Aus der Darstellung“. `designed` ohne eigene
+  Werte und `standard` ergeben weiter dieselben Dateien. Die eigene HTML-Datei
+  bleibt, wie sie ist; die Passwortabfrage daneben folgt der Darstellung.
+- **Ohne Darstellung Byte für Byte wie vorher.** `PageBrand` ist dann `null`,
+  und die Prüfsummen in `tests/haproxy/page-design.test.ts` gelten
+  unverändert. Eine Pille oder ein Symbol für den Tab allein zählen nicht.
+- **Was wohin geht.** Mit Logo: das Logo als Data-URI, der Name als
+  Alternativtext, kein Zeichen von HAPM. Ohne Logo, aber mit Name: der Name als
+  Text an der Stelle des Logos. Mit einer Farbe allein: das Logo von HAPM in
+  dieser Farbe. Die Farbe ist die, die auch die Oberfläche zeigt
+  (`readableAccent`, weiße Schrift mindestens 4,5:1). Eine helle Fassung des
+  Logos steht nur auf einer Fehlerseite, die hell und dunkel dem System folgt
+  (also ohne Akzentfarbe): beide Bilder stehen in der Seite, CSS zeigt eines.
+- **Die Größe.** Ein Logo der Darstellung darf 256 KB haben, eine Seite
+  15.000 Bytes. `brandLogoFit` misst an den fertigen Seiten, die HAProxy
+  bekäme (bei eigener HTML-Datei nur die Passwortabfrage): erst helles und
+  dunkles Logo, dann nur das helle, sonst der Name als Text. Das Ergebnis gilt
+  für alle Seiten zugleich, ein Logo auf der 503 und ein Name auf der
+  Passwortabfrage sähen nach zwei Absendern aus. Die Seite „Fehlerseiten“ sagt
+  es in einem Hinweis, statt still etwas wegzulassen, und ein zu großes Logo
+  der Darstellung ist kein Grund, ein Design abzulehnen. Verkleinert wird
+  nichts. Eine Datei, die allein größer ist als eine Seite, schickt die Route
+  gar nicht erst an den Browser (`logoTooLarge`).
+- **Woher die Seiten sie kennen.** Wie das Design: `loadPageDesign` liest die
+  Darstellung mit und setzt sie für den Prozess (`activeBrand`), die Vorschau
+  bekommt sie von `GET /api/haproxy/error-pages/design` und rechnet im Browser
+  mit denselben Funktionen.
+- **`page-theme.ts` importiert im Kreis** mit `error-pages.ts` und
+  `lock-page.ts`: dort wird nach dem Aussehen gefragt, hier an ihren Seiten
+  gemessen. Beides sind Funktionen, die erst beim Aufruf laufen. Rechnet eines
+  der drei Module beim Laden etwas mit einem anderen aus, bricht das.
 
 **Eigene HTML-Datei** (`custom-page.ts`):
 
@@ -1636,9 +1682,49 @@ gestalten“ für Fehlerseiten und Passwortabfrage zugleich:
 - **Synchron und nicht als abgekoppelter Lauf**, wie die DNS-Zugangsdaten: kein
   Zertifikat, keine neue Konfiguration. Die Schritte kommen in der Antwort zurück
   und stehen im Audit, in der Historie der Läufe stehen sie nicht.
-- **Eine neue Fassung der Seiten zeigt sich als „Andere Seite"**: die Prüfsumme
-  der Datei auf der Platte weicht dann von der ab, die jetzt aus dem
-  gespeicherten Design entstünde. Der Knopf schreibt sie neu.
+- **Eine neue Fassung der Seiten zieht HAPM selbst nach**, wenn die Datei von
+  HAPM stammt, sonst zeigt sie sich als „Andere Seite" und der Knopf schreibt
+  sie neu. Siehe den nächsten Absatz.
+
+**Nachziehen ohne Rückfrage** (`followPageChanges` in `page-design-apply.ts`):
+ändert ein Update von HAPM die Standardseite, oder ändert jemand die
+Darstellung, schreibt HAPM die Fehlerdateien neu, die es selbst hinterlassen
+hat. Ausgelöst beim Start (`lib/bootstrap.ts`, 20 Sekunden danach und ohne den
+Start aufzuhalten: beim ersten `compose up` startet HAProxy erst, wenn HAPM
+bereit ist) und nach dem Speichern unter „Darstellung“. Ein geändertes Design
+braucht das nicht, sein Speichern schreibt ohnehin alles und fragt vorher.
+
+- **Was HAPM hinterlassen hat, steht in der Collection `page_files`**
+  (`page-files.ts`): je Pfad die Prüfsumme des zuletzt Geschriebenen, vermerkt
+  nach jedem erfolgreichen Schreiben (nach `haproxy -c` und Reload) und beim
+  ersten Anlegen. Ein gescheiterter Vorgang stellt die Dateien zurück und
+  vermerkt nichts.
+- **Die Regel** (`isOwnErrorFile`): gibt es einen Eintrag, wird die Datei nur
+  geschrieben, wenn sie ihm genau entspricht. Jede Abweichung hat jemand anderes
+  geschrieben, und eine Seite von Hand wird nicht ohne Rückfrage ersetzt. Ohne
+  Eintrag (eine Installation von vor dieser Fassung) nur, wenn die Datei Byte
+  für Byte eine Standardseite einer früheren oder der jetzigen Fassung ist
+  (`page-history.ts`, de und en, gerechnet über jeden Commit: es gab zwei
+  frühere Fassungen). Dateien aus einem früheren „Selbst gestalten“ ohne
+  Eintrag kennt HAPM nicht und lässt sie stehen.
+- **Warum das sicher ist.** Ersetzt wird nur, was nachweislich von HAPM stammt
+  und seitdem niemand angefasst hat: dieselbe Prüfsumme wie beim Schreiben, oder
+  eine Seite, die HAPM selbst so ausgeliefert hat. Was dabei verloren gehen
+  kann, ist also nur eine ältere Fassung von HAPM. Der Weg ist derselbe wie
+  beim Knopf: nur unter `/etc/haproxy/`, Sicherung `.hapm-previous` und
+  `.hapm-original`, `haproxy -c`, Reload, bei einem Fehlschlag alles zurück.
+  Läuft HAProxy beim Start noch nicht, scheitert der Reload, die Dateien
+  stehen wie vorher, und der nächste Start versucht es wieder. Die eigene
+  HTML-Datei ändert sich mit der Darstellung nicht und gilt deshalb gar nicht
+  erst als abweichend.
+- **Protokoll.** Was geschrieben wurde und was als Seite von Hand stehen
+  blieb, steht im Log (`[fehlerseiten]`) und im Audit (`haproxy_error_pages_updated`
+  bzw. `…_failed`, beim Start als `scheduler`, nach der Darstellung als der
+  Benutzer, der gespeichert hat). Hat sich nichts geändert, steht nichts im
+  Audit.
+- **Ändert sich die Standardseite**, kommen ihre neuen Prüfsummen nach
+  `page-history.ts`, die alten bleiben. `tests/haproxy/page-files.test.ts`
+  scheitert, solange die jetzige Seite dort fehlt.
 - **Die 404 heißt hier anders als im Baustein `ui/static/page.ts`.** Auf dem Proxy meint sie die ganze
   Domain („Unter dieser Adresse ist nichts eingerichtet"), und „Zur Startseite"
   führte auf dieselbe Seite.

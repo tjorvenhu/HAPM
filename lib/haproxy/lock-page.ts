@@ -15,7 +15,9 @@
  * kommen aus dem gespeicherten Design (`page-design.ts`), wenn es „Selbst
  * gestalten“ ist. Bei der Seite von HAPM und bei eigenem HTML für die
  * Fehlerseiten bleibt die Abfrage die von HAPM (`builtInDesign`): sie braucht
- * ein Formular, das die Regel in `haproxy.cfg` versteht.
+ * ein Formular, das die Regel in `haproxy.cfg` versteht. Logo, Name und
+ * Akzentfarbe der Darstellung kommen in jeder Art dazu, soweit das Design sie
+ * nicht selbst setzt (`page-brand.ts`).
  *
  * Geschrieben werden die Seiten beim Speichern des Designs
  * (`page-design-apply.ts`) und vor jedem Schreibvorgang am Reverse-Proxy
@@ -33,7 +35,10 @@ import {
 import { DEFAULT_LOCALE, msgid, translate, type Locale } from '@/lib/i18n';
 import { buildCommand, withStdin } from '../shell';
 import { LOCK_FIELD, LOCK_PAGE_FILES, LOCK_PASSWORD_MAX } from './config';
-import { activeDesign, builtInDesign, designTheme, PAGE_MAX_BYTES, type PageDesign } from './page-design';
+import type { StaticTheme } from '@/ui/static/page';
+import { activeDesign, builtInDesign, PAGE_MAX_BYTES, type PageDesign } from './page-design';
+import { activeBrand, type PageBrand } from './page-brand';
+import { pageTheme } from './page-theme';
 
 /** Was eine Seite höchstens wiegen darf. Woher die Zahl kommt, steht in
  *  `page-design.ts`: über dieser Grenze antwortet HAProxy mit 500, und
@@ -77,8 +82,17 @@ function body(kind: LockPageKind, submit: string, locale: Locale): string {
 }
 
 /** Eine der drei Seiten als vollständiges Dokument. Ohne `design` gilt das
- *  gespeicherte. */
-export function renderLockPage(kind: LockPageKind, stored: PageDesign = activeDesign()): string {
+ *  gespeicherte, ohne `brand` die Darstellung, die gerade gilt. */
+export function renderLockPage(
+  kind: LockPageKind,
+  stored: PageDesign = activeDesign(),
+  brand: PageBrand | null = activeBrand()
+): string {
+  return lockPageWithTheme(kind, stored, pageTheme(stored, brand));
+}
+
+/** Dieselbe Seite mit einem fertigen Aussehen. Für `page-theme.ts`, das daran misst. */
+export function lockPageWithTheme(kind: LockPageKind, stored: PageDesign, theme: StaticTheme): string {
   const design = builtInDesign(stored);
   const defaults = lockPageDefaults(design.locale);
   return renderStaticPage(
@@ -88,15 +102,18 @@ export function renderLockPage(kind: LockPageKind, stored: PageDesign = activeDe
       subtitle: design.lock.subtitle ?? defaults.subtitle,
       body: body(kind, design.lock.submit ?? defaults.submit, design.locale),
     },
-    designTheme(design)
+    theme
   );
 }
 
 /** Alle drei, mit dem Dateinamen, unter dem die Regeln sie erwarten. */
-export function lockPages(design: PageDesign = activeDesign()): { file: string; html: string }[] {
+export function lockPages(
+  design: PageDesign = activeDesign(),
+  brand: PageBrand | null = activeBrand()
+): { file: string; html: string }[] {
   return (Object.keys(LOCK_PAGE_FILES) as LockPageKind[]).map((kind) => ({
     file: LOCK_PAGE_FILES[kind],
-    html: renderLockPage(kind, design),
+    html: renderLockPage(kind, design, brand),
   }));
 }
 

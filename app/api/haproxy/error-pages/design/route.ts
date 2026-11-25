@@ -3,7 +3,8 @@ import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
 import { logAudit, getClientIP } from '@/lib/audit';
 import { getProxyServer, type ProvisionStep } from '@/lib/haproxy/provision';
 import { applyPageDesign } from '@/lib/haproxy/page-design-apply';
-import { loadPageDesign, savePageDesign } from '@/lib/haproxy/page-design-store';
+import { loadPageBrand, loadPageDesign, savePageDesign } from '@/lib/haproxy/page-design-store';
+import { activeBrand } from '@/lib/haproxy/page-brand';
 import {
   defaultPageDesign,
   isDefaultDesign,
@@ -133,7 +134,9 @@ async function audit(
 export async function GET() {
   try {
     await requireSession();
-    return ok({ design: await loadPageDesign() });
+    // Die Darstellung kommt mit: die Vorschau rechnet im Browser dieselben Seiten.
+    const design = await loadPageDesign();
+    return ok({ design, brand: activeBrand() });
   } catch (err) {
     return handleError(err);
   }
@@ -152,7 +155,7 @@ export async function PUT(request: Request) {
 
     const parsed = parsePageDesign(body.design, locale);
     if (!parsed.ok) throw new ApiError(parsed.error);
-    const tooLarge = designSizeError(parsed.design, locale);
+    const tooLarge = designSizeError(parsed.design, locale, await loadPageBrand());
     if (tooLarge) throw new ApiError(tooLarge);
 
     const server = await getProxyServer(body.serverId || LOCAL_SERVER_ID);
