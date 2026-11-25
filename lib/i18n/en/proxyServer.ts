@@ -557,6 +557,9 @@ export const proxyServer: Dictionary = {
   "{file} ist kein hochgeladenes Zertifikat. Zertifikate von acme.sh vergehen mit ihrem Ziel.": "{file} is not an uploaded certificate. Certificates from acme.sh are removed with their target.",
   "Das Zertifikat wird noch gebraucht: {list}. Entfernen Sie zuerst die Ziele oder laden Sie ein anderes Zertifikat für sie hoch.": "The certificate is still needed: {list}. Remove the targets first or upload another certificate for them.",
   "Das Zertifikat ließ sich nicht entfernen: {detail}": "The certificate could not be removed: {detail}",
+  "Das Zertifikat für {domain} wird noch gebraucht: {list}. Es bleibt stehen, solange ein Ziel darunter liegt.": "The certificate for {domain} is still needed: {list}. It stays as long as a target lies beneath it.",
+  "Die Datei ist entfernt, aber acme.sh hat den Eintrag für {domain} nicht gelöscht. Die nächste Erneuerung legt die Datei wieder an: {detail}": "The file is removed, but acme.sh did not delete the entry for {domain}. The next renewal creates the file again: {detail}",
+  "acme.sh hat den Eintrag für {domain} nicht gelöscht: {detail}": "acme.sh did not delete the entry for {domain}: {detail}",
   // Fehlerseiten: Art der Seiten, eigene HTML-Datei (app/(app)/reverse-proxy/fehlerseiten, lib/haproxy/page-design.ts, design-pages.ts)
   'Standard': 'Standard',
   'Die Fehlerseite von HAPM, hell oder dunkel nach dem Gerät des Besuchers.':

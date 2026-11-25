@@ -32,9 +32,11 @@ import { useT } from '@/lib/i18n/react';
  *
  * ── Zwei Herkünfte, zwei Regeln ──
  *
- * Was acme.sh führt, ist hier nur lesend. Es entsteht und vergeht mit einem
- * Dienst; es hier einzeln zu entfernen hieße, dem Reverse-Proxy das PEM unter
- * einer laufenden Domain wegzuziehen.
+ * Was acme.sh führt, entsteht und vergeht mit einem Dienst. Gelöscht wird es
+ * hier nur, wenn niemand es hält (`keptBy` leer): kein Ziel bekommt es
+ * ausgeliefert, und es deckt keine Domain eines Ziels ab. Sonst hieße es, dem
+ * Reverse-Proxy das PEM unter einer laufenden Domain wegzuziehen. Die Route
+ * prüft das im Lock noch einmal, die Seite zeigt nur den Knopf.
  *
  * Hochgeladene Zertifikate entstehen dagegen nur hier, also werden sie hier
  * ersetzt und entfernt. Entfernen geht nur, solange danach kein Ziel ohne
@@ -57,6 +59,8 @@ interface CertificateRow extends AcmeCertificate {
   usedBy: CertificateUser[];
   /** Ob die PEM-Datei im Zertifikatsverzeichnis liegt. `null`: unbekannt. */
   deployed: boolean | null;
+  /** Wer es hält: `usedBy` und die Ziele, deren Domains es abdeckt. Leer heißt löschbar. */
+  keptBy: string[];
 }
 
 interface UploadedRow extends UploadedCertificate {
@@ -180,6 +184,99 @@ export default function ReverseProxyCertificatesPage() {
     }
   }
 
+  /** Was beim Löschen mit HAProxy geschieht, hängt daran, ob eine Datei geladen ist. */
+  function acmeRemovalText(cert: CertificateRow): string {
+    const domains = cert.domains.join(', ');
+    if (cert.createdAt === null) {
+      return t('acme.sh löscht den Antrag für {domains}. Ein Zertifikat gibt es dafür nicht, HAProxy bleibt unverändert.', { domains });
+    }
+    if (cert.deployed === false) {
+      return t('acme.sh löscht das Zertifikat für {domains} samt Schlüssel. Ausgerollt ist es nicht, HAProxy bleibt unverändert.', { domains });
+    }
+    return t(
+      'acme.sh löscht das Zertifikat für {domains} samt Schlüssel und erneuert es nicht mehr. Die Datei im Zertifikatsverzeichnis wird entfernt und HAProxy neu geladen.',
+      { domains }
+    );
+  }
+
+  /** Ein Zertifikat von acme.sh löschen. Wirft mit der Meldung der Route. */
+  async function deleteAcme(cert: CertificateRow): Promise<{ reloaded: boolean }> {
+    const res = await apiFetch(`/api/haproxy/certificates?domain=${encodeURIComponent(cert.mainDomain)}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || t('Das Zertifikat ließ sich nicht löschen.'));
+    return { reloaded: data.data.reloaded === true };
+  }
+
+  async function removeAcme(cert: CertificateRow) {
+    const confirmed = await confirm({
+      title: cert.createdAt === null ? t('Antrag löschen?') : t('Zertifikat löschen?'),
+      message: acmeRemovalText(cert),
+      confirmLabel: t('Löschen'),
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+    setRemoving(`acme:${cert.mainDomain}`);
+    try {
+      const { reloaded } = await deleteAcme(cert);
+      notify({
+        variant: 'success',
+        message: reloaded
+          ? t('Das Zertifikat für {domain} ist gelöscht. HAProxy ist neu geladen.', { domain: cert.mainDomain })
+          : t('Das Zertifikat für {domain} ist gelöscht.', { domain: cert.mainDomain }),
+      });
+      await load(true);
+    } catch (err: unknown) {
+      notify({
+        variant: 'error',
+        message: err instanceof Error && err.message ? err.message : t('Das Zertifikat ließ sich nicht löschen.'),
+      });
+    } finally {
+      setRemoving(null);
+    }
+  }
+
+  /** Alle, die niemand hält, nacheinander. Jedes prüft die Route einzeln im Lock. */
+  async function removeUnused(certs: CertificateRow[]) {
+    const confirmed = await confirm({
+      title: t('Unbenutzte Zertifikate löschen?'),
+      message: plural(
+        certs.length,
+        {
+          one: 'acme.sh löscht {count} Zertifikat samt Schlüssel: {list}. Für jede geladene Datei wird HAProxy neu geladen.',
+          other: 'acme.sh löscht {count} Zertifikate samt Schlüssel: {list}. Für jede geladene Datei wird HAProxy neu geladen.',
+        },
+        { list: certs.map((cert) => cert.mainDomain).join(', ') }
+      ),
+      confirmLabel: t('Alle löschen'),
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+    setRemoving('acme:*');
+    const failed: string[] = [];
+    let reason = '';
+    try {
+      for (const cert of certs) {
+        try {
+          await deleteAcme(cert);
+        } catch (err: unknown) {
+          failed.push(cert.mainDomain);
+          if (err instanceof Error && err.message) reason = err.message;
+        }
+      }
+      notify(
+        failed.length === 0
+          ? {
+              variant: 'success',
+              message: plural(certs.length, { one: '{count} Zertifikat ist gelöscht.', other: '{count} Zertifikate sind gelöscht.' }),
+            }
+          : { variant: 'error', message: t('Nicht gelöscht: {list}. {reason}', { list: failed.join(', '), reason }) }
+      );
+      await load(true);
+    } finally {
+      setRemoving(null);
+    }
+  }
+
   async function issue(cert: CertificateRow, dnsHook: string | null) {
     const res = await apiFetch('/api/haproxy/certificates/issue', {
       method: 'POST',
@@ -253,6 +350,19 @@ export default function ReverseProxyCertificatesPage() {
         </span>
       );
     }
+    if (cert.usedBy.length === 0 && cert.keptBy.length > 0) {
+      return (
+        <span style={{ color: 'var(--text-secondary)' }}>
+          {t('Von keinem Eintrag benutzt')}
+          <InfoHint
+            text={t(
+              'Es deckt noch Domains dieser Ziele ab: {list}. Deshalb bleibt es stehen. Löschen lässt es sich, wenn kein Ziel mehr darunter liegt.',
+              { list: cert.keptBy.join(', ') }
+            )}
+          />
+        </span>
+      );
+    }
     return usersCell(cert.usedBy);
   }
 
@@ -315,12 +425,14 @@ export default function ReverseProxyCertificatesPage() {
                     { general: <Link href="/system">{t('Allgemein')}</Link> }
                   )
                 : t(
-                    'Zertifikate von acme.sh entstehen und vergehen mit ihrem Ziel. Hochgeladene ersetzen und entfernen Sie hier, acme.sh beantragt dann für ihre Domains keins.'
+                    'Zertifikate von acme.sh entstehen mit ihrem Ziel. Eins, das kein Ziel mehr braucht, löschen Sie in seiner Zeile. Hochgeladene ersetzen und entfernen Sie hier, acme.sh beantragt dann für ihre Domains keins.'
                   )}
             </span>
           </div>
 
-          {rows.map((row) => (
+          {rows.map((row) => {
+            const unused = row.acmeReady ? row.certificates.filter((cert) => cert.keptBy.length === 0) : [];
+            return (
             <div key={row.$id}>
               {row.error && <div className="alert alert-danger sys-block">{row.error}</div>}
 
@@ -406,6 +518,17 @@ export default function ReverseProxyCertificatesPage() {
                       ? t('DNS-Hooks: {hooks}', { hooks: row.dnsHooks.join(', ') })
                       : t('Kein DNS-Hook eingerichtet, keine Wildcard ausstellbar')}
                   </span>
+                  {unused.length > 1 && (
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      style={{ marginLeft: 'auto' }}
+                      disabled={removing !== null}
+                      onClick={() => void removeUnused(unused)}
+                    >
+                      {removing === 'acme:*' ? <Loader2 size={14} className="spin" /> : <Trash2 size={14} />}
+                      {t('Unbenutzte löschen ({count})', { count: unused.length })}
+                    </button>
+                  )}
                 </div>
 
                 {row.error ? null : !row.acmeReady ? (
@@ -454,8 +577,9 @@ export default function ReverseProxyCertificatesPage() {
                             <td>{renewCell(cert)}</td>
                             <td>{acmeUsersCell(cert)}</td>
                             <td>
-                              {cert.createdAt === null && row.source === 'acme' && (
-                                <div className="hapm-form-actions">
+                              {/* Ohne `nowrap` stehen die zwei Knöpfe eines nie ausgestellten Antrags untereinander. */}
+                              <div className="hapm-form-actions" style={{ flexWrap: 'nowrap' }}>
+                                {cert.createdAt === null && row.source === 'acme' && (
                                   <button
                                     className="btn btn-ghost btn-icon btn-sm"
                                     data-tooltip={t('Erneut beantragen')}
@@ -464,8 +588,23 @@ export default function ReverseProxyCertificatesPage() {
                                   >
                                     <RotateCw size={16} />
                                   </button>
-                                </div>
-                              )}
+                                )}
+                                {unused.includes(cert) && (
+                                  <button
+                                    className="btn btn-ghost btn-icon btn-sm"
+                                    data-tooltip={t('Löschen')}
+                                    aria-label={t('Löschen')}
+                                    disabled={removing !== null}
+                                    onClick={() => void removeAcme(cert)}
+                                  >
+                                    {removing === `acme:${cert.mainDomain}` ? (
+                                      <Loader2 size={16} className="spin" />
+                                    ) : (
+                                      <Trash2 size={16} />
+                                    )}
+                                  </button>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -475,7 +614,8 @@ export default function ReverseProxyCertificatesPage() {
                 )}
               </div>
             </div>
-          ))}
+            );
+          })}
         </>
       )}
 

@@ -6,12 +6,13 @@ import { logAudit, getClientIP } from '@/lib/audit';
 import {
   probeProxy,
   readCertificateInventory,
+  removeAcmeCertificate,
   removeUploadedCertificate,
   uploadCertificate,
 } from '@/lib/haproxy/provision';
-import { certificateUse, pemFileName, type AcmeCertificate } from '@/lib/haproxy/certs';
+import { certificateKeepers, certificateUse, pemFileName, type AcmeCertificate } from '@/lib/haproxy/certs';
 import { inspectUpload, isPemFileName, servedFiles, type UploadedCertificate } from '@/lib/haproxy/cert-upload';
-import { scopeSlug, type HaproxyService } from '@/lib/haproxy/config';
+import { isValidDomain, scopeSlug, type HaproxyService } from '@/lib/haproxy/config';
 import { localServer } from '@/lib/helpers';
 import { getSettings } from '@/lib/settings';
 import type { CertificateSource } from '@/lib/types';
@@ -28,11 +29,13 @@ import type { CertificateSource } from '@/lib/types';
  * `acme.sh --list` über jedes Domainverzeichnis läuft: die Übersicht pollt im
  * Minutentakt je Proxy, diese Seite wird aufgerufen, wenn man sie braucht.
  *
- * Was acme.sh führt, ist hier nur lesend: es entsteht und vergeht mit einem
- * Dienst, und es hier einzeln zu löschen hieße, dem Reverse-Proxy das PEM unter
- * einer laufenden Domain wegzuziehen. Hochgeladene Zertifikate entstehen
- * dagegen nur hier, also werden sie hier auch ersetzt und entfernt (POST,
- * DELETE), und zwar nur, solange kein Ziel ohne sie dastünde.
+ * Was acme.sh führt, entsteht und vergeht mit einem Dienst. Gelöscht wird es
+ * hier nur, wenn niemand es hält (`certificateKeepers`): kein Ziel bekommt es
+ * ausgeliefert, und es deckt keine Domain eines Ziels ab. Sonst hieße es, dem
+ * Reverse-Proxy das PEM unter einer laufenden Domain wegzuziehen. Hochgeladene
+ * Zertifikate entstehen dagegen nur hier, also werden sie hier auch ersetzt
+ * und entfernt (POST, DELETE), und zwar nur, solange kein Ziel ohne sie
+ * dastünde.
  */
 
 /**
@@ -54,6 +57,9 @@ interface CertificateRow extends AcmeCertificate {
   /** Ob die PEM-Datei im Zertifikatsverzeichnis liegt. `false` auch, wenn es
    *  nie ausgestellt wurde (`createdAt: null`); `null` heißt unbekannt. */
   deployed: boolean | null;
+  /** Die Dienste, die es halten (`certificateKeepers`): `usedBy` und dazu,
+   *  wessen Domain es abdeckt. Leer heißt, es lässt sich löschen. */
+  keptBy: string[];
 }
 
 interface UploadedRow extends UploadedCertificate {
@@ -82,12 +88,9 @@ interface ProxyCertificates {
  * Wildcard für diesen Namen nicht aus, und sie stünde sonst bei beiden.
  */
 function usersByFile(
-  acme: AcmeCertificate[],
-  uploaded: UploadedCertificate[],
-  deployed: string[] | null,
+  files: ReturnType<typeof servedFiles>,
   services: HaproxyService[]
 ): (file: string) => CertificateUser[] {
-  const files = servedFiles(acme, uploaded, deployed);
   const use = certificateUse(files, services);
   return (file) => {
     const served = files.find((entry) => entry.file === file);
@@ -112,7 +115,8 @@ export async function GET() {
       const probe = await probeProxy(server);
       const inventory = await readCertificateInventory(server);
       const acme = probe.acmeReady ? inventory.acme : [];
-      const usersOf = usersByFile(acme, inventory.uploaded, inventory.deployed, probe.services);
+      const files = servedFiles(acme, inventory.uploaded, inventory.deployed);
+      const usersOf = usersByFile(files, probe.services);
       row = {
         ...base,
         acmeReady: probe.acmeReady,
@@ -123,7 +127,12 @@ export async function GET() {
             cert.createdAt === null ? false : inventory.deployed === null ? null : inventory.deployed.includes(file);
           // Ein nie ausgestellter Antrag hat keine Datei. Liegt eine unter seinem
           // Namen, ist sie hochgeladen und steht dort mit ihren Diensten.
-          return { ...cert, deployed, usedBy: deployed === false ? [] : usersOf(file) };
+          return {
+            ...cert,
+            deployed,
+            usedBy: deployed === false ? [] : usersOf(file),
+            keptBy: certificateKeepers(cert, files, probe.services).map((service) => service.id),
+          };
         }),
         uploaded: inventory.uploaded.map((cert) => ({ ...cert, usedBy: usersOf(cert.file) })),
         error: null,
@@ -198,14 +207,43 @@ export async function POST(request: Request) {
   }
 }
 
+/**
+ * Ein Zertifikat entfernen: `?file=` ein hochgeladenes, `?domain=` eins von
+ * acme.sh (seine Hauptdomain). Ob es noch gebraucht wird, prüft
+ * `provision.ts` im Lock, nicht die Seite.
+ */
 export async function DELETE(request: Request) {
   try {
     await requireCsrf(request);
     const session = await requireSession();
-    const file = new URL(request.url).searchParams.get('file') ?? '';
+    const params = new URL(request.url).searchParams;
+    const server = localServer();
+
+    const domain = params.get('domain');
+    if (domain !== null) {
+      const mainDomain = domain.trim().toLowerCase();
+      if (!isValidDomain(mainDomain)) throw new ApiError(msg('"{domain}" ist keine gültige Domain.', { domain: mainDomain }));
+      const removed = await removeAcmeCertificate(server, mainDomain);
+      const cert = removed.certificate;
+
+      await logAudit({
+        userId: session.userId,
+        userEmail: session.email,
+        action: 'haproxy_certificate_removed',
+        resource: 'server',
+        resourceId: server.$id,
+        details:
+          `acme.sh ${cert.mainDomain}: ${cert.domains.join(', ')}` +
+          (cert.createdAt === null ? ', nie ausgestellt' : removed.reloaded ? `, ${pemFileName(cert.mainDomain)} gelöscht` : ', nicht ausgerollt'),
+        ip: getClientIP(request),
+      });
+
+      return ok({ mainDomain: cert.mainDomain, reloaded: removed.reloaded });
+    }
+
+    const file = params.get('file') ?? '';
     if (!isPemFileName(file)) throw new ApiError(msg('Unbekannte Zertifikatsdatei.'));
 
-    const server = localServer();
     const removed = await removeUploadedCertificate(server, file);
 
     await logAudit({

@@ -243,6 +243,58 @@ export function certificateUse<T extends { domains: string[] }, S extends { doma
 }
 
 /**
+ * Welche der übrig bleibenden Dienste dieses Zertifikat noch brauchen.
+ *
+ * Der Fall, für den es die Prüfung gibt: `app.kunde.example` und `api.kunde.example` sind
+ * zwei Einträge auf einem Zertifikat `*.kunde.example`, genau wofür man Wildcards
+ * nimmt. Den ersten zu löschen darf dem zweiten das PEM nicht wegnehmen. Ohne
+ * die Prüfung täte es das, und auffallen würde es nicht beim Löschen, sondern
+ * beim nächsten Start von HAProxy.
+ *
+ * Im Zweifel bleibt das Zertifikat stehen: ein überzähliges kostet einen
+ * Erneuerungseintrag, ein fehlendes nimmt eine fremde Domain offline. Deshalb
+ * „deckt ab" und nicht „wird ausgeliefert" (`certificateUse`).
+ */
+export function certificateUsers<S extends { domains: string[] }>(
+  cert: { domains: string[] },
+  services: readonly S[]
+): S[] {
+  return services.filter((service) =>
+    service.domains.some((domain) => cert.domains.some((p) => certCovers(p, domain)))
+  );
+}
+
+/**
+ * Wer ein Zertifikat von acme.sh noch hält: die Dienste, denen HAProxy es
+ * ausliefert (`certificateUse` über `files`, die geladenen Dateien in der
+ * Reihenfolge der Dateinamen), und die, deren Domains es abdeckt
+ * (`certificateUsers`). Leer heißt: es lässt sich auf der Zertifikatsseite
+ * löschen. Die Seite und das Löschen fragen beide hier.
+ *
+ * Beides, weil beides einzeln zu wenig ist. „Ausgeliefert" allein ließe eine
+ * Wildcard löschen, unter der Ziele mit eigenem Zertifikat liegen; fiele
+ * eins davon weg (`deleteService` räumt es ab), stünde das Ziel ohne da.
+ * „Deckt ab" allein übersähe den Dienst auf `*.kunde.example`, dem HAProxy
+ * das genaue Zertifikat `app.kunde.example` ausliefert.
+ *
+ * Ein nie ausgestellter Antrag (`createdAt: null`) hält niemand: er hat kein
+ * Zertifikat, deckt nichts ab und hat keine Datei. Eine Datei unter seinem
+ * Namen ist hochgeladen und steht dort mit ihren eigenen Diensten.
+ */
+export function certificateKeepers<S extends { domains: string[] }>(
+  cert: AcmeCertificate,
+  files: readonly { file: string; domains: string[] }[],
+  services: readonly S[]
+): S[] {
+  if (cert.createdAt === null) return [];
+  const name = pemFileName(cert.mainDomain);
+  const served = files.find((entry) => entry.file === name);
+  const servedTo = served ? (certificateUse(files, services).get(served) ?? []) : [];
+  const covering = certificateUsers(cert, services);
+  return services.filter((service) => servedTo.includes(service) || covering.includes(service));
+}
+
+/**
  * Der Dateiname, unter dem das PEM in `/etc/haproxy/certs` liegt.
  *
  * Für eine Wildcard wird der Stern zum Unterstrich. HAProxy braucht den Namen

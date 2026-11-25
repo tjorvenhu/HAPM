@@ -7,9 +7,9 @@ import { listCertificates } from '@/lib/haproxy/api-actions';
  * Was acme.sh führt, samt der Dienste, die es benutzen.
  *
  * **Nur lesend, und das bleibt so.** Ein Zertifikat entsteht und vergeht mit
- * einem Dienst; es hier einzeln löschbar zu machen hieße, dem Reverse-Proxy das
- * PEM unter einer laufenden Domain wegzuziehen — und das fiele nicht heute auf,
- * sondern beim nächsten Start von HAProxy.
+ * einem Dienst. Eins, das kein Ziel mehr hält, löscht ein Mensch auf der
+ * Zertifikatsseite (`removeAcmeCertificate`); eine Pipeline hat dafür keinen
+ * Grund, sie legt Ziele an und entfernt sie.
  *
  * Eine eigene Route und kein Feld auf `/services`, weil `acme.sh --list` über
  * jedes Domainverzeichnis läuft. Wer die Dienste pollt, soll das nicht bei

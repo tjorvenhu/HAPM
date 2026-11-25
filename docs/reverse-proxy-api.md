@@ -567,7 +567,9 @@ dann wird die ganze Datei abgelehnt — HAProxy stünde beim nächsten Start.
 
 ### `GET /certificates`
 
-Nur lesend, und das bleibt so.
+Nur lesend, und das bleibt so. Ein Zertifikat, das kein Ziel mehr hält,
+löscht man in der Oberfläche (Reverse-Proxy, Zertifikate); eine Pipeline legt
+Ziele an und entfernt sie, die Zertifikate folgen ihnen.
 
 ```ts
 type ProxyCertificates = {

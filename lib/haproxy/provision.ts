@@ -109,12 +109,15 @@ import {
   parseDnsHooks,
   findCertificateFor,
   certCovers,
+  certificateKeepers,
+  certificateUsers,
   pemFileName,
   type AcmeCertificate,
 } from './certs';
 import {
   certListingCommand,
   parseCertListing,
+  servedFiles,
   uploadedCertificates,
   uploadedCoverage,
   type InspectedUpload,
@@ -1286,24 +1289,6 @@ async function deployCertificate(
 }
 
 /**
- * Welche der übrig bleibenden Dienste dieses Zertifikat noch brauchen.
- *
- * Der Fall, für den es die Prüfung gibt: `app.kunde.example` und `api.kunde.example` sind
- * zwei Einträge auf einem Zertifikat `*.kunde.example` — genau wofür man Wildcards
- * nimmt. Den ersten zu löschen darf dem zweiten das PEM nicht wegnehmen. Ohne
- * die Prüfung täte es das, und auffallen würde es nicht beim Löschen, sondern
- * beim nächsten Start von HAProxy.
- *
- * Im Zweifel bleibt das Zertifikat stehen: ein überzähliges kostet einen
- * Erneuerungseintrag, ein fehlendes nimmt eine fremde Domain offline.
- */
-function certificateUsers(cert: AcmeCertificate, services: HaproxyService[]): HaproxyService[] {
-  return services.filter((service) =>
-    service.domains.some((domain) => cert.domains.some((p) => certCovers(p, domain)))
-  );
-}
-
-/**
  * Ein Zertifikat samt Erneuerungseintrag abräumen. Best effort und immer am
  * Ende: ab hier läuft HAProxy schon mit der neuen Lage, ein Fehlschlag ist eine
  * liegengebliebene Datei und kein Ausfall.
@@ -2062,6 +2047,107 @@ export async function removeUploadedCertificate(server: Server, file: string): P
     });
     await sshExec(ssh, buildCommand(['rm', '-f', '--', UPLOAD_OLD]), SHORT_MS).catch(() => null);
     return cert;
+  });
+}
+
+/** Wohin die PEM-Datei eines Zertifikats von acme.sh beim Löschen bis zum Neuladen geht: neben das Verzeichnis, nicht hinein. */
+const ACME_OLD = '/etc/haproxy/hapm-acme-old.pem.hapm-previous';
+
+/** Was `removeAcmeCertificate` getan hat, für Protokoll und Meldung. */
+export interface AcmeRemoval {
+  certificate: AcmeCertificate;
+  /** Ob eine PEM-Datei von acme.sh im Verzeichnis lag und HAProxy dafür neu geladen hat. */
+  reloaded: boolean;
+}
+
+/**
+ * Ein Zertifikat von acme.sh löschen, das niemand mehr hält
+ * (`certificateKeepers`): ausgestellt und unbenutzt, ausgestellt und nie
+ * ausgerollt, oder ein Antrag, der nie durchkam.
+ *
+ * Geprüft wird hier, im Lock, und nicht in der Oberfläche: die Seite zeigt den
+ * Stand vom letzten Takt, und dazwischen kann ein Ziel angelegt worden sein,
+ * das genau dieses Zertifikat gefunden hat (`findCertificateFor`).
+ *
+ * Erst die Datei, dann acme.sh. Die Datei lässt sich zurücklegen, wenn
+ * `haproxy -c` oder das Neuladen scheitert; ein Eintrag, den
+ * `acme.sh --remove` abgemeldet hat, nicht. Scheitert danach acme.sh, ist die
+ * Datei weg und der Eintrag noch da: die nächste Erneuerung rollte sie wieder
+ * aus, also wird das gemeldet und nicht verschwiegen.
+ */
+export async function removeAcmeCertificate(server: Server, mainDomain: string): Promise<AcmeRemoval> {
+  return withProxyLock(server.$id, async () => {
+    const ssh = await getSSHConfig(server);
+    const probe = await readableProbe(server);
+    const acme = await probeCertificates(ssh);
+    const listing = await probeListing(ssh);
+    const uploaded = listing ? uploadedCertificates(listing, acme) : [];
+    const deployed = listing ? listing.map((entry) => entry.file) : null;
+
+    const wanted = mainDomain.toLowerCase();
+    const cert = acme.find((entry) => entry.mainDomain.toLowerCase() === wanted);
+    if (!cert) throw new ApiError(msg('acme.sh führt kein Zertifikat für {domain}.', { domain: mainDomain }), 404);
+    // Der Name geht unten in `rm -rf`. Aus `acme.sh --list` kommt nur eine Domain, aber das prüft hier niemand sonst.
+    if (!isValidDomain(cert.mainDomain)) throw new ApiError(msg('"{domain}" ist keine gültige Domain.', { domain: cert.mainDomain }));
+
+    const keepers = certificateKeepers(cert, servedFiles(acme, uploaded, deployed), probe.services);
+    if (keepers.length > 0) {
+      throw new ApiError(
+        msg('Das Zertifikat für {domain} wird noch gebraucht: {list}. Es bleibt stehen, solange ein Ziel darunter liegt.', {
+          domain: cert.mainDomain,
+          list: keepers.map((service) => service.id).join(', '),
+        }),
+        409
+      );
+    }
+
+    /* Die Datei gehört acme.sh nur, wenn es ausgestellt hat. Unter dem Namen
+     * eines nie ausgestellten Antrags liegt höchstens ein hochgeladenes
+     * Zertifikat, und das bleibt. Ob sie da ist, sagt `test -f` und nicht
+     * `deployed`: das Verzeichnis kann unlesbar gewesen sein. */
+    const path = pemPath(cert.mainDomain);
+    let reloaded = false;
+    if (cert.createdAt !== null) {
+      const move = await sshExec(
+        ssh,
+        `${buildCommand(['test', '-f', path])} && ${buildCommand(['mv', path, ACME_OLD])} && echo ja`,
+        SHORT_MS
+      );
+      if (move.stdout.trim() === 'ja') {
+        await checkAndReload(ssh, async () => {
+          await sshExec(ssh, buildCommand(['mv', ACME_OLD, path]), SHORT_MS).catch(() => null);
+        });
+        await sshExec(ssh, buildCommand(['rm', '-f', '--', ACME_OLD]), SHORT_MS).catch(() => null);
+        reloaded = true;
+      }
+    }
+
+    const ecc = isEccKey(cert.keyLength);
+    const remove = await sshExec(
+      ssh,
+      buildCommand([ACME, '--remove', '-d', cert.mainDomain, ...(ecc ? ['--ecc'] : [])]),
+      SHORT_MS
+    );
+    if (remove.code !== 0) {
+      throw new ApiError(
+        reloaded
+          ? msg('Die Datei ist entfernt, aber acme.sh hat den Eintrag für {domain} nicht gelöscht. Die nächste Erneuerung legt die Datei wieder an: {detail}', {
+              domain: cert.mainDomain,
+              detail: tail(remove.stderr || remove.stdout),
+            })
+          : msg('acme.sh hat den Eintrag für {domain} nicht gelöscht: {detail}', {
+              domain: cert.mainDomain,
+              detail: tail(remove.stderr || remove.stdout),
+            })
+      );
+    }
+    // `--remove` meldet nur ab und lässt das Verzeichnis mit Schlüssel stehen.
+    await sshExec(
+      ssh,
+      buildCommand(['rm', '-rf', '--', `${ACME_HOME}/${cert.mainDomain}${ecc ? '_ecc' : ''}`]),
+      SHORT_MS
+    ).catch(() => null);
+    return { certificate: cert, reloaded };
   });
 }
 

@@ -8,7 +8,11 @@ import {
   parseDnsHooks,
   servedCertificate,
   certificateUse,
+  certificateUsers,
+  certificateKeepers,
+  type AcmeCertificate,
 } from '@/lib/haproxy/certs';
+import { servedFiles } from '@/lib/haproxy/cert-upload';
 
 /**
  * Die Ausgabe ist die von `acme.sh --list --listraw`, samt Kopfzeile, samt
@@ -236,5 +240,84 @@ describe('certificateUse', () => {
   it('nennt einen Dienst mit mehreren Domains auf demselben Zertifikat nur einmal', () => {
     const both = { id: 'beide', domains: ['huether.tech', 'www.huether.tech'] };
     expect(certificateUse([wildcard], [both]).get(wildcard)).toEqual([both]);
+  });
+});
+
+/* ── Wann ein Zertifikat von acme.sh gelöscht werden darf ──
+ *
+ * Die Zertifikatsseite bietet das Löschen nur an, wenn `certificateKeepers`
+ * leer ist, und `removeAcmeCertificate` fragt im Lock dieselbe Funktion. Die
+ * Regel: kein Ziel bekommt es ausgeliefert, und es deckt keine Domain eines
+ * Ziels ab (`certificateUsers`, wie beim Löschen eines Dienstes). Im Zweifel
+ * bleibt es stehen. */
+
+function acmeCert(mainDomain: string, domains: string[], createdAt: string | null = '2026-05-01T00:00:00Z'): AcmeCertificate {
+  return { mainDomain, domains, keyLength: 'ec-256', createdAt, renewAt: null };
+}
+
+describe('certificateUsers', () => {
+  it('zählt jeden Dienst, dessen Domain das Zertifikat abdeckt', () => {
+    const app = { id: 'app', domains: ['app.kunde.example'] };
+    const other = { id: 'fremd', domains: ['fremd.example'] };
+    const wildcard = acmeCert('kunde.example', ['kunde.example', '*.kunde.example']);
+    expect(certificateUsers(wildcard, [app, other])).toEqual([app]);
+  });
+
+  it('eine Wildcard deckt nur eine Ebene ab', () => {
+    const deep = { id: 'tief', domains: ['a.b.kunde.example'] };
+    expect(certificateUsers(acmeCert('*.kunde.example', ['*.kunde.example']), [deep])).toEqual([]);
+  });
+});
+
+describe('certificateKeepers', () => {
+  const app = { id: 'app', domains: ['app.kunde.example'] };
+  const other = { id: 'fremd', domains: ['fremd.example'] };
+
+  const keepers = (cert: AcmeCertificate, all: AcmeCertificate[], services: { id: string; domains: string[] }[], deployed: string[] | null = null) =>
+    certificateKeepers(cert, servedFiles(all, [], deployed), services).map((service) => service.id);
+
+  it('ein Zertifikat, das kein Ziel betrifft, hält niemand', () => {
+    const left = acmeCert('alt.example', ['alt.example']);
+    expect(keepers(left, [left], [app, other])).toEqual([]);
+  });
+
+  it('das eigene Zertifikat eines Ziels hält das Ziel', () => {
+    const own = acmeCert('app.kunde.example', ['app.kunde.example']);
+    expect(keepers(own, [own], [app, other])).toEqual(['app']);
+  });
+
+  it('eine Wildcard bleibt, solange ein Ziel darunter liegt, auch wenn HAProxy ihm sein eigenes ausliefert', () => {
+    const own = acmeCert('app.kunde.example', ['app.kunde.example']);
+    const wildcard = acmeCert('kunde.example', ['kunde.example', '*.kunde.example']);
+    // Ausgeliefert wird das eigene, „Benutzt von" der Wildcard ist leer …
+    const files = servedFiles([own, wildcard], [], null);
+    expect(certificateUse(files, [app]).get(files.find((f) => f.file === 'kunde.example.pem')!)).toEqual([]);
+    // … und trotzdem bleibt sie: sie deckt app ab.
+    expect(keepers(wildcard, [own, wildcard], [app])).toEqual(['app']);
+  });
+
+  it('ein genaues Zertifikat, das HAProxy einem Dienst auf der Wildcard ausliefert, bleibt', () => {
+    const catchAll = { id: 'alle', domains: ['*.kunde.example'] };
+    const own = acmeCert('app.kunde.example', ['app.kunde.example']);
+    // `app.kunde.example` deckt `*.kunde.example` nicht ab, ausgeliefert wird es trotzdem.
+    expect(certificateUsers(own, [catchAll])).toEqual([]);
+    expect(keepers(own, [own], [catchAll])).toEqual(['alle']);
+  });
+
+  it('ein nicht ausgerolltes Zertifikat bleibt, solange es ein Ziel abdeckt', () => {
+    const own = acmeCert('app.kunde.example', ['app.kunde.example']);
+    expect(keepers(own, [own], [app], [])).toEqual(['app']);
+    expect(keepers(own, [own], [other], [])).toEqual([]);
+  });
+
+  it('einen nie ausgestellten Antrag hält niemand: er deckt nichts ab', () => {
+    const failed = acmeCert('kunde.example', ['kunde.example', '*.kunde.example'], null);
+    expect(keepers(failed, [failed], [app])).toEqual([]);
+  });
+
+  it('nennt jeden Dienst einmal, in der Reihenfolge der Datei', () => {
+    const both = { id: 'beide', domains: ['kunde.example', 'www.kunde.example'] };
+    const wildcard = acmeCert('kunde.example', ['kunde.example', '*.kunde.example']);
+    expect(keepers(wildcard, [wildcard], [both, app, other])).toEqual(['beide', 'app']);
   });
 });

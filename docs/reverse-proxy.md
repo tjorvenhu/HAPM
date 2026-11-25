@@ -1072,7 +1072,8 @@ beantragen.
   beim Nachsehen erwartet.
 - **Abgeräumt wird es wie jedes andere:** es bleibt, solange ein Ziel es
   braucht (`certificateUsers`). Braucht es keines, steht es auf der
-  Zertifikatsseite mit leerer Spalte „Benutzt von".
+  Zertifikatsseite mit leerer Spalte „Benutzt von" und lässt sich dort löschen
+  (siehe „Die Zertifikatsseite").
 - Eine eigene Route dafür gibt es nicht. Aufgerufen wird es aus der Einrichtung
   (`lib/setup/run.ts`).
 
@@ -1209,11 +1210,12 @@ oder im Assistenten (`PUT /api/settings/certificates`, `/api/setup/certificates`
 
 Was acme.sh führt und was hochgeladen ist, mit den abgedeckten Domains, dem
 Erneuerungstermin oder Ablauf und den Diensten, die es benutzen. **Was acme.sh
-führt, ist nur lesend.** Ein solches Zertifikat entsteht und vergeht mit einem
-Dienst; es hier einzeln zu löschen hieße, dem Reverse-Proxy das PEM unter einer
-laufenden Domain wegzuziehen, und das fiele beim nächsten Start von HAProxy auf,
-nicht heute. **Hochgeladene entstehen dagegen nur hier**, also werden sie hier
-hochgeladen, ersetzt und entfernt (siehe „Hochgeladene Zertifikate").
+führt, entsteht und vergeht mit einem Dienst und lässt sich hier nur löschen,
+wenn es niemand hält.** Ein gebrauchtes hier zu löschen hieße, dem
+Reverse-Proxy das PEM unter einer laufenden Domain wegzuziehen, und das fiele
+beim nächsten Start von HAProxy auf, nicht heute. **Hochgeladene entstehen
+dagegen nur hier**, also werden sie hier hochgeladen, ersetzt und entfernt
+(siehe „Hochgeladene Zertifikate").
 
 Die Spalte, für die es die Seite gibt, ist „Benutzt von": leer heißt, das
 Zertifikat ist entweder von Hand ausgestellt oder von einem gelöschten Dienst
@@ -1247,6 +1249,44 @@ landet (erster Eintrag der Datei, dessen ACL den Namen trifft, wie
 Für `certificateUsers` beim Löschen gilt das **nicht**: dort bleibt ein
 Zertifikat stehen, solange es einen übrig bleibenden Dienst auch nur abdeckt.
 Im Zweifel bleibt es stehen; die Seite dagegen soll zeigen, was ist.
+
+**Ein Zertifikat von acme.sh, das niemand hält, lässt sich hier löschen**
+(`DELETE /api/haproxy/certificates?domain=<Hauptdomain>`,
+`removeAcmeCertificate`, Knopf in der Zeile; ab zwei Kandidaten auch
+„Unbenutzte löschen", das dieselbe Route je Zertifikat nacheinander aufruft).
+Der Fall: ein Ziel ist gelöscht, sein Zertifikat blieb wegen einer Wildcard
+oder eines zweiten Ziels stehen, oder ein Antrag aus der Einrichtung kam nie
+durch. Automatisch aufgeräumt wird weiter nichts.
+
+- **„Hält" ist beides** (`certificateKeepers` in `certs.ts`): ein Ziel bekommt
+  es ausgeliefert („Benutzt von", `certificateUse`), **oder** es deckt eine
+  Domain eines Ziels ab (`certificateUsers`, dieselbe vorsichtige Regel wie
+  beim Löschen eines Dienstes). Nur das Erste hieße: die Wildcard über Zielen
+  mit eigenem Zertifikat ginge weg, und fiele eins dieser Zertifikate später
+  weg, stünde das Ziel ohne da. Nur das Zweite übersähe den Dienst auf
+  `*.kunde.example`, dem HAProxy ein genaues Zertifikat darunter ausliefert.
+  Steht „Benutzt von" leer und das Zertifikat hält trotzdem jemand, sagt das
+  ein „i" in der Zelle, mit den Zielen.
+- **Ein nie ausgestellter Antrag hält niemand.** Er hat kein Zertifikat und
+  deckt nichts ab (`findCertificateFor` übergeht ihn ohnehin). Typisch ist die
+  gescheiterte Wildcard aus der Einrichtung, unter der längst Ziele mit eigenem
+  Zertifikat stehen; mit „deckt ab" bliebe sie für immer. Eine Datei unter
+  seinem Namen ist hochgeladen und bleibt.
+- **Geprüft wird im Lock**, nicht in der Oberfläche: zwischen zwei Takten der
+  Seite kann ein neues Ziel genau dieses Zertifikat gefunden haben. Auch ein
+  laufender „Erneut beantragen"-Lauf hält den Lock, das Löschen sieht danach
+  das ausgestellte Zertifikat.
+- **Erst die Datei, dann acme.sh.** Eine ausgestellte PEM-Datei geht neben das
+  Verzeichnis (`hapm-acme-old.pem.hapm-previous`), dann `haproxy -c` und
+  Neuladen (`checkAndReload`, scheitert es, kommt sie zurück). Danach
+  `acme.sh --remove` und das Domainverzeichnis (`<domain>_ecc`, bei RSA ohne
+  Endung): `--remove` meldet nur ab und ließe den Schlüssel liegen. Die Datei
+  lässt sich zurücklegen, ein abgemeldeter Eintrag nicht. Scheitert acme.sh
+  danach, sagt die Meldung, dass die nächste Erneuerung die Datei wieder
+  anlegt. Ohne Datei (nie ausgestellt, nicht ausgerollt) wird nicht neu
+  geladen.
+- Protokoll: `haproxy_certificate_removed` wie bei einem hochgeladenen, im
+  Detail mit `acme.sh` davor.
 
 **Ein nie ausgestellter Antrag lässt sich hier noch einmal stellen**
 (`POST /api/haproxy/certificates/issue`, Knopf in der Zeile). Der typische Fall
