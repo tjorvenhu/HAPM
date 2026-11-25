@@ -435,6 +435,29 @@ function Account() {
 
       {error && <div className="alert alert-danger sys-block">{error}</div>}
 
+      {/* Über den Reitern und nicht im Reiter „Zweiter Faktor“: wer die Seite
+          öffnet, landet auf „Passwort“, und eine Warnung, die man erst nach
+          einem Klick sieht, warnt niemanden. Der Knopf öffnet denselben Dialog
+          wie der im Reiter. */}
+      {account?.totpEnabled && account.recoveryCodesLeft <= FEW_RECOVERY_CODES && (
+        <div className="alert alert-warning sys-block hapm-alert-action">
+          <span>
+            {account.recoveryCodesLeft === 0
+              ? t(
+                  'Für dieses Konto gibt es keine Wiederherstellungscodes. Geht die Authenticator-App verloren, kommen Sie nur noch über den Server wieder hinein. Erzeugen Sie jetzt Codes und legen Sie sie sicher ab.'
+                )
+              : plural(account.recoveryCodesLeft, {
+                  one: 'Nur noch ein Wiederherstellungscode übrig. Erzeugen Sie neue, bevor er verbraucht ist.',
+                  other: 'Nur noch {count} Wiederherstellungscodes übrig. Erzeugen Sie neue, bevor alle verbraucht sind.',
+                })}
+          </span>
+          <button className="btn btn-primary btn-sm" type="button" onClick={openRecoveryCodes}>
+            <LifeBuoy size={14} />
+            {account.recoveryCodesLeft === 0 ? t('Wiederherstellungscodes erzeugen') : t('Neue Wiederherstellungscodes')}
+          </button>
+        </div>
+      )}
+
       <AreaTabs areas={AREAS} value={area} onChange={selectArea} dirty={(key) => key === 'passwort' && Boolean(current || next || repeat)} />
 
       {area === 'passwort' && (
@@ -528,25 +551,6 @@ function Account() {
             <SkeletonRows />
           ) : account ? (
             <div className="card-body">
-              {account.totpEnabled && account.recoveryCodesLeft === 0 && (
-                <div className="alert alert-warning">
-                  <span>
-                    {t(
-                      'Für dieses Konto gibt es keine Wiederherstellungscodes. Geht die Authenticator-App verloren, kommen Sie nur noch über den Server wieder hinein. Erzeugen Sie jetzt Codes und legen Sie sie sicher ab.'
-                    )}
-                  </span>
-                </div>
-              )}
-              {account.totpEnabled && account.recoveryCodesLeft > 0 && account.recoveryCodesLeft <= FEW_RECOVERY_CODES && (
-                <div className="alert alert-warning">
-                  <span>
-                    {plural(account.recoveryCodesLeft, {
-                      one: 'Nur noch ein Wiederherstellungscode übrig. Erzeugen Sie neue, bevor er verbraucht ist.',
-                      other: 'Nur noch {count} Wiederherstellungscodes übrig. Erzeugen Sie neue, bevor alle verbraucht sind.',
-                    })}
-                  </span>
-                </div>
-              )}
               {account.totpEnabled && account.recoveryCodesLeft > FEW_RECOVERY_CODES && (
                 <p className="form-hint">
                   {t('{count} Wiederherstellungscodes übrig. Jeder ersetzt bei der Anmeldung einmal den Code aus der App.', {

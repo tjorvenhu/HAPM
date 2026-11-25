@@ -506,3 +506,10 @@
 
 .hapm-done-check.is-failed { background: var(--danger); }
 
+
+/* Ein Hinweis mit Knopf am Ende der Zeile (Konto: Wiederherstellungscodes). */
+.hapm-alert-action { align-items: center; }
+
+.hapm-alert-action > span { flex: 1; min-width: 0; }
+
+.hapm-alert-action > .btn { flex-shrink: 0; }

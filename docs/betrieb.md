@@ -215,7 +215,10 @@ bleiben.
    in `user_state`). „Passkey anlegen“ führt nach
    `/konto?bereich=passkeys&passkey=neu`, wo der Dialog gleich aufgeht.
    Nach einer Anmeldung mit einem Wiederherstellungscode geht es auf
-   `/konto?bereich=zweiter-faktor`: dort stehen die übrigen Codes.
+   `/konto?bereich=zweiter-faktor`: dort stehen die übrigen Codes. Fehlen
+   die Codes oder sind es drei oder weniger, steht die Warnung mit dem Knopf
+   zum Erzeugen über den Reitern der Kontoseite, nicht nur im Reiter: wer
+   „Konto“ öffnet, landet auf „Passwort“.
 2. **Erreichbarkeit:** nur im eigenen Netz oder aus dem Internet. Die Wahl steht
    sofort in den Einstellungen (`exposure`). An ihr hängt, ob Zertifikate über
    HTTP-01 oder immer über DNS-01 ausgestellt werden, siehe
