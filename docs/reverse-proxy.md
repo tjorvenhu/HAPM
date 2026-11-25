@@ -1312,6 +1312,15 @@ Minutentakt, diese Seite alle zwei Minuten und nur, wenn sie offen ist.
 
 ### Was für alle Dienste gilt: `/reverse-proxy/einstellungen`
 
+**Fünf Reiter** statt einer langen Seite: HTTPS, Zugriff (Admin-IPs und
+Zugriffsschutz), DNS-Zugangsdaten, Länder-Tabelle, Grundkonfiguration. Der
+gewählte steht als `?bereich=` in der Adresse (`zugriff`, `dns`, `laender`,
+`grundkonfiguration`), Links anderswo führen damit direkt hin; ein alter Link
+auf `#grundkonfiguration` öffnet den Reiter auch. HTTPS-Zeilen, Admin-IPs und
+Zugriffsschutz gehen in EINEM Vorgang in die Datei, deshalb steht ihr Speichern
+oben in der Kopfzeile, und ein Reiter mit ungespeicherten Änderungen trägt
+einen Punkt.
+
 Was keinem Dienst gehört, sondern HAProxy als Ganzem: der Block unter
 `# Globale HTTPS-Settings` im Frontend (HSTS, `option forwardfor`, die
 `X-Forwarded-*`-Header), die Admin-Adressliste und der Zugriffsschutz (eigener

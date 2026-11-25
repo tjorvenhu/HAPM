@@ -1655,7 +1655,7 @@ export default function ServiceFormModal({
                           ? 'Es sind keine Admin-IPs hinterlegt. Ohne Adressen kommt niemand hinein.'
                           : 'Für „Nur Admin-IPs" sind keine Adressen hinterlegt.'
                       )}{' '}
-                      <Link href="/reverse-proxy/einstellungen">{t('Einstellungen öffnen')}</Link>
+                      <Link href="/reverse-proxy/einstellungen?bereich=zugriff">{t('Einstellungen öffnen')}</Link>
                     </span>
                   )}
                   {!passwordPossible && (
@@ -1681,7 +1681,7 @@ export default function ServiceFormModal({
                         </>
                       )}
                       . {t('Die Liste gilt für alle Ziele.')}{' '}
-                      <Link href="/reverse-proxy/einstellungen">{t('Einstellungen öffnen')}</Link>
+                      <Link href="/reverse-proxy/einstellungen?bereich=zugriff">{t('Einstellungen öffnen')}</Link>
                     </span>
                   </div>
                 )}

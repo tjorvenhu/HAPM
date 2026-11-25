@@ -97,7 +97,7 @@ export default function GeoipReminder() {
         )}
         {!status.autoRefresh && <>{t('Das selbsttätige Erneuern ist abgeschaltet.')} </>}
         {rich('Unter {link} lässt sich die Tabelle holen oder hochladen.', {
-          link: <Link href="/reverse-proxy/einstellungen">{t('Einstellungen')}</Link>,
+          link: <Link href="/reverse-proxy/einstellungen?bereich=laender">{t('Einstellungen')}</Link>,
         })}
       </span>
     </div>

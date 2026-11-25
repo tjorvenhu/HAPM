@@ -556,4 +556,9 @@ export const proxyPages: Dictionary = {
     'Applies to every service in the HTTPS frontend. A block that would hit you is refused.',
   '{country} entfernen': 'Remove {country}',
   'Gesperrte Länder ({count})': 'Blocked countries ({count})',
+  'DNS-Zugangsdaten': 'DNS credentials',
+  'Änderungen speichern': 'Save changes',
+  'Ungespeicherte Änderungen': 'Unsaved changes',
+  'Gesperrte Adressen und Länder, Ratenbegrenzung. Gilt für jeden Dienst.':
+    'Blocked addresses and countries, rate limit. Applies to every service.',
 };

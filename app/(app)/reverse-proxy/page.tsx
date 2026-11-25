@@ -430,7 +430,7 @@ export default function ReverseProxyPage() {
                           'In haproxy.cfg fehlen Zeilen, die HAPM heute in die Grundkonfiguration schreibt. Unter Einstellungen lassen sie sich einzeln übernehmen.'
                         )}
                       >
-                        <Link href="/reverse-proxy/einstellungen#grundkonfiguration">
+                        <Link href="/reverse-proxy/einstellungen?bereich=grundkonfiguration">
                           {plural(proxy.baseConfigMissing ?? 0, {
                             one: '{count} neue Vorgabe',
                             other: '{count} neue Vorgaben',

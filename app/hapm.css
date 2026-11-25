@@ -490,3 +490,13 @@
 
 /* Die gültige Adresse unter „Allgemein“, über den Knöpfen des Assistenten. */
 .hapm-address-current { font-size: 1rem; font-weight: 500; overflow-wrap: anywhere; }
+
+/* Reverse-Proxy, Einstellungen: die Nummer vor jeder HTTPS-Zeile, wie in einer Datei. */
+.hapm-line-no {
+  flex-shrink: 0; min-width: 2.25rem; padding: 4px 8px; border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface)); color: var(--accent);
+  font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600; text-align: center;
+}
+
+/* Ein Reiter mit Änderungen, die noch nicht gespeichert sind. */
+.hapm-tab-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--warning); }

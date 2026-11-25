@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { Fragment, Suspense, useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ShieldCheck, Loader2, RefreshCw, X, ArrowLeft, Network, Save, Lock, Plus, Info,
-  KeyRound, Trash2,
+  KeyRound, Trash2, ShieldAlert, Globe, FileCog, type LucideIcon,
 } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
@@ -30,6 +31,7 @@ import ProtectionSection, {
   type ProtectionDraft,
 } from '@/components/reverse-proxy/ProtectionSection';
 import { useT } from '@/lib/i18n/react';
+import { msgid } from '@/lib/i18n';
 
 /**
  * Die globalen Einstellungen eines Reverse-Proxys.
@@ -47,9 +49,26 @@ import { useT } from '@/lib/i18n/react';
  * Geschrieben wird über denselben Weg wie ein Dienst: prüfen, Backup,
  * einsetzen, reloaden — abgekoppelt, sichtbar in der Pille unten rechts.
  *
- * Darunter der Abgleich mit der Grundkonfiguration (`BaseConfigPanel`): was
- * eine ältere Installation an neuen Vorgaben nicht hat.
+ * Daneben der Abgleich mit der Grundkonfiguration (`BaseConfigPanel`): was
+ * eine ältere Installation an neuen Vorgaben nicht hat, und die Länder-Tabelle.
+ *
+ * Fünf Reiter statt einer langen Seite. Der gewählte steht in der Adresse
+ * (`?bereich=`), damit ein Link anderswo direkt dorthin führt.
  */
+
+type Area = 'https' | 'zugriff' | 'dns' | 'laender' | 'grundkonfiguration';
+
+const AREAS: { key: Area; label: string; icon: LucideIcon }[] = [
+  { key: 'https', label: msgid('HTTPS'), icon: ShieldCheck },
+  { key: 'zugriff', label: msgid('Zugriff'), icon: Lock },
+  { key: 'dns', label: msgid('DNS-Zugangsdaten'), icon: KeyRound },
+  { key: 'laender', label: msgid('Länder-Tabelle'), icon: Globe },
+  { key: 'grundkonfiguration', label: msgid('Grundkonfiguration'), icon: FileCog },
+];
+
+function areaOf(value: string | null): Area {
+  return AREAS.find((entry) => entry.key === value)?.key ?? 'https';
+}
 
 interface SettingsRow {
   $id: string;
@@ -72,7 +91,32 @@ interface Draft {
 }
 
 export default function ReverseProxySettingsPage() {
+  // `useSearchParams` verlangt eine Suspense-Grenze, sonst scheitert der Build.
+  return (
+    <Suspense fallback={<SkeletonRows />}>
+      <SettingsPage />
+    </Suspense>
+  );
+}
+
+function SettingsPage() {
   const { apiFetch } = useApp();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  // Ältere Links zeigen mit `#grundkonfiguration` auf die Karte.
+  const [area, setArea] = useState<Area>(() =>
+    typeof window !== 'undefined' && window.location.hash === '#grundkonfiguration'
+      ? 'grundkonfiguration'
+      : areaOf(searchParams.get('bereich'))
+  );
+
+  const select = useCallback(
+    (next: Area) => {
+      setArea(next);
+      router.replace(next === 'https' ? '/reverse-proxy/einstellungen' : `?bereich=${next}`, { scroll: false });
+    },
+    [router]
+  );
   const { notify } = useToast();
   const confirm = useConfirm();
   const { t, rich } = useT();
@@ -182,7 +226,22 @@ export default function ReverseProxySettingsPage() {
 
   /** Der Stand, den das Formular zeigt: die Bearbeitung, sonst die Maschine. */
   function valueOf(row: SettingsRow): Draft | null {
-    if (draft[row.$id]) return draft[row.$id];
+    return draft[row.$id] ?? baseOf(row);
+  }
+
+  /** Ob auf diesem Reiter etwas getippt ist, das noch nicht gespeichert ist. */
+  function areaDirty(row: SettingsRow, key: Area): boolean {
+    const now = draft[row.$id];
+    const base = baseOf(row);
+    if (!now || !base) return false;
+    const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+    if (key === 'https') return !same(now.httpsLines, base.httpsLines);
+    if (key === 'zugriff') return !same(now.adminIps, base.adminIps) || !same(now.protection, base.protection);
+    return false;
+  }
+
+  /** Der Stand der Maschine, so wie das Formular ihn hält. */
+  function baseOf(row: SettingsRow): Draft | null {
     if (!row.settings || row.settings.httpsLines === null) return null;
     const lines = row.settings.httpsLines;
     return {
@@ -381,6 +440,8 @@ export default function ReverseProxySettingsPage() {
     }
   }
 
+  const dirtyRow = rows.find((row) => draft[row.$id]) ?? null;
+
   return (
     <>
       <div className="page-header">
@@ -404,436 +465,462 @@ export default function ReverseProxySettingsPage() {
             {refreshing ? <Loader2 size={16} className="spin" /> : <RefreshCw size={16} />}
             {t('Aktualisieren')}
           </button>
+          {/* Ein Speichern für HTTPS, Admin-IPs und Zugriffsschutz: sie gehen in
+              einem Vorgang in die Datei, auch wenn sie auf zwei Reitern stehen. */}
+          {dirtyRow && dirtyRow.editable && (
+            <button className="btn btn-primary" onClick={() => save(dirtyRow)} disabled={saving === dirtyRow.$id}>
+              {saving === dirtyRow.$id ? <Loader2 size={16} className="spin" /> : <Save size={16} />}
+              {t('Änderungen speichern')}
+            </button>
+          )}
         </div>
       </div>
 
       {error && <div className="alert alert-danger sys-block">{error}</div>}
 
-      {/* Ganz oben: die Tabelle gehört nicht zu `haproxy.cfg`, sondern zu HAPM. */}
-      <GeoipPanel />
+      <div className="tabs" role="tablist">
+        {AREAS.map((entry) => {
+          const Icon = entry.icon;
+          const changed = rows.some((row) => areaDirty(row, entry.key));
+          return (
+            <button
+              key={entry.key}
+              type="button"
+              role="tab"
+              aria-selected={area === entry.key}
+              className={`tab ${area === entry.key ? 'active' : ''}`}
+              onClick={() => select(entry.key)}
+            >
+              <Icon size={15} />
+              {t(entry.label)}
+              {changed && <span className="hapm-tab-dot" aria-label={t('Ungespeicherte Änderungen')} />}
+            </button>
+          );
+        })}
+      </div>
+
+      {area === 'laender' && <GeoipPanel />}
+      {area === 'grundkonfiguration' && <BaseConfigPanel />}
 
       {/* Ein laufender Vorgang steht in der Pille unten rechts, nicht hier. */}
 
-      {loading ? (
-        <SkeletonRows />
-      ) : rows.length === 0 ? (
-        <div className="empty-state">
-          <Network size={40} />
-          <h3>{t('HAProxy antwortet nicht')}</h3>
-          <p>
-            {rich('Ohne HAProxy gibt es hier nichts einzustellen. Sein Zustand steht in der {overview}.', {
-              overview: <Link href="/dashboard">{t('Übersicht')}</Link>,
-            })}
-          </p>
-        </div>
-      ) : (
-        rows.map((row) => {
-          const value = valueOf(row);
-          const dirty = !!draft[row.$id];
-
-          return (
-            <div className="card sys-block" key={row.$id}>
-              <div className="card-header">
-                <div>
-                  <div className="card-title">
-                    <Network size={17} />
-                    HAProxy
-                  </div>
-                </div>
-                {value && row.editable && (
-                  <button
-                    className="btn btn-primary"
-                    onClick={() => save(row)}
-                    disabled={!dirty || saving === row.$id}
-                  >
-                    {saving === row.$id ? <Loader2 size={16} className="spin" /> : <Save size={16} />}
-                    {t('Speichern')}
-                  </button>
-                )}
+      {(area === 'https' || area === 'zugriff' || area === 'dns') &&
+        (loading ? (
+          <SkeletonRows />
+        ) : rows.length === 0 ? (
+          <div className="empty-state">
+            <Network size={40} />
+            <h3>{t('HAProxy antwortet nicht')}</h3>
+            <p>
+              {rich('Ohne HAProxy gibt es hier nichts einzustellen. Sein Zustand steht in der {overview}.', {
+                overview: <Link href="/dashboard">{t('Übersicht')}</Link>,
+              })}
+            </p>
+          </div>
+        ) : (
+          rows.map((row) => {
+            const value = valueOf(row);
+            const noMarker = !row.error && row.settings?.httpsLines == null && (
+              <div className="alert alert-warning sys-block">
+                <span>
+                  {rich(
+                    'In der Konfiguration steht keine Zeile {marker}. Ohne sie ist nicht bestimmbar, wo die globalen Einstellungen hingehören. Hier wird deshalb nichts angeboten.',
+                    { marker: <code>{HTTPS_MARKER}</code> }
+                  )}
+                </span>
               </div>
+            );
 
-              {row.error && <div className="alert alert-danger">{row.error}</div>}
+            return (
+              <Fragment key={row.$id}>
+                {row.error && <div className="alert alert-danger sys-block">{row.error}</div>}
 
-              {!row.error && row.settings?.httpsLines == null && (
-                <div className="alert alert-warning">
-                  <span>
-                    {rich(
-                      'In der Konfiguration steht keine Zeile {marker}. Ohne sie ist nicht bestimmbar, wo die globalen Einstellungen hingehören. Hier wird deshalb nichts angeboten.',
-                      { marker: <code>{HTTPS_MARKER}</code> }
+                {area === 'https' && (
+                  <>
+                    {noMarker}
+                    {value && (
+                      <div className="card sys-block">
+                        <div className="card-body">
+                          <section className="form-section">
+                            <div className="form-section-head">
+                              <span className="form-section-icon">
+                                <ShieldCheck size={17} />
+                              </span>
+                              <div>
+                                <div className="form-section-title">{t('HTTPS-Einstellungen')}</div>
+                                <div className="form-section-sub">
+                                  {rich(
+                                    'Die Zeilen unter {marker}, eine je Feld. Sie gelten für jeden Dienst und werden so übernommen, wie sie hier stehen.',
+                                    { marker: <code>{HTTPS_MARKER}</code> }
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="form-list">
+                              {value.httpsLines.map((line, index) => (
+                                <div className="form-list-row" key={index}>
+                                  <span className="hapm-line-no">{String(index + 1).padStart(2, '0')}</span>
+                                  <input
+                                    className="form-input mono"
+                                    value={line}
+                                    onChange={(e) =>
+                                      edit(row, {
+                                        httpsLines: value.httpsLines.map((l, i) =>
+                                          i === index ? e.target.value : l
+                                        ),
+                                      })
+                                    }
+                                    placeholder="option forwardfor"
+                                    spellCheck={false}
+                                    autoComplete="off"
+                                  />
+                                  <button
+                                    type="button"
+                                    className="btn btn-ghost btn-icon"
+                                    data-tooltip={t('Zeile entfernen')}
+                                    disabled={value.httpsLines.length === 1}
+                                    onClick={() =>
+                                      edit(row, {
+                                        httpsLines: value.httpsLines.filter((_, i) => i !== index),
+                                      })
+                                    }
+                                  >
+                                    <X size={16} />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+
+                            <div>
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => edit(row, { httpsLines: [...value.httpsLines, ''] })}
+                              >
+                                <Plus size={14} />
+                                {t('Zeile hinzufügen')}
+                              </button>
+                            </div>
+
+                            <div className="form-note">
+                              <Info size={14} />
+                              <span>
+                                {rich(
+                                  'Jede Zeile geht unverändert in die Konfiguration. Geprüft wird sie von HAProxy selbst ({check}). Ist etwas daran falsch, wird nichts eingesetzt und der Fehler steht im Protokoll des Vorgangs. Kommentare und Zeilen wie {backend} gehen hier nicht: sie würden den Block beenden, und alles darunter stünde danach außerhalb.',
+                                  { check: <code>haproxy -c</code>, backend: <code>backend …</code> }
+                                )}
+                              </span>
+                            </div>
+                          </section>
+                        </div>
+                      </div>
                     )}
-                  </span>
-                </div>
-              )}
+                  </>
+                )}
 
-              {value && (
-                <div className="card-body">
-                  <div className="form-columns">
-                    <section className="form-section">
-                      <div className="form-section-head">
-                        <span className="form-section-icon">
-                          <ShieldCheck size={17} />
-                        </span>
-                        <div>
-                          <div className="form-section-title">{t('HTTPS-Einstellungen')}</div>
-                          <div className="form-section-sub">
-                            {rich(
-                              'Die Zeilen unter {marker}, eine je Feld. Sie gelten für jeden Dienst und werden so übernommen, wie sie hier stehen.',
-                              { marker: <code>{HTTPS_MARKER}</code> }
-                            )}
-                          </div>
-                        </div>
-                      </div>
+                {area === 'zugriff' && (
+                  <>
+                    {noMarker}
+                    {value && (
+                      <div className="card sys-block">
+                        <div className="card-body">
+                          <section className="form-section">
+                            <div className="form-section-head">
+                              <span className="form-section-icon">
+                                <Lock size={17} />
+                              </span>
+                              <div>
+                                <div className="form-section-title">{t('Admin-IPs')}</div>
+                                <div className="form-section-sub">
+                                  {rich(
+                                    'Die Adressen, die einen gesperrten Eintrag noch erreichen. Sie stehen einmal in der Konfiguration ({acl}) und gelten für jeden Eintrag, bei dem das Schloss zu ist.',
+                                    { acl: <code>acl admin_ips src …</code> }
+                                  )}
+                                </div>
+                              </div>
+                            </div>
 
-                      <div className="form-list">
-                        {value.httpsLines.map((line, index) => (
-                          <div className="form-list-row" key={index}>
-                            <input
-                              className="form-input mono"
-                              value={line}
-                              onChange={(e) =>
-                                edit(row, {
-                                  httpsLines: value.httpsLines.map((l, i) =>
-                                    i === index ? e.target.value : l
-                                  ),
-                                })
-                              }
-                              placeholder="option forwardfor"
-                              spellCheck={false}
-                              autoComplete="off"
-                            />
-                            <button
-                              type="button"
-                              className="btn btn-ghost btn-icon"
-                              data-tooltip={t('Zeile entfernen')}
-                              disabled={value.httpsLines.length === 1}
-                              onClick={() =>
-                                edit(row, {
-                                  httpsLines: value.httpsLines.filter((_, i) => i !== index),
-                                })
-                              }
-                            >
-                              <X size={16} />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
+                            <div className="form-list">
+                              {value.adminIps.map((ip, index) => (
+                                <div className="form-list-row" key={index}>
+                                  <input
+                                    className="form-input"
+                                    value={ip}
+                                    onChange={(e) =>
+                                      edit(row, {
+                                        adminIps: value.adminIps.map((a, i) =>
+                                          i === index ? e.target.value : a
+                                        ),
+                                      })
+                                    }
+                                    placeholder={t('203.0.113.7 oder 10.0.0.0/8')}
+                                    autoComplete="off"
+                                  />
+                                  <button
+                                    type="button"
+                                    className="btn btn-ghost btn-icon"
+                                    data-tooltip={t('Zeile entfernen')}
+                                    disabled={value.adminIps.length === 1}
+                                    onClick={() =>
+                                      edit(row, {
+                                        adminIps: value.adminIps.filter((_, i) => i !== index),
+                                      })
+                                    }
+                                  >
+                                    <X size={16} />
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
 
-                      <div>
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-sm"
-                          onClick={() => edit(row, { httpsLines: [...value.httpsLines, ''] })}
-                        >
-                          <Plus size={14} />
-                          {t('Zeile hinzufügen')}
-                        </button>
-                      </div>
+                            <div>
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => edit(row, { adminIps: [...value.adminIps, ''] })}
+                              >
+                                <Plus size={14} />
+                                {t('Adresse hinzufügen')}
+                              </button>
+                            </div>
 
-                      <div className="form-note">
-                        <Info size={14} />
-                        <span>
-                          {rich(
-                            'Jede Zeile geht unverändert in die Konfiguration. Geprüft wird sie von HAProxy selbst ({check}). Ist etwas daran falsch, wird nichts eingesetzt und der Fehler steht im Protokoll des Vorgangs. Kommentare und Zeilen wie {backend} gehen hier nicht: sie würden den Block beenden, und alles darunter stünde danach außerhalb.',
-                            { check: <code>haproxy -c</code>, backend: <code>backend …</code> }
-                          )}
-                        </span>
-                      </div>
-                    </section>
-
-                    <section className="form-section">
-                      <div className="form-section-head">
-                        <span className="form-section-icon">
-                          <Lock size={17} />
-                        </span>
-                        <div>
-                          <div className="form-section-title">{t('Admin-IPs')}</div>
-                          <div className="form-section-sub">
-                            {rich(
-                              'Die Adressen, die einen gesperrten Eintrag noch erreichen. Sie stehen einmal in der Konfiguration ({acl}) und gelten für jeden Eintrag, bei dem das Schloss zu ist.',
-                              { acl: <code>acl admin_ips src …</code> }
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="form-list">
-                        {value.adminIps.map((ip, index) => (
-                          <div className="form-list-row" key={index}>
-                            <input
-                              className="form-input"
-                              value={ip}
-                              onChange={(e) =>
-                                edit(row, {
-                                  adminIps: value.adminIps.map((a, i) =>
-                                    i === index ? e.target.value : a
-                                  ),
-                                })
-                              }
-                              placeholder={t('203.0.113.7 oder 10.0.0.0/8')}
-                              autoComplete="off"
-                            />
-                            <button
-                              type="button"
-                              className="btn btn-ghost btn-icon"
-                              data-tooltip={t('Zeile entfernen')}
-                              disabled={value.adminIps.length === 1}
-                              onClick={() =>
-                                edit(row, {
-                                  adminIps: value.adminIps.filter((_, i) => i !== index),
-                                })
-                              }
-                            >
-                              <X size={16} />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-
-                      <div>
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-sm"
-                          onClick={() => edit(row, { adminIps: [...value.adminIps, ''] })}
-                        >
-                          <Plus size={14} />
-                          {t('Adresse hinzufügen')}
-                        </button>
-                      </div>
-
-                      {row.settings && row.settings.lockedServices.length > 0 ? (
-                        <div className="form-note">
-                          <Lock size={14} />
-                          <span>
-                            {t(
-                              'Gesperrt sind gerade: {services}. Solange das so ist, lässt sich die Liste nicht leeren: eine Regel auf eine Adressliste, die es nicht mehr gibt, lässt HAProxy beim nächsten Start stehen.',
-                              { services: row.settings.lockedServices.join(', ') }
-                            )}
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="form-note">
-                          <Info size={14} />
-                          <span>
-                            {t('Kein Eintrag ist gesperrt. Das Schloss dafür sitzt auf der Karte des jeweiligen Ziels.')}
-                          </span>
-                        </div>
-                      )}
-
-                      {/* Der Text in EINEM `span`: `.alert` ist ein Flex-Kasten,
-                          und ein `code` als direktes Kind wird darin zu einer
-                          eigenen Spalte. */}
-                      {row.settings && !row.settings.adminEditable && (
-                        <div className="alert alert-warning">
-                          <span>
-                            {rich(
-                              '{acl} steht mehr als einmal in der Konfiguration. HAProxy verodert die Zeilen; sie hier zu einer zusammenzuschreiben wäre eine Änderung, die niemand angefordert hat.',
-                              { acl: <code>acl admin_ips src …</code> }
-                            )}
-                          </span>
-                        </div>
-                      )}
-                    </section>
-                  </div>
-                </div>
-              )}
-
-              {/* ── Zugriffsschutz ──
-                  Im selben Speichern wie die Admin-IPs: an ihnen hängt die
-                  Ausnahme der Länder- und Ratensperre. */}
-              {value && (
-                <div className="card-body detail-block">
-                  <div className="form-section-title" style={{ marginBottom: 12 }}>
-                    {t('Zugriffsschutz')}
-                  </div>
-                  <ProtectionSection
-                    value={value.protection}
-                    onChange={(protection) => edit(row, { protection })}
-                    context={protectionContext}
-                    hasAdminIps={value.adminIps.some((ip) => ip.trim() !== '')}
-                  />
-                </div>
-              )}
-
-              {/* ── DNS-Zugangsdaten ──
-                  Außerhalb des `value`-Blocks, weil sie mit `haproxy.cfg` nichts
-                  zu tun haben: eine Maschine ohne den HTTPS-Marker kann trotzdem
-                  Wildcards ausstellen. */}
-              {!row.error && (
-                <div className="card-body detail-block">
-                  <section className="form-section">
-                    <div className="form-section-head">
-                      <span className="form-section-icon">
-                        <KeyRound size={17} />
-                      </span>
-                      <div>
-                        <div className="form-section-title">{t('DNS-Zugangsdaten für Wildcards')}</div>
-                        <div className="form-section-sub">
-                          {rich(
-                            'Eine Wildcard lässt Let’s Encrypt nur über DNS-01 ausstellen. Der Token liegt in der Konfiguration von {acme} und wird dort für jede Erneuerung wiederverwendet. Anzeigen lässt er sich danach nicht mehr.',
-                            { acme: <code>acme.sh</code> }
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Eine Zeile je hinterlegtem Token, sonst nichts. Vorher
-                        stand hier je Anbieter ein aufgeklappter Block mit
-                        Eingabefeldern — auch für den, den niemand benutzt. Ein
-                        Formular, das immer offen steht, ist keine Auskunft
-                        darüber, was eingerichtet ist. */}
-                    <div className="form-list">
-                      {configuredProviders(row).length === 0 ? (
-                        <div className="form-list-empty">{t('Kein Token hinterlegt.')}</div>
-                      ) : (
-                        configuredProviders(row).map((provider) => (
-                          <div className="form-list-row" key={provider.hook}>
-                            <span style={{ flex: 1, minWidth: 0 }}>{provider.label}</span>
-                            <span className="badge-status badge-success">
-                              <span className="dot" />
-                              {t('Token gesetzt')}
-                            </span>
-                            {/* Kein Bearbeiten: der Token lässt sich nicht
-                                anzeigen, ein Feld daneben hieße also „leer =
-                                unverändert" und wäre die Stelle, an der man
-                                versehentlich nichts ändert. Wechseln heißt
-                                entfernen und neu hinterlegen. */}
-                            <button
-                              type="button"
-                              className="btn btn-ghost btn-icon"
-                              data-tooltip={t('Token entfernen')}
-                              disabled={savingCred === `${row.$id}|${provider.hook}`}
-                              onClick={() => removeCredentials(row, provider)}
-                            >
-                              {savingCred === `${row.$id}|${provider.hook}` ? (
-                                <Loader2 size={16} className="spin" />
-                              ) : (
-                                <Trash2 size={16} />
-                              )}
-                            </button>
-                          </div>
-                        ))
-                      )}
-                    </div>
-
-                    {addingFor === row.$id ? (
-                      <div className="form-subsection">
-                        <div className="form-group">
-                          <label className="form-label">{t('Anbieter')}</label>
-                          <Select
-                            value={addHook}
-                            onChange={setAddHook}
-                            options={missingProviders(row).map((provider) => ({
-                              value: provider.hook,
-                              label: provider.label,
-                            }))}
-                          />
-                        </div>
-
-                        {findDnsProvider(addHook)?.fields.map((field) => (
-                          <div className="form-group" key={field.name}>
-                            <label className="form-label">
-                              {t(field.label)}
-                              {!field.required && ' (optional)'}
-                            </label>
-                            {/* `type="password"`, weil daneben jemand steht. */}
-                            <input
-                              className="form-input"
-                              type="password"
-                              value={credDraft[`${row.$id}|${addHook}|${field.name}`] ?? ''}
-                              onChange={(e) =>
-                                setCredDraft({
-                                  ...credDraft,
-                                  [`${row.$id}|${addHook}|${field.name}`]: e.target.value,
-                                })
-                              }
-                              autoComplete="new-password"
-                              spellCheck={false}
-                            />
-                            {field.hint && (
+                            {row.settings && row.settings.lockedServices.length > 0 ? (
+                              <div className="form-note">
+                                <Lock size={14} />
+                                <span>
+                                  {t(
+                                    'Gesperrt sind gerade: {services}. Solange das so ist, lässt sich die Liste nicht leeren: eine Regel auf eine Adressliste, die es nicht mehr gibt, lässt HAProxy beim nächsten Start stehen.',
+                                    { services: row.settings.lockedServices.join(', ') }
+                                  )}
+                                </span>
+                              </div>
+                            ) : (
                               <div className="form-note">
                                 <Info size={14} />
-                                <span>{t(field.hint)}</span>
+                                <span>
+                                  {t('Kein Eintrag ist gesperrt. Das Schloss dafür sitzt auf der Karte des jeweiligen Ziels.')}
+                                </span>
+                              </div>
+                            )}
+
+                            {/* Der Text in EINEM `span`: `.alert` ist ein Flex-Kasten,
+                                und ein `code` als direktes Kind wird darin zu einer
+                                eigenen Spalte. */}
+                            {row.settings && !row.settings.adminEditable && (
+                              <div className="alert alert-warning">
+                                <span>
+                                  {rich(
+                                    '{acl} steht mehr als einmal in der Konfiguration. HAProxy verodert die Zeilen; sie hier zu einer zusammenzuschreiben wäre eine Änderung, die niemand angefordert hat.',
+                                    { acl: <code>acl admin_ips src …</code> }
+                                  )}
+                                </span>
+                              </div>
+                            )}
+                          </section>
+                        </div>
+                      </div>
+                    )}
+                    {value && (
+                      <div className="card sys-block">
+                        <div className="card-header">
+                          <div>
+                            <div className="card-title">
+                              <ShieldAlert size={17} />
+                              {t('Zugriffsschutz')}
+                            </div>
+                            <div className="card-subtitle">
+                              {t('Gesperrte Adressen und Länder, Ratenbegrenzung. Gilt für jeden Dienst.')}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="card-body">
+                          <ProtectionSection
+                            value={value.protection}
+                            onChange={(protection) => edit(row, { protection })}
+                            context={protectionContext}
+                            hasAdminIps={value.adminIps.some((ip) => ip.trim() !== '')}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {area === 'dns' && !row.error && (
+                  <div className="card sys-block">
+                    <div className="card-body">
+                      <section className="form-section">
+                        <div className="form-section-head">
+                          <span className="form-section-icon">
+                            <KeyRound size={17} />
+                          </span>
+                          <div>
+                            <div className="form-section-title">{t('DNS-Zugangsdaten für Wildcards')}</div>
+                            <div className="form-section-sub">
+                              {rich(
+                                'Eine Wildcard lässt Let’s Encrypt nur über DNS-01 ausstellen. Der Token liegt in der Konfiguration von {acme} und wird dort für jede Erneuerung wiederverwendet. Anzeigen lässt er sich danach nicht mehr.',
+                                { acme: <code>acme.sh</code> }
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Eine Zeile je hinterlegtem Token, sonst nichts. Vorher
+                            stand hier je Anbieter ein aufgeklappter Block mit
+                            Eingabefeldern — auch für den, den niemand benutzt. Ein
+                            Formular, das immer offen steht, ist keine Auskunft
+                            darüber, was eingerichtet ist. */}
+                        <div className="form-list">
+                          {configuredProviders(row).length === 0 ? (
+                            <div className="form-list-empty">{t('Kein Token hinterlegt.')}</div>
+                          ) : (
+                            configuredProviders(row).map((provider) => (
+                              <div className="form-list-row" key={provider.hook}>
+                                <span style={{ flex: 1, minWidth: 0 }}>{provider.label}</span>
+                                <span className="badge-status badge-success">
+                                  <span className="dot" />
+                                  {t('Token gesetzt')}
+                                </span>
+                                {/* Kein Bearbeiten: der Token lässt sich nicht
+                                    anzeigen, ein Feld daneben hieße also „leer =
+                                    unverändert" und wäre die Stelle, an der man
+                                    versehentlich nichts ändert. Wechseln heißt
+                                    entfernen und neu hinterlegen. */}
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-icon"
+                                  data-tooltip={t('Token entfernen')}
+                                  disabled={savingCred === `${row.$id}|${provider.hook}`}
+                                  onClick={() => removeCredentials(row, provider)}
+                                >
+                                  {savingCred === `${row.$id}|${provider.hook}` ? (
+                                    <Loader2 size={16} className="spin" />
+                                  ) : (
+                                    <Trash2 size={16} />
+                                  )}
+                                </button>
+                              </div>
+                            ))
+                          )}
+                        </div>
+
+                        {addingFor === row.$id ? (
+                          <div className="form-subsection">
+                            <div className="form-group">
+                              <label className="form-label">{t('Anbieter')}</label>
+                              <Select
+                                value={addHook}
+                                onChange={setAddHook}
+                                options={missingProviders(row).map((provider) => ({
+                                  value: provider.hook,
+                                  label: provider.label,
+                                }))}
+                              />
+                            </div>
+
+                            {findDnsProvider(addHook)?.fields.map((field) => (
+                              <div className="form-group" key={field.name}>
+                                <label className="form-label">
+                                  {t(field.label)}
+                                  {!field.required && ' (optional)'}
+                                </label>
+                                {/* `type="password"`, weil daneben jemand steht. */}
+                                <input
+                                  className="form-input"
+                                  type="password"
+                                  value={credDraft[`${row.$id}|${addHook}|${field.name}`] ?? ''}
+                                  onChange={(e) =>
+                                    setCredDraft({
+                                      ...credDraft,
+                                      [`${row.$id}|${addHook}|${field.name}`]: e.target.value,
+                                    })
+                                  }
+                                  autoComplete="new-password"
+                                  spellCheck={false}
+                                />
+                                {field.hint && (
+                                  <div className="form-note">
+                                    <Info size={14} />
+                                    <span>{t(field.hint)}</span>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+
+                            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                onClick={cancelAdd}
+                                disabled={savingCred !== null}
+                              >
+                                {t('Abbrechen')}
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-primary btn-sm"
+                                disabled={
+                                  savingCred !== null ||
+                                  !hasCredentialInput(`${row.$id}|${addHook}`, findDnsProvider(addHook))
+                                }
+                                onClick={() => {
+                                  const provider = findDnsProvider(addHook);
+                                  if (provider) void saveCredentials(row, provider);
+                                }}
+                              >
+                                {savingCred ? (
+                                  <Loader2 size={14} className="spin" />
+                                ) : (
+                                  <Save size={14} />
+                                )}
+                                {t('Speichern')}
+                              </button>
+                            </div>
+
+                            {findDnsProvider(addHook) && (
+                              <div className="form-note">
+                                <Info size={14} />
+                                <span>
+                                  {findDnsProvider(addHook)!.note ? (
+                                    <>{t(findDnsProvider(addHook)!.note!)} </>
+                                  ) : null}
+                                  <a
+                                    href={findDnsProvider(addHook)!.consoleUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    {t('Token beim Anbieter anlegen')}
+                                  </a>
+                                </span>
                               </div>
                             )}
                           </div>
-                        ))}
-
-                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                          <button
-                            type="button"
-                            className="btn btn-secondary btn-sm"
-                            onClick={cancelAdd}
-                            disabled={savingCred !== null}
-                          >
-                            {t('Abbrechen')}
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-primary btn-sm"
-                            disabled={
-                              savingCred !== null ||
-                              !hasCredentialInput(`${row.$id}|${addHook}`, findDnsProvider(addHook))
-                            }
-                            onClick={() => {
-                              const provider = findDnsProvider(addHook);
-                              if (provider) void saveCredentials(row, provider);
-                            }}
-                          >
-                            {savingCred ? (
-                              <Loader2 size={14} className="spin" />
-                            ) : (
-                              <Save size={14} />
-                            )}
-                            {t('Speichern')}
-                          </button>
-                        </div>
-
-                        {findDnsProvider(addHook) && (
-                          <div className="form-note">
-                            <Info size={14} />
-                            <span>
-                              {findDnsProvider(addHook)!.note ? (
-                                <>{t(findDnsProvider(addHook)!.note!)} </>
-                              ) : null}
-                              <a
-                                href={findDnsProvider(addHook)!.consoleUrl}
-                                target="_blank"
-                                rel="noreferrer"
+                        ) : (
+                          /* Der Knopf verschwindet, wenn jeder Anbieter der Liste
+                             schon einen Token hat: einer, der dasteht und nur noch
+                             eine leere Auswahl öffnet, ist keine Auskunft. */
+                          missingProviders(row).length > 0 && (
+                            <div>
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => startAdd(row)}
                               >
-                                {t('Token beim Anbieter anlegen')}
-                              </a>
-                            </span>
-                          </div>
+                                <Plus size={14} />
+                                {t('Hinzufügen')}
+                              </button>
+                            </div>
+                          )
                         )}
-                      </div>
-                    ) : (
-                      /* Der Knopf verschwindet, wenn jeder Anbieter der Liste
-                         schon einen Token hat: einer, der dasteht und nur noch
-                         eine leere Auswahl öffnet, ist keine Auskunft. */
-                      missingProviders(row).length > 0 && (
-                        <div>
-                          <button
-                            type="button"
-                            className="btn btn-secondary btn-sm"
-                            onClick={() => startAdd(row)}
-                          >
-                            <Plus size={14} />
-                            {t('Hinzufügen')}
-                          </button>
-                        </div>
-                      )
-                    )}
-                  </section>
-                </div>
-              )}
-            </div>
-          );
-        })
-      )}
-
-      {/* Lädt sich selbst: der Abgleich ist eine eigene Runde und soll die
-          Einstellungen darüber nicht aufhalten. */}
-      <BaseConfigPanel />
+                      </section>
+                    </div>
+                  </div>
+                )}
+              </Fragment>
+            );
+          })
+        ))}
 
       {openRunId && (
         <UpdateRunOverlay
