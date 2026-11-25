@@ -27,5 +27,4 @@ pnpm-debug.log*
 .session.json
 
 # Notizen der Entwicklungsumgebung, nicht Teil des Projekts
-.forge/
 .claude/
