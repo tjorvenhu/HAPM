@@ -40,7 +40,7 @@ export function mcpEndpoint(publicUrl: string | null): string | null {
 /** Die Schnipsel je Client. Kennungen und JSON bleiben, wie die Clients sie lesen. */
 export function mcpSnippets(endpoint: string): Record<Exclude<Client, 'connector'>, string> {
   return {
-    'claude-code': `claude mcp add --transport http hapm ${endpoint} --header "Authorization: Bearer ${TOKEN_PLACEHOLDER}"`,
+    'claude-code': `claude mcp add --scope user --transport http hapm ${endpoint} --header "Authorization: Bearer ${TOKEN_PLACEHOLDER}"`,
     'mcp-json': JSON.stringify(
       {
         mcpServers: {

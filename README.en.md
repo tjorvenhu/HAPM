@@ -400,7 +400,7 @@ statistics and DNS zones.
 2. Connect your client, for Claude Code for example:
 
    ```bash
-   claude mcp add --transport http hapm https://hapm.example.org/api/mcp \
+   claude mcp add --scope user --transport http hapm https://hapm.example.org/api/mcp \
      --header "Authorization: Bearer hapm_…"
    ```
 

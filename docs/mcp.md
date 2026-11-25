@@ -24,9 +24,13 @@ Ist dort nichts eingetragen, zeigt die Seite einen Hinweis statt einer Adresse.
 **Claude Code**
 
 ```bash
-claude mcp add --transport http hapm https://hapm.example.org/api/mcp \
+claude mcp add --scope user --transport http hapm https://hapm.example.org/api/mcp \
   --header "Authorization: Bearer hapm_…"
 ```
+
+`--scope user`, weil ohne Angabe `local` gilt: der Server stünde dann nur im
+Ordner, in dem der Befehl lief. HAPM ist der Proxy für alle Projekte, der Key
+gehört nicht in eine Datei im Repo.
 
 Oder im Projekt als `.mcp.json`, mit dem Key in einer Umgebungsvariablen statt
 in der Datei (VS Code und andere Clients mit HTTP-Transport lesen dieselbe

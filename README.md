@@ -402,7 +402,7 @@ Zertifikate, Systemstatus, Statistik und DNS-Zonen lesen.
 2. Den Client verbinden, für Claude Code etwa:
 
    ```bash
-   claude mcp add --transport http hapm https://hapm.example.org/api/mcp \
+   claude mcp add --scope user --transport http hapm https://hapm.example.org/api/mcp \
      --header "Authorization: Bearer hapm_…"
    ```
 
