@@ -164,50 +164,50 @@ describe('parseDnsHooks', () => {
 /* ── Was HAProxy ausliefert, nicht was abdecken könnte ──
  *
  * Das Fehlerbild, aus dem das stammt: auf der Zertifikatsseite stand die
- * Wildcard `huether.tech, *.huether.tech` bei „Benutzt von" mit allen drei
+ * Wildcard `example.org, *.example.org` bei „Benutzt von" mit allen drei
  * Zielen, obwohl jedes sein eigenes Zertifikat hatte (und die Wildcard nie
  * ausgestellt war). Gezählt wurde jedes Zertifikat, das eine Domain abdeckt. */
 
 describe('servedCertificate', () => {
-  const wildcard = { file: 'huether.tech.pem', domains: ['huether.tech', '*.huether.tech'] };
-  const own = { file: 'truenas.huether.tech.pem', domains: ['truenas.huether.tech'] };
+  const wildcard = { file: 'example.org.pem', domains: ['example.org', '*.example.org'] };
+  const own = { file: 'truenas.example.org.pem', domains: ['truenas.example.org'] };
 
   it('nimmt das Zertifikat mit genau diesem Namen vor der Wildcard', () => {
-    expect(servedCertificate([wildcard, own], 'truenas.huether.tech')).toBe(own);
-    expect(servedCertificate([own, wildcard], 'truenas.huether.tech')).toBe(own);
+    expect(servedCertificate([wildcard, own], 'truenas.example.org')).toBe(own);
+    expect(servedCertificate([own, wildcard], 'truenas.example.org')).toBe(own);
   });
 
   it('nimmt die Wildcard für einen Namen ohne eigenes Zertifikat', () => {
-    expect(servedCertificate([wildcard, own], 'unifi.huether.tech')).toBe(wildcard);
-    expect(servedCertificate([wildcard, own], 'huether.tech')).toBe(wildcard);
+    expect(servedCertificate([wildcard, own], 'unifi.example.org')).toBe(wildcard);
+    expect(servedCertificate([wildcard, own], 'example.org')).toBe(wildcard);
   });
 
   it('kennt die eine Ebene der Wildcard', () => {
-    expect(servedCertificate([wildcard], 'a.b.huether.tech')).toBeNull();
+    expect(servedCertificate([wildcard], 'a.b.example.org')).toBeNull();
     expect(servedCertificate([wildcard], 'fremd.example')).toBeNull();
   });
 
   it('bei gleichen Namen das erste der Liste, so lädt HAProxy das Verzeichnis', () => {
-    const second = { file: 'z.pem', domains: ['truenas.huether.tech'] };
-    expect(servedCertificate([own, second], 'truenas.huether.tech')).toBe(own);
+    const second = { file: 'z.pem', domains: ['truenas.example.org'] };
+    expect(servedCertificate([own, second], 'truenas.example.org')).toBe(own);
   });
 
   it('bedient einen Dienst auf einer Wildcard mit dem Zertifikat dieses Musters', () => {
-    expect(servedCertificate([own, wildcard], '*.huether.tech')).toBe(wildcard);
-    expect(servedCertificate([own], '*.huether.tech')).toBeNull();
+    expect(servedCertificate([own, wildcard], '*.example.org')).toBe(wildcard);
+    expect(servedCertificate([own], '*.example.org')).toBeNull();
   });
 });
 
 describe('certificateUse', () => {
-  const hapm = { id: 'hapm', domains: ['hapm.huether.tech'] };
-  const truenas = { id: 'truenas_huether_tech', domains: ['truenas.huether.tech'] };
-  const unifi = { id: 'unifi_huether_tech', domains: ['unifi.huether.tech'] };
+  const hapm = { id: 'hapm', domains: ['hapm.example.org'] };
+  const truenas = { id: 'truenas_example_org', domains: ['truenas.example.org'] };
+  const unifi = { id: 'unifi_example_org', domains: ['unifi.example.org'] };
   const services = [hapm, truenas, unifi];
 
-  const wildcard = { file: 'huether.tech.pem', domains: ['huether.tech', '*.huether.tech'] };
-  const ownHapm = { file: 'hapm.huether.tech.pem', domains: ['hapm.huether.tech'] };
-  const ownTruenas = { file: 'truenas.huether.tech.pem', domains: ['truenas.huether.tech'] };
-  const ownUnifi = { file: 'unifi.huether.tech.pem', domains: ['unifi.huether.tech'] };
+  const wildcard = { file: 'example.org.pem', domains: ['example.org', '*.example.org'] };
+  const ownHapm = { file: 'hapm.example.org.pem', domains: ['hapm.example.org'] };
+  const ownTruenas = { file: 'truenas.example.org.pem', domains: ['truenas.example.org'] };
+  const ownUnifi = { file: 'unifi.example.org.pem', domains: ['unifi.example.org'] };
 
   it('schreibt einen Dienst mit eigenem Zertifikat nicht zusätzlich unter die Wildcard', () => {
     const use = certificateUse([ownHapm, wildcard, ownTruenas, ownUnifi], services);
@@ -223,14 +223,14 @@ describe('certificateUse', () => {
   });
 
   it('ein Dienst auf der Wildcard benutzt auch ein genaues Zertifikat darunter, das bei ihm landet', () => {
-    const catchAll = { id: 'alle', domains: ['*.huether.tech'] };
+    const catchAll = { id: 'alle', domains: ['*.example.org'] };
     const use = certificateUse([wildcard, ownTruenas], [catchAll]);
     expect(use.get(wildcard)).toEqual([catchAll]);
     expect(use.get(ownTruenas)).toEqual([catchAll]);
   });
 
   it('das genaue Zertifikat gehört dem Eintrag, bei dem die Anfrage landet', () => {
-    const catchAll = { id: 'alle', domains: ['*.huether.tech'] };
+    const catchAll = { id: 'alle', domains: ['*.example.org'] };
     // Exakte Einträge stehen vor den Wildcards (`insertServiceBlock`).
     const use = certificateUse([wildcard, ownTruenas], [truenas, catchAll]);
     expect(use.get(ownTruenas)).toEqual([truenas]);
@@ -238,7 +238,7 @@ describe('certificateUse', () => {
   });
 
   it('nennt einen Dienst mit mehreren Domains auf demselben Zertifikat nur einmal', () => {
-    const both = { id: 'beide', domains: ['huether.tech', 'www.huether.tech'] };
+    const both = { id: 'beide', domains: ['example.org', 'www.example.org'] };
     expect(certificateUse([wildcard], [both]).get(wildcard)).toEqual([both]);
   });
 });

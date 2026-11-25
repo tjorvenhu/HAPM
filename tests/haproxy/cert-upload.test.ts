@@ -189,7 +189,7 @@ describe('auf der Platte', () => {
 
 /* ── Was HAProxy lädt ──
  *
- * Die Lage des Fehlerbilds: ein Antrag auf `huether.tech, *.huether.tech`, der
+ * Die Lage des Fehlerbilds: ein Antrag auf `example.org, *.example.org`, der
  * nie durchkam (acme.sh führt ihn ohne Ausstellungsdatum, die Seite zeigte
  * „Erneuerung —"), daneben drei Ziele mit eigenem Zertifikat. HAProxy lädt
  * die drei Dateien und keine Wildcard; „Benutzt von" stand trotzdem bei ihr. */
@@ -202,37 +202,37 @@ describe('servedFiles', () => {
     renewAt: '2027-01-23T10:00:00Z',
   });
   const failedWildcard: AcmeCertificate = {
-    mainDomain: 'huether.tech',
-    domains: ['huether.tech', '*.huether.tech'],
+    mainDomain: 'example.org',
+    domains: ['example.org', '*.example.org'],
     keyLength: 'ec-256',
     createdAt: null,
     renewAt: null,
   };
   const acme = [
-    issued('hapm.huether.tech'),
+    issued('hapm.example.org'),
     failedWildcard,
-    issued('truenas.huether.tech'),
-    issued('unifi.huether.tech'),
+    issued('truenas.example.org'),
+    issued('unifi.example.org'),
   ];
-  const deployed = ['000-hapm-default.pem', 'hapm.huether.tech.pem', 'truenas.huether.tech.pem', 'unifi.huether.tech.pem'];
+  const deployed = ['000-hapm-default.pem', 'hapm.example.org.pem', 'truenas.example.org.pem', 'unifi.example.org.pem'];
 
   it('ein nie ausgestellter Antrag hat keine Datei und bedient niemanden', () => {
     const files = servedFiles(acme, [], deployed);
-    expect(files.map((f) => f.file)).toEqual(['hapm.huether.tech.pem', 'truenas.huether.tech.pem', 'unifi.huether.tech.pem']);
+    expect(files.map((f) => f.file)).toEqual(['hapm.example.org.pem', 'truenas.example.org.pem', 'unifi.example.org.pem']);
 
     const services = [
-      { id: 'hapm', domains: ['hapm.huether.tech'] },
-      { id: 'truenas_huether_tech', domains: ['truenas.huether.tech'] },
-      { id: 'unifi_huether_tech', domains: ['unifi.huether.tech'] },
+      { id: 'hapm', domains: ['hapm.example.org'] },
+      { id: 'truenas_example_org', domains: ['truenas.example.org'] },
+      { id: 'unifi_example_org', domains: ['unifi.example.org'] },
     ];
     const use = certificateUse(files, services);
-    expect(files.map((f) => use.get(f)?.map((s) => s.id))).toEqual([['hapm'], ['truenas_huether_tech'], ['unifi_huether_tech']]);
+    expect(files.map((f) => use.get(f)?.map((s) => s.id))).toEqual([['hapm'], ['truenas_example_org'], ['unifi_example_org']]);
   });
 
   it('ausgestellt, aber nicht ausgerollt, lädt HAProxy nicht', () => {
-    const wildcard = issued('huether.tech', ['huether.tech', '*.huether.tech']);
+    const wildcard = issued('example.org', ['example.org', '*.example.org']);
     expect(servedFiles([wildcard], [], []).length).toBe(0);
-    expect(servedFiles([wildcard], [], ['huether.tech.pem']).map((f) => f.file)).toEqual(['huether.tech.pem']);
+    expect(servedFiles([wildcard], [], ['example.org.pem']).map((f) => f.file)).toEqual(['example.org.pem']);
   });
 
   it('ohne Blick ins Verzeichnis gilt das Ausgestellte als ausgerollt', () => {
