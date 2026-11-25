@@ -42,16 +42,23 @@ const NAV_SECTIONS: NavSection[] = [
     items: [{ label: msgid('Übersicht'), href: '/dashboard', icon: LayoutDashboard }],
   },
   {
+    // Was man einrichtet. Die Einstellungen am Ende, wie in jeder Gruppe.
     title: msgid('Reverse-Proxy'),
     items: [
       { label: msgid('Ziele'), href: '/reverse-proxy', icon: Network },
-      { label: msgid('Statistik'), href: '/reverse-proxy/statistiken', icon: BarChart3 },
       { label: msgid('Zertifikate'), href: '/reverse-proxy/zertifikate', icon: ShieldCheck },
-      { label: msgid('Logs'), href: '/reverse-proxy/logs', icon: ScrollText },
       { label: msgid('DNS'), href: '/dns', icon: Globe },
-      { label: msgid('API'), href: '/reverse-proxy/api', icon: Plug },
       { label: msgid('Fehlerseiten'), href: '/reverse-proxy/fehlerseiten', icon: FileWarning },
+      { label: msgid('API'), href: '/reverse-proxy/api', icon: Plug },
       { label: msgid('Einstellungen'), href: '/reverse-proxy/einstellungen', icon: SlidersHorizontal },
+    ],
+  },
+  {
+    // Was man beobachtet: hier wird nichts eingestellt.
+    title: msgid('Auswertung'),
+    items: [
+      { label: msgid('Statistik'), href: '/reverse-proxy/statistiken', icon: BarChart3 },
+      { label: msgid('Logs'), href: '/reverse-proxy/logs', icon: ScrollText },
     ],
   },
   {
@@ -60,8 +67,8 @@ const NAV_SECTIONS: NavSection[] = [
       { label: msgid('Updates'), href: '/updates', icon: PackageCheck, badge: 'updates' },
       { label: msgid('Sicherung'), href: '/backup', icon: DatabaseBackup },
       { label: msgid('Benachrichtigungen'), href: '/notifications', icon: Bell },
-      { label: msgid('Allgemein'), href: '/system', icon: Settings },
       { label: msgid('Benutzer'), href: '/users', icon: Users },
+      { label: msgid('Allgemein'), href: '/system', icon: Settings },
     ],
   },
 ];

@@ -14,6 +14,7 @@ export const shell: Dictionary = {
   'Fehlerseiten': 'Error pages',
   'Einstellungen': 'Settings',
   'System': 'System',
+  Auswertung: 'Insights',
   'Updates': 'Updates',
   'Sicherung': 'Backup',
   'Benachrichtigungen': 'Notifications',

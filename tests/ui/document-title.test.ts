@@ -51,7 +51,8 @@ describe('NAV_PAGES', () => {
   });
 
   it('nennt den Bereich als Nebenzeile, außer er hieße wie die Seite', () => {
-    expect(NAV_PAGES.find((page) => page.href === '/reverse-proxy/logs')?.subtitle).toBe('Reverse-Proxy');
+    expect(NAV_PAGES.find((page) => page.href === '/reverse-proxy/logs')?.subtitle).toBe('Auswertung');
+    expect(NAV_PAGES.find((page) => page.href === '/reverse-proxy/zertifikate')?.subtitle).toBe('Reverse-Proxy');
     expect(NAV_PAGES.find((page) => page.href === '/dashboard')?.subtitle).toBeUndefined();
   });
 });
