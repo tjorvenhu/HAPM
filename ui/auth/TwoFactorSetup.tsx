@@ -165,18 +165,10 @@ export default function TwoFactorSetup({ start, verify, onComplete, onCancel, re
               />
             </div>
 
-            <div style={{
-              background: "var(--bg-warm)",
-              border: "1px solid var(--border)",
-              borderRadius: 8,
-              padding: "12px 16px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 8,
-              marginBottom: 20,
-            }}>
-              <code style={{ fontSize: "0.75rem", wordBreak: "break-all", flex: 1 }}>{manualCode}</code>
+            {/* Der Code bricht nie um: abgetippt wird er am Stück. Reicht der
+                Platz nicht, rutscht der Knopf in die nächste Zeile. */}
+            <div className="two-factor-secret">
+              <code>{manualCode}</code>
               <button
                 type="button"
                 className={copied ? "two-factor-copy is-copied" : "two-factor-copy"}
