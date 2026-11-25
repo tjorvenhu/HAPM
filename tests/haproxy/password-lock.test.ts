@@ -509,16 +509,22 @@ describe('Die Routen', () => {
     // Eine Route, die `readServiceInput` direkt nähme, ließe ein mitgeschicktes
     // Passwort fallen: aus „mit Passwort sperren" würde ein Fehler oder, beim
     // Ändern, das alte Passwort.
+    // Die Routen unter /api/internal und der MCP-Server lesen über
+    // `lib/haproxy/api-actions.ts`, die beiden Funktionen dort zählen wie Routen.
     for (const route of [
       'app/api/haproxy/services/route.ts',
       'app/api/haproxy/services/[id]/route.ts',
-      'app/api/internal/haproxy/services/route.ts',
-      'app/api/internal/haproxy/services/[id]/route.ts',
+      'lib/haproxy/api-actions.ts',
     ]) {
       const text = source(route);
       expect(text, route).toContain('readServiceRequest(body)');
       expect(text, route).not.toContain('readServiceInput');
     }
+    const actions = source('lib/haproxy/api-actions.ts');
+    expect(actions.match(/readServiceRequest\(body\)/g)).toHaveLength(2);
+    expect(source('app/api/internal/haproxy/services/route.ts')).toContain('createServiceRun(');
+    expect(source('app/api/internal/haproxy/services/[id]/route.ts')).toContain('updateServiceRun(');
+    expect(source('lib/mcp/tools.ts')).not.toContain('readServiceInput');
   });
 });
 

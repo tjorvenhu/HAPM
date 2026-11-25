@@ -10,7 +10,7 @@ export const shell: Dictionary = {
   'Zertifikate': 'Certificates',
   'Logs': 'Logs',
   'DNS': 'DNS',
-  'API': 'API',
+  'API und MCP': 'API & MCP',
   'Fehlerseiten': 'Error pages',
   'Einstellungen': 'Settings',
   'System': 'System',

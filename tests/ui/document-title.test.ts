@@ -15,7 +15,7 @@ describe('documentTitle', () => {
     expect(documentTitle('/reverse-proxy')).toBe('Ziele · HAPM');
     expect(documentTitle('/reverse-proxy/zertifikate')).toBe('Zertifikate · HAPM');
     expect(documentTitle('/dns')).toBe('DNS · HAPM');
-    expect(documentTitle('/reverse-proxy/api')).toBe('API · HAPM');
+    expect(documentTitle('/reverse-proxy/api')).toBe('API und MCP · HAPM');
     expect(documentTitle('/updates')).toBe('Updates · HAPM');
     expect(documentTitle('/backup')).toBe('Sicherung · HAPM');
     expect(documentTitle('/notifications')).toBe('Benachrichtigungen · HAPM');
@@ -33,7 +33,7 @@ describe('documentTitle', () => {
   it('der längere Treffer gewinnt, auch über Bereichsgrenzen hinweg', () => {
     // /reverse-proxy (Ziele) ist ein Präfix von /reverse-proxy/api, und die API
     // steht in einem anderen Bereich der Leiste.
-    expect(documentTitle('/reverse-proxy/api')).toBe('API · HAPM');
+    expect(documentTitle('/reverse-proxy/api')).toBe('API und MCP · HAPM');
     expect(documentTitle('/reverse-proxy/logs')).toBe('Logs · HAPM');
     expect(documentTitle('/reverse-proxy/statistiken')).toBe('Statistik · HAPM');
     expect(documentTitle('/reverse-proxy/einstellungen')).toBe('Einstellungen · HAPM');

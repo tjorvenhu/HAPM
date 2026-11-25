@@ -49,7 +49,7 @@ const NAV_SECTIONS: NavSection[] = [
       { label: msgid('Zertifikate'), href: '/reverse-proxy/zertifikate', icon: ShieldCheck },
       { label: msgid('DNS'), href: '/dns', icon: Globe },
       { label: msgid('Fehlerseiten'), href: '/reverse-proxy/fehlerseiten', icon: FileWarning },
-      { label: msgid('API'), href: '/reverse-proxy/api', icon: Plug },
+      { label: msgid('API und MCP'), href: '/reverse-proxy/api', icon: Plug },
       { label: msgid('Einstellungen'), href: '/reverse-proxy/einstellungen', icon: SlidersHorizontal },
     ],
   },
@@ -100,7 +100,7 @@ export const NAV_PAGES: { title: string; subtitle?: string; href: string }[] = [
  * Die Seite, die im Browsertitel steht.
  *
  * Der längste passende Eintrag gewinnt, über alle Bereiche hinweg:
- * `/reverse-proxy/api` gehört zu „API" und nicht zu „Ziele", obwohl
+ * `/reverse-proxy/api` gehört zu „API und MCP" und nicht zu „Ziele", obwohl
  * `/reverse-proxy` ein Präfix davon ist. Die Seite einer Gruppe
  * (`/reverse-proxy/<gruppe>`) hat keinen eigenen Eintrag und fällt auf „Ziele".
  */

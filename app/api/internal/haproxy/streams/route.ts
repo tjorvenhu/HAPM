@@ -1,19 +1,9 @@
 import { requireServiceToken } from '@/lib/service-auth';
-import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
-import { msg } from '@/lib/i18n';
+import { ok, handleError, jsonBody } from '@/lib/api';
 import { getT } from '@/lib/i18n/server';
 import { serviceActor } from '@/lib/audit';
-import { precheckStreamCreate, probeProxy, checkStreamPort } from '@/lib/haproxy/provision';
-import { startHaproxyRun } from '@/lib/haproxy/runner';
-import {
-  haproxyActor,
-  proxyServers,
-  resolveProxy,
-  streamsOf,
-  type StreamView,
-} from '@/lib/haproxy/internal';
-import { HaproxyConfigError } from '@/lib/haproxy/config';
-import { readStreamInput, validateNewStream } from '@/lib/haproxy/streams';
+import { haproxyActor } from '@/lib/haproxy/internal';
+import { checkPort, createStreamRun, listStreams } from '@/lib/haproxy/api-actions';
 
 /**
  * Die TCP-Weiterleitungen für einen anderen Dienst: lesen und anlegen.
@@ -21,8 +11,8 @@ import { readStreamInput, validateNewStream } from '@/lib/haproxy/streams';
  * Das Gegenstück zu `/api/haproxy/streams`, nur mit Token statt Sitzung. Was
  * dort gilt, gilt hier unverändert — derselbe Rumpf (`readStreamInput`),
  * dieselbe Prüfung (`validateNewStream`), dieselbe Vorabprüfung und derselbe
- * abgekoppelte Lauf. Siehe `lib/haproxy/internal.ts` für den Grund, warum kein
- * zweiter Schreibweg daneben entsteht.
+ * abgekoppelte Lauf. Die Logik steht in `lib/haproxy/api-actions.ts`, der
+ * MCP-Server ruft sie auch.
  *
  * ── Was ein Aufrufer hier anders machen muss als bei einem Dienst ──
  *
@@ -31,15 +21,6 @@ import { readStreamInput, validateNewStream } from '@/lib/haproxy/streams';
  * keine Sockets, ein belegter Port kommt also durch die Prüfung und scheitert
  * erst beim Reload. Wer eine Pipeline baut, fragt vorher.
  */
-
-interface ListResponse {
-  streams: StreamView[];
-  /** Gesetzt, wenn HAProxy gerade nicht antwortet. Eigenes Feld und keine
-   *  Ausnahme: eine leere Liste hieße sonst „es gibt keine Weiterleitungen"
-   *  statt „nicht lesbar", und darauf würde eine Pipeline einen Port vergeben,
-   *  den es längst gibt. Eine Liste wie die von `/proxies`. */
-  unreachable: { serverId: string; serverName: string; error: string }[];
-}
 
 /**
  * Die Weiterleitungen, alle oder gefiltert.
@@ -53,66 +34,16 @@ interface ListResponse {
 export async function GET(request: Request) {
   try {
     await requireServiceToken(request);
+    const { t } = await getT();
 
     const url = new URL(request.url);
-    const wantedServer = url.searchParams.get('serverId');
-    const scope = url.searchParams.get('scope')?.trim().toUpperCase() || null;
+    const serverId = url.searchParams.get('serverId');
     const rawPort = url.searchParams.get('port');
 
     if (rawPort !== null) {
-      const port = Number(rawPort.trim());
-      if (!Number.isInteger(port) || port < 1 || port > 65535) {
-        throw new ApiError(msg('port muss eine ganze Zahl zwischen {min} und {max} sein.', { min: 1, max: 65535 }));
-      }
-      const server = await resolveProxy(wantedServer);
-      const exclude = url.searchParams.get('exclude')?.trim() || undefined;
-      const { t } = await getT();
-      return ok({
-        serverId: server.$id,
-        serverName: server.name,
-        port,
-        ...(await checkStreamPort(server, port, exclude, t)),
-      });
+      return ok(await checkPort(rawPort, { serverId, exclude: url.searchParams.get('exclude') }, t));
     }
-
-    // Eine genannte Maschine geht durch `resolveProxy`, damit eine unbekannte ID
-    // ein 404 ist und keine leere Liste.
-    const servers = wantedServer ? [await resolveProxy(wantedServer)] : await proxyServers();
-
-    const response: ListResponse = { streams: [], unreachable: [] };
-    const { t } = await getT();
-
-    await Promise.all(
-      servers.map(async (server) => {
-        try {
-          const probe = await probeProxy(server);
-          if (!probe.configReadable) {
-            response.unreachable.push({
-              serverId: server.$id,
-              serverName: server.name,
-              error: t('Die HAProxy-Konfiguration ist nicht lesbar.'),
-            });
-            return;
-          }
-          response.streams.push(...streamsOf(server, probe));
-        } catch (err) {
-          response.unreachable.push({
-            serverId: server.$id,
-            serverName: server.name,
-            error: err instanceof Error ? err.message : t('HAProxy ist nicht erreichbar.'),
-          });
-        }
-      })
-    );
-
-    if (scope) {
-      response.streams = response.streams.filter((s) => (s.scope ?? '').toUpperCase() === scope);
-    }
-    response.streams.sort(
-      (a, b) => a.serverName.localeCompare(b.serverName, 'de') || a.id.localeCompare(b.id, 'de')
-    );
-
-    return ok(response);
+    return ok(await listStreams({ serverId, scope: url.searchParams.get('scope') }, t));
   } catch (err) {
     return handleError(err);
   }
@@ -142,31 +73,8 @@ export async function POST(request: Request) {
     // Kein requireCsrf: ein CSRF-Token schützt einen Browser mit Cookie, und
     // hier gibt es weder das eine noch das andere.
     const service = await requireServiceToken(request);
-
-    const body = await jsonBody<{ serverId?: string }>(request);
-    const server = await resolveProxy(body.serverId);
-
-    const draft = readStreamInput(body);
-    const invalid = validateNewStream(draft);
-    if (invalid) throw new ApiError(invalid);
-
-    let input;
-    try {
-      input = await precheckStreamCreate(server, draft);
-    } catch (err) {
-      if (err instanceof HaproxyConfigError) throw new ApiError(err, 409);
-      throw err;
-    }
-
-    const run = await startHaproxyRun({
-      server,
-      action: 'stream-create',
-      serviceId: input.id,
-      streamInput: input,
-      actor: haproxyActor(serviceActor(service), request),
-    });
-
-    return ok({ runId: run.$id, serverId: server.$id, streamId: input.id });
+    const body = await jsonBody(request);
+    return ok(await createStreamRun(body, haproxyActor(serviceActor(service), request)));
   } catch (err) {
     return handleError(err);
   }

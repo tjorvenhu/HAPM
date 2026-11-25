@@ -46,7 +46,7 @@ export async function GET(request: Request) {
     const offset = Math.max(Number(url.searchParams.get('offset') ?? 0) || 0, 0);
 
     // `?source=api` — nur die Vorgänge, die über /api/internal/haproxy kamen.
-    // Das ist der Filter der Seite „Reverse-Proxy → API": sie soll zeigen, ob
+    // Das ist der Filter der Seite „Reverse-Proxy → API und MCP": sie soll zeigen, ob
     // die Pipeline durchkommt, und nicht, was jemand nebenher im Dialog getan
     // hat. Gefiltert wird über `triggeredByTokenId` und nicht über den Namen —
     // ein Mensch und ein Token stehen beide mit ihrem Namen in `triggeredBy`.
