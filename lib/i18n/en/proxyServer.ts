@@ -643,4 +643,8 @@ export const proxyServer: Dictionary = {
     'The difference “{id}” no longer exists in the configuration. Please reload the page.',
   'Zeilen, die es nur in dieser Datei gibt, werden nicht angefasst: {line}': 'Lines that exist only in this file are left untouched: {line}',
   'Es wurde keine Abweichung ausgewählt.': 'No difference was selected.',
+  'Es wurde kein Zertifikat angegeben.': 'No certificate was given.',
+  'acme.sh führt kein Zertifikat für {domain}.': 'acme.sh has no certificate for {domain}.',
+  'Das Zertifikat für {domain} ist ausgestellt. acme.sh erneuert es selbst.':
+    'The certificate for {domain} is issued. acme.sh renews it by itself.',
 };

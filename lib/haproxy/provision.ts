@@ -369,17 +369,34 @@ async function probeUploaded(
   ssh: Awaited<ReturnType<typeof getSSHConfig>>,
   acme: AcmeCertificate[]
 ): Promise<UploadedCertificate[]> {
-  const res = await sshExec(ssh, certListingCommand(HAPROXY_CERT_DIR), SHORT_MS).catch(() => null);
-  return res ? uploadedCertificates(parseCertListing(res.stdout), acme) : [];
+  const listing = await probeListing(ssh);
+  return listing ? uploadedCertificates(listing, acme) : [];
 }
 
-/** Was acme.sh führt und was hochgeladen ist, für die Zertifikatsseite und die Prüfungen. */
+/** Jede PEM-Datei im Zertifikatsverzeichnis mit ihrem ersten Zertifikat. `null`: nicht lesbar. */
+async function probeListing(
+  ssh: Awaited<ReturnType<typeof getSSHConfig>>
+): Promise<{ file: string; pem: string }[] | null> {
+  const res = await sshExec(ssh, certListingCommand(HAPROXY_CERT_DIR), SHORT_MS).catch(() => null);
+  return res ? parseCertListing(res.stdout) : null;
+}
+
+/**
+ * Was acme.sh führt und was hochgeladen ist, für die Zertifikatsseite und die
+ * Prüfungen. `deployed` sind die Dateinamen im Zertifikatsverzeichnis, also
+ * das, was HAProxy tatsächlich lädt; `null` heißt unbekannt, nicht „keine".
+ */
 export async function readCertificateInventory(
   server: Server
-): Promise<{ acme: AcmeCertificate[]; uploaded: UploadedCertificate[] }> {
+): Promise<{ acme: AcmeCertificate[]; uploaded: UploadedCertificate[]; deployed: string[] | null }> {
   const ssh = await getSSHConfig(server);
   const acme = await probeCertificates(ssh);
-  return { acme, uploaded: await probeUploaded(ssh, acme) };
+  const listing = await probeListing(ssh);
+  return {
+    acme,
+    uploaded: listing ? uploadedCertificates(listing, acme) : [],
+    deployed: listing ? listing.map((entry) => entry.file) : null,
+  };
 }
 
 /**
@@ -390,11 +407,10 @@ export async function readCertificateInventory(
  * Minutentakt.
  */
 export async function readPemCoverage(server: Server): Promise<string[][]> {
-  const ssh = await getSSHConfig(server);
-  const res = await sshExec(ssh, certListingCommand(HAPROXY_CERT_DIR), SHORT_MS).catch(() => null);
-  if (!res) return [];
+  const listing = await probeListing(await getSSHConfig(server));
+  if (!listing) return [];
   const now = Date.now();
-  return uploadedCertificates(parseCertListing(res.stdout), [])
+  return uploadedCertificates(listing, [])
     .filter((cert) => cert.notAfter !== null && Date.parse(cert.notAfter) > now && cert.domains.length > 0)
     .map((cert) => cert.domains);
 }
@@ -409,13 +425,26 @@ export async function readCoverage(server: Server): Promise<AcmeCertificate[]> {
  * hochgeladen und noch gültig ist. Danach richtet sich `findCertificateFor`,
  * damit für eine Domain mit hochgeladenem Zertifikat nichts beantragt wird.
  */
-async function probeCoverage(ssh: Awaited<ReturnType<typeof getSSHConfig>>): Promise<{
-  certs: AcmeCertificate[];
-  uploaded: UploadedCertificate[];
-}> {
+async function probeCoverage(ssh: Awaited<ReturnType<typeof getSSHConfig>>): Promise<Coverage> {
   const acme = await probeCertificates(ssh);
-  const uploaded = await probeUploaded(ssh, acme);
-  return { certs: [...acme, ...uploadedCoverage(uploaded, Date.now())], uploaded };
+  const listing = await probeListing(ssh);
+  const uploaded = listing ? uploadedCertificates(listing, acme) : [];
+  return {
+    certs: [...acme, ...uploadedCoverage(uploaded, Date.now())],
+    acme,
+    uploaded,
+    deployed: listing ? listing.map((entry) => entry.file) : null,
+  };
+}
+
+interface Coverage {
+  /** Alles, was abdecken kann: von acme.sh und gültig hochgeladen. */
+  certs: AcmeCertificate[];
+  /** Davon, was acme.sh führt (dieselben Objekte wie in `certs`). */
+  acme: AcmeCertificate[];
+  uploaded: UploadedCertificate[];
+  /** Die Dateien im Zertifikatsverzeichnis. `null`: nicht lesbar. */
+  deployed: string[] | null;
 }
 
 /**
@@ -938,7 +967,7 @@ async function issueAndDeploy(
   ssh: Awaited<ReturnType<typeof getSSHConfig>>,
   domains: string[],
   plan: ChallengePlan,
-  coverage: { certs: AcmeCertificate[]; uploaded: UploadedCertificate[] },
+  coverage: Coverage,
   acmeServer: string,
   steps: StepLog
 ): Promise<boolean> {
@@ -954,12 +983,25 @@ async function issueAndDeploy(
    * sich danach gegenseitig die Challenge weg. */
   const existing = findCertificateFor(certs, domains);
   if (existing) {
+    /* Ausgestellt heißt noch nicht ausgerollt. acme.sh führt ein Zertifikat,
+     * sobald der Antrag durch ist; scheiterte danach das Ausrollen (oder hat
+     * jemand von Hand ohne Deploy-Hook ausgestellt), liegt kein PEM in
+     * `/etc/haproxy/certs`. Als „vorhanden" gezählt, entstünde das Ziel ohne
+     * Zertifikat, und HAProxy lieferte für die Domain ein fremdes aus. Also wird
+     * nachgeholt, was fehlt, statt ein zweites zu beantragen. */
+    const undeployed =
+      coverage.acme.includes(existing) &&
+      coverage.deployed !== null &&
+      !coverage.deployed.includes(pemFileName(existing.mainDomain));
     await steps.push({
       label: msgid('Zertifikat schon vorhanden'),
       ok: true,
-      detail: `${existing.mainDomain} deckt ${domains.join(', ')} ab. Es wurde keins beantragt.`,
+      detail:
+        `${existing.mainDomain} deckt ${domains.join(', ')} ab. Es wurde keins beantragt.` +
+        (undeployed ? ` Es lag noch nicht in ${HAPROXY_CERT_DIR} und wird jetzt ausgerollt.` : ''),
     });
-    return true;
+    if (!undeployed) return true;
+    return deployCertificate(ssh, existing.mainDomain, isEccKey(existing.keyLength), steps);
   }
 
   const issue = await sshExec(
@@ -1001,6 +1043,25 @@ async function issueAndDeploy(
         : ''),
   });
 
+  return deployCertificate(ssh, mainDomain, true, steps);
+}
+
+/** Ob acme.sh das Zertifikat unter `<domain>_ecc` führt. Ohne Angabe: wie HAPM beantragt, `ec-256`. */
+function isEccKey(keyLength: string | null): boolean {
+  return keyLength === null || keyLength.toLowerCase().startsWith('ec');
+}
+
+/**
+ * Ein ausgestelltes Zertifikat über den Deploy-Hook nach `/etc/haproxy/certs`
+ * legen. acme.sh merkt sich Hook und Umgebung dabei im Erneuerungseintrag, und
+ * jede spätere Erneuerung rollt von selbst aus.
+ */
+async function deployCertificate(
+  ssh: Awaited<ReturnType<typeof getSSHConfig>>,
+  mainDomain: string,
+  ecc: boolean,
+  steps: StepLog
+): Promise<boolean> {
   const deploy = await sshExec(
     ssh,
     withEnv(
@@ -1016,7 +1077,7 @@ async function issueAndDeploy(
         // die inzwischen jemand anders kaputtgemacht hat.
         DEPLOY_HAPROXY_RELOAD: `haproxy -c -f ${HAPROXY_CFG} && hapm-reload`,
       },
-      [ACME, '--deploy', '-d', mainDomain, '--ecc', '--deploy-hook', 'haproxy']
+      [ACME, '--deploy', '-d', mainDomain, ...(ecc ? ['--ecc'] : []), '--deploy-hook', 'haproxy']
     ),
     ACME_MS
   );

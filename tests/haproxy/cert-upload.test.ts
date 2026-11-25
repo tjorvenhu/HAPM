@@ -10,11 +10,12 @@ import {
   inspectUpload,
   isPemFileName,
   parseCertListing,
+  servedFiles,
   uploadedCertificates,
   uploadedCoverage,
   type InspectedUpload,
 } from '@/lib/haproxy/cert-upload';
-import { findCertificateFor, type AcmeCertificate } from '@/lib/haproxy/certs';
+import { certificateUse, findCertificateFor, type AcmeCertificate } from '@/lib/haproxy/certs';
 import { germanText, type Message } from '@/lib/i18n/translate';
 import {
   CA_CERT,
@@ -183,5 +184,65 @@ describe('auf der Platte', () => {
     expect(isPemFileName('a/b.pem')).toBe(false);
     expect(isPemFileName('app.example.org.pem.hapm-removing')).toBe(false);
     expect(isPemFileName('.versteckt.pem')).toBe(false);
+  });
+});
+
+/* ── Was HAProxy lädt ──
+ *
+ * Die Lage des Fehlerbilds: ein Antrag auf `huether.tech, *.huether.tech`, der
+ * nie durchkam (acme.sh führt ihn ohne Ausstellungsdatum, die Seite zeigte
+ * „Erneuerung —"), daneben drei Ziele mit eigenem Zertifikat. HAProxy lädt
+ * die drei Dateien und keine Wildcard; „Benutzt von" stand trotzdem bei ihr. */
+describe('servedFiles', () => {
+  const issued = (mainDomain: string, domains = [mainDomain]): AcmeCertificate => ({
+    mainDomain,
+    domains,
+    keyLength: 'ec-256',
+    createdAt: '2026-10-25T10:00:00Z',
+    renewAt: '2027-01-23T10:00:00Z',
+  });
+  const failedWildcard: AcmeCertificate = {
+    mainDomain: 'huether.tech',
+    domains: ['huether.tech', '*.huether.tech'],
+    keyLength: 'ec-256',
+    createdAt: null,
+    renewAt: null,
+  };
+  const acme = [
+    issued('hapm.huether.tech'),
+    failedWildcard,
+    issued('truenas.huether.tech'),
+    issued('unifi.huether.tech'),
+  ];
+  const deployed = ['000-hapm-default.pem', 'hapm.huether.tech.pem', 'truenas.huether.tech.pem', 'unifi.huether.tech.pem'];
+
+  it('ein nie ausgestellter Antrag hat keine Datei und bedient niemanden', () => {
+    const files = servedFiles(acme, [], deployed);
+    expect(files.map((f) => f.file)).toEqual(['hapm.huether.tech.pem', 'truenas.huether.tech.pem', 'unifi.huether.tech.pem']);
+
+    const services = [
+      { id: 'hapm', domains: ['hapm.huether.tech'] },
+      { id: 'truenas_huether_tech', domains: ['truenas.huether.tech'] },
+      { id: 'unifi_huether_tech', domains: ['unifi.huether.tech'] },
+    ];
+    const use = certificateUse(files, services);
+    expect(files.map((f) => use.get(f)?.map((s) => s.id))).toEqual([['hapm'], ['truenas_huether_tech'], ['unifi_huether_tech']]);
+  });
+
+  it('ausgestellt, aber nicht ausgerollt, lädt HAProxy nicht', () => {
+    const wildcard = issued('huether.tech', ['huether.tech', '*.huether.tech']);
+    expect(servedFiles([wildcard], [], []).length).toBe(0);
+    expect(servedFiles([wildcard], [], ['huether.tech.pem']).map((f) => f.file)).toEqual(['huether.tech.pem']);
+  });
+
+  it('ohne Blick ins Verzeichnis gilt das Ausgestellte als ausgerollt', () => {
+    expect(servedFiles([issued('app.example.org')], [], null).map((f) => f.file)).toEqual(['app.example.org.pem']);
+  });
+
+  it('hochgeladene zählen mit, sortiert wie HAProxy das Verzeichnis liest', () => {
+    const uploaded = uploadedCertificates([{ file: 'app.example.org.pem', pem: LEAF_CERT }], []);
+    const files = servedFiles([issued('_x.example.org'), issued('Zeta.example.org')], uploaded, null);
+    // Byte für Byte: Großbuchstaben vor dem Unterstrich vor Kleinbuchstaben.
+    expect(files.map((f) => f.file)).toEqual(['Zeta.example.org.pem', '_x.example.org.pem', 'app.example.org.pem']);
   });
 });

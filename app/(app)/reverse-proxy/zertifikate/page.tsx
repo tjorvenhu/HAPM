@@ -2,13 +2,15 @@
 
 import { useEffect, useState, useCallback, type ReactNode } from 'react';
 import Link from 'next/link';
-import { ShieldCheck, Loader2, RefreshCw, Network, Info, Upload, Replace, Trash2 } from 'lucide-react';
+import { ShieldCheck, Loader2, RefreshCw, RotateCw, Network, Info, Upload, Replace, Trash2 } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { usePolling } from '@/components/usePolling';
 import { useNow } from '@/components/useNow';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/ConfirmDialog';
 import CertificateUploadDialog, { type UploadBody } from '@/components/reverse-proxy/CertificateUploadDialog';
+import CertificateIssueDialog from '@/components/reverse-proxy/CertificateIssueDialog';
+import { InfoHint } from '@/ui/primitives/InfoHint';
 import type { AcmeCertificate } from '@/lib/haproxy/certs';
 import type { UploadedCertificate } from '@/lib/haproxy/cert-upload';
 import type { CertificateSource } from '@/lib/types';
@@ -50,7 +52,11 @@ interface CertificateUser {
 }
 
 interface CertificateRow extends AcmeCertificate {
+  /** Wem HAProxy dieses Zertifikat ausliefert, nicht wen es abdecken könnte:
+   *  ein genaueres Zertifikat für denselben Namen gewinnt vor der Wildcard. */
   usedBy: CertificateUser[];
+  /** Ob die PEM-Datei im Zertifikatsverzeichnis liegt. `null`: unbekannt. */
+  deployed: boolean | null;
 }
 
 interface UploadedRow extends UploadedCertificate {
@@ -88,6 +94,8 @@ export default function ReverseProxyCertificatesPage() {
   /** Offen: `null` heißt neu hochladen, sonst die Zeile, die ersetzt wird. */
   const [uploading, setUploading] = useState<{ replace: UploadedRow | null } | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
+  /** Der nie ausgestellte Antrag, der gerade noch einmal gestellt wird. */
+  const [issuing, setIssuing] = useState<{ cert: CertificateRow; dnsHooks: string[] } | null>(null);
 
   const load = useCallback(
     async (quiet = false) => {
@@ -172,6 +180,23 @@ export default function ReverseProxyCertificatesPage() {
     }
   }
 
+  async function issue(cert: CertificateRow, dnsHook: string | null) {
+    const res = await apiFetch('/api/haproxy/certificates/issue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mainDomain: cert.mainDomain, dnsHook }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || t('Der Antrag ließ sich nicht starten.'));
+    setIssuing(null);
+    notify({
+      variant: 'success',
+      message: t('Der Antrag für {domains} läuft. Den Fortschritt zeigt die Anzeige unten rechts.', {
+        domains: cert.domains.join(', '),
+      }),
+    });
+  }
+
   const usersCell = (usedBy: CertificateUser[]): ReactNode =>
     usedBy.length > 0 ? (
       /* Der Name ist der Weg dorthin: `?dienst=` öffnet den Bearbeiten-Dialog
@@ -194,6 +219,42 @@ export default function ReverseProxyCertificatesPage() {
          aufgeräumt. */
       <span style={{ color: 'var(--text-secondary)' }}>{t('Von keinem Eintrag benutzt')}</span>
     );
+
+  /** Ein Antrag, der nie durchkam, hat keinen Termin: er hat kein Zertifikat. */
+  function renewCell(cert: CertificateRow): ReactNode {
+    if (cert.createdAt === null) {
+      return (
+        <span className="badge-status badge-warning" style={{ whiteSpace: 'nowrap' }}>
+          <span className="dot" />
+          {t('Nie ausgestellt')}
+          <InfoHint
+            text={t(
+              'acme.sh führt den Antrag, aber er ist nie durchgekommen. Es gibt kein Zertifikat, HAProxy liefert keins dafür aus, und Ziele unter diesen Domains bekommen ein eigenes. Der Grund steht in der Historie beim gescheiterten Lauf.'
+            )}
+          />
+        </span>
+      );
+    }
+    return cert.renewAt ? formatDate(locale, cert.renewAt) : '—';
+  }
+
+  function acmeUsersCell(cert: CertificateRow): ReactNode {
+    if (cert.createdAt === null) return '—';
+    if (cert.deployed === false) {
+      return (
+        <span className="badge-status badge-warning" style={{ whiteSpace: 'nowrap' }}>
+          <span className="dot" />
+          {t('Nicht ausgerollt')}
+          <InfoHint
+            text={t(
+              'acme.sh hat es ausgestellt, im Zertifikatsverzeichnis von HAProxy liegt es aber nicht. Das nächste Ziel, das es braucht, rollt es aus.'
+            )}
+          />
+        </span>
+      );
+    }
+    return usersCell(cert.usedBy);
+  }
 
   function expiryCell(cert: UploadedRow): ReactNode {
     if (!cert.notAfter) return <span style={{ color: 'var(--text-secondary)' }}>{t('Nicht lesbar')}</span>;
@@ -371,7 +432,15 @@ export default function ReverseProxyCertificatesPage() {
                           <th>{t('Abgedeckte Domains')}</th>
                           <th>{t('Schlüssel')}</th>
                           <th>{t('Erneuerung')}</th>
-                          <th>{t('Benutzt von')}</th>
+                          <th>
+                            {t('Benutzt von')}
+                            <InfoHint
+                              text={t(
+                                'Die Ziele, denen HAProxy dieses Zertifikat ausliefert. Hat eine Domain ein eigenes Zertifikat, bekommt sie das, auch wenn eine Wildcard sie ebenfalls abdeckt.'
+                              )}
+                            />
+                          </th>
+                          <th aria-label={t('Aktionen')} />
                         </tr>
                       </thead>
                       <tbody>
@@ -382,8 +451,22 @@ export default function ReverseProxyCertificatesPage() {
                             </td>
                             <td>{cert.domains.join(', ')}</td>
                             <td>{cert.keyLength ?? '—'}</td>
-                            <td>{cert.renewAt ? formatDate(locale, cert.renewAt) : '—'}</td>
-                            <td>{usersCell(cert.usedBy)}</td>
+                            <td>{renewCell(cert)}</td>
+                            <td>{acmeUsersCell(cert)}</td>
+                            <td>
+                              {cert.createdAt === null && row.source === 'acme' && (
+                                <div className="hapm-form-actions">
+                                  <button
+                                    className="btn btn-ghost btn-icon btn-sm"
+                                    data-tooltip={t('Erneut beantragen')}
+                                    aria-label={t('Erneut beantragen')}
+                                    onClick={() => setIssuing({ cert, dnsHooks: row.dnsHooks })}
+                                  >
+                                    <RotateCw size={16} />
+                                  </button>
+                                </div>
+                              )}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -394,6 +477,16 @@ export default function ReverseProxyCertificatesPage() {
             </div>
           ))}
         </>
+      )}
+
+      {issuing && (
+        <CertificateIssueDialog
+          mainDomain={issuing.cert.mainDomain}
+          domains={issuing.cert.domains}
+          dnsHooks={issuing.dnsHooks}
+          onIssue={(dnsHook) => issue(issuing.cert, dnsHook)}
+          onClose={() => setIssuing(null)}
+        />
       )}
 
       {uploading && (

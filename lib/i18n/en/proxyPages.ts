@@ -476,4 +476,16 @@ export const proxyPages: Dictionary = {
     'haproxy.cfg lacks lines that HAPM now writes into the base configuration. They can be applied one by one under Settings.',
   '{count} neue Vorgabe': '{count} new default',
   '{count} neue Vorgaben': '{count} new defaults',
+  'Erneut beantragen': 'Request again',
+  'Nie ausgestellt': 'Never issued',
+  'Nicht ausgerollt': 'Not deployed',
+  'acme.sh führt den Antrag, aber er ist nie durchgekommen. Es gibt kein Zertifikat, HAProxy liefert keins dafür aus, und Ziele unter diesen Domains bekommen ein eigenes. Der Grund steht in der Historie beim gescheiterten Lauf.':
+    'acme.sh keeps the order, but it never went through. There is no certificate, HAProxy serves none for it, and targets under these domains get their own. The reason is in the history, at the failed run.',
+  'acme.sh hat es ausgestellt, im Zertifikatsverzeichnis von HAProxy liegt es aber nicht. Das nächste Ziel, das es braucht, rollt es aus.':
+    'acme.sh issued it, but it is not in the HAProxy certificate directory. The next target that needs it deploys it.',
+  'Die Ziele, denen HAProxy dieses Zertifikat ausliefert. Hat eine Domain ein eigenes Zertifikat, bekommt sie das, auch wenn eine Wildcard sie ebenfalls abdeckt.':
+    'The targets HAProxy serves this certificate to. A domain with its own certificate gets that one, even if a wildcard covers it as well.',
+  'Der Antrag für {domains} läuft. Den Fortschritt zeigt die Anzeige unten rechts.':
+    'The request for {domains} is running. The indicator at the bottom right shows its progress.',
+  'Der Antrag ließ sich nicht starten.': 'The request could not be started.',
 };

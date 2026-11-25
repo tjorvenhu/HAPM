@@ -22,9 +22,11 @@
  * jemand auf der Maschine von Hand ein Zertifikat ausgestellt hat, also in dem
  * Moment, in dem man sie braucht.
  *
- * Rein und ohne Importe, damit `tests/haproxy/certs.test.ts` an echter Ausgabe
- * nachrechnen kann — dieselbe Bauweise wie `config.ts`.
+ * Rein und ohne Zugriff auf die Maschine, damit `tests/haproxy/certs.test.ts`
+ * an echter Ausgabe nachrechnen kann — dieselbe Bauweise wie `config.ts`.
  */
+
+import { domainCovers, isWildcardDomain } from './config';
 
 /** Ein Zertifikat, wie acme.sh es führt. */
 export interface AcmeCertificate {
@@ -173,6 +175,71 @@ export function findCertificateFor(
   // acme.sh stehen: als „schon vorhanden" gelesen, entstünde der Dienst beim
   // zweiten Versuch ohne Zertifikat, und HAProxy antwortete mit dem Platzhalter.
   return certs.find((cert) => cert.createdAt !== null && certificateCovers(cert, domains)) ?? null;
+}
+
+/**
+ * Welches der geladenen Zertifikate HAProxy für diesen Namen ausliefert.
+ *
+ * HAProxy lädt `/etc/haproxy/certs` als Ganzes und wählt per SNI: zuerst ein
+ * Zertifikat, das genau diesen Namen trägt, erst danach eins, dessen Wildcard
+ * ihn abdeckt. Liegen für `app.kunde.example` ein eigenes Zertifikat und
+ * `*.kunde.example` daneben, bekommt der Browser das eigene, und die Wildcard
+ * bedient den Namen nicht. „Deckt ab" (`certCovers`) ist deshalb nicht
+ * „wird benutzt": die Zertifikatsseite zählte sonst beide als benutzt.
+ *
+ * Bei Gleichstand das erste der Liste. HAProxy liest das Verzeichnis in der
+ * Reihenfolge der Dateinamen, so reicht der Aufrufer die Liste herein.
+ *
+ * Ein Name, der selbst eine Wildcard ist (`*.kunde.example` als Domain eines
+ * Dienstes), steht für die Namen darunter, für die es kein eigenes Zertifikat
+ * gibt: bedient wird er von dem Zertifikat, das genau dieses Muster trägt.
+ */
+export function servedCertificate<T extends { domains: string[] }>(certs: readonly T[], host: string): T | null {
+  const h = host.toLowerCase();
+  return (
+    certs.find((cert) => cert.domains.some((name) => name.toLowerCase() === h)) ??
+    certs.find((cert) => cert.domains.some((name) => isWildcardDomain(name) && certCovers(name, h))) ??
+    null
+  );
+}
+
+/**
+ * Welche Dienste welches Zertifikat benutzen: das, was HAProxy für ihre Namen
+ * ausliefert (`servedCertificate`), nicht jedes, das sie abdecken könnte.
+ *
+ * Ein Dienst auf einer Wildcard (`*.kunde.example`) benutzt außerdem jedes
+ * Zertifikat mit einem genauen Namen darunter, wenn HAProxy es für diesen Namen
+ * ausliefert und die Anfrage bei diesem Dienst landet. Landen heißt: der erste
+ * Dienst in der Reihenfolge der Datei, dessen ACL den Namen trifft
+ * (`domainCovers`), wie bei `shadowedBy`. Hat der Name einen eigenen Eintrag,
+ * gehört das Zertifikat diesem.
+ *
+ * `services` in der Reihenfolge der Datei, `certs` in der der Dateinamen.
+ */
+export function certificateUse<T extends { domains: string[] }, S extends { domains: string[] }>(
+  certs: readonly T[],
+  services: readonly S[]
+): Map<T, S[]> {
+  const use = new Map<T, S[]>(certs.map((cert) => [cert, []]));
+  const add = (cert: T | null, service: S) => {
+    const users = cert ? use.get(cert) : undefined;
+    if (users && !users.includes(service)) users.push(service);
+  };
+  const routedTo = (host: string) => services.find((s) => s.domains.some((d) => domainCovers(d, host)));
+
+  for (const service of services) {
+    for (const domain of service.domains) {
+      add(servedCertificate(certs, domain), service);
+      if (!isWildcardDomain(domain)) continue;
+      for (const cert of certs) {
+        for (const name of cert.domains) {
+          if (isWildcardDomain(name) || !domainCovers(domain, name)) continue;
+          if (routedTo(name) === service && servedCertificate(certs, name) === cert) add(cert, service);
+        }
+      }
+    }
+  }
+  return use;
 }
 
 /**

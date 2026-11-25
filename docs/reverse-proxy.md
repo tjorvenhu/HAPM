@@ -943,6 +943,17 @@ Erneuerungseintrag auf überlappende Domains), und **abgeräumt wird nur, was ke
 Beiseitelegen). Im Zweifel bleibt das Zertifikat stehen: ein überzähliges kostet
 einen Erneuerungseintrag, ein fehlendes nimmt eine fremde Domain offline.
 
+**Ausgestellt heißt nicht ausgerollt, und beantragt heißt nicht ausgestellt.**
+acme.sh führt einen Antrag in `--list`, sobald er gestellt ist, auch wenn er
+scheitert: mit Domains, ohne `Created` und ohne `Renew`. `findCertificateFor`
+zählt deshalb nur, was ein Ausstellungsdatum hat. Das reicht nicht: scheitert
+nach dem Antrag das Ausrollen (oder hat jemand von Hand ohne Deploy-Hook
+ausgestellt), führt acme.sh ein Zertifikat, das in `/etc/haproxy/certs` nicht
+liegt. Als „vorhanden" gezählt, entstünde das Ziel beim zweiten Versuch ohne
+PEM, und HAProxy lieferte ein fremdes aus. `issueAndDeploy` rollt ein solches
+vorhandenes Zertifikat deshalb aus (`deployCertificate`), statt ein zweites zu
+beantragen oder stillschweigend nichts zu tun.
+
 **Der PEM-Name wird gesetzt und nicht dem Hook überlassen** (`pemFileName`,
 `DEPLOY_HAPROXY_PEM_NAME`). Die Vorgabe ist die Hauptdomain, und die hieße bei
 einer Wildcard `*.kunde.example.pem` — ein Stern im Dateinamen ist in jedem
@@ -1215,6 +1226,45 @@ macht. Aufgelöst wird der Link erst nach dem Laden und genau einmal — vorher 
 „gibt es nicht" nicht dasselbe wie „noch nicht gelesen", und ohne das Flag ginge
 der Dialog nach jedem Poll-Takt wieder auf. Die Adresse wird danach aufgeräumt,
 sonst öffnet ein Reload denselben Dialog erneut.
+
+**„Benutzt von" heißt: HAProxy liefert es diesem Ziel aus**
+(`certificateUse`, `servedCertificate` in `certs.ts`, `servedFiles` in
+`cert-upload.ts`). Nicht: es deckt eine Domain des Ziels ab. HAProxy lädt das
+Verzeichnis als Ganzes und wählt per SNI zuerst ein Zertifikat mit genau dem
+Namen, erst danach eine Wildcard. Ein Ziel mit eigenem Zertifikat unter
+`*.kunde.example` bekommt das eigene, und die Wildcard bedient es nicht.
+Vorher zählte die Seite jedes abdeckende Zertifikat: das eigene **und** die
+Wildcard standen beim Ziel, und es sah aus, als schriebe HAPM jedes Ziel unter
+beide. Gezählt wird außerdem nur, was HAProxy überhaupt lädt: ein nie
+ausgestellter Antrag (Spalte „Erneuerung": „Nie ausgestellt") und ein
+ausgestelltes, aber nicht ausgerolltes Zertifikat („Nicht ausgerollt") haben
+keine Datei und bedienen niemanden. Bei gleichen Namen gewinnt die erste
+Datei in Byte-Reihenfolge, so liest HAProxy das Verzeichnis. Ein Ziel auf einer
+Wildcard benutzt dazu jedes genaue Zertifikat darunter, dessen Name bei ihm
+landet (erster Eintrag der Datei, dessen ACL den Namen trifft, wie
+`shadowedBy`).
+
+Für `certificateUsers` beim Löschen gilt das **nicht**: dort bleibt ein
+Zertifikat stehen, solange es einen übrig bleibenden Dienst auch nur abdeckt.
+Im Zweifel bleibt es stehen; die Seite dagegen soll zeigen, was ist.
+
+**Ein nie ausgestellter Antrag lässt sich hier noch einmal stellen**
+(`POST /api/haproxy/certificates/issue`, Knopf in der Zeile). Der typische Fall
+ist die Wildcard aus der Einrichtung, die am DNS-Hook scheiterte: acme.sh
+behält den Eintrag, ein Zertifikat gibt es nicht, und jedes Ziel darunter
+bekommt ein eigenes. Einen Antrag ohne Ziel stellt sonst nur der Assistent,
+der Eintrag bliebe für immer ein Zertifikat, das es nicht gibt. Nur für
+Einträge ohne Ausstellungsdatum und nur mit deren Domains: Ausgestelltes
+erneuert acme.sh selbst, und beliebige Zertifikate ohne Ziel sind nicht der
+Zweck der Seite. Es ist derselbe Lauf wie aus dem Assistenten
+(`action: 'certificate'`).
+
+**Ziele mit eigenem Zertifikat wechseln danach nicht von selbst auf die
+Wildcard**, und das ist Absicht: ihr Zertifikat ist gültig, wird erneuert, und
+HAProxy liefert es vor der Wildcard aus. Auf die Wildcard käme ein Ziel nur,
+wenn sein eigenes Zertifikat abgeräumt wird; das macht HAPM nicht ungefragt.
+Ein Ziel neu zu speichern ändert daran nichts (`certificateChanged`: gleiche
+Domains, kein Antrag).
 
 Eine eigene Route und kein Feld auf `/api/haproxy/services`, weil
 `acme.sh --list` über jedes Domainverzeichnis läuft: die Übersicht pollt im

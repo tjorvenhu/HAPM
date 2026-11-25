@@ -275,6 +275,42 @@ export function uploadedCertificates(
     .sort((a, b) => a.file.localeCompare(b.file));
 }
 
+/** Eine PEM-Datei, die HAProxy lädt, mit den Namen ihres Zertifikats. */
+export interface ServedFile {
+  file: string;
+  domains: string[];
+}
+
+/**
+ * Was HAProxy aus `/etc/haproxy/certs` lädt: was acme.sh ausgestellt und
+ * ausgerollt hat, dazu jede hochgeladene Datei, auch eine abgelaufene (HAProxy
+ * liefert sie trotzdem aus). Ein Antrag ohne Ausstellungsdatum hat keine Datei,
+ * und ein ausgestelltes Zertifikat ohne Datei liefert HAProxy nicht aus.
+ *
+ * `deployed` sind die Dateinamen im Verzeichnis, `null` heißt unbekannt: dann
+ * gilt, was acme.sh ausgestellt hat, als ausgerollt, statt ein Fehlen zu
+ * behaupten, das niemand gesehen hat.
+ *
+ * Sortiert nach Dateinamen, Byte für Byte: in dieser Reihenfolge liest HAProxy
+ * das Verzeichnis, und bei gleichen Namen gewinnt die erste Datei
+ * (`servedCertificate`).
+ */
+export function servedFiles(
+  acme: AcmeCertificate[],
+  uploaded: UploadedCertificate[],
+  deployed: string[] | null
+): ServedFile[] {
+  const files: ServedFile[] = [];
+  for (const cert of acme) {
+    if (cert.createdAt === null) continue;
+    const file = pemFileName(cert.mainDomain);
+    if (deployed !== null && !deployed.includes(file)) continue;
+    files.push({ file, domains: cert.domains });
+  }
+  for (const cert of uploaded) files.push({ file: cert.file, domains: cert.domains });
+  return files.sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : 0));
+}
+
 /**
  * Die hochgeladenen Zertifikate in der Form, die `findCertificateFor` und
  * `certificateUsers` lesen. Nur gültige: ein abgelaufenes deckt nichts ab,

@@ -9,8 +9,8 @@ import {
   removeUploadedCertificate,
   uploadCertificate,
 } from '@/lib/haproxy/provision';
-import { certCovers, type AcmeCertificate } from '@/lib/haproxy/certs';
-import { inspectUpload, isPemFileName, type UploadedCertificate } from '@/lib/haproxy/cert-upload';
+import { certificateUse, pemFileName, type AcmeCertificate } from '@/lib/haproxy/certs';
+import { inspectUpload, isPemFileName, servedFiles, type UploadedCertificate } from '@/lib/haproxy/cert-upload';
 import { scopeSlug, type HaproxyService } from '@/lib/haproxy/config';
 import { localServer } from '@/lib/helpers';
 import { getSettings } from '@/lib/settings';
@@ -47,9 +47,13 @@ interface CertificateUser {
 }
 
 interface CertificateRow extends AcmeCertificate {
-  /** Die Dienste, die dieses Zertifikat benutzen. Leer heißt: es liegt da, ohne
-   *  dass ein Eintrag es braucht. */
+  /** Die Dienste, für deren Domains HAProxy dieses Zertifikat ausliefert. Leer
+   *  heißt: es liegt da, ohne dass ein Eintrag es braucht, oder ein genaueres
+   *  Zertifikat bedient dieselben Namen. */
   usedBy: CertificateUser[];
+  /** Ob die PEM-Datei im Zertifikatsverzeichnis liegt. `false` auch, wenn es
+   *  nie ausgestellt wurde (`createdAt: null`); `null` heißt unbekannt. */
+  deployed: boolean | null;
 }
 
 interface UploadedRow extends UploadedCertificate {
@@ -71,10 +75,27 @@ interface ProxyCertificates {
   error: string | null;
 }
 
-function usersOf(domains: string[], services: HaproxyService[]): CertificateUser[] {
-  return services
-    .filter((service) => service.domains.some((domain) => domains.some((p) => certCovers(p, domain))))
-    .map((service) => ({ id: service.id, slug: service.scope ? scopeSlug(service.scope) : null }));
+/**
+ * „Benutzt von" je Datei: welche Dienste das Zertifikat bekommen, das HAProxy
+ * per SNI auswählt (`certificateUse`). Nicht jedes, das ihre Domains abdeckt:
+ * neben einem eigenen Zertifikat für `app.kunde.example` liefert HAProxy die
+ * Wildcard für diesen Namen nicht aus, und sie stünde sonst bei beiden.
+ */
+function usersByFile(
+  acme: AcmeCertificate[],
+  uploaded: UploadedCertificate[],
+  deployed: string[] | null,
+  services: HaproxyService[]
+): (file: string) => CertificateUser[] {
+  const files = servedFiles(acme, uploaded, deployed);
+  const use = certificateUse(files, services);
+  return (file) => {
+    const served = files.find((entry) => entry.file === file);
+    return (served ? (use.get(served) ?? []) : []).map((service) => ({
+      id: service.id,
+      slug: service.scope ? scopeSlug(service.scope) : null,
+    }));
+  };
 }
 
 export async function GET() {
@@ -90,15 +111,21 @@ export async function GET() {
     try {
       const probe = await probeProxy(server);
       const inventory = await readCertificateInventory(server);
+      const acme = probe.acmeReady ? inventory.acme : [];
+      const usersOf = usersByFile(acme, inventory.uploaded, inventory.deployed, probe.services);
       row = {
         ...base,
         acmeReady: probe.acmeReady,
         dnsHooks: probe.dnsHooks,
-        certificates: (probe.acmeReady ? inventory.acme : []).map((cert) => ({
-          ...cert,
-          usedBy: usersOf(cert.domains, probe.services),
-        })),
-        uploaded: inventory.uploaded.map((cert) => ({ ...cert, usedBy: usersOf(cert.domains, probe.services) })),
+        certificates: acme.map((cert) => {
+          const file = pemFileName(cert.mainDomain);
+          const deployed =
+            cert.createdAt === null ? false : inventory.deployed === null ? null : inventory.deployed.includes(file);
+          // Ein nie ausgestellter Antrag hat keine Datei. Liegt eine unter seinem
+          // Namen, ist sie hochgeladen und steht dort mit ihren Diensten.
+          return { ...cert, deployed, usedBy: deployed === false ? [] : usersOf(file) };
+        }),
+        uploaded: inventory.uploaded.map((cert) => ({ ...cert, usedBy: usersOf(cert.file) })),
         error: null,
       };
     } catch (err) {

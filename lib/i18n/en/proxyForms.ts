@@ -470,4 +470,8 @@ export const proxyForms: Dictionary = {
   'Ziel spricht': 'Target speaks',
   'Ziele sprechen': 'Targets speak',
   'Ziele dieser Regel sprechen': 'Targets of this rule speak',
+  'acme.sh beantragt ein Zertifikat für {domains} und legt es für HAProxy ab. Ziele mit eigenem Zertifikat behalten es.':
+    'acme.sh requests a certificate for {domains} and places it for HAProxy. Targets with their own certificate keep it.',
+  'DNS-Hook': 'DNS hook',
+  'Beantragen': 'Request',
 };
