@@ -6,9 +6,10 @@ import { join } from 'path';
  * Fängt zwei Fehler an Klassennamen ab, die TypeScript nicht sieht.
  *
  * Der erste: eine Seite benutzt eine Klasse, die es nirgends gibt. Die Regeln
- * stehen an drei Stellen (`ui/css/`, `app/globals.css`, `app/hapm.css`), und
- * die beiden letzten kennen nur, was einzelne Seiten brauchen. Eine Klasse, die
- * in keiner davon steht, fällt beim Schreiben nicht auf: das sieht man erst im
+ * stehen an drei Stellen (`ui/css/`, `app/globals.css`, `app/hapm.css`, dazu
+ * die Stylesheets einzelner Seiten in `PAGE_CSS`), und alle außer `ui/css/`
+ * kennen nur, was einzelne Seiten brauchen. Eine Klasse, die in keiner davon
+ * steht, fällt beim Schreiben nicht auf: das sieht man erst im
  * Browser.
  *
  * Der zweite: `.alert` trägt Abstand, Radius und Anordnung, `.alert-info` nur
@@ -26,7 +27,15 @@ function uiCss(entry: string): string {
 }
 
 const GLOBALS = readFileSync('app/globals.css', 'utf8');
-const CSS = [uiCss('tool.css'), GLOBALS, readFileSync('app/hapm.css', 'utf8')].join('\n');
+/** Stylesheets einzelner Seiten, eingebunden in deren `page.tsx`. */
+const PAGE_CSS = ['app/logs.css', 'app/setup/setup.css'];
+
+const CSS = [
+  uiCss('tool.css'),
+  GLOBALS,
+  readFileSync('app/hapm.css', 'utf8'),
+  ...PAGE_CSS.map((file) => readFileSync(file, 'utf8')),
+].join('\n');
 
 const DEFINED = new Set([...CSS.matchAll(/\.([a-zA-Z][\w-]*)/g)].map((m) => m[1]));
 

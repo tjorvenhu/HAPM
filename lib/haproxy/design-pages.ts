@@ -126,8 +126,10 @@ export function designPageSizes(design: PageDesign): DesignPageSize[] {
 export function logoByteBudget(design: PageDesign): number {
   // Die Seiten mit einem leeren Bild: Rahmen, Texte, `<img>` und der Kopf der
   // Data-URI. Jede Seite bekommt dasselbe Logo, die größte bleibt die größte.
+  // Ein Logo gibt es nur in „Selbst gestalten“. Gerechnet wird für diese Art,
+  // auch wenn gerade eine andere gewählt ist: das Formular zeigt die Zahl dort.
   const mime = design.logo.kind === 'custom' ? design.logo.mime : 'image/svg+xml';
-  const empty: PageDesign = { ...design, logo: { kind: 'custom', mime, data: '' } };
+  const empty: PageDesign = { ...design, mode: 'designed', logo: { kind: 'custom', mime, data: '' } };
   const free = PAGE_MAX_BYTES - designPageSizes(empty)[0].bytes;
   return Math.max(0, Math.floor(free / 4) * 3);
 }
@@ -135,6 +137,10 @@ export function logoByteBudget(design: PageDesign): number {
 /**
  * Der Grund, warum ein Design nicht ausgeliefert werden kann, oder `null`.
  * `messages` ist die Sprache der Oberfläche, nicht die der Seiten.
+ *
+ * Die eine Prüfung der Größe für Formular und Route, für jede Art: gemessen
+ * wird die fertige Datei samt Kopfzeilen, bei eigenem HTML also mit dem
+ * längsten Titel und Text, die die Platzhalter einsetzen.
  */
 export function designSizeError(design: PageDesign, messages: Locale = DEFAULT_LOCALE): string | null {
   const largest = designPageSizes(design)[0];
@@ -146,7 +152,10 @@ export function designSizeError(design: PageDesign, messages: Locale = DEFAULT_L
     bytes: formatNumber(messages, largest.bytes),
     max: formatNumber(messages, PAGE_MAX_BYTES),
   };
-  if (design.logo.kind === 'custom') {
+  if (design.mode === 'custom' && largest.page.kind === 'error') {
+    return t('Mit diesem HTML und CSS hätte „{page}“ {bytes} Bytes, HAProxy lädt höchstens {max}. Kürzen Sie HTML oder CSS.', values);
+  }
+  if (design.mode === 'designed' && design.logo.kind === 'custom') {
     return t(
       'Das Logo passt nicht in die Seite. Mit ihm hätte „{page}“ {bytes} Bytes, HAProxy lädt höchstens {max}. Mit den jetzigen Texten darf die Logo-Datei höchstens {budget} Bytes groß sein.',
       { ...values, budget: formatNumber(messages, logoByteBudget(design)) }

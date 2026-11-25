@@ -1,7 +1,7 @@
 'use client';
 
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { Monitor, Smartphone } from 'lucide-react';
+import { Monitor, Moon, Smartphone, Sun } from 'lucide-react';
 import Select from '@/components/Select';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import { useT } from '@/lib/i18n/react';
@@ -35,6 +35,13 @@ import { PAGE_MAX_BYTES, type PageDesign } from '@/lib/haproxy/page-design';
  * Die Seite im Rahmen spricht die Sprache des Designs (`design.locale`), alles
  * drumherum die der Oberfläche.
  *
+ * ── Hell und dunkel ──
+ *
+ * Die Seite von HAPM folgt `prefers-color-scheme` des Besuchers, eine eigene
+ * Vorlage kann es auch. Im Rahmen gilt dafür das `color-scheme` des `iframe`
+ * selbst, nicht das des Rechners, an dem jemand HAPM bedient: so zeigt der
+ * Umschalter beide Fassungen, ohne das Dokument anzufassen.
+ *
  * ── Warum verkleinert ──
  *
  * Die Fehlerseite hat unter 640 px eine eigene Anordnung. In einer Spalte von
@@ -50,6 +57,8 @@ const VIEWPORTS = {
 
 type Viewport = keyof typeof VIEWPORTS;
 
+type Scheme = 'light' | 'dark';
+
 interface DesignPreviewProps {
   design: PageDesign;
   pageId: string;
@@ -59,6 +68,7 @@ interface DesignPreviewProps {
 export default function DesignPreview({ design, pageId, onPageChange }: DesignPreviewProps) {
   const { t, locale } = useT();
   const [viewport, setViewport] = useState<Viewport>('wide');
+  const [scheme, setScheme] = useState<Scheme>('light');
   const [available, setAvailable] = useState(0);
   const stage = useRef<HTMLDivElement>(null);
 
@@ -110,6 +120,28 @@ export default function DesignPreview({ design, pageId, onPageChange }: DesignPr
             {t('Handy')}
           </button>
         </div>
+        <div className="segmented" role="group" aria-label={t('Farbschema des Besuchers')}>
+          <button
+            type="button"
+            className={scheme === 'light' ? 'active' : ''}
+            aria-pressed={scheme === 'light'}
+            aria-label={t('Hell')}
+            data-tooltip={t('Hell')}
+            onClick={() => setScheme('light')}
+          >
+            <Sun size={15} />
+          </button>
+          <button
+            type="button"
+            className={scheme === 'dark' ? 'active' : ''}
+            aria-pressed={scheme === 'dark'}
+            aria-label={t('Dunkel')}
+            data-tooltip={t('Dunkel')}
+            onClick={() => setScheme('dark')}
+          >
+            <Moon size={15} />
+          </button>
+        </div>
       </div>
 
       <div className="hapm-design-stage" ref={stage} style={{ height: height * scale }}>
@@ -122,6 +154,7 @@ export default function DesignPreview({ design, pageId, onPageChange }: DesignPr
           style={{
             width,
             height,
+            colorScheme: scheme,
             transform: `scale(${scale})`,
             marginLeft: Math.max(0, (available - width * scale) / 2),
           }}

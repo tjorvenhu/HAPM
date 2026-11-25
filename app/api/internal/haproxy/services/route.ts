@@ -1,20 +1,9 @@
 import { requireServiceToken } from '@/lib/service-auth';
-import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
+import { ok, handleError, jsonBody } from '@/lib/api';
 import { getT } from '@/lib/i18n/server';
 import { serviceActor } from '@/lib/audit';
-import { precheckCreate, probeProxy } from '@/lib/haproxy/provision';
-import { startHaproxyRun } from '@/lib/haproxy/runner';
-import { getSettings, challengeFor } from '@/lib/settings';
-import {
-  haproxyActor,
-  proxyServers,
-  readDnsDomains,
-  resolveProxy,
-  servicesOf,
-  type ServiceView,
-} from '@/lib/haproxy/internal';
-import { readServiceRequest } from '@/lib/haproxy/password-lock';
-import { HaproxyConfigError, validateNewService } from '@/lib/haproxy/config';
+import { haproxyActor } from '@/lib/haproxy/internal';
+import { createServiceRun, listServices } from '@/lib/haproxy/api-actions';
 
 /**
  * Die Reverse-Proxy-Ziele für einen anderen Dienst: lesen und anlegen.
@@ -23,17 +12,9 @@ import { HaproxyConfigError, validateNewService } from '@/lib/haproxy/config';
  * dort gilt, gilt hier unverändert — es ist derselbe Rumpf, dieselbe Prüfung,
  * dieselbe Vorabprüfung und derselbe abgekoppelte Lauf. Siehe
  * `lib/haproxy/internal.ts` für den Grund, warum kein zweiter Schreibweg
- * daneben entsteht.
+ * daneben entsteht, und `lib/haproxy/api-actions.ts` für die Logik, die sich
+ * diese Route mit dem MCP-Server teilt.
  */
-
-interface ListResponse {
-  services: ServiceView[];
-  /** Gesetzt, wenn HAProxy gerade nicht antwortet. Eigenes Feld und keine
-   *  Ausnahme: eine leere Liste hieße sonst „es gibt keine Dienste" statt
-   *  „nicht lesbar", und darauf würde eine Pipeline einen Eintrag anlegen, den
-   *  es längst gibt. Eine Liste wie die von `/proxies`. */
-  unreachable: { serverId: string; serverName: string; error: string }[];
-}
 
 /**
  * Die Einträge, alle oder gefiltert.
@@ -50,61 +31,17 @@ export async function GET(request: Request) {
   try {
     await requireServiceToken(request);
     const { t } = await getT();
-
     const url = new URL(request.url);
-    const wantedServer = url.searchParams.get('serverId');
-    const domain = url.searchParams.get('domain')?.trim().toLowerCase() || null;
-    const scope = url.searchParams.get('scope')?.trim().toUpperCase() || null;
-
-    // Eine genannte Maschine geht durch `resolveProxy`, damit eine unbekannte ID
-    // ein 404 ist und keine leere Liste — die liest sich wie „es gibt dort
-    // keine Einträge".
-    const servers = wantedServer
-      ? [await resolveProxy(wantedServer)]
-      : await proxyServers();
-
-    const response: ListResponse = { services: [], unreachable: [] };
-    // Für `surface` am Eintrag: über welches Ziel die Adresse von HAPM läuft.
-    const protection = { publicUrl: (await getSettings()).publicUrl };
-
-    await Promise.all(
-      servers.map(async (server) => {
-        try {
-          const probe = await probeProxy(server);
-          if (!probe.configReadable) {
-            response.unreachable.push({
-              serverId: server.$id,
-              serverName: server.name,
-              error: t('Die HAProxy-Konfiguration ist nicht lesbar.'),
-            });
-            return;
-          }
-          response.services.push(...servicesOf(server, probe, protection));
-        } catch (err) {
-          response.unreachable.push({
-            serverId: server.$id,
-            serverName: server.name,
-            error: err instanceof Error ? err.message : t('HAProxy ist nicht erreichbar.'),
-          });
-        }
-      })
+    return ok(
+      await listServices(
+        {
+          serverId: url.searchParams.get('serverId'),
+          domain: url.searchParams.get('domain'),
+          scope: url.searchParams.get('scope'),
+        },
+        t
+      )
     );
-
-    response.services = response.services.filter((service) => {
-      if (scope && (service.scope ?? '').toUpperCase() !== scope) return false;
-      // Exakter Vergleich und keine Teilzeichenkette: `kunde.example` bedient nicht
-      // `fremdekunde.example`, obwohl der Name darin vorkommt. Wer die Wildcard
-      // darüber sucht, fragt nach ihr — dass `*.kunde.example` auch `app.kunde.example`
-      // trägt, ist eine Frage an `/proxies` und nicht an einen Textfilter.
-      if (domain && !service.domains.some((d) => d.toLowerCase() === domain)) return false;
-      return true;
-    });
-
-    response.services.sort(
-      (a, b) => a.serverName.localeCompare(b.serverName, 'de') || a.id.localeCompare(b.id, 'de')
-    );
-
-    return ok(response);
   } catch (err) {
     return handleError(err);
   }
@@ -134,44 +71,8 @@ export async function POST(request: Request) {
     // Kein requireCsrf: ein CSRF-Token schützt einen Browser mit Cookie, und
     // hier gibt es weder das eine noch das andere.
     const service = await requireServiceToken(request);
-
-    const body = await jsonBody<{
-      serverId?: string;
-      dnsHook?: string;
-      dnsDomains?: string[] | 'auto';
-    }>(request);
-
-    const server = await resolveProxy(body.serverId);
-
-    // Mit dem Passwort der Sperre, falls eins mitkam (lib/haproxy/password-lock.ts).
-    const draft = readServiceRequest(body);
-    const invalid = validateNewService(draft);
-    if (invalid) throw new ApiError(invalid);
-
-    // Nicht Teil der Eingabe: der Hook steht in keiner Zeile der Konfiguration.
-    const dnsHook = String(body.dnsHook ?? '').trim() || null;
-    // Intern oder öffentlich: davon hängt ab, ob HTTP-01 überhaupt geht (`challenge.ts`).
-    const challenge = challengeFor(await getSettings(), dnsHook);
-
-    let input;
-    try {
-      input = await precheckCreate(server, draft, challenge);
-    } catch (err) {
-      if (err instanceof HaproxyConfigError) throw new ApiError(err, 409);
-      throw err;
-    }
-
-    const run = await startHaproxyRun({
-      server,
-      action: 'create',
-      serviceId: input.id,
-      input,
-      challenge,
-      dns: { ensure: await readDnsDomains(body.dnsDomains, input.domains) },
-      actor: haproxyActor(serviceActor(service), request),
-    });
-
-    return ok({ runId: run.$id, serverId: server.$id, serviceId: input.id });
+    const body = await jsonBody(request);
+    return ok(await createServiceRun(body, haproxyActor(serviceActor(service), request)));
   } catch (err) {
     return handleError(err);
   }

@@ -12,14 +12,14 @@
  *  - `renderStaticPage`: die Karte der Anmeldeseiten (`auth/AuthCard`). Hellgraue
  *    Seitenfläche, weiße Karte mit 24 px Radius, Logo, Überschrift, Felder mit 14 px Radius,
  *    Knopf als Pill. Für alles, was eine Eingabe verlangt (Passwortabfrage).
- *  - `renderErrorPage`: warme helle Fläche, schwebende runde Kopfleiste mit Logo und
- *    „Zurück", der Code groß und blass in der Serif, darunter Überschrift, Satz und
- *    Knopf. Ohne Karte.
+ *  - `renderErrorPage`: ruhige Fläche mit schlichter Kopfleiste (Logo, „Zurück"), mittig
+ *    eine Marke mit dem Code in der Akzentfarbe, Überschrift, Satz und Knopf, in der
+ *    Schrift des Systems. Ohne Karte, hell oder dunkel nach dem System.
  *
  * Die Farben und Maße stehen hier als feste Werte, je mit dem Namen der Variable daneben,
  * weil die Seite das Stylesheet nicht einbinden kann. Wie bei den Mails (`mail/layout`):
  * wer eine Farbe in `ui/css/` ändert, zieht sie hier nach. Die Schrift ist die des
- * Systems, `Instrument Sans` nur ein Wunsch davor.
+ * Systems, auf der Passwortabfrage mit `Instrument Sans` als Wunsch davor.
  *
  * Beide Erscheinungen nehmen ein `StaticTheme` an: Farben, Logo, Schriftzug, Fußzeile.
  * Ohne es entsteht die Seite im Aussehen von HAPM.
@@ -141,8 +141,8 @@ function surfaceOn(background: string): string {
 export const STATIC_THEME_DEFAULTS = {
   accent: "#1a5c4c",
   /** Die Fehlerseiten. Die Karte der Passwortabfrage steht auf `#edf0ef`. */
-  background: "#f5f4f0",
-  text: "#0f0f0f",
+  background: "#f5f7f6",
+  text: "#0f1412",
 } as const
 
 /**
@@ -334,87 +334,110 @@ export function staticPasswordForm(form: {
 
 /* ── Fehlerseiten ──
  *
- * Eine schwebende Kopfleiste (Logo links, „Zurück" rechts) über einer warmen hellen
- * Fläche. Die Werte sind eigene (`SITE_TOKENS`), nicht die der Oberfläche: die Seite
- * steht unter den Domains hinter dem Proxy und soll nicht wie ein Verwaltungswerkzeug
- * aussehen.
+ * Eine schlichte Kopfleiste (Logo links, „Zurück" rechts), darunter mittig eine kleine
+ * Marke mit dem Code in der Akzentfarbe, die Überschrift, ein Satz und der Knopf. Ohne
+ * Karte. Die Werte sind eigene, nicht die der Oberfläche: die Seite steht unter den
+ * Domains hinter dem Proxy und soll nicht wie ein Verwaltungswerkzeug aussehen.
  *
  * Verweise auf andere Seiten fehlen mit Absicht, bis auf „Zurück" und die Startseite:
  * die Seite steht unter fremden Domains, und was es dort gibt, weiß sie nicht.
  *
- * Die Serif (`Instrument Serif`) ist hier nur ein Wunsch: die Seite kann keine Schrift
- * laden, und für eine eingebettete fehlt der Platz (16 KB für die ganze Antwort, das Logo
- * allein braucht 5,5). Wo sie nicht installiert ist, steht Times New Roman und nicht
- * Georgia: dessen Ziffern haben Unterlängen, und die 4 der großen Zahl hinge in die
- * Überschrift.
+ * Die Schrift ist die des Systems (`system-ui` und die üblichen Namen danach). Die Seite
+ * kann keine Schrift laden, und für eine eingebettete fehlt der Platz: 16 KB für die
+ * ganze Antwort, das Logo allein braucht 4,5. Ein Name einer Webschrift vorn im Stapel
+ * hieße auf fast jedem Rechner nur, dass die nächste Zeile gilt, und auf dem einen, auf
+ * dem sie installiert ist, eine andere Seite als in der Vorschau.
+ *
+ * Hell und dunkel folgt dem System (`prefers-color-scheme`), aber nur ohne eigene
+ * Farben: wer Hintergrund, Text oder Akzent setzt, hat eine Fassung gewählt, und eine
+ * zweite daraus zu raten ergäbe Farben, die niemand gesehen hat.
  */
+
+/** Die Farben der dunklen Fassung, nur ohne eigene Farben. Kontrast je mindestens 7:1. */
+const SITE_DARK = [
+  "--bg:#0e1211",
+  "--surface:#161b19",
+  "--text:#eef2f0",
+  "--text-secondary:#a3aca8",
+  "--border:#2a3330",
+  "--accent:#5cc5a8",
+  "--accent-hover:#7fd3bb",
+  "--on-accent:#06221b",
+  "--accent-soft:rgba(92,197,168,.12)",
+  "--accent-text:#7fd3bb",
+  "--glow:rgba(92,197,168,.10)",
+].join(";")
 
 function siteStyle(theme: StaticTheme): string {
   const accent = accentColors(theme, { accent: "#1a5c4c", accentHover: "#237a65", onAccent: "#fff" })
+  const customAccent = isHexColor(theme.accent)
   const custom = isHexColor(theme.background) || isHexColor(theme.text)
   const bg = isHexColor(theme.background) ? theme.background.toLowerCase() : STATIC_THEME_DEFAULTS.background
   const text = isHexColor(theme.text) ? theme.text.toLowerCase() : STATIC_THEME_DEFAULTS.text
   const surface = isHexColor(theme.background) ? surfaceOn(bg) : "#fff"
-  const navSurface = isHexColor(theme.background) ? rgba(surface, ".84") : "rgba(255,255,255,.84)"
-  const hover = isHexColor(theme.text) ? rgba(text, ".06") : "rgba(15,15,15,.06)"
-  const glow = custom ? rgba(mix(bg, text, 0.1), ".6") : "rgba(221,220,216,.6)"
-  const buttonGlow = isHexColor(theme.accent) ? rgba(accent.accent, ".5") : "rgba(26,92,76,.5)"
+  // Die Marke mit dem Code ist Schrift in der Akzentfarbe. Trägt der Grund sie nicht
+  // lesbar, steht sie in der Textfarbe.
+  const accentText = contrastRatio(accent.accent, bg) >= 3 ? accent.accent : text
 
   const tokens = [
     `--bg:${bg}`,
     `--surface:${surface}`,
     `--text:${text}`,
-    `--text-secondary:${custom ? mix(bg, text, 0.67) : "#5a5753"}`,
-    `--border:${custom ? mix(bg, text, 0.13) : "#d8d6d1"}`,
+    `--text-secondary:${custom ? mix(bg, text, 0.67) : "#555c59"}`,
+    `--border:${custom ? mix(bg, text, 0.13) : "#dde2df"}`,
     `--accent:${accent.accent}`,
     `--accent-hover:${accent.accentHover}`,
-    "--serif:'Instrument Serif','Times New Roman',Times,serif",
+    `--on-accent:${accent.onAccent}`,
+    `--accent-soft:${customAccent || custom ? rgba(accent.accent, ".1") : "rgba(26,92,76,.08)"}`,
+    `--accent-text:${accentText}`,
+    `--glow:${customAccent || custom ? rgba(accent.accent, ".08") : "rgba(26,92,76,.06)"}`,
   ].join(";")
+  const adaptive = !custom && !customAccent
+  // Das Logo von HAPM ist dunkelgrün gezeichnet. Auf dunklem Grund werden Schriftzug
+  // und dunkle Fläche hell, über CSS: das schlägt die Farbe im Attribut.
+  const lightLogo = '.logo path[fill="#042d20"]{fill:#e6ece9}.logo path[fill="#044b39"]{fill:#4fae93}'
 
   return [
-    `:root{${tokens}}`,
+    `:root{${tokens}${adaptive ? ";color-scheme:light dark" : ""}}`,
     "*{box-sizing:border-box;margin:0}",
-    "body{background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased;",
-    "font:400 1rem/1.6 'Instrument Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}",
-    /* .nav, .nav-inner: 12 px Abstand nach oben und 60 px Höhe ergeben 72 px. */
-    ".nav{position:fixed;top:0;left:0;right:0;z-index:2;height:72px;padding:.75rem 2rem 0}",
-    ".nav-inner{max-width:calc(1280px - 4rem);height:100%;margin:0 auto;padding:0 .625rem 0 calc(2rem - 1px);",
-    "display:flex;align-items:center;justify-content:space-between;gap:1.5rem;border:1px solid var(--border);",
-    `border-radius:100px;background:${navSurface};backdrop-filter:blur(18px);`,
-    "box-shadow:0 1px 2px rgba(0,0,0,.04),0 14px 32px -18px rgba(0,0,0,.22)}",
-    ".nav-logo{display:block;line-height:0}",
-    ".nav-logo svg{display:block;width:152px;height:30px}",
-    /* .nav-back */
-    ".nav-back{display:inline-flex;align-items:center;gap:.5rem;height:2.5rem;padding:0 1rem 0 .75rem;",
-    "border-radius:100px;color:var(--text-secondary);font-size:.875rem;font-weight:500;text-decoration:none}",
-    `.nav-back:hover{background:${hover};color:var(--text)}`,
-    ".nav-back svg{width:16px;height:16px}",
-    /* .not-found, .not-found-content */
-    ".nf{position:relative;display:flex;align-items:center;justify-content:center;min-height:100vh;",
-    "min-height:100dvh;padding:72px 2rem 4rem;overflow:hidden;text-align:center}",
-    ".nf::before{content:'';position:absolute;top:40%;left:50%;width:700px;height:700px;",
-    "transform:translate(-50%,-50%);pointer-events:none;",
-    `background:radial-gradient(ellipse,${glow} 0%,transparent 60%)}`,
-    ".nf-c{position:relative;max-width:520px}",
-    /* .not-found-code, -title, -desc */
-    ".code{margin-bottom:1rem;color:var(--border);font-family:var(--serif);",
-    "font-size:clamp(6rem,15vw,10rem);font-weight:400;line-height:1;letter-spacing:-.04em}",
-    "h1{margin-bottom:1rem;font-family:var(--serif);font-size:clamp(1.5rem,3vw,2rem);font-weight:400;line-height:1.3}",
-    ".desc{margin-bottom:3rem;color:var(--text-secondary);line-height:1.7}",
+    "body{display:flex;flex-direction:column;min-height:100vh;min-height:100dvh;",
+    "background:radial-gradient(ellipse 90% 60% at 50% -15%,var(--glow),transparent 75%) no-repeat,var(--bg);",
+    "color:var(--text);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;",
+    "font:400 1rem/1.6 system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}",
+    ".top{display:flex;align-items:center;justify-content:space-between;gap:1rem;",
+    "width:100%;max-width:72rem;margin:0 auto;padding:1.25rem 1.5rem}",
+    ".logo{display:flex;align-items:center;gap:.625rem;min-width:0;color:var(--text);",
+    "font-size:1rem;font-weight:600;line-height:1.2;text-decoration:none;border-radius:6px}",
+    ".logo svg{display:block;width:132px;height:26px}",
+    ".back{display:inline-flex;flex-shrink:0;align-items:center;gap:.375rem;height:2.25rem;padding:0 .875rem 0 .625rem;",
+    "border:1px solid var(--border);border-radius:999px;background:var(--surface);color:var(--text-secondary);",
+    "font-size:.875rem;font-weight:500;text-decoration:none}",
+    ".back:hover{color:var(--text)}",
+    ".back svg{width:16px;height:16px}",
+    ".main{display:flex;flex:1;align-items:center;justify-content:center;padding:2rem 1.5rem 6rem}",
+    ".box{width:100%;max-width:34rem;text-align:center}",
+    ".code{display:inline-flex;align-items:center;gap:.5rem;margin-bottom:1.5rem;padding:.3125rem .875rem;",
+    "border-radius:999px;background:var(--accent-soft);color:var(--accent-text);",
+    "font-size:.8125rem;font-weight:600;line-height:1.4;letter-spacing:.02em;font-variant-numeric:tabular-nums}",
+    ".code::before{content:'';width:.375rem;height:.375rem;border-radius:50%;background:currentColor}",
+    "h1{margin-bottom:.875rem;font-size:clamp(1.875rem,5vw,2.75rem);font-weight:700;line-height:1.12;",
+    "letter-spacing:-.025em;text-wrap:balance}",
+    ".desc{max-width:30rem;margin:0 auto 2.25rem;color:var(--text-secondary);font-size:1.0625rem;line-height:1.65;",
+    "text-wrap:pretty}",
     ".desc:last-child{margin-bottom:0}",
-    /* Der Knopf */
-    ".btn{display:inline-flex;align-items:center;justify-content:center;gap:.55rem;padding:.9rem 2rem;",
-    `border-radius:10px;background:var(--accent);color:${accent.onAccent};font-size:.9rem;font-weight:600;line-height:1.2;`,
-    "text-decoration:none;",
-    `box-shadow:0 1px 2px rgba(15,42,35,.16),0 6px 16px -8px ${buttonGlow},inset 0 1px 0 rgba(255,255,255,.14)}`,
+    ".btn{display:inline-flex;align-items:center;gap:.5rem;min-height:2.875rem;padding:0 1.375rem;",
+    "border-radius:999px;background:var(--accent);color:var(--on-accent);font-size:.9375rem;font-weight:600;",
+    "line-height:1.2;text-decoration:none;box-shadow:0 1px 2px rgba(0,0,0,.08),0 8px 20px -12px var(--accent)}",
     ".btn:hover{background:var(--accent-hover)}",
-    ".btn svg{width:16px;height:16px}",
-    ".btn:focus-visible,.nav-back:focus-visible{outline:2px solid var(--accent);outline-offset:2px}",
-    "@media(max-width:640px){.nav{padding:.75rem 1rem 0}.nav-inner{padding-left:1.25rem}.nf{padding:72px 1.25rem 3rem}}",
-    themeLogoSrc(theme) ? ".nav-logo img{display:block;width:auto;height:30px;max-width:200px}" : "",
-    theme.brand
-      ? ".nav-logo{display:flex;align-items:center;gap:.625rem;color:var(--text);font-size:1rem;font-weight:600;line-height:1.2;text-decoration:none}"
-      : "",
+    ".btn svg{width:16px;height:16px;transition:transform .15s}",
+    ".btn:hover svg{transform:translateX(2px)}",
+    ".btn:focus-visible,.back:focus-visible,.logo:focus-visible{outline:2px solid var(--accent);outline-offset:3px}",
+    "@media(max-width:640px){.top{padding:1rem 1.25rem}.main{padding:1.5rem 1.25rem 4rem}.logo svg{width:112px;height:22px}}",
+    "@media(prefers-reduced-motion:reduce){.btn svg{transition:none}}",
+    adaptive ? `@media(prefers-color-scheme:dark){:root{${SITE_DARK}}${lightLogo}}` : "",
+    theme.logo === undefined && luminance(bg) <= 0.4 ? lightLogo : "",
+    themeLogoSrc(theme) ? ".logo img{display:block;width:auto;height:30px;max-width:200px}" : "",
+    theme.brand ? ".logo span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" : "",
     theme.footer ? ".foot{margin-top:2.5rem;color:var(--text-secondary);font-size:.8125rem;line-height:1.5}.desc+.foot{margin-top:0}" : "",
   ].join("")
 }
@@ -557,7 +580,7 @@ export function renderErrorPage(
         : ""
   const logo =
     themeLogo(theme, override.logo === false) +
-    (theme.brand ? `<span class="nav-brand">${escapeHtml(theme.brand)}</span>` : "")
+    (theme.brand ? `<span>${escapeHtml(theme.brand)}</span>` : "")
 
   return (
     "<!doctype html>" +
@@ -570,14 +593,14 @@ export function renderErrorPage(
     `<style>${siteStyle(theme)}</style>` +
     "</head>" +
     "<body>" +
-    '<header class="nav"><div class="nav-inner">' +
-    `<a class="nav-logo" href="/" aria-label="${escapeHtml(t("Startseite"))}">${logo}</a>` +
+    '<header class="top">' +
+    `<a class="logo" href="/" aria-label="${escapeHtml(t("Startseite"))}">${logo}</a>` +
     /* „Zurück" heißt zurück: mit JavaScript die vorige Seite, ohne die Startseite. Das
        ist die einzige Stelle mit Skript, und die Seite funktioniert ohne. */
-    `<a class="nav-back" href="/" onclick="history.back();return false">${CHEVRON}${escapeHtml(t("Zurück"))}</a>` +
-    "</div></header>" +
-    '<main class="nf"><div class="nf-c">' +
-    `<p class="code" aria-hidden="true">${escapeHtml(String(status))}</p>` +
+    `<a class="back" href="/" onclick="history.back();return false">${CHEVRON}${escapeHtml(t("Zurück"))}</a>` +
+    "</header>" +
+    '<main class="main"><div class="box">' +
+    `<p class="code">${escapeHtml(t("Fehler"))} <b>${escapeHtml(String(status))}</b></p>` +
     `<h1>${escapeHtml(page.title)}</h1>` +
     `<p class="desc">${escapeHtml(page.text)}</p>` +
     button +

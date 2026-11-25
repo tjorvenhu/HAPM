@@ -1,7 +1,7 @@
 import { requireServiceToken } from '@/lib/service-auth';
 import { ok, handleError } from '@/lib/api';
 import { getT } from '@/lib/i18n/server';
-import { proxyServers, proxyView, type ProxyView } from '@/lib/haproxy/internal';
+import { listProxies } from '@/lib/haproxy/api-actions';
 
 /**
  * Dieser Server, als Liste mit genau einem Eintrag: der Aufruf, mit dem eine
@@ -24,16 +24,14 @@ import { proxyServers, proxyView, type ProxyView } from '@/lib/haproxy/internal'
  * Probe und wären damit umsonst, aber eine Konfiguration mit vierzig Einträgen
  * schickt dann bei jedem Aufruf vierzig Objekte an einen Aufrufer, der sich für
  * die Gruppen interessiert. Wer sie will, nimmt `/services`.
+ *
+ * Die Logik steht in `lib/haproxy/api-actions.ts`, der MCP-Server ruft sie auch.
  */
 export async function GET(request: Request) {
   try {
     await requireServiceToken(request);
-
-    const servers = await proxyServers();
-    const rows: ProxyView[] = await Promise.all(servers.map(proxyView));
     const { t } = await getT();
-
-    return ok(rows.map((row) => ({ ...row, error: row.error === null ? null : t(row.error) })));
+    return ok(await listProxies(t));
   } catch (err) {
     return handleError(err);
   }

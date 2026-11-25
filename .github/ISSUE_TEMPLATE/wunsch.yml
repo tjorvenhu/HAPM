@@ -1,0 +1,20 @@
+name: Wunsch · Feature request
+description: Eine Idee für HAPM · An idea for HAPM
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Welches Problem soll gelöst werden? · What problem should be solved?
+      description: Beschreiben Sie die Lage, nicht nur die Lösung · Describe the situation, not only the solution
+    validations:
+      required: true
+  - type: textarea
+    id: vorschlag
+    attributes:
+      label: Vorschlag · Proposal
+      description: Wie könnte HAPM das lösen? · How could HAPM solve it?
+  - type: textarea
+    id: alternativen
+    attributes:
+      label: Was haben Sie bisher gemacht? · What do you do today?

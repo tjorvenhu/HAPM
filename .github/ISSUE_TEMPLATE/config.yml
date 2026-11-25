@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Sicherheitslücke melden · Report a vulnerability
+    url: https://github.com/tjorvenhu/HAPM/security/advisories/new
+    about: Vertraulich, nicht als öffentliches Issue · Private, not as a public issue
+  - name: Anleitung · Documentation
+    url: https://github.com/tjorvenhu/HAPM#readme
+    about: Installation, Einrichtung und Fehlerbehebung · Installation, setup and troubleshooting

@@ -12,7 +12,10 @@
  * Maschine kommen.
  *
  * Farben, Logo und die drei Texte der Abfrage (Überschrift, Text, Knopf)
- * kommen aus dem gespeicherten Design (`page-design.ts`).
+ * kommen aus dem gespeicherten Design (`page-design.ts`), wenn es „Selbst
+ * gestalten“ ist. Bei der Seite von HAPM und bei eigenem HTML für die
+ * Fehlerseiten bleibt die Abfrage die von HAPM (`builtInDesign`): sie braucht
+ * ein Formular, das die Regel in `haproxy.cfg` versteht.
  *
  * Geschrieben werden die Seiten beim Speichern des Designs
  * (`page-design-apply.ts`) und vor jedem Schreibvorgang am Reverse-Proxy
@@ -30,7 +33,7 @@ import {
 import { DEFAULT_LOCALE, msgid, translate, type Locale } from '@/lib/i18n';
 import { buildCommand, withStdin } from '../shell';
 import { LOCK_FIELD, LOCK_PAGE_FILES, LOCK_PASSWORD_MAX } from './config';
-import { activeDesign, designTheme, PAGE_MAX_BYTES, type PageDesign } from './page-design';
+import { activeDesign, builtInDesign, designTheme, PAGE_MAX_BYTES, type PageDesign } from './page-design';
 
 /** Was eine Seite höchstens wiegen darf. Woher die Zahl kommt, steht in
  *  `page-design.ts`: über dieser Grenze antwortet HAProxy mit 500, und
@@ -75,7 +78,8 @@ function body(kind: LockPageKind, submit: string, locale: Locale): string {
 
 /** Eine der drei Seiten als vollständiges Dokument. Ohne `design` gilt das
  *  gespeicherte. */
-export function renderLockPage(kind: LockPageKind, design: PageDesign = activeDesign()): string {
+export function renderLockPage(kind: LockPageKind, stored: PageDesign = activeDesign()): string {
+  const design = builtInDesign(stored);
   const defaults = lockPageDefaults(design.locale);
   return renderStaticPage(
     {

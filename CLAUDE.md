@@ -15,6 +15,7 @@ Next.js (App Router) mit TypeScript strict, pnpm. Drei Container: HAPM, HAProxy
 | `lib/haproxy/`, `app/(app)/reverse-proxy/`, `components/reverse-proxy/` | [`docs/reverse-proxy.md`](docs/reverse-proxy.md): dort steht zu fast jeder Zeile, warum die naheliegende Lösung einmal danebenging |
 | `lib/dns/`, `app/(app)/dns/` | [`docs/dns.md`](docs/dns.md) |
 | `app/api/internal/` | [`docs/reverse-proxy-api.md`](docs/reverse-proxy-api.md) |
+| `app/api/mcp/`, `lib/mcp/`, `lib/haproxy/api-actions.ts` | [`docs/mcp.md`](docs/mcp.md), dazu [`docs/reverse-proxy-api.md`](docs/reverse-proxy-api.md) |
 | `lib/docker/`, `lib/updates/`, `lib/bootstrap.ts`, `Dockerfile`, Compose, `install.sh` | [`docs/betrieb.md`](docs/betrieb.md) |
 | `app/setup/`, `app/api/setup/`, `lib/setup/`, `lib/haproxy/challenge.ts` | [`docs/betrieb.md`](docs/betrieb.md), Abschnitt „Ersteinrichtung", und [`docs/reverse-proxy.md`](docs/reverse-proxy.md), „Interne Installation" |
 | `lib/db/`, `lib/setup-db.ts`, `bin/hapm-admin.mjs` | [`docs/betrieb.md`](docs/betrieb.md), Abschnitt „Postgres" |

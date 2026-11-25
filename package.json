@@ -25,6 +25,7 @@
     "@better-auth/core": "1.6.26",
     "@better-auth/drizzle-adapter": "1.6.26",
     "@better-auth/passkey": "1.6.26",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@simplewebauthn/browser": "^13.3.0",
     "better-auth": "1.6.26",
     "drizzle-orm": "^0.45.2",
@@ -37,7 +38,8 @@
     "qrcode": "^1.5.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "recharts": "^3.9.2"
+    "recharts": "^3.9.2",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

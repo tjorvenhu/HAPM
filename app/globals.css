@@ -412,3 +412,38 @@ button.sys-back:hover { color: var(--accent-hover); }
 @media (max-width: 768px) {
   .metrics-row { grid-template-columns: 1fr; }
 }
+
+/* ── Fehlerseiten: Art der Seiten und eigenes HTML ──
+ * Die drei Arten sind `.kind-card`, hier mit einem Zustand: anders als im
+ * Dialog eines Ziels führt die Wahl nicht weiter, sondern bleibt stehen.
+ * HTML und CSS in derselben Schrift wie eine Konfigurationszeile
+ * (`.form-input.mono`), Zeilen ohne Umbruch, damit Einrückung lesbar bleibt. */
+.hapm-mode .kind-card.active {
+  border-color: var(--accent); background: var(--accent-light);
+}
+
+.form-textarea.mono {
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 0.8125rem; line-height: 1.55;
+  white-space: pre; overflow-wrap: normal; overflow-x: auto; tab-size: 2;
+}
+
+.hapm-placeholders { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+
+.hapm-placeholders code {
+  padding: 1px 6px; border-radius: var(--radius); background: var(--surface-muted);
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace; font-size: 0.75rem; color: var(--text);
+}
+
+/* „Vorlage einsetzen" steht in der Zeile des Labels, rechts. */
+.hapm-design .form-label-row > .btn { margin-left: auto; margin-block: -0.25rem; }
+
+/* ── API und MCP: ein Schnipsel zum Kopieren ──
+ * `.code-block` mit dem Knopf daneben, oben bündig. Lange Zeilen brechen um,
+ * damit der ganze Befehl zu lesen ist; kopiert wird er über den Knopf, und
+ * die Einrückung des JSON bleibt erhalten. */
+.mcp-snippet { align-items: flex-start; }
+
+.mcp-snippet > .code-block {
+  flex: 1; min-width: 0; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere;
+}

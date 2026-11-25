@@ -300,9 +300,8 @@ export const proxyPages: Dictionary = {
   'Zurückziehen': 'Revoke',
   'Zurückziehen fehlgeschlagen': 'Revoke failed',
   '"{name}" gilt nicht mehr.': '"{name}" is no longer valid.',
-  'Reverse-Proxy-API': 'Reverse proxy API',
-  'Womit ein anderer Dienst Domains und Ziele in HAProxy anlegt, ändert und entfernt. Die vollständige Anleitung steht in {doc}.':
-    'How another service creates, changes, and removes domains and targets in HAProxy. The full guide is in {doc}.',
+  'Womit ein anderer Dienst oder ein KI-Assistent Domains und Ziele in HAProxy anlegt, ändert und entfernt. Die Anleitungen stehen in {api} und {mcp}.':
+    'How another service or an AI assistant creates, changes and removes domains and targets in HAProxy. The guides are in {api} and {mcp}.',
   'API-Key anlegen': 'Create API key',
   'Zugang': 'Access',
   'Die Basis-URL ist die Adresse, unter der HAPM erreichbar ist. Der Parameter {param} ist überall freiwillig: ohne ihn gilt dieser Server.':

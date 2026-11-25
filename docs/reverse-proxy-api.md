@@ -8,6 +8,10 @@ HTTP geht und welche Regeln dabei gelten. Der letzte Abschnitt („Für den, der
 die Routen ändert") sagt, warum die Routen so gebaut sind. Die Regeln des
 Reverse-Proxys selbst stehen in [`reverse-proxy.md`](reverse-proxy.md).
 
+Dasselbe gibt es als MCP-Server für Sprachmodelle (Claude Code, Claude
+Desktop, claude.ai): `/api/mcp`, mit denselben Keys und denselben Regeln,
+beschrieben in [`mcp.md`](mcp.md).
+
 Zwei Dinge vorweg:
 
 - **Es gibt genau ein HAProxy.** `GET /proxies` liefert eine Liste mit einem
@@ -19,7 +23,7 @@ Zwei Dinge vorweg:
 
 ## Zugang
 
-Ein API-Key, ausgestellt in HAPM unter **Reverse-Proxy → API**
+Ein API-Key, ausgestellt in HAPM unter **Reverse-Proxy → API und MCP**
 (`/reverse-proxy/api`). Dort stehen auch die fertige Basis-URL zum Kopieren und
 die Liste der Endpunkte. Verwaltet werden dieselben Token auch unter
 `/service-tokens`. Der Klartext erscheint genau einmal, in der Antwort auf
@@ -763,7 +767,13 @@ anlegen kann, ohne dass jemand einen Dialog ausfüllt. Die Richtung ist immer
   zwischen ihren eigenen Abfragen untergehen, beantwortet die Frage nicht mehr,
   für die es da ist.
 
-### Die Routen (`lib/haproxy/internal.ts`)
+### Die Routen (`lib/haproxy/internal.ts`, `lib/haproxy/api-actions.ts`)
+
+**Die Logik einer Route steht in `lib/haproxy/api-actions.ts`**, nicht in der
+Routendatei. Die Route prüft das Token, liest Rumpf und Adresse, baut den Actor
+(`haproxyActor(serviceActor(service), request)`) und ruft eine Funktion. Der
+MCP-Server ([`mcp.md`](mcp.md)) ruft dieselben Funktionen; eine Änderung an
+einer Regel gilt damit für beide.
 
 **Es gibt keinen zweiten Schreibweg.** Die Routen nehmen
 denselben Rumpf (`readServiceInput`), prüfen mit derselben Funktion

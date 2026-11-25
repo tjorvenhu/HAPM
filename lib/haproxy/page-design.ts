@@ -9,13 +9,30 @@
  * steht dort. Wo das Design liegt, steht in `page-design-store.ts`, wie es auf
  * die Maschine kommt, in `page-design-apply.ts`.
  *
+ * ── Drei Arten (`mode`) ──
+ *
+ *  - `standard`: die Seite von HAPM, nur die Sprache ist wählbar.
+ *  - `designed`: dieselbe Seite mit eigenen Farben, Logo und Texten.
+ *  - `custom`: die Fehlerseiten aus eigenem HTML und CSS (`custom-page.ts`).
+ *    Die Passwortabfrage bleibt dabei die von HAPM: sie braucht ein Formular,
+ *    das die Regel in `haproxy.cfg` versteht.
+ *
+ * Die Felder der anderen Arten bleiben beim Wechsel gespeichert: wer zurück
+ * auf „Selbst gestalten“ geht, findet sein Design wieder. Was gilt, sagt nur
+ * `mode` (`builtInDesign`).
+ *
+ * Eine Zeile ohne `mode` stammt von vor der Wahl. Trägt sie eigene Farben,
+ * Logo, Name, Fußzeile oder Texte, ist sie `designed`, sonst `standard`
+ * (`parsePageDesign`). Beides ergibt dieselben Seiten wie vorher.
+ *
  * ── Vorgabe heißt: nichts gesetzt ──
  *
  * Eine Farbe `null`, ein Text ohne Eintrag, das Logo `hapm`, die Sprache `de`:
- * daraus entsteht Byte für Byte die Seite, die HAPM ohne dieses Modul schriebe.
- * Eine bestehende Installation erkennt ihre Dateien deshalb nach dem Update
- * weiter als die eigenen. `tests/haproxy/page-design.test.ts` hält die
- * Prüfsummen fest, auch die der englischen Fassung.
+ * daraus entsteht dieselbe Seite wie bei `standard`. `designed` ohne jede
+ * Änderung und `standard` schreiben also dieselben Dateien.
+ * `tests/haproxy/page-design.test.ts` hält die Prüfsummen fest, auch die der
+ * englischen Fassung: ändert sich die Vorlage, sieht jede Installation ihre
+ * Dateien danach als „Andere Seite“, und das ist dann eine Entscheidung.
  *
  * ── Die Sprache ──
  *
@@ -56,6 +73,14 @@
 
 import { ERROR_PAGE_STATUSES, isHexColor, type StaticTheme } from '@/ui/static/page';
 import { createTranslator, formatNumber, isLocale, DEFAULT_LOCALE, type Locale, type Translator } from '@/lib/i18n';
+import {
+  cleanCustomSource,
+  closesStyle,
+  hasDocumentFrame,
+  unknownPlaceholders,
+  CUSTOM_PAGE_PLACEHOLDERS,
+  type CustomPage,
+} from './custom-page';
 
 /** Was eine fertige Seite samt Logo höchstens wiegen darf, in Bytes. */
 export const PAGE_MAX_BYTES = 15_000;
@@ -92,7 +117,13 @@ export interface LockTexts {
   submit: string | null;
 }
 
+export const PAGE_MODES = ['standard', 'designed', 'custom'] as const;
+
+export type PageMode = (typeof PAGE_MODES)[number];
+
 export interface PageDesign {
+  /** Welche Art gilt. Die Felder der anderen bleiben gespeichert. */
+  mode: PageMode;
   colors: DesignColors;
   logo: DesignLogo;
   /** Schriftzug neben dem Logo. Leer heißt keiner. */
@@ -104,10 +135,13 @@ export interface PageDesign {
   lock: LockTexts;
   /** Sprache der Vorgabetexte. Eigene Texte bleiben, wie sie sind. */
   locale: Locale;
+  /** Eigenes HTML und CSS, nur bei `mode: 'custom'` in Gebrauch. */
+  custom: CustomPage;
 }
 
 export function defaultPageDesign(): PageDesign {
   return {
+    mode: 'standard',
     colors: { accent: null, background: null, text: null },
     logo: { kind: 'hapm' },
     brand: '',
@@ -115,12 +149,29 @@ export function defaultPageDesign(): PageDesign {
     errors: {},
     lock: { title: null, subtitle: null, submit: null },
     locale: 'de',
+    custom: { html: '', css: '' },
   };
 }
 
 /** Für ein Design in der Form, in der `parsePageDesign` es zurückgibt. */
 export function isDefaultDesign(design: PageDesign): boolean {
   return JSON.stringify(design) === JSON.stringify(defaultPageDesign());
+}
+
+/** Ob Farben, Logo, Name, Fußzeile oder ein Text von der Vorgabe abweichen. Sprache und Art zählen nicht. */
+export function hasOwnDesign(design: Pick<PageDesign, 'colors' | 'logo' | 'brand' | 'footer' | 'errors' | 'lock'>): boolean {
+  const base = defaultPageDesign();
+  const fields = (d: typeof design) => JSON.stringify([d.colors, d.logo, d.brand, d.footer, d.errors, d.lock]);
+  return fields(design) !== fields(base);
+}
+
+/**
+ * Das Design, nach dem eine Seite im Aufbau von HAPM entsteht. Bei `designed`
+ * das eigene, sonst die Vorgabe in der gewählten Sprache: bei `standard` für
+ * alle Seiten, bei `custom` für die Passwortabfrage.
+ */
+export function builtInDesign(design: PageDesign): PageDesign {
+  return design.mode === 'designed' ? design : { ...defaultPageDesign(), locale: design.locale };
 }
 
 export const DESIGN_TEXT_LIMITS = {
@@ -269,10 +320,75 @@ function readColor(value: unknown, name: string, t: T): { value: string | null }
   return { value: value.toLowerCase() };
 }
 
-/** Derselbe Satz für die Prüfung und für die Route, die einen zu großen Rumpf gar nicht erst liest. */
+/** Ein Logo, das in keine Seite passen kann, schon vor dem Entpacken. */
 export function logoTooLargeMessage(locale: Locale = DEFAULT_LOCALE): string {
   return createTranslator(locale).t(
     'Das Logo ist zu groß. Die ganze Seite darf samt Logo höchstens {max} Bytes haben.',
+    { max: formatNumber(locale, PAGE_MAX_BYTES) }
+  );
+}
+
+function byteSize(text: string): number {
+  return new TextEncoder().encode(text).length;
+}
+
+/** Ein Feld des eigenen HTML oder CSS. Die Größe der ganzen Seite prüft `designSizeError`. */
+function readSource(value: unknown, name: string, t: T, locale: Locale): { value: string } | { error: string } {
+  if (value === null || value === undefined) return { value: '' };
+  if (typeof value !== 'string') return { error: t('{name} ist kein Text.', { name }) };
+  const text = cleanCustomSource(value);
+  const bytes = byteSize(text);
+  if (bytes > PAGE_MAX_BYTES) {
+    return {
+      error: t('{name} hat {bytes} Bytes. Eine ganze Seite darf höchstens {max} Bytes haben.', {
+        name,
+        bytes: formatNumber(locale, bytes),
+        max: formatNumber(locale, PAGE_MAX_BYTES),
+      }),
+    };
+  }
+  return { value: text };
+}
+
+function readCustom(value: unknown, mode: PageMode, t: T, locale: Locale): { value: CustomPage } | { error: string } {
+  if (value !== null && value !== undefined && !isRecord(value)) return { error: t('Das eigene HTML und CSS ist ungültig.') };
+  const raw = isRecord(value) ? value : {};
+
+  const html = readSource(raw.html, t('Das HTML'), t, locale);
+  if ('error' in html) return html;
+  const css = readSource(raw.css, t('Das CSS'), t, locale);
+  if ('error' in css) return css;
+
+  // Den Inhalt prüft nur, wer ihn ausliefert: liegt eine halbe Vorlage bei
+  // einer anderen Art, soll sie das Speichern dort nicht aufhalten. Beim
+  // Wechsel auf `custom` wird sie hier geprüft.
+  if (mode !== 'custom') return { value: { html: html.value, css: css.value } };
+
+  if (hasDocumentFrame(html.value)) {
+    return { error: t('Das HTML ist nur der Inhalt von <body>. Doctype, <html>, <head> und <body> setzt HAPM selbst.') };
+  }
+  const unknown = unknownPlaceholders(html.value);
+  if (unknown.length > 0) {
+    return {
+      error: t('Den Platzhalter {found} gibt es nicht. Erlaubt sind {allowed}.', {
+        found: unknown[0],
+        allowed: CUSTOM_PAGE_PLACEHOLDERS.map((name) => `{{${name}}}`).join(', '),
+      }),
+    };
+  }
+  if (closesStyle(css.value)) {
+    return { error: t('Das CSS darf kein </style> enthalten. Dort endete der Stil, und der Rest stünde als Text auf der Seite.') };
+  }
+  if (!html.value) {
+    return { error: t('Das HTML ist leer. Geben Sie den Inhalt der Seite ein oder wählen Sie eine andere Art.') };
+  }
+  return { value: { html: html.value, css: css.value } };
+}
+
+/** Für die Route, die einen zu großen Rumpf gar nicht erst liest: dort kann das Logo oder das eigene HTML schuld sein. */
+export function requestTooLargeMessage(locale: Locale = DEFAULT_LOCALE): string {
+  return createTranslator(locale).t(
+    'Die Eingabe ist zu groß. Jede Seite darf samt Logo oder eigenem HTML höchstens {max} Bytes haben.',
     { max: formatNumber(locale, PAGE_MAX_BYTES) }
   );
 }
@@ -359,16 +475,35 @@ export function parsePageDesign(raw: unknown, messages: Locale = DEFAULT_LOCALE)
     return fail(t('Die Sprache der Vorgabetexte ist Deutsch oder Englisch.'));
   }
 
+  const own = {
+    colors: { accent: accent.value, background: background.value, text: text.value },
+    logo: logo.value,
+    brand: brand.value,
+    footer: footer.value,
+    errors,
+    lock: { title: lockTitle.value, subtitle: lockSubtitle.value, submit: lockSubmit.value },
+  };
+
+  if (raw.mode !== undefined && raw.mode !== null && !PAGE_MODES.includes(raw.mode as PageMode)) {
+    return fail(t('Die Art der Fehlerseiten ist unbekannt.'));
+  }
+  // Eine Zeile von vor der Wahl: ein eigenes Design bleibt eines.
+  const mode: PageMode = PAGE_MODES.includes(raw.mode as PageMode)
+    ? (raw.mode as PageMode)
+    : hasOwnDesign(own)
+      ? 'designed'
+      : 'standard';
+
+  const custom = readCustom(raw.custom, mode, t, messages);
+  if ('error' in custom) return fail(custom.error);
+
   return {
     ok: true,
     design: {
-      colors: { accent: accent.value, background: background.value, text: text.value },
-      logo: logo.value,
-      brand: brand.value,
-      footer: footer.value,
-      errors,
-      lock: { title: lockTitle.value, subtitle: lockSubtitle.value, submit: lockSubmit.value },
+      mode,
+      ...own,
       locale: isLocale(raw.locale) ? raw.locale : 'de',
+      custom: custom.value,
     },
   };
 }

@@ -14,12 +14,14 @@ import EntityCard, { EntityGrid, EntityField } from '@/components/EntityCard';
 import IpAllowList from '@/components/IpAllowList';
 import { SkeletonCards } from '@/components/Skeleton';
 import { InfoHint } from '@/ui/primitives/InfoHint';
+import McpAccess from '@/components/reverse-proxy/McpAccess';
 import { formatDate, formatRelative, msgid, type Locale } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
 
 /**
  * Der Zugang zur Reverse-Proxy-API an einer Stelle: wohin, womit, von wo — und
- * ob es ankommt.
+ * ob es ankommt. Darunter derselbe Zugang über MCP (`McpAccess`): dieselben
+ * Schlüssel, ein anderer Endpunkt.
  *
  * Die Schlüssel liegen in `service_tokens` und werden nur hier verwaltet. Unter
  * `/api/internal` gibt es nur den Reverse-Proxy, ein Schlüssel gilt deshalb für
@@ -103,6 +105,25 @@ export default function ReverseProxyApiPage() {
   }, []);
 
   const [copied, setCopied] = useState<string | null>(null);
+
+  /** Die Adresse von HAPM aus den Einstellungen, für den MCP-Endpunkt. */
+  const [publicUrl, setPublicUrl] = useState<string | null>(null);
+  const [settingsLoading, setSettingsLoading] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch('/api/settings')
+      .then((res) => res.json())
+      .then((body) => {
+        if (!cancelled && body.success) setPublicUrl(body.data.publicUrl ?? null);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setSettingsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [apiFetch]);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [name, setName] = useState('');
@@ -236,11 +257,11 @@ export default function ReverseProxyApiPage() {
             <ArrowLeft size={14} />
             {t('Reverse-Proxy')}
           </Link>
-          <h1 className="page-title">{t('Reverse-Proxy-API')}</h1>
+          <h1 className="page-title">{t('API und MCP')}</h1>
           <p className="page-subtitle">
             {rich(
-              'Womit ein anderer Dienst Domains und Ziele in HAProxy anlegt, ändert und entfernt. Die vollständige Anleitung steht in {doc}.',
-              { doc: <code>docs/reverse-proxy-api.md</code> }
+              'Womit ein anderer Dienst oder ein KI-Assistent Domains und Ziele in HAProxy anlegt, ändert und entfernt. Die Anleitungen stehen in {api} und {mcp}.',
+              { api: <code>docs/reverse-proxy-api.md</code>, mcp: <code>docs/mcp.md</code> }
             )}
           </p>
         </div>
@@ -324,6 +345,8 @@ export default function ReverseProxyApiPage() {
           </span>
         </div>
       </div>
+
+      <McpAccess publicUrl={publicUrl} loading={settingsLoading} />
 
       <h2 className="section-title">
         {t('API-Keys')}
