@@ -64,6 +64,7 @@ import {
   validateNewService,
   validateScopeName,
   wildcardSuffix,
+  type BackendTls,
   type CreateServiceInput,
   type HaproxyBalance,
   type HaproxyScopeInfo,
@@ -687,9 +688,79 @@ interface ServerRead {
   check: boolean;
   weight: number | null;
   cookie: string | null;
+  tls: BackendTls;
+  notes: string[];
 }
 
-function readServer(words: string[], problems: string[]): ServerRead | null {
+/** Was in `global` steht und eine server-Zeile ändert. */
+interface GlobalRead {
+  /** `ssl-server-verify none`: ein `ssl` ohne `verify` prüft dann nicht. */
+  serverVerifyNone: boolean;
+}
+
+const NO_GLOBAL: GlobalRead = { serverVerifyNone: false };
+
+/** Ein SNI, der die Domain der Anfrage ist: so, wie HAPM ihn schreibt, oder
+ *  gleichwertig (ohne Port, kleingeschrieben). */
+const HOST_SNI = /^(?:req\.)?hdr\(host\)(?:,field\(1,:\))?(?:,lower)?$/i;
+
+/**
+ * Die HTTPS-Wörter einer server-Zeile als `BackendTls`, oder ein Grund.
+ *
+ * HAPM schreibt genau zwei Formen (`backendTlsParams`). Übernommen wird, was
+ * sich danach so verhält wie vorher: `verify none` mit beliebigem SNI (das
+ * Zertifikat wird nicht geprüft, der SNI wählt nur aus, welches das Ziel
+ * zeigt), `verify required` nur gegen die CAs des Systems und mit der Domain
+ * der Anfrage als SNI. Mit einem festen SNI oder ohne prüfte HAProxy den
+ * Namen anders als HAPM danach, und ein Ziel, das heute durchkommt, fiele
+ * durch.
+ */
+function readServerTls(
+  name: string,
+  params: { ssl: boolean; verify: string | null; caFile: string | null; sni: string | null; tlsWords: string[] },
+  global: GlobalRead,
+  notes: string[]
+): BackendTls | { problem: string } {
+  if (!params.ssl) {
+    if (params.tlsWords.length === 0) return 'off';
+    return { problem: t('server {name}: {options} ohne ssl kennt HAPM nicht.', { name, options: params.tlsWords.join(' ') }) };
+  }
+  const verify = params.verify ?? (global.serverVerifyNone ? 'none' : 'required');
+  if (verify === 'none') {
+    if (params.caFile) return { problem: t('server {name}: ca-file mit verify none kennt HAPM nicht.', { name }) };
+    if (!params.sni || !HOST_SNI.test(params.sni)) {
+      notes.push(t('server {name}: HAPM schickt dem Ziel die Domain der Anfrage als SNI.', { name }));
+    }
+    return 'insecure';
+  }
+  if (verify !== 'required') {
+    return { problem: t('server {name}: verify {verify} kennt HAProxy nicht.', { name, verify }) };
+  }
+  if (!params.caFile) {
+    return {
+      problem: t('server {name}: ssl prüft das Zertifikat, aber ohne ca-file. So lädt HAProxy die Zeile nicht.', { name }),
+    };
+  }
+  if (params.caFile !== '@system-ca') {
+    return {
+      problem: t('server {name}: Eine eigene CA-Datei ({file}) kennt HAPM nicht, nur die CAs des Systems (@system-ca).', {
+        name,
+        file: params.caFile,
+      }),
+    };
+  }
+  if (!params.sni || !HOST_SNI.test(params.sni)) {
+    return {
+      problem: t(
+        'server {name}: HAPM prüft das Zertifikat gegen die Domain der Anfrage (sni req.hdr(host)). Hier wird es anders geprüft, das Ziel könnte danach durchfallen.',
+        { name }
+      ),
+    };
+  }
+  return 'verify';
+}
+
+function readServer(words: string[], problems: string[], global: GlobalRead = NO_GLOBAL): ServerRead | null {
   const [, name, address, ...params] = words;
   if (!name || !address) {
     problems.push(t('„{line}": server-Zeile ohne Name oder Adresse.', { line: words.join(' ') }));
@@ -721,6 +792,7 @@ function readServer(words: string[], problems: string[]): ServerRead | null {
   let check = false;
   let weight: number | null = null;
   let cookie: string | null = null;
+  const tls = { ssl: false, verify: null as string | null, caFile: null as string | null, sni: null as string | null, tlsWords: [] as string[] };
   const rest: string[] = [];
   for (let i = 0; i < params.length; i++) {
     const param = params[i];
@@ -733,13 +805,27 @@ function readServer(words: string[], problems: string[]): ServerRead | null {
       }
       weight = value;
     } else if (param === 'cookie') cookie = params[++i] ?? '';
+    else if (param === 'ssl') tls.ssl = true;
+    // `check-ssl` ist bei `ssl` die Vorgabe, `check-sni` schreibt HAPM selbst
+    // (die Hauptdomain, `backendCheckSni`).
+    else if (param === 'check-ssl') tls.tlsWords.push(param);
+    else if (param === 'check-sni') tls.tlsWords.push(param, params[++i] ?? '');
+    else if (param === 'verify') tls.tlsWords.push(param, (tls.verify = (params[++i] ?? '').toLowerCase()));
+    else if (param === 'ca-file') tls.tlsWords.push(param, (tls.caFile = params[++i] ?? ''));
+    else if (param === 'sni') tls.tlsWords.push(param, (tls.sni = params[++i] ?? ''));
     else rest.push(param);
   }
   if (rest.length > 0) {
     problems.push(t('server {name}: {options} bildet HAPM nicht ab.', { name, options: rest.join(' ') }));
     return null;
   }
-  return { name, target: addr, check, weight, cookie };
+  const notes: string[] = [];
+  const mode = readServerTls(name, tls, global, notes);
+  if (typeof mode !== 'string') {
+    problems.push(mode.problem);
+    return null;
+  }
+  return { name, target: addr, check, weight, cookie, tls: mode, notes };
 }
 
 /* ── Was ein Backend- oder listen-Abschnitt hergibt ── */
@@ -820,7 +906,7 @@ function readRedirect(
   };
 }
 
-function readProxyBody(section: Section): ProxyRead {
+function readProxyBody(section: Section, global: GlobalRead = NO_GLOBAL): ProxyRead {
   const read: ProxyRead = {
     servers: [],
     balance: null,
@@ -858,11 +944,14 @@ function readProxyBody(section: Section): ProxyRead {
       continue;
     }
     if (kw === 'server') {
-      const server = readServer(w, read.problems);
+      const server = readServer(w, read.problems, global);
       if (server) {
         if (read.servers.some((s) => s.name === server.name)) {
           problem(line, t('Der Servername {name} steht doppelt.', { name: server.name }));
-        } else read.servers.push(server);
+        } else {
+          read.servers.push(server);
+          read.notes.push(...server.notes);
+        }
       }
       continue;
     }
@@ -1465,6 +1554,21 @@ function stickyOf(read: ProxyRead, problems: string[], notes: string[]): boolean
   return true;
 }
 
+/** Eine Art für alle Ziele eines Backends: HAPM schreibt sie auf jede Zeile. */
+function backendTlsOf(read: ProxyRead, problems: string[], where?: string): BackendTls {
+  const modes = unique(read.servers.map((s) => s.tls));
+  if (modes.length > 1) {
+    const reason = t('Die Ziele sprechen teils HTTP, teils HTTPS. HAPM kennt eine Art je Backend.');
+    problems.push(where ? `${where}: ${reason}` : reason);
+  }
+  return modes[0] ?? 'off';
+}
+
+const TLS_LABELS: Record<Exclude<BackendTls, 'off'>, string> = {
+  insecure: msgid('HTTPS zum Ziel'),
+  verify: msgid('HTTPS zum Ziel, Zertifikat geprüft'),
+};
+
 function emptyService(domains: string[]): CreateServiceInput {
   return {
     scope: '',
@@ -1536,6 +1640,7 @@ function httpEntry(
         service.requestHeaders = read.requestHeaders;
         service.responseHeaders = read.responseHeaders;
         service.tunnel = read.tunnel;
+        service.backendTls = backendTlsOf(read, problems);
       }
     }
   }
@@ -1551,6 +1656,7 @@ function httpEntry(
     const { read } = found;
     const where = t('Pfad-Regel {paths} (backend {backend})', { paths: path.paths.join(' '), backend: path.backend });
     problems.push(...read.problems.map((p) => `${where}: ${p}`));
+    notes.push(...read.notes);
     if (read.redirect) problems.push(t('{rule}: eine Weiterleitung als Pfad-Regel kennt HAPM nicht.', { rule: where }));
     if (read.servers.length === 0) problems.push(t('{rule}: kein Ziel.', { rule: where }));
     if (read.balance) problems.push(t('{rule}: ein Verfahren an einer Pfad-Regel kennt HAPM nicht.', { rule: where }));
@@ -1590,8 +1696,7 @@ function httpEntry(
       paths: path.paths,
       servers: read.servers.map((s) => ({ name: s.name, target: s.target })),
       check: checks > 0 && checks === read.servers.length,
-      // `ssl` auf einer server-Zeile übernimmt der Import nicht (`readServer`).
-      backendTls: 'off',
+      backendTls: backendTlsOf(read, problems, where),
     };
     service.routes.push(routeInput);
   }
@@ -1633,6 +1738,10 @@ function httpEntry(
       ...service.requestHeaders.map((h) => t('Header an das Ziel: {name}', { name: h.name })),
       ...service.responseHeaders.map((h) => t('Header an den Besucher: {name}', { name: h.name })),
       ...(service.tunnel ? [t('Lange Verbindungen')] : []),
+      ...(service.backendTls !== 'off' ? [t(TLS_LABELS[service.backendTls])] : []),
+      ...unique(service.routes.filter((r) => r.backendTls !== 'off').map((r) => t(TLS_LABELS[r.backendTls as Exclude<BackendTls, 'off'>]))).map(
+        (label) => t('Pfad-Regel: {what}', { what: label })
+      ),
     ],
     notes: unique(notes),
     problems: unique(problems),
@@ -1677,6 +1786,9 @@ function streamEntry(
   const checks = read.servers.filter((s) => s.check).length;
   if (checks > 0 && checks < read.servers.length) problems.push(t('Nur ein Teil der Ziele wird geprüft. HAPM prüft alle oder keins.'));
   if (read.servers.some((s) => s.cookie !== null)) problems.push(t('Eine Cookie-Marke gibt es in mode tcp nicht.'));
+  if (read.servers.some((s) => s.tls !== 'off')) {
+    problems.push(t('ssl an einer server-Zeile kennt HAPM bei einer TCP-Weiterleitung nicht: sie reicht durch, was kommt.'));
+  }
 
   const port = ports.length === 1 ? ports[0] : null;
   const stream: CreateStreamInput = {
@@ -1748,11 +1860,18 @@ function readImport(text: string): ImportResult {
   const backendNames = new Set(
     sections.filter((s) => s.kind === 'backend' || s.kind === 'listen').map((s) => s.name ?? '')
   );
+  const global: GlobalRead = {
+    serverVerifyNone: sections.some(
+      (s) =>
+        s.kind === 'global' &&
+        s.body.some((l) => l.words[0].toLowerCase() === 'ssl-server-verify' && l.words[1]?.toLowerCase() === 'none')
+    ),
+  };
   const reads = new Map<string, ProxyRead>();
   const backendOf = (name: string) => {
     const section = proxies.get(name);
     if (!section || section.kind === 'frontend') return null;
-    if (!reads.has(name)) reads.set(name, readProxyBody(section));
+    if (!reads.has(name)) reads.set(name, readProxyBody(section, global));
     return { section, read: reads.get(name)! };
   };
 
@@ -1803,7 +1922,7 @@ function readImport(text: string): ImportResult {
      * und das kennt HAPM nicht. */
     const label = `${section.kind} ${section.name ?? ''}`.trim();
     if (section.kind === 'listen') {
-      const read = readProxyBody(section);
+      const read = readProxyBody(section, global);
       if (read.servers.length === 0 && read.problems.length > 0 && read.binds.length === 0) {
         skipped.push({ line: section.head.no, text: range, reason: read.problems.join(' ') });
         continue;

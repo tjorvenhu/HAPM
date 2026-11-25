@@ -214,6 +214,24 @@ export const proxyServer: Dictionary = {
   'server {name}: die Gewichtung {weight} nimmt HAProxy nicht.':
     'server {name}: HAProxy does not accept the weight {weight}.',
   'server {name}: {options} bildet HAPM nicht ab.': 'server {name}: HAPM does not represent {options}.',
+  'server {name}: {options} ohne ssl kennt HAPM nicht.': 'server {name}: HAPM does not support {options} without ssl.',
+  'server {name}: ca-file mit verify none kennt HAPM nicht.': 'server {name}: HAPM does not support ca-file with verify none.',
+  'server {name}: HAPM schickt dem Ziel die Domain der Anfrage als SNI.':
+    'server {name}: HAPM sends the domain of the request to the target as SNI.',
+  'server {name}: verify {verify} kennt HAProxy nicht.': 'server {name}: HAProxy does not know verify {verify}.',
+  'server {name}: ssl prüft das Zertifikat, aber ohne ca-file. So lädt HAProxy die Zeile nicht.':
+    'server {name}: ssl verifies the certificate, but there is no ca-file. HAProxy does not load the line like this.',
+  'server {name}: Eine eigene CA-Datei ({file}) kennt HAPM nicht, nur die CAs des Systems (@system-ca).':
+    'server {name}: HAPM does not support a custom CA file ({file}), only the system CAs (@system-ca).',
+  'server {name}: HAPM prüft das Zertifikat gegen die Domain der Anfrage (sni req.hdr(host)). Hier wird es anders geprüft, das Ziel könnte danach durchfallen.':
+    'server {name}: HAPM verifies the certificate against the domain of the request (sni req.hdr(host)). It is verified differently here, so the target could fail afterwards.',
+  'Die Ziele sprechen teils HTTP, teils HTTPS. HAPM kennt eine Art je Backend.':
+    'Some targets speak HTTP, others HTTPS. HAPM supports one kind per backend.',
+  'HTTPS zum Ziel': 'HTTPS to the target',
+  'HTTPS zum Ziel, Zertifikat geprüft': 'HTTPS to the target, certificate verified',
+  'Pfad-Regel: {what}': 'Path rule: {what}',
+  'ssl an einer server-Zeile kennt HAPM bei einer TCP-Weiterleitung nicht: sie reicht durch, was kommt.':
+    'HAPM does not support ssl on a server line of a TCP forward: it passes through whatever arrives.',
   'Den Code {code} kennt HAPM nicht, nur 301 und 302.': 'HAPM does not support the code {code}, only 301 and 302.',
   'Die Angabe {option} an der Weiterleitung kennt HAPM nicht.':
     'HAPM does not support the option {option} on a redirect.',

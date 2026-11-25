@@ -28,7 +28,7 @@ body:
     attributes:
       label: Fassung von HAPM · HAPM version
       description: Steht unter „Updates“ · Shown under "Updates"
-      placeholder: 0.6.0
+      placeholder: 0.6.1
     validations:
       required: true
   - type: dropdown

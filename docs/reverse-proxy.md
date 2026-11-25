@@ -312,8 +312,23 @@ Fassung hinter `haproxy:lts` (heute 3.4,
   `LockKeyhole`, an einer Regel das Symbol im Chip. Bewusst nicht das Schloss
   der Sperre: das sagt etwas darüber, wer hereinkommt, dieses darüber, wie
   HAProxy weiterspricht.
-- **Der Import** (`lib/haproxy/import.ts`) übernimmt `ssl` auf einer
-  server-Zeile weiterhin nicht und nennt den Grund.
+- **Der Import** (`lib/haproxy/import.ts`, `readServerTls`) übernimmt `ssl`
+  auf einer server-Zeile, wenn sich das Ziel danach verhält wie vorher:
+  - `verify none` mit beliebigem oder ohne `sni` wird `insecure`. Geprüft wird
+    nichts, der SNI wählt nur das Zertifikat; weicht er von `req.hdr(host)`
+    ab, steht ein Hinweis am Eintrag.
+  - `verify required ca-file @system-ca` mit SNI aus dem Host
+    (`req.hdr(host)`, auch mit `,field(1,:)` oder `,lower`) wird `verify`.
+    Ohne `sni` oder mit festem prüfte HAProxy den Namen anders als HAPM
+    danach, und ein Ziel, das heute durchkommt, fiele durch: ein Grund, kein
+    Hinweis. Eine eigene `ca-file` ebenso.
+  - `ssl` ohne `verify` gilt nach `ssl-server-verify none` in `global` als
+    `insecure`, sonst lädt HAProxy die Zeile nicht.
+  - `check-ssl` und `check-sni` entfallen: das eine ist bei `ssl` die
+    Vorgabe, das andere schreibt HAPM selbst (`backendCheckSni`).
+  - `verifyhost`, `alpn`, Client-Zertifikate (`crt`) und alles Weitere
+    bleiben ein Grund. HTTP und HTTPS gemischt in einem Backend auch, und
+    `ssl` an einer TCP-Weiterleitung.
 
 ### Gruppen
 
@@ -1965,7 +1980,8 @@ still darin: TLS und Zertifikat, der Name des Cookies der Sitzungsbindung
   `if host_acl path_acl` (mit `path_beg`) wird eine Pfad-Regel des Eintrags,
   dessen Hauptweiche `if host_acl` ist. Domains mit demselben Weg werden ein
   Eintrag.
-- Backends: `server` (Name, `host:port`, `weight`, `check`), `balance` aus der
+- Backends: `server` (Name, `host:port`, `weight`, `check`, HTTPS zum Ziel
+  mit `ssl verify none` oder `ssl verify required ca-file @system-ca`), `balance` aus der
   Allow-Liste, `cookie … insert` mit Marke auf jeder server-Zeile (als
   Sitzungsbindung), `option httpchk`/`http-check` (nur als „Healthcheck an",
   HAPM prüft GET / mit 200 bis 399), `http-request`/`http-response set-header`
@@ -2003,7 +2019,8 @@ Seite für unbekannte Domains), `stats`, `userlist`, Lua, Regeln mit Ausdrücken
 oder Umgebungsvariablen (`%[src]`, `"$NAME"`), Map-Dateien, Weichen nach SNI in
 `mode tcp` (Durchreichen von TLS nach Namen), IPv6-Ziele (`BACKEND_TARGET` in
 `config.ts` kennt sie nicht), Parameter auf der server-Zeile außer `check`,
-`weight`, `cookie` (`inter`, `ssl`, `send-proxy`, `backup`, …), TCP-Ports an
+`weight`, `cookie` und den HTTPS-Wörtern (`inter`, `send-proxy`, `backup`, …;
+was von `ssl` übernommen wird, steht unter „Ziele, die HTTPS sprechen"), TCP-Ports an
 einer festen Adresse (HAPM bände an alle, der Port stünde weiter offen), Backends
 ohne Weiche. Ein `\` am Zeilenende ist keine Fortsetzung: HAProxy kennt keine
 (geprüft gegen 3.4) und lädt so eine Datei nicht, also wird nichts verbunden.

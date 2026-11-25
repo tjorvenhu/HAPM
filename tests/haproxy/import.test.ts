@@ -366,7 +366,99 @@ describe('parseImport: Einzelheiten', () => {
       '    acl a hdr(host) -i a.example.org\n    use_backend web if a',
       'backend web\n    server web 10.0.0.1:443 check inter 2s ssl verify none\n'
     );
-    expect(r.entries[0].problems.join(' ')).toContain('inter 2s ssl verify none');
+    expect(r.entries[0].problems.join(' ')).toContain('inter 2s');
+    expect(r.entries[0].service).toBeNull();
+  });
+
+  describe('HTTPS zum Ziel (ssl auf der server-Zeile)', () => {
+    const rules = '    acl a hdr(host) -i a.example.org\n    use_backend web if a';
+    const one = (line: string, global = '') =>
+      parseImport(
+        `${global}defaults\n    mode http\nfrontend f\n    bind :443 ssl crt /x/\n${rules}\nbackend web\n    ${line}\n`
+      ).entries[0];
+
+    it('verify none mit der Domain der Anfrage als SNI: HTTPS ohne Prüfung, ohne Hinweis', () => {
+      const e = one('server web 10.0.0.1:8006 check ssl verify none sni req.hdr(host) check-sni a.example.org');
+      expect(e.problems).toEqual([]);
+      expect(e.service?.backendTls).toBe('insecure');
+      expect(e.service?.healthcheck).toBe(false);
+      expect(e.notes.join(' ')).not.toContain('SNI');
+      expect(e.extras).toContain('HTTPS zum Ziel');
+    });
+
+    it('verify none ohne oder mit festem SNI: übernommen, mit Hinweis', () => {
+      for (const line of ['server web 10.0.0.1:443 ssl verify none', 'server web 10.0.0.1:443 ssl verify none sni str(pve.lan) check-ssl']) {
+        const e = one(line);
+        expect(e.problems, line).toEqual([]);
+        expect(e.service?.backendTls, line).toBe('insecure');
+        expect(e.notes.join(' '), line).toContain('Domain der Anfrage als SNI');
+      }
+    });
+
+    it('verify required gegen die CAs des Systems mit SNI aus dem Host: HTTPS mit Prüfung', () => {
+      for (const sni of ['req.hdr(host)', 'req.hdr(host),field(1,:)', 'hdr(Host),lower']) {
+        const e = one(`server web 10.0.0.1:443 ssl verify required ca-file @system-ca sni ${sni}`);
+        expect(e.problems, sni).toEqual([]);
+        expect(e.service?.backendTls, sni).toBe('verify');
+        expect(e.extras, sni).toContain('HTTPS zum Ziel, Zertifikat geprüft');
+      }
+    });
+
+    it('eine Prüfung, die HAPM anders hielte, wird nicht übernommen', () => {
+      const cases: [string, string][] = [
+        ['server web 10.0.0.1:443 ssl verify required ca-file /etc/ssl/intern.pem sni req.hdr(host)', 'eigene CA-Datei'],
+        ['server web 10.0.0.1:443 ssl verify required ca-file @system-ca', 'anders geprüft'],
+        ['server web 10.0.0.1:443 ssl verify required ca-file @system-ca sni str(intern.lan)', 'anders geprüft'],
+        ['server web 10.0.0.1:443 ssl', 'ohne ca-file'],
+        ['server web 10.0.0.1:443 ssl verify none verifyhost x.lan', 'verifyhost'],
+        ['server web 10.0.0.1:443 ssl verify none alpn h2', 'alpn h2'],
+        ['server web 10.0.0.1:443 verify none', 'ohne ssl'],
+      ];
+      for (const [line, reason] of cases) {
+        const e = one(line);
+        expect(e.service, line).toBeNull();
+        expect(e.problems.join(' '), line).toContain(reason);
+      }
+    });
+
+    it('ssl ohne verify gilt nach ssl-server-verify none in global als HTTPS ohne Prüfung', () => {
+      const e = one('server web 10.0.0.1:443 ssl', 'global\n    ssl-server-verify none\n');
+      expect(e.problems).toEqual([]);
+      expect(e.service?.backendTls).toBe('insecure');
+    });
+
+    it('HTTP und HTTPS gemischt in einem Backend: nicht übernehmbar', () => {
+      const e = one('server a 10.0.0.1:443 ssl verify none\n    server b 10.0.0.2:80');
+      expect(e.problems.join(' ')).toContain('teils HTTP, teils HTTPS');
+    });
+
+    it('eine Pfad-Regel behält ihre eigene Art', () => {
+      const r = parseImport(
+        'defaults\n    mode http\nfrontend f\n    bind :443 ssl crt /x/\n' +
+          '    acl a hdr(host) -i a.example.org\n    acl p path_beg /api\n' +
+          '    use_backend web_api if a p\n    use_backend web if a\n' +
+          'backend web\n    server web 10.0.0.1:80\n' +
+          'backend web_api\n    server api 10.0.0.1:8443 check ssl verify none sni req.hdr(host)\n'
+      );
+      const e = r.entries[0];
+      expect(e.problems).toEqual([]);
+      expect(e.service?.backendTls).toBe('off');
+      expect(e.service?.routes[0]).toMatchObject({ name: 'api', check: true, backendTls: 'insecure' });
+    });
+
+    it('wird so geschrieben, dass HAPM es wieder liest und bearbeiten kann', () => {
+      const e = one('server web 10.0.0.1:8006 check ssl verify none sni req.hdr(host)');
+      const input = { ...e.service!, scope: 'IMPORTIERT', id: 'web' };
+      const service = parseHaproxyConfig(addService(FRESH, input)).find((s) => s.id === 'web')!;
+      expect(service.editable, service.extras.join(', ')).toBe(true);
+      expect(toCreateInput(service)).toEqual(input);
+    });
+
+    it('in mode tcp nicht: dort reicht HAProxy durch', () => {
+      const r = parseImport('listen db\n    mode tcp\n    bind :5432\n    server db 10.0.0.70:5432 ssl verify none\n');
+      expect(r.entries[0].stream).toBeNull();
+      expect(r.entries[0].problems.join(' ')).toContain('TCP-Weiterleitung');
+    });
   });
 
   it('timeout tunnel mit einem anderen Wert als einer Stunde', () => {
