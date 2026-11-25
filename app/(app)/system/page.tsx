@@ -1,18 +1,20 @@
 'use client';
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import Link from 'next/link';
-import { AlertTriangle, AtSign, Globe, Home, Loader2, Network, Plus, Save } from 'lucide-react';
+import { AlertTriangle, ArrowRightLeft, AtSign, Globe, Home, Loader2, Network, Save, Trash2 } from 'lucide-react';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { SkeletonDetail } from '@/components/Skeleton';
 import CertificateSourceCard from '@/components/system/CertificateSourceCard';
+import AddressMoveWizard from '@/components/system/AddressMoveWizard';
+import { MOVE_STAGE_LABELS, moveOutcome } from '@/lib/address-move/rules';
 import { msgid } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
 // Nur der Typ: die Datei dahinter erreicht `lib/db`.
 import type { SettingsView } from '@/lib/settings';
+import type { AddressMoveView } from '@/lib/address-move';
 import type { Exposure } from '@/lib/types';
 
 /** Dieselben zwei Möglichkeiten wie im Assistenten, mit der Folge für künftige Zertifikate. */
@@ -42,10 +44,10 @@ export default function GeneralSettingsPage() {
 
   const [settings, setSettings] = useState<SettingsView | null>(null);
   const [error, setError] = useState('');
-  /** Nur was getippt wurde. Ohne Eingabe zeigt das Feld den gespeicherten Wert. */
-  const [urlDraft, setUrlDraft] = useState<string | null>(null);
-  const [urlError, setUrlError] = useState('');
-  const [savingUrl, setSavingUrl] = useState(false);
+  /** Stand des Umzugs auf eine neue Adresse. Läuft einer, geht der Assistent beim Laden auf. */
+  const [moveView, setMoveView] = useState<AddressMoveView | null>(null);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [removingUrl, setRemovingUrl] = useState(false);
   const [emailDraft, setEmailDraft] = useState<string | null>(null);
   const [emailError, setEmailError] = useState('');
   const [savingEmail, setSavingEmail] = useState(false);
@@ -57,6 +59,13 @@ export default function GeneralSettingsPage() {
       const body = await res.json();
       if (!body.success) throw new Error(body.error);
       setSettings(body.data as SettingsView);
+      const moveRes = await apiFetch('/api/settings/address', { cache: 'no-store' });
+      const moveBody = await moveRes.json();
+      if (moveBody.success) {
+        const next = moveBody.data as AddressMoveView;
+        setMoveView(next);
+        if (moveOutcome(next.move) === 'running') setWizardOpen(true);
+      }
       setError('');
     } catch {
       setError(t('Die Einstellungen konnten nicht geladen werden.'));
@@ -78,40 +87,34 @@ export default function GeneralSettingsPage() {
     return body.data as SaveResult;
   }
 
-  async function saveUrl(event: FormEvent) {
-    event.preventDefault();
-    if (!settings || urlDraft === null) return;
-    setUrlError('');
+  /** Die Adresse entfernen. Ändern geht über den Assistenten (`AddressMoveWizard`). */
+  async function removeUrl() {
+    if (!settings?.publicUrl) return;
+    const confirmed = await confirm({
+      title: t('Adresse von HAPM entfernen?'),
+      message: t(
+        'Passkeys sind an die Domain gebunden. Mit den bisher hinterlegten ist danach keine Anmeldung mehr möglich. Links in schon verschickten Mails zeigen weiter auf die alte Adresse. Das Ziel, über das die bisherige Adresse läuft, lässt sich danach wieder entfernen: geschützt ist immer das Ziel der aktuellen Adresse.'
+      ),
+      confirmLabel: t('Adresse entfernen'),
+      variant: 'danger',
+    });
+    if (!confirmed) return;
 
-    const next = urlDraft.trim();
-    if (settings.publicUrl && next !== settings.publicUrl) {
-      const confirmed = await confirm({
-        title: next ? t('Adresse von HAPM ändern?') : t('Adresse von HAPM entfernen?'),
-        message: t(
-          'Passkeys sind an die Domain gebunden. Mit den bisher hinterlegten ist danach keine Anmeldung mehr möglich. Links in schon verschickten Mails zeigen weiter auf die alte Adresse. Das Ziel, über das die bisherige Adresse läuft, lässt sich danach wieder entfernen: geschützt ist immer das Ziel der aktuellen Adresse.'
-        ),
-        confirmLabel: next ? t('Adresse ändern') : t('Adresse entfernen'),
-        variant: 'danger',
-      });
-      if (!confirmed) return;
-    }
-
-    setSavingUrl(true);
+    setRemovingUrl(true);
     try {
-      const result = await patch({ publicUrl: next || null });
+      const result = await patch({ publicUrl: null });
       setSettings(result.settings);
-      setUrlDraft(null);
-      notify({
-        variant: 'success',
-        message: result.settings.publicUrl
-          ? t('HAPM gilt als erreichbar unter {url}.', { url: result.settings.publicUrl })
-          : t('Die Adresse ist entfernt. Mails enthalten keinen Link in die Oberfläche.'),
-      });
+      notify({ variant: 'success', message: t('Die Adresse ist entfernt. Mails enthalten keinen Link in die Oberfläche.') });
     } catch (err: unknown) {
-      setUrlError(err instanceof Error ? err.message : t('Die Adresse ließ sich nicht speichern.'));
+      notify({ variant: 'error', message: err instanceof Error ? err.message : t('Die Adresse ließ sich nicht speichern.') });
     } finally {
-      setSavingUrl(false);
+      setRemovingUrl(false);
     }
+  }
+
+  function closeWizard() {
+    setWizardOpen(false);
+    void load();
   }
 
   async function saveEmail(event: FormEvent) {
@@ -191,11 +194,10 @@ export default function GeneralSettingsPage() {
     );
   }
 
-  const urlValue = urlDraft ?? settings.publicUrl ?? '';
-  const urlChanged = urlDraft !== null && urlDraft.trim() !== (settings.publicUrl ?? '');
+  const lastMove = moveView?.move ?? null;
+  const failedStage = moveOutcome(lastMove) === 'failed' ? lastMove?.stages.find((stage) => stage.status === 'error') : undefined;
   const emailValue = emailDraft ?? settings.acmeEmail ?? '';
   const emailChanged = emailDraft !== null && emailDraft.trim() !== (settings.acmeEmail ?? '');
-  const target = settings.listenPort ? `127.0.0.1:${settings.listenPort}` : t('127.0.0.1 und den Port von HAPM');
 
   return (
     <>
@@ -218,51 +220,60 @@ export default function GeneralSettingsPage() {
           </span>
         </div>
 
-        <form className="card-body" onSubmit={saveUrl}>
-          {urlError && <div className="alert alert-danger">{urlError}</div>}
+        <div className="card-body">
+          {failedStage && lastMove && (
+            <div className="alert alert-danger">
+              <span>
+                {t('Der Umzug nach {domain} ist nicht durchgelaufen. {stage}: {detail}', {
+                  domain: lastMove.domain,
+                  stage: t(MOVE_STAGE_LABELS[failedStage.key]),
+                  detail: failedStage.detail ? t(failedStage.detail) : t('Der Vorgang nennt keinen Grund.'),
+                })}
+              </span>
+            </div>
+          )}
 
-          <div className="form-group">
-            <label className="form-label" htmlFor="public-url">
-              {t('Adresse')}
-              <InfoHint
-                text={t(
-                  'HAPM ist unter der Domain erst erreichbar, wenn sie im Reverse-Proxy als Ziel angelegt ist und auf {target} zeigt. Dabei entsteht auch ihr Zertifikat. Die Adresse hier anzugeben richtet das nicht ein.',
-                  { target }
-                )}
-              />
-            </label>
-            <input
-              id="public-url"
-              className="form-input"
-              type="url"
-              inputMode="url"
-              placeholder="https://hapm.example.org"
-              value={urlValue}
-              disabled={savingUrl}
-              onChange={(event) => setUrlDraft(event.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-            />
-            <p className="form-hint">{t('Nur https:// und die Domain, ohne Pfad dahinter.')}</p>
+          <div className="hapm-address-current">
+            {settings.publicUrl ? (
+              <a href={settings.publicUrl} className="mono" target="_blank" rel="noreferrer">
+                {settings.publicUrl}
+              </a>
+            ) : (
+              <span className="hapm-muted">{t('Noch keine Adresse. HAPM ist nur über IP und Port erreichbar.')}</span>
+            )}
+          </div>
+
+          <div className="hapm-form-actions">
+            <button className="btn btn-primary" type="button" onClick={() => setWizardOpen(true)} disabled={!moveView}>
+              <ArrowRightLeft size={16} strokeWidth={1.5} />
+              {settings.publicUrl ? t('Adresse ändern') : t('Adresse einrichten')}
+            </button>
+            {settings.publicUrl && (
+              <button className="btn btn-secondary" type="button" onClick={removeUrl} disabled={removingUrl}>
+                {removingUrl ? <Loader2 size={16} strokeWidth={1.5} className="spin" /> : <Trash2 size={16} strokeWidth={1.5} />}
+                {t('Adresse entfernen')}
+              </button>
+            )}
           </div>
 
           <div className="alert alert-warning">
             <AlertTriangle size={16} strokeWidth={1.5} />
             <span>{t('Eine spätere Änderung der Domain entwertet alle hinterlegten Passkeys.')}</span>
           </div>
-
-          <div className="hapm-form-actions">
-            <button className="btn btn-primary" type="submit" disabled={savingUrl || !urlChanged}>
-              {savingUrl ? <Loader2 size={16} strokeWidth={1.5} className="spin" /> : <Save size={16} strokeWidth={1.5} />}
-              {t('Speichern')}
-            </button>
-            <Link className="btn btn-secondary" href="/reverse-proxy">
-              <Plus size={16} strokeWidth={1.5} />
-              {t('Ziel anlegen')}
-            </Link>
-          </div>
-        </form>
+        </div>
       </div>
+
+      {wizardOpen && moveView && (
+        <AddressMoveWizard
+          initial={moveView}
+          onClose={closeWizard}
+          onSavedWithoutMove={(url) => {
+            setWizardOpen(false);
+            notify({ variant: 'success', message: t('HAPM gilt als erreichbar unter {url}.', { url }) });
+            void load();
+          }}
+        />
+      )}
 
       <div className="card sys-block">
         <div className="card-header">

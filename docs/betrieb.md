@@ -318,7 +318,62 @@ gab, trägt keinen Wert und gilt als abgeschlossen. **Abgeschlossen und
 übersprungen sind endgültig**: die Einrichtung lässt sich nicht erneut öffnen
 (`/api/setup/status` nimmt nur noch `skipped`, und nur solange sie offen ist).
 Was sie eingerichtet hat, ändert man danach an seiner Stelle: Art und Adresse
-unter „Allgemein", die Anbindung unter „DNS", das Ziel unter „Reverse-Proxy".
+unter „Allgemein" (die Adresse über den Assistenten im nächsten Abschnitt), die
+Anbindung unter „DNS", das Ziel unter „Reverse-Proxy".
+
+### Die Adresse ändern: `lib/address-move/`
+
+Unter „Allgemein" steht die gültige Adresse mit dem Knopf „Adresse ändern"
+(ohne Adresse „Adresse einrichten"). Er öffnet einen Assistenten im Fenster
+(`components/system/AddressMoveWizard.tsx`), gebaut wie die Einrichtung:
+Schrittleiste und Abschluss kommen aus `app/setup/setup.css`.
+
+1. **Adresse:** die neue Domain. Darunter „Nur die Adresse eintragen, ohne
+   Zertifikat und Ziel" für HAPM hinter einem anderen Reverse-Proxy, über
+   `PATCH /api/settings` wie bisher.
+2. **Prüfung** (`GET /api/settings/address?domain=`): worauf die Domain im DNS
+   zeigt (dieselbe Abfrage wie in der Einrichtung), wie das Zertifikat entsteht
+   und ob schon eins sie abdeckt. Weiter geht es nur nach `checkGate`
+   (`rules.ts`): zeigt sie auf diesen Server, sofort; zeigt sie woanders hin
+   oder ging die Abfrage nicht, nur mit ausdrücklicher Bestätigung (hinter
+   einer Adressumsetzung ist das richtig); **ohne Eintrag gar nicht**, auch
+   wenn das Zertifikat über DNS-01 entstünde: am Ende ist das alte Ziel weg,
+   und HAPM wäre unter keiner Adresse mehr erreichbar. Eine Domain, die schon
+   ein Ziel bedient, das nicht zu HAPM führt, wird abgelehnt.
+   **Fehlt der Eintrag, bietet der Assistent an, ihn anzulegen**
+   (`offerRecord`): nur bei einer Installation aus dem Internet und nur, wenn
+   die Zone unter „DNS" eingerichtet ist. Gesetzt wird erst nach Bestätigung
+   (`PUT /api/settings/address/dns-record`, `ensureAddressRecord`), der Wert
+   ist vorbelegt mit der ersten Adresse des Servers und änderbar (hinter NAT
+   trägt der Server seine öffentliche Adresse nicht selbst). Intern gehört der
+   Eintrag in den DNS-Server des eigenen Netzes.
+3. **Umzug** (`POST /api/settings/address`, `startAddressMove`): Zertifikat,
+   neues Ziel, `publicUrl`, altes Ziel entfernen. Jeder Schritt mit HAProxy
+   ist ein gewöhnlicher Lauf mit Vorabprüfung und steht in der Historie.
+
+**Ein neues Ziel statt die Domain am alten zu tauschen.** Getauscht wäre die
+Oberfläche unter der alten Adresse in dem Augenblick weg, in dem HAProxy neu
+lädt, und beide Domains an einem Ziel verlangten ein Zertifikat für beide
+(`findCertificateFor` sucht eins, das alle Domains eines Ziels abdeckt). Das
+neue Ziel übernimmt vom alten Sperre, Kopfzeilen und Ziele (`toCreateInput`),
+sonst stünde die Oberfläche nach dem Umzug offen, wo sie gesperrt war. Es heißt
+`hapm`, wenn der Name frei ist, sonst nach der Domain. Das alte Ziel geht als
+letzter Schritt, und zwar erst, wenn `publicUrl` schon umgestellt ist: vorher
+schützt `protected.ts` es. Trägt es weitere Domains, wird nur die alte
+entfernt; lief die alte Adresse über eine Wildcard, bleibt es stehen. Sein
+Zertifikat geht mit, wenn es niemand sonst braucht (wie beim Löschen eines
+Ziels).
+
+**Wer den Assistenten unter der alten Adresse offen hat, verliert sie mit dem
+letzten Schritt.** Bricht das Pollen ab, nachdem die neue Adresse gilt, zeigt
+das Fenster den Abschluss mit dem Hinweis, dass die alte nicht mehr antwortet.
+Ob der letzte Schritt ganz durch ist, steht danach unter „Allgemein" (ein
+gescheiterter Umzug als rote Meldung mit Schritt und Grund).
+
+Der Stand liegt in der Collection `address_move` (eine Zeile `current`). Wie
+die Einrichtung läuft der Umzug im Prozess: nach einem Neustart gilt er als
+abgebrochen und lässt sich erneut starten, was schon da ist (Zertifikat, Ziel),
+wird dabei vorgefunden. Läuft er, öffnet „Allgemein" das Fenster beim Laden.
 
 ## Updates: `lib/updates/`
 

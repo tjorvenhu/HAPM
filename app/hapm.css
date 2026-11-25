@@ -447,3 +447,46 @@
 }
 
 .hapm-chip-remove:hover { background: var(--surface-muted); color: var(--text); }
+
+/* ── Adresse ändern: der Assistent im Fenster (`AddressMoveWizard`) ──
+   Schrittleiste und Abschluss kommen aus `app/setup/setup.css`. Hier steht
+   nur, was das Fenster anders braucht als die Karte der Einrichtung. */
+.modal.hapm-move { max-width: 40rem; }
+
+.hapm-move .hapm-stepper { margin-bottom: 0.5rem; }
+
+.hapm-move-step { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+.hapm-move-lead { display: flex; flex-direction: column; gap: 4px; }
+
+.hapm-move-lead h3 { margin: 0; font-size: 1.125rem; font-weight: 600; letter-spacing: -0.015em; }
+
+.hapm-move-lead p { margin: 0; font-size: 0.875rem; color: var(--text-secondary); }
+
+.hapm-move-domain { min-height: 3rem; font-size: 1rem; }
+
+.hapm-move-aside { align-self: flex-start; color: var(--text-tertiary); }
+
+.hapm-move-waiting { display: flex; align-items: center; gap: 8px; font-size: 0.875rem; color: var(--text-secondary); }
+
+.hapm-move-record { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+.hapm-move-record-name { font-size: 0.875rem; font-weight: 500; overflow-wrap: anywhere; }
+
+.hapm-move-record > .form-input { flex: 1 1 10rem; min-width: 0; }
+
+.hapm-move-done { align-items: stretch; }
+
+.hapm-move-done-title { margin: 0; font-size: 1.375rem; font-weight: 700; letter-spacing: -0.03em; text-align: center; }
+
+.hapm-move-done-sub { margin: 4px 0 0; font-size: 0.9375rem; color: var(--text-secondary); text-align: center; }
+
+.hapm-move-open { justify-content: center; min-height: 2.75rem; }
+
+.hapm-move-open span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.hapm-move-done-hint { text-align: center; }
+
+
+/* Die gültige Adresse unter „Allgemein“, über den Knöpfen des Assistenten. */
+.hapm-address-current { font-size: 1rem; font-weight: 500; overflow-wrap: anywhere; }

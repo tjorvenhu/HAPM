@@ -565,7 +565,6 @@ export const system: Dictionary = {
   // Allgemein und Benutzer: `app/(app)/system`, `app/(app)/users`, `lib/settings.ts`, `app/api/settings`, `app/api/users`, `app/api/activity`, `app/api/search`
   "Neue Zertifikate prüft Let's Encrypt über Port 80. Der DNS-Anbieter wird nur für Wildcards gebraucht.":
     "Let's Encrypt validates new certificates over port 80. The DNS provider is only needed for wildcards.",
-  'Adresse von HAPM ändern?': 'Change the HAPM address?',
   'Adresse von HAPM entfernen?': 'Remove the HAPM address?',
   'Passkeys sind an die Domain gebunden. Mit den bisher hinterlegten ist danach keine Anmeldung mehr möglich. Links in schon verschickten Mails zeigen weiter auf die alte Adresse. Das Ziel, über das die bisherige Adresse läuft, lässt sich danach wieder entfernen: geschützt ist immer das Ziel der aktuellen Adresse.':
     'Passkeys are bound to the domain. The passkeys added so far can no longer be used to sign in. Links in emails already sent still point to the old address. The target that serves the old address can be removed afterward: only the target of the current address is protected.',
@@ -581,11 +580,7 @@ export const system: Dictionary = {
     "New certificates will then be validated over port 80. If Let's Encrypt cannot reach the server, every new request fails. Existing certificates keep their method, including on renewal.",
   'Umstellen': 'Switch',
   'Die Art der Installation ist umgestellt. Sie gilt für neue Zertifikate.': 'The installation type is changed. It applies to new certificates.',
-  '127.0.0.1 und den Port von HAPM': '127.0.0.1 and the HAPM port',
   'Sie steht in den Links der Mails, und an ihre Domain werden Passkeys gebunden.': 'It is used in the links in emails, and passkeys are bound to its domain.',
-  'HAPM ist unter der Domain erst erreichbar, wenn sie im Reverse-Proxy als Ziel angelegt ist und auf {target} zeigt. Dabei entsteht auch ihr Zertifikat. Die Adresse hier anzugeben richtet das nicht ein.':
-    'HAPM is only reachable at the domain once it is created as a target in the reverse proxy and points to {target}. That also creates its certificate. Entering the address here does not set that up.',
-  'Nur https:// und die Domain, ohne Pfad dahinter.': 'Only https:// and the domain, with no path after it.',
   'Eine spätere Änderung der Domain entwertet alle hinterlegten Passkeys.': 'Changing the domain later invalidates all added passkeys.',
   'Art der Installation': 'Installation type',
   'Sie bestimmt, wie neue Zertifikate ausgestellt werden.': 'It determines how new certificates are issued.',
@@ -702,4 +697,115 @@ export const system: Dictionary = {
   "Zertifikate kommen entweder über ACME oder werden hochgeladen.": "Certificates either come through ACME or are uploaded.",
   "External Account Binding gibt es nur zusammen mit einem eigenen ACME-Server.": "External Account Binding is only available with your own ACME server.",
   "Der Schalter für HTTP über Port 80 kennt nur an und aus.": "The switch for HTTP on port 80 only knows on and off.",
+  'Abgebrochen: HAPM wurde neu gestartet. Der Umzug lässt sich erneut starten.':
+    'Cancelled: HAPM was restarted. The move can be started again.',
+  'Adresse einrichten':
+    'Set up address',
+  'Adresse von HAPM umstellen':
+    'Switch the HAPM address',
+  'Adresse von HAPM ändern':
+    'Change the HAPM address',
+  'Bei einer internen Installation gehört der Eintrag in den DNS-Server des eigenen Netzes.':
+    'For an internal installation the record belongs in the DNS server of your own network.',
+  'Bisher: {url}. HAPM stellt das Zertifikat aus, legt das Ziel an und entfernt danach das alte.':
+    'Currently: {url}. HAPM issues the certificate, creates the target and then removes the old one.',
+  'DNS-Eintrag anlegen?':
+    'Create DNS record?',
+  'Danach entfernt':
+    'Removed afterwards',
+  'Das Ziel {id} trägt neben {host} weitere Domains und lässt sich nicht selbsttätig ändern. Die Domain {host} entfernen Sie unter Reverse-Proxy.':
+    'The target {id} carries further domains besides {host} and cannot be changed automatically. Remove the domain {host} under Reverse proxy.',
+  'Das dauert einige Minuten. Das Fenster darf zu, der Umzug läuft weiter.':
+    'This takes a few minutes. You can close the window, the move continues.',
+  'Der Eintrag {type} {domain} → {address} steht in der Zone {zone}. Bis ihn jeder sieht, kann es einen Moment dauern.':
+    'The record {type} {domain} → {address} is in the zone {zone}. It can take a moment until everyone sees it.',
+  'Der Umzug ist nicht durchgelaufen':
+    'The move did not complete',
+  'Der Umzug ließ sich nicht starten.':
+    'The move could not be started.',
+  'Der Umzug läuft bereits.':
+    'The move is already running.',
+  'Der Umzug nach {domain} ist nicht durchgelaufen. {stage}: {detail}':
+    'The move to {domain} did not complete. {stage}: {detail}',
+  'Die Adresse ließ sich nicht ermitteln.':
+    'The address could not be determined.',
+  'Die Domain führt trotzdem zu diesem Server, etwa über eine Adressumsetzung (NAT).':
+    'The domain still leads to this server, for example through address translation (NAT).',
+  'Die Prüfung hat nicht ergeben, dass {domain} auf diesen Server zeigt. Bitte bestätigen Sie, dass es trotzdem stimmt.':
+    'The check did not show that {domain} points to this server. Please confirm that it is correct anyway.',
+  'Die bisherige Adresse antwortet nicht mehr, ihr Ziel ist entfernt. Ob der letzte Schritt ganz durchgelaufen ist, steht unter der neuen Adresse in Allgemein.':
+    'The previous address no longer responds, its target is removed. Whether the last step fully completed is shown at the new address under General.',
+  'Erneut prüfen':
+    'Check again',
+  'Es gab keine alte Adresse.':
+    'There was no old address.',
+  'Es muss die öffentliche Adresse dieses Servers sein. Hinter einer Adressumsetzung (NAT) ist das nicht die Adresse, die der Server selbst trägt.':
+    'It must be the public address of this server. Behind address translation (NAT) that is not the address the server carries itself.',
+  'Für die alte Adresse gab es kein Ziel mehr.':
+    'There was no target left for the old address.',
+  'Für {domain} gibt es keinen DNS-Eintrag. Ohne ihn wäre HAPM nach dem Umzug nicht mehr erreichbar.':
+    'There is no DNS record for {domain}. Without it HAPM would no longer be reachable after the move.',
+  'Für {domain} gibt es noch keinen DNS-Eintrag. Legen Sie ihn an und prüfen Sie dann erneut. Ohne ihn wäre HAPM nach dem Umzug nicht mehr erreichbar.':
+    'There is no DNS record for {domain} yet. Create it and check again. Without it HAPM would no longer be reachable after the move.',
+  'Für {domain} gibt es noch keinen DNS-Eintrag. Ohne ihn wäre HAPM nach dem Umzug nicht mehr erreichbar.':
+    'There is no DNS record for {domain} yet. Without it HAPM would no longer be reachable after the move.',
+  'Für {domain} liegt kein Zertifikat vor. Laden Sie es zuerst unter Reverse-Proxy, Zertifikate hoch.':
+    'There is no certificate for {domain}. Upload it first under Reverse proxy, Certificates.',
+  'HAPM fragt das DNS, worauf die Domain zeigt.':
+    'HAPM asks DNS where the domain points to.',
+  'HAPM ist umgezogen':
+    'HAPM has moved',
+  'HAPM kann den Eintrag bei {provider} anlegen':
+    'HAPM can create the record at {provider}',
+  'HAPM legt dann weder Zertifikat noch Ziel an und lässt das alte Ziel stehen. Das passt, wenn HAPM hinter einem anderen Reverse-Proxy steht. Passkeys der bisherigen Adresse gelten danach nicht mehr.':
+    'HAPM then creates neither certificate nor target and keeps the old target. That fits when HAPM runs behind another reverse proxy. Passkeys of the previous address no longer work afterwards.',
+  'HAPM legt in der Zone {zone} den Eintrag {domain} → {address} an.':
+    'HAPM creates the record {domain} → {address} in the zone {zone}.',
+  'HAPM stellt das Zertifikat aus und legt das Ziel an.':
+    'HAPM issues the certificate and creates the target.',
+  'HAPM zieht nach {domain} um':
+    'HAPM is moving to {domain}',
+  'Ist {domain} erreichbar?':
+    'Is {domain} reachable?',
+  'Noch keine Adresse. HAPM ist nur über IP und Port erreichbar.':
+    'No address yet. HAPM is only reachable via IP and port.',
+  'Nur die Adresse eintragen, ohne Zertifikat und Ziel':
+    'Only enter the address, without certificate and target',
+  'Nur die Adresse eintragen?':
+    'Only enter the address?',
+  'Nur eintragen':
+    'Only enter',
+  'Passkeys sind an die Domain gebunden. Mit den bisher hinterlegten ist danach keine Anmeldung mehr möglich.':
+    'Passkeys are bound to the domain. The ones stored so far can no longer be used to sign in afterwards.',
+  'Umzug abgeschlossen':
+    'Move completed',
+  'Umzug starten':
+    'Start move',
+  'Umzug':
+    'Move',
+  'Unter welcher Domain soll HAPM erreichbar sein?':
+    'Under which domain should HAPM be reachable?',
+  'Was einen Haken trägt, bleibt bestehen. Die bisherige Adresse gilt weiter, bis der Schritt „Adresse von HAPM umstellen“ durch ist.':
+    'Everything with a check mark stays in place. The previous address remains valid until the step “Switch the HAPM address” is done.',
+  'Zertifikat für die neue Adresse':
+    'Certificate for the new address',
+  'Ziel der alten Adresse entfernen':
+    'Remove the target of the old address',
+  'Ziel für die neue Adresse anlegen':
+    'Create the target for the new address',
+  'das Ziel von {url}':
+    'the target of {url}',
+  'wird über DNS ausgestellt':
+    'is issued via DNS',
+  'wird über DNS bei {provider} ausgestellt':
+    'is issued via DNS at {provider}',
+  'wird über HTTP auf Port 80 ausgestellt':
+    'is issued via HTTP on port 80',
+  '{domain} gehört schon zum Ziel {id}, das nicht zu HAPM führt. Wählen Sie eine andere Domain oder entfernen Sie sie dort.':
+    '{domain} already belongs to the target {id}, which does not lead to HAPM. Choose another domain or remove it there.',
+  '{domain} ist schon die Adresse von HAPM.':
+    '{domain} already is the HAPM address.',
+  '{domain} liegt in keiner Zone, die unter DNS eingerichtet ist.':
+    '{domain} is not in any zone set up under DNS.',
+  'Adresse von HAPM einrichten': 'Set up the HAPM address',
 };

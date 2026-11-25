@@ -302,6 +302,28 @@ export interface SetupExecution {
   stages: SetupStage[];
 }
 
+/* ── Umzug der Oberfläche auf eine neue Adresse (`lib/address-move/`) ── */
+
+export type AddressMoveStageKey = 'certificate' | 'service' | 'publicUrl' | 'cleanup';
+
+export interface AddressMoveStage {
+  key: AddressMoveStageKey;
+  status: SetupStageStatus;
+  detail: string | null;
+  runId: string | null;
+}
+
+export interface AddressMoveState extends DbDoc {
+  /** Die neue Domain, ohne Schema. */
+  domain: string;
+  /** Die Adresse davor, wie sie in den Einstellungen stand. `null`: es gab keine. */
+  previousUrl: string | null;
+  startedAt: string;
+  /** `true`, solange der Prozess daran arbeitet. Nach einem Neustart steht es noch da. */
+  running: boolean;
+  stages: AddressMoveStage[];
+}
+
 export interface SetupState extends DbDoc {
   /** `null`, solange im Assistenten nichts gewählt wurde. */
   exposure: Exposure | null;
@@ -450,4 +472,5 @@ export const COLLECTIONS = {
   SAVED_TARGETS: 'saved_targets',
   BRANDING: 'branding',
   PAGE_FILES: 'page_files',
+  ADDRESS_MOVE: 'address_move',
 } as const;

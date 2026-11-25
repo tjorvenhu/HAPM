@@ -17,7 +17,7 @@ Next.js (App Router) mit TypeScript strict, pnpm. Drei Container: HAPM, HAProxy
 | `app/api/internal/` | [`docs/reverse-proxy-api.md`](docs/reverse-proxy-api.md) |
 | `app/api/mcp/`, `lib/mcp/`, `lib/haproxy/api-actions.ts` | [`docs/mcp.md`](docs/mcp.md), dazu [`docs/reverse-proxy-api.md`](docs/reverse-proxy-api.md) |
 | `lib/docker/`, `lib/updates/`, `lib/bootstrap.ts`, `Dockerfile`, Compose, `install.sh` | [`docs/betrieb.md`](docs/betrieb.md) |
-| `app/setup/`, `app/api/setup/`, `lib/setup/`, `lib/haproxy/challenge.ts` | [`docs/betrieb.md`](docs/betrieb.md), Abschnitt „Ersteinrichtung", und [`docs/reverse-proxy.md`](docs/reverse-proxy.md), „Interne Installation" |
+| `app/setup/`, `app/api/setup/`, `lib/setup/`, `lib/address-move/`, `lib/haproxy/challenge.ts` | [`docs/betrieb.md`](docs/betrieb.md), Abschnitt „Ersteinrichtung", und [`docs/reverse-proxy.md`](docs/reverse-proxy.md), „Interne Installation" |
 | `lib/db/`, `lib/setup-db.ts`, `bin/hapm-admin.mjs` | [`docs/betrieb.md`](docs/betrieb.md), Abschnitt „Postgres" |
 | `lib/branding/`, `app/(app)/system/darstellung/`, `app/branding.css`, `ui/primitives/Logo.tsx` | [`docs/betrieb.md`](docs/betrieb.md), Abschnitt „Darstellung" |
 | `lib/auth/`, `lib/session.ts`, `lib/two-factor.ts`, `app/api/auth/`, `app/api/account/` | die Köpfe der Dateien: dort steht zu jeder Stelle, warum sie so ist |
