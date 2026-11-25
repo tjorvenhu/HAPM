@@ -651,4 +651,24 @@ export const proxyServer: Dictionary = {
   'acme.sh führt kein Zertifikat für {domain}.': 'acme.sh has no certificate for {domain}.',
   'Das Zertifikat für {domain} ist ausgestellt. acme.sh erneuert es selbst.':
     'The certificate for {domain} is issued. acme.sh renews it by itself.',
+  'Kein Ländercode: {code}. Erwartet werden zwei Buchstaben wie DE.':
+    'Not a country code: {code}. Expected are two letters like DE.',
+  'Das Land {code} steht doppelt in der Liste.':
+    'The country {code} is in the list twice.',
+  'Unbekannter Zeitraum für die Ratenbegrenzung: {period}.':
+    'Unknown period for the rate limit: {period}.',
+  'Die Ratenbegrenzung braucht eine ganze Zahl von {min} bis {max} Anfragen.':
+    'The rate limit needs a whole number from {min} to {max} requests.',
+  'In {file} war keine Stelle für den Zugriffsschutz zu finden: gesucht wird die letzte bind-Zeile des Frontends mit "{marker}".':
+    'No place for the access protection was found in {file}: it goes after the last bind line of the frontend with "{marker}".',
+  'Der Block "{marker}" in {file} steht nicht so da, wie HAPM ihn schreibt. Er wird deshalb nicht überschrieben. Erst in der Datei auf den Stand von HAPM bringen oder entfernen.':
+    'The "{marker}" block in {file} is not the way HAPM writes it, so it is not overwritten. First bring it in line with HAPM in the file or remove it.',
+  'Ihre Adresse {ip} fällt unter die Sperre {network}. Damit wäre auch diese Oberfläche für Sie nicht mehr erreichbar.':
+    'Your address {ip} falls under the block {network}. This interface would no longer be reachable for you either.',
+  'Ihre Adresse {ip} liegt im gesperrten Land {country}. Damit wäre auch diese Oberfläche für Sie nicht mehr erreichbar. Unter Admin-IPs eingetragen gilt die Ländersperre für Sie nicht.':
+    'Your address {ip} is in the blocked country {country}. This interface would no longer be reachable for you either. Listed under admin IPs, the country block does not apply to you.',
+  'Für die Ländersperre fehlt die GeoIP-Tabelle. Sie lässt sich oben auf dieser Seite holen.':
+    'The country block needs the GeoIP table. You can fetch it at the top of this page.',
+  'Die GeoIP-Tabelle kennt diese Länder nicht: {codes}.':
+    'The GeoIP table does not know these countries: {codes}.',
 };

@@ -2912,11 +2912,347 @@ export interface GlobalSettings {
    *  fürs Mitlesen: die Liste zu leeren, während einer davon gesperrt ist,
    *  macht die Konfiguration ungültig. */
   lockedServices: string[];
+  /** Der Block unter `# Zugriffsschutz`. Ohne Block: alles leer. `null` heißt:
+   *  der Block steht da, aber nicht so, wie HAPM ihn schreibt. Dann wird er
+   *  nicht angefasst, siehe `parseProtection`. */
+  protection: AccessProtection | null;
 }
 
 export interface GlobalSettingsInput {
   httpsLines: string[];
   adminIps: string[];
+  /** Fehlt das Feld, bleibt der Zugriffsschutz, wie er ist. Neu geschrieben
+   *  wird der Block trotzdem, weil seine Ausnahme für die Admin-IPs an der
+   *  Adressliste hängt. */
+  protection?: AccessProtection;
+}
+
+/* ── Zugriffsschutz ──
+ *
+ * Drei Sperren, die für JEDEN Dienst im HTTPS-Frontend gelten: einzelne
+ * Adressen und Netze, ganze Länder und eine Ratenbegrenzung je Adresse. Sie
+ * stehen als ein Block unter `# Zugriffsschutz` direkt hinter den `bind`-Zeilen
+ * (hinter `acl admin_ips`, wenn es die gibt), also vor jeder Regel der Dienste.
+ *
+ * Nur im HTTPS-Frontend. Im HTTP-Frontend liegt die ACME-Prüfung, und Let's
+ * Encrypt prüft von Rechnern in mehreren Ländern aus. Eine Ländersperre dort
+ * ließe HTTP-01 scheitern. Wer über HTTP kommt, wird ohnehin nach HTTPS
+ * umgeleitet und trifft dort auf die Sperre.
+ *
+ * Wie die Passwortsperre läuft das ohne HAPM: HAProxy liest die Länderlisten
+ * beim Laden aus Dateien (`GEO_BLOCK_DIR`, eine je Land, erzeugt aus der
+ * GeoIP-Tabelle in `lib/geoip/networks.ts`) und zählt die Anfragen in einer
+ * eigenen `stick-table` des Frontends.
+ *
+ * Die Admin-IPs sind von der Länder- und der Ratensperre ausgenommen, sonst
+ * sperrt sich aus, wer auf Reisen ist oder die Oberfläche lädt (sie läuft über
+ * dasselbe HAProxy). Von der Sperre einzelner Adressen nicht: wer eine Adresse
+ * ausdrücklich sperrt, meint sie.
+ */
+
+export const PROTECTION_MARKER = '# Zugriffsschutz';
+export const BLOCKED_IPS_ACL = 'hapm_blocked_ips';
+export const BLOCKED_COUNTRIES_ACL = 'hapm_blocked_countries';
+export const GEO_BLOCK_DIR = '/etc/haproxy/hapm-geo';
+
+export const RATE_PERIODS = ['10s', '1m', '10m'] as const;
+export type RatePeriod = (typeof RATE_PERIODS)[number];
+
+export interface RateLimit {
+  /** Mehr Anfragen als diese im Zeitraum bekommen 429. */
+  requests: number;
+  period: RatePeriod;
+}
+
+export interface AccessProtection {
+  blockedIps: string[];
+  /** ISO-Codes aus zwei Großbuchstaben, sortiert. */
+  blockedCountries: string[];
+  /** `null` heißt: keine Begrenzung. */
+  rateLimit: RateLimit | null;
+}
+
+export const EMPTY_PROTECTION: AccessProtection = { blockedIps: [], blockedCountries: [], rateLimit: null };
+
+export const RATE_LIMIT_MIN = 10;
+export const RATE_LIMIT_MAX = 100_000;
+/** Der Vorschlag beim Einschalten. Eine Seite mit vielen Dateien lädt beim
+ *  ersten Aufruf leicht hundert auf einmal, und mehrere Menschen hinter
+ *  einem Anschluss teilen sich eine Adresse. */
+export const RATE_LIMIT_DEFAULT: RateLimit = { requests: 300, period: '10s' };
+
+/** Wie lange eine Adresse ohne Anfrage in der Tabelle bleibt: das Doppelte des
+ *  Zeitraums, damit die Rate über den ganzen Zeitraum gezählt wird. */
+const RATE_EXPIRE: Record<RatePeriod, string> = { '10s': '20s', '1m': '2m', '10m': '20m' };
+
+/** HAProxy liest höchstens 64 Wörter je Zeile und schneidet den Rest mit einer
+ *  Warnung ab. Lange Listen gehen deshalb auf mehrere Zeilen mit demselben
+ *  ACL-Namen, die HAProxy verodert. */
+const ACL_VALUES_PER_LINE = 40;
+
+export function geoBlockFile(country: string): string {
+  return `${GEO_BLOCK_DIR}/${country}.lst`;
+}
+
+function chunks<T>(list: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size));
+  return out;
+}
+
+/** Die Zeilen des Blocks ohne Marker und Einrückung. Leer heißt: kein Block. */
+export function protectionLines(protection: AccessProtection, adminExempt: boolean): string[] {
+  const unlessAdmin = adminExempt ? ` !${ADMIN_ACL}` : '';
+  const out: string[] = [];
+
+  if (protection.blockedIps.length > 0) {
+    for (const part of chunks(protection.blockedIps, ACL_VALUES_PER_LINE)) {
+      out.push(`acl ${BLOCKED_IPS_ACL} src ${part.join(' ')}`);
+    }
+    out.push(`http-request deny deny_status 403 if ${BLOCKED_IPS_ACL}`);
+  }
+
+  if (protection.blockedCountries.length > 0) {
+    // Zwei Wörter je Land (`-f <datei>`).
+    for (const part of chunks(protection.blockedCountries, ACL_VALUES_PER_LINE / 2)) {
+      out.push(`acl ${BLOCKED_COUNTRIES_ACL} src ${part.map((c) => `-f ${geoBlockFile(c)}`).join(' ')}`);
+    }
+    out.push(`http-request deny deny_status 403 if ${BLOCKED_COUNTRIES_ACL}${unlessAdmin}`);
+  }
+
+  if (protection.rateLimit) {
+    const { requests, period } = protection.rateLimit;
+    // Die Tabelle gehört dem Frontend selbst und nicht einem eigenen Backend:
+    // so geht sie mit dem Block, und es gibt keinen Abschnitt, von dem man
+    // wissen müsste, wer ihn noch braucht. Gezählt wird über `sc1`. Die
+    // Passwortsperre zählt über `sc2`, Handgeschriebenes am ehesten über `sc0`.
+    out.push(
+      `stick-table type ipv6 size 100k expire ${RATE_EXPIRE[period]} store http_req_rate(${period})`,
+      'http-request track-sc1 src',
+      `http-request deny deny_status 429 if { sc_http_req_rate(1) gt ${requests} }${unlessAdmin}`
+    );
+  }
+  return out;
+}
+
+/** Marker und die Zeilen darunter bis zur nächsten Leerzeile, dem nächsten
+ *  Kommentar oder Abschnitt, wie beim Block der HTTPS-Einstellungen. */
+export function protectionBlockRange(lines: string[]): { start: number; end: number } | null {
+  const start = lines.findIndex((line) => clean(line) === PROTECTION_MARKER);
+  if (start === -1) return null;
+  let end = start + 1;
+  while (end < lines.length) {
+    const line = clean(lines[end]);
+    if (line === '' || line.startsWith('#') || SECTION_KEYWORDS.test(line)) break;
+    end++;
+  }
+  return { start, end };
+}
+
+/**
+ * Den Block lesen. Er zählt nur vollständig, wie die Passwortsperre: aus den
+ * Zeilen entsteht ein Kandidat, und er gilt erst, wenn er neu geschrieben
+ * Zeile für Zeile so dasteht. Eine von Hand geänderte Zahl oder eine fremde
+ * Zeile im Block machen ihn unlesbar (`null`), und dann wird er nicht
+ * angefasst. Sonst würde aus einer Regel, die jemand bewusst anders
+ * geschrieben hat, beim nächsten Speichern still die von HAPM.
+ */
+export function parseProtection(text: string): AccessProtection | null {
+  const lines = text.split('\n');
+  const range = protectionBlockRange(lines);
+  if (!range) return { ...EMPTY_PROTECTION };
+
+  const body: string[] = [];
+  for (let i = range.start + 1; i < range.end; i++) body.push(clean(lines[i]));
+
+  const candidate: AccessProtection = { blockedIps: [], blockedCountries: [], rateLimit: null };
+  const ipAcl = new RegExp(`^acl\\s+${BLOCKED_IPS_ACL}\\s+src\\s+(.+)$`);
+  const countryAcl = new RegExp(`^acl\\s+${BLOCKED_COUNTRIES_ACL}\\s+src\\s+(.+)$`);
+  const table = /^stick-table\s.*\shttp_req_rate\((\S+)\)$/;
+  const rate = /^http-request\s+deny\s+deny_status\s+429\s+if\s+\{\s*sc_http_req_rate\(1\)\s+gt\s+(\d+)\s*\}/;
+
+  let period: string | null = null;
+  let requests: number | null = null;
+  for (const line of body) {
+    let match = ipAcl.exec(line);
+    if (match) {
+      candidate.blockedIps.push(...match[1].split(/\s+/).filter(Boolean));
+      continue;
+    }
+    match = countryAcl.exec(line);
+    if (match) {
+      const words = match[1].split(/\s+/).filter(Boolean);
+      for (let i = 0; i < words.length; i += 2) {
+        const file = new RegExp(`^${GEO_BLOCK_DIR}/([A-Z]{2})\\.lst$`).exec(words[i + 1] ?? '');
+        if (words[i] !== '-f' || !file) return null;
+        candidate.blockedCountries.push(file[1]);
+      }
+      continue;
+    }
+    match = table.exec(line);
+    if (match) {
+      period = match[1];
+      continue;
+    }
+    match = rate.exec(line);
+    if (match) requests = Number(match[1]);
+  }
+
+  if (period !== null || requests !== null) {
+    if (!(RATE_PERIODS as readonly string[]).includes(period ?? '') || requests === null) return null;
+    candidate.rateLimit = { requests, period: period as RatePeriod };
+  }
+
+  const same = (expected: string[]) =>
+    expected.length === body.length && expected.every((line, i) => line === body[i]);
+  if (same(protectionLines(candidate, true)) || same(protectionLines(candidate, false))) {
+    return candidate;
+  }
+  return null;
+}
+
+/** Die Länder, deren Listen die Konfiguration lädt. Gelesen aus jeder Zeile
+ *  der ACL, auch aus einem Block, der sonst nicht lesbar ist: die Dateien
+ *  müssen liegen, sobald eine Zeile auf sie zeigt, sonst lehnt HAProxy die
+ *  ganze Konfiguration ab. */
+export function geoBlockCountries(text: string): string[] {
+  const found = new Set<string>();
+  const acl = new RegExp(`^acl\\s+${BLOCKED_COUNTRIES_ACL}\\s`);
+  const file = new RegExp(`${GEO_BLOCK_DIR}/([A-Z]{2})\\.lst`, 'g');
+  for (const raw of text.split('\n')) {
+    const line = clean(raw);
+    if (!acl.test(line)) continue;
+    for (const match of line.matchAll(file)) found.add(match[1]);
+  }
+  return [...found].sort();
+}
+
+/** Ob eine Konfiguration überhaupt etwas sperrt. Für die Anzeige. */
+export function protectionActive(protection: AccessProtection | null): boolean {
+  return (
+    protection !== null &&
+    (protection.blockedIps.length > 0 || protection.blockedCountries.length > 0 || protection.rateLimit !== null)
+  );
+}
+
+export function validateProtection(protection: AccessProtection): Message | null {
+  const seen = new Set<string>();
+  for (const address of protection.blockedIps) {
+    if (!isValidSourceAddress(address)) {
+      return msg('Keine gültige Adresse: {address}. Erwartet wird eine IP oder ein Netz wie 10.0.0.0/8.', { address });
+    }
+    if (seen.has(address)) return msg('Die Adresse {address} steht doppelt in der Liste.', { address });
+    seen.add(address);
+  }
+  const countries = new Set<string>();
+  for (const code of protection.blockedCountries) {
+    if (!/^[A-Z]{2}$/.test(code) || code === 'ZZ') {
+      return msg('Kein Ländercode: {code}. Erwartet werden zwei Buchstaben wie DE.', { code });
+    }
+    if (countries.has(code)) return msg('Das Land {code} steht doppelt in der Liste.', { code });
+    countries.add(code);
+  }
+  const limit = protection.rateLimit;
+  if (limit) {
+    if (!(RATE_PERIODS as readonly string[]).includes(limit.period)) {
+      return msg('Unbekannter Zeitraum für die Ratenbegrenzung: {period}.', { period: String(limit.period) });
+    }
+    if (!Number.isInteger(limit.requests) || limit.requests < RATE_LIMIT_MIN || limit.requests > RATE_LIMIT_MAX) {
+      return msg('Die Ratenbegrenzung braucht eine ganze Zahl von {min} bis {max} Anfragen.', {
+        min: RATE_LIMIT_MIN,
+        max: RATE_LIMIT_MAX,
+      });
+    }
+  }
+  return null;
+}
+
+/** Aus einem Request-Rumpf, normalisiert und nicht geprüft. `undefined`, wenn
+ *  das Feld fehlt. */
+export function readProtectionInput(value: unknown): AccessProtection | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const raw = value as Record<string, unknown>;
+  const list = (entry: unknown): string[] =>
+    Array.isArray(entry) ? entry.map((item) => String(item).trim()).filter(Boolean) : [];
+  return {
+    blockedIps: list(raw.blockedIps),
+    blockedCountries: [...new Set(list(raw.blockedCountries).map((code) => code.toUpperCase()))].sort(),
+    rateLimit: readRateLimit(raw.rateLimit),
+  };
+}
+
+function readRateLimit(value: unknown): RateLimit | null {
+  if (!value || typeof value !== 'object') return null;
+  const raw = value as Record<string, unknown>;
+  return { requests: Number(raw.requests), period: String(raw.period) as RatePeriod };
+}
+
+/** Wohin ein neuer Block kommt: hinter `acl admin_ips` im HTTPS-Frontend, sonst
+ *  hinter dessen letzte `bind`-Zeile. Das HTTPS-Frontend ist das mit dem
+ *  Marker der HTTPS-Einstellungen. Die letzte `bind`-Zeile der ganzen Datei
+ *  könnte zu einer TCP-Weiterleitung gehören. */
+function protectionAnchor(lines: string[]): number | null {
+  const marker = lines.findIndex((line) => clean(line) === HTTPS_MARKER);
+  if (marker === -1) return null;
+  let start = marker;
+  while (start > 0 && !SECTION_KEYWORDS.test(clean(lines[start]))) start--;
+  let end = marker + 1;
+  while (end < lines.length && !SECTION_KEYWORDS.test(clean(lines[end]))) end++;
+
+  let anchor: number | null = null;
+  for (let i = start; i < end; i++) {
+    const line = clean(lines[i]);
+    if (/^bind\s/.test(line) && i < marker) anchor = i;
+    if (new RegExp(`^acl\\s+${ADMIN_ACL}\\s`).test(line) && (anchor === null || i > anchor)) anchor = i;
+  }
+  return anchor;
+}
+
+function applyProtectionBlock(
+  lines: string[],
+  protection: AccessProtection,
+  adminExempt: boolean
+): string[] {
+  let next = [...lines];
+  const body = protectionLines(protection, adminExempt);
+  let range = protectionBlockRange(next);
+
+  // Eine Regel mit `!admin_ips` vor der ACL wäre „unknown acl". Steht der Block
+  // vor der Admin-ACL, wird er dahinter neu eingesetzt.
+  if (range && body.length > 0 && adminExempt) {
+    const admin = next.findIndex((line) => new RegExp(`^acl\\s+${ADMIN_ACL}\\s`).test(clean(line)));
+    if (admin > range.start) {
+      next = removeBlock(next, range);
+      range = null;
+    }
+  }
+
+  if (range) {
+    if (body.length === 0) return removeBlock(next, range);
+    const indent = /^\s*/.exec(next[range.start])?.[0] ?? '    ';
+    return [...next.slice(0, range.start + 1), ...body.map((l) => `${indent}${l}`), ...next.slice(range.end)];
+  }
+  if (body.length === 0) return next;
+
+  const anchor = protectionAnchor(next);
+  if (anchor === null) {
+    throw new HaproxyConfigError(
+      msg(
+        'In {file} war keine Stelle für den Zugriffsschutz zu finden: gesucht wird die letzte bind-Zeile des Frontends mit "{marker}".',
+        { file: HAPROXY_CFG, marker: HTTPS_MARKER }
+      )
+    );
+  }
+  const indent = /^\s*/.exec(next[anchor])?.[0] ?? '    ';
+  next.splice(anchor + 1, 0, '', `${indent}${PROTECTION_MARKER}`, ...body.map((l) => `${indent}${l}`));
+  return next;
+}
+
+/** Den Block samt Marker entfernen, mit der Leerzeile davor, die beim
+ *  Einfügen dazukam. */
+function removeBlock(lines: string[], range: { start: number; end: number }): string[] {
+  const blankBefore = range.start > 0 && clean(lines[range.start - 1]) === '' ? 1 : 0;
+  return [...lines.slice(0, range.start - blankBefore), ...lines.slice(range.end)];
 }
 
 /** Wo der Einstellungsblock steht: Marker-Zeile und die Zeilen darunter bis zur
@@ -2979,6 +3315,7 @@ export function parseGlobalSettings(text: string): GlobalSettings {
       // deshalb nicht im Weg.
       .filter((service) => service.lockedDomains.length > 0 && service.passwordLock === null)
       .map((service) => service.id),
+    protection: parseProtection(text),
   };
 
   const block = httpsBlockRange(lines);
@@ -3116,7 +3453,7 @@ export function validateGlobalSettings(input: GlobalSettingsInput): Message | nu
     if (seen.has(address)) return msg('Die Adresse {address} steht doppelt in der Liste.', { address });
     seen.add(address);
   }
-  return null;
+  return input.protection ? validateProtection(input.protection) : null;
 }
 
 /**
@@ -3192,6 +3529,24 @@ export function applyGlobalSettings(text: string, input: GlobalSettingsInput): s
     }
     const indent = /^\s*/.exec(lines[anchor])?.[0] ?? '    ';
     lines.splice(anchor + 1, 0, '', `${indent}${ADMIN_MARKER}`, `${indent}${aclLine}`);
+  }
+
+  /* ── Der Zugriffsschutz ──
+   *
+   * Immer neu geschrieben, auch wenn das Feld fehlt: die Ausnahme für die
+   * Admin-IPs (`!admin_ips`) gibt es nur, solange die ACL existiert. Ein von
+   * Hand geänderter Block bleibt stehen, solange niemand ihn ändern will. */
+  if (current.protection === null) {
+    if (input.protection) {
+      throw new HaproxyConfigError(
+        msg(
+          'Der Block "{marker}" in {file} steht nicht so da, wie HAPM ihn schreibt. Er wird deshalb nicht überschrieben. Erst in der Datei auf den Stand von HAPM bringen oder entfernen.',
+          { marker: PROTECTION_MARKER, file: HAPROXY_CFG }
+        )
+      );
+    }
+  } else {
+    lines = applyProtectionBlock(lines, input.protection ?? current.protection, input.adminIps.length > 0);
   }
 
   const block = httpsBlockRange(lines)!;
@@ -4115,6 +4470,7 @@ export function readGlobalSettingsInput(body: unknown): GlobalSettingsInput {
     adminIps: Array.isArray(raw.adminIps)
       ? raw.adminIps.map((ip) => String(ip).trim()).filter(Boolean)
       : [],
+    protection: readProtectionInput(raw.protection),
   };
 }
 
@@ -4169,11 +4525,26 @@ export function readGlobalSettingsPatch(
     );
   }
 
+  // Der Zugriffsschutz feldweise wie der Rest: was fehlt, bleibt stehen.
+  // `rateLimit: null` schaltet die Begrenzung ab, ein fehlendes Feld nicht.
+  let protection: AccessProtection | undefined;
+  const touchesProtection = ['blockedIps', 'blockedCountries', 'rateLimit'].some((key) => key in raw);
+  if (touchesProtection) {
+    const base = current.protection ?? EMPTY_PROTECTION;
+    const read = readProtectionInput({
+      blockedIps: 'blockedIps' in raw ? raw.blockedIps : base.blockedIps,
+      blockedCountries: 'blockedCountries' in raw ? raw.blockedCountries : base.blockedCountries,
+      rateLimit: 'rateLimit' in raw ? raw.rateLimit : base.rateLimit,
+    });
+    protection = read;
+  }
+
   return {
     // `null` heißt „es gibt den Marker nicht" — `applyGlobalSettings` lehnt das
     // gleich danach mit dem Grund ab, hier wäre eine Vermutung fehl am Platz.
     httpsLines: list(raw.httpsLines) ?? current.httpsLines ?? [],
     adminIps,
+    ...(protection ? { protection } : {}),
   };
 }
 

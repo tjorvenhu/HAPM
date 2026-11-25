@@ -14,6 +14,7 @@ import { msg } from '../i18n/translate';
 import { compileGeoTable, GeoTableError } from './format';
 import { GEOIP_MAX_UPLOAD_BYTES, GEOIP_SOURCE_NAME, unpackUpload } from './pack';
 import { storeGeoipTable } from './store';
+import { followGeoipChange } from './follow';
 
 export interface GeoipImport {
   version: string;
@@ -83,6 +84,7 @@ export async function importGeoipFile(input: {
     uploadedBy: input.uploadedBy,
     fetched: input.fetched === true,
   });
+  followGeoipChange();
 
   return {
     version,

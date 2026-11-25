@@ -23,14 +23,21 @@ import { HTTPS_MARKER, type GlobalSettings } from '@/lib/haproxy/config';
 import { SkeletonRows } from '@/components/Skeleton';
 import GeoipPanel from '@/components/reverse-proxy/GeoipPanel';
 import BaseConfigPanel from '@/components/reverse-proxy/BaseConfigPanel';
+import ProtectionSection, {
+  protectionDraft,
+  protectionPayload,
+  type ProtectionContext,
+  type ProtectionDraft,
+} from '@/components/reverse-proxy/ProtectionSection';
 import { useT } from '@/lib/i18n/react';
 
 /**
  * Die globalen Einstellungen eines Reverse-Proxys.
  *
  * Was für ALLE Dienste einer Maschine gilt und deshalb in keinen Dienst-Dialog
- * gehört: der Block unter `# Globale HTTPS-Settings` im Frontend und die
- * Admin-Adressliste.
+ * gehört: der Block unter `# Globale HTTPS-Settings` im Frontend, die
+ * Admin-Adressliste und der Zugriffsschutz (gesperrte Adressen und Länder,
+ * Ratenbegrenzung).
  *
  * Warum überhaupt hier: es sind genau die Zeilen, die man einmal setzt und
  * danach nie wieder ansieht — und die fehlen, wenn ein Proxy neu aufgesetzt
@@ -60,6 +67,8 @@ interface SettingsRow {
 interface Draft {
   httpsLines: string[];
   adminIps: string[];
+  /** `null`: der Block steht von Hand geändert da und geht nicht mit. */
+  protection: ProtectionDraft | null;
 }
 
 export default function ReverseProxySettingsPage() {
@@ -69,6 +78,7 @@ export default function ReverseProxySettingsPage() {
   const { t, rich } = useT();
 
   const [rows, setRows] = useState<SettingsRow[]>([]);
+  const [protectionContext, setProtectionContext] = useState<ProtectionContext | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
@@ -103,7 +113,10 @@ export default function ReverseProxySettingsPage() {
       try {
         const res = await apiFetch('/api/haproxy/settings');
         const data = await res.json();
-        if (data.success) setRows(data.data);
+        if (data.success) {
+          setRows(data.data.rows);
+          setProtectionContext(data.data.protectionContext);
+        }
         setError('');
       } catch {
         setError(t('Die Einstellungen konnten nicht geladen werden.'));
@@ -177,6 +190,7 @@ export default function ReverseProxySettingsPage() {
       // „hinzufügen" zu drücken. Gilt für beide Listen.
       httpsLines: lines.length > 0 ? [...lines] : [''],
       adminIps: row.settings.adminIps.length > 0 ? [...row.settings.adminIps] : [''],
+      protection: row.settings.protection ? protectionDraft(row.settings.protection) : null,
     };
   }
 
@@ -333,7 +347,13 @@ export default function ReverseProxySettingsPage() {
       const res = await apiFetch('/api/haproxy/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ serverId: row.$id, ...value }),
+        body: JSON.stringify({
+          serverId: row.$id,
+          httpsLines: value.httpsLines,
+          adminIps: value.adminIps,
+          // Fehlt das Feld, bleibt ein von Hand geänderter Block stehen.
+          ...(value.protection ? { protection: protectionPayload(value.protection) } : {}),
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || t('Speichern fehlgeschlagen'));
@@ -614,6 +634,23 @@ export default function ReverseProxySettingsPage() {
                       )}
                     </section>
                   </div>
+                </div>
+              )}
+
+              {/* ── Zugriffsschutz ──
+                  Im selben Speichern wie die Admin-IPs: an ihnen hängt die
+                  Ausnahme der Länder- und Ratensperre. */}
+              {value && (
+                <div className="card-body detail-block">
+                  <div className="form-section-title" style={{ marginBottom: 12 }}>
+                    {t('Zugriffsschutz')}
+                  </div>
+                  <ProtectionSection
+                    value={value.protection}
+                    onChange={(protection) => edit(row, { protection })}
+                    context={protectionContext}
+                    hasAdminIps={value.adminIps.some((ip) => ip.trim() !== '')}
+                  />
                 </div>
               )}
 

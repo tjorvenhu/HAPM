@@ -138,6 +138,19 @@ describe('diffBaseConfig', () => {
     expect(diffBaseConfig(text, OPTIONS).drifts).toEqual([]);
   });
 
+  it('gleicht den Zugriffsschutz nicht ab', () => {
+    const text = applyGlobalSettings(BASE, {
+      httpsLines: parseGlobalSettings(BASE).httpsLines!,
+      adminIps: ['203.0.113.7'],
+      protection: {
+        blockedIps: ['198.51.100.0/24'],
+        blockedCountries: ['RU'],
+        rateLimit: { requests: 300, period: '10s' },
+      },
+    });
+    expect(diffBaseConfig(text, OPTIONS).drifts).toEqual([]);
+  });
+
   it('übersieht, was zwischen den Markern steht, auch alte vsm_lock-Kennungen', () => {
     let text = addService(addScope(BASE, 'KUNDEN'), SERVICE);
     text = replaced(

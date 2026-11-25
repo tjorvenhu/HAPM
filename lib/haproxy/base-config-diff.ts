@@ -46,6 +46,7 @@
 import { msg, msgid } from '../i18n/translate';
 import {
   ADMIN_ACL,
+  protectionBlockRange,
   HTTPS_MARKER,
   HaproxyConfigError,
   SECTION_KEYWORDS,
@@ -309,6 +310,9 @@ function managedIndexes(lines: string[]): Set<number> {
   const managed = new Set<number>();
   const block = httpsBlockRange(lines);
   if (block) for (let i = block.start + 1; i < block.end; i++) managed.add(i);
+  // Der Zugriffsschutz gehört der Einstellungsseite wie die Admin-ACL.
+  const protection = protectionBlockRange(lines);
+  if (protection) for (let i = protection.start + 1; i < protection.end; i++) managed.add(i);
   lines.forEach((raw, index) => {
     if (new RegExp(`^acl\\s+${ADMIN_ACL}\\s`).test(clean(raw))) managed.add(index);
   });

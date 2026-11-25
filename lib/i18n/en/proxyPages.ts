@@ -488,4 +488,54 @@ export const proxyPages: Dictionary = {
   'Der Antrag für {domains} läuft. Den Fortschritt zeigt die Anzeige unten rechts.':
     'The request for {domains} is running. The indicator at the bottom right shows its progress.',
   'Der Antrag ließ sich nicht starten.': 'The request could not be started.',
+  'Zugriffsschutz':
+    'Access protection',
+  '10 Sekunden':
+    '10 seconds',
+  '1 Minute':
+    '1 minute',
+  '10 Minuten':
+    '10 minutes',
+  'Der Block {marker} steht nicht so in der Konfiguration, wie HAPM ihn schreibt. Er wirkt weiter, wird hier aber nicht bearbeitet, damit keine Änderung von Hand verloren geht.':
+    'The {marker} block in the configuration is not the way HAPM writes it. It stays in effect but is not edited here, so no manual change gets lost.',
+  'Gesperrte Adressen':
+    'Blocked addresses',
+  'Einzelne IPs oder Netze, die keinen Dienst erreichen. Gilt auch für Admin-IPs.':
+    'Single IPs or networks that reach no service. Applies to admin IPs as well.',
+  'Gesperrte Länder':
+    'Blocked countries',
+  'Besucher aus diesen Ländern bekommen 403. Admin-IPs sind ausgenommen.':
+    'Visitors from these countries get 403. Admin IPs are exempt.',
+  'Besucher aus diesen Ländern bekommen 403. Mit Admin-IPs wären diese ausgenommen.':
+    'Visitors from these countries get 403. Admin IPs, once set, are exempt.',
+  'Kein Land gesperrt.':
+    'No country blocked.',
+  'Ohne GeoIP-Tabelle lässt sich kein Land sperren. Sie lässt sich oben auf dieser Seite holen.':
+    'Without a GeoIP table no country can be blocked. You can fetch it at the top of this page.',
+  'Land hinzufügen':
+    'Add country',
+  'Land suchen':
+    'Search country',
+  'Ratenbegrenzung':
+    'Rate limit',
+  'Zu viele Anfragen von einer Adresse bekommen 429, bis sie wieder unter der Grenze liegt.':
+    'Too many requests from one address get 429 until it is below the limit again.',
+  'Anfragen je Adresse':
+    'Requests per address',
+  '{min} bis {max}':
+    '{min} to {max}',
+  'Zeitraum':
+    'Period',
+  'Admin-IPs zählen nicht mit. Eine Seite lädt beim ersten Aufruf oft hundert Dateien und mehr, und mehrere Menschen hinter einem Anschluss teilen sich eine Adresse.':
+    'Admin IPs are not counted. A page often loads a hundred files or more on first visit, and several people behind one connection share an address.',
+  'Eine Seite lädt beim ersten Aufruf oft hundert Dateien und mehr, und mehrere Menschen hinter einem Anschluss teilen sich eine Adresse. Das gilt auch für diese Oberfläche.':
+    'A page often loads a hundred files or more on first visit, and several people behind one connection share an address. This applies to this interface as well.',
+  'Gilt im HTTPS-Frontend für jeden Dienst. Ihre Adresse ist {ip} ({country}). Eine Sperre, die Sie selbst träfe, wird abgelehnt.':
+    'Applies to every service in the HTTPS frontend. Your address is {ip} ({country}). A block that would hit you is refused.',
+  'Gilt im HTTPS-Frontend für jeden Dienst. Ihre Adresse ist {ip}. Eine Sperre, die Sie selbst träfe, wird abgelehnt.':
+    'Applies to every service in the HTTPS frontend. Your address is {ip}. A block that would hit you is refused.',
+  'Gilt im HTTPS-Frontend für jeden Dienst. Eine Sperre, die Sie selbst träfe, wird abgelehnt.':
+    'Applies to every service in the HTTPS frontend. A block that would hit you is refused.',
+  '{country} entfernen': 'Remove {country}',
+  'Gesperrte Länder ({count})': 'Blocked countries ({count})',
 };

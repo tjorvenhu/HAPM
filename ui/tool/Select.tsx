@@ -33,6 +33,10 @@ interface SelectProps<T extends string> {
   emptyText?: string;
   disabled?: boolean;
   id?: string;
+  /** A filter field at the top of the list, for long lists (countries).
+   *  Matches label and value, case-insensitive. */
+  searchable?: boolean;
+  searchPlaceholder?: string;
 }
 
 export default function Select<T extends string>({
@@ -43,9 +47,12 @@ export default function Select<T extends string>({
   emptyText,
   disabled = false,
   id,
+  searchable = false,
+  searchPlaceholder,
 }: SelectProps<T>) {
   const { t } = useT();
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
   // Die Liste bleibt beim Schließen noch so lange im Baum, wie sie ausblendet.
   const { mounted, closing } = usePresence(open);
   const ref = useRef<HTMLDivElement>(null);
@@ -66,7 +73,19 @@ export default function Select<T extends string>({
     };
   }, [open]);
 
+  // Leer beim nächsten Öffnen: ein stehengebliebener Filter zeigte sonst eine
+  // Liste, in der scheinbar Einträge fehlen.
+  useEffect(() => {
+    if (!open) setQuery('');
+  }, [open]);
+
   const selected = options.find((o) => o.value === value);
+  const needle = query.trim().toLowerCase();
+  const visible = needle
+    ? options.filter(
+        (o) => o.label.toLowerCase().includes(needle) || o.value.toLowerCase().includes(needle)
+      )
+    : options;
 
   return (
     <div className="custom-select" ref={ref}>
@@ -98,12 +117,32 @@ export default function Select<T extends string>({
           role="listbox"
           inert={closing}
         >
-          {options.length === 0 ? (
+          {searchable && (
+            <input
+              className="form-input custom-select-search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={searchPlaceholder ?? t('Suchen')}
+              autoFocus
+              autoComplete="off"
+              spellCheck={false}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                const first = visible.find((o) => !o.disabled);
+                if (first) {
+                  onChange(first.value);
+                  setOpen(false);
+                }
+              }}
+            />
+          )}
+          {visible.length === 0 ? (
             <div className="custom-select-empty">
-              {emptyText ?? t('Keine Einträge vorhanden')}
+              {needle ? t('Kein Treffer') : (emptyText ?? t('Keine Einträge vorhanden'))}
             </div>
           ) : (
-            options.map((option) => (
+            visible.map((option) => (
               <div
                 key={option.value}
                 role="option"

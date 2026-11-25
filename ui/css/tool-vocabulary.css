@@ -1785,6 +1785,12 @@ a.kpi { color: inherit; }
 /* ── Bausteine aus `ui/tool`: Auswahlliste und Bestätigungsfenster ──
    Als Klassen und nicht als style-Attribut im Baustein, damit `app/globals.css` sie
    überstimmen kann. */
+/* Das Suchfeld einer langen Auswahlliste. Klebt oben, während die Einträge darunter scrollen. */
+.custom-select-search {
+  position: sticky; top: -0.375rem; z-index: 1;
+  width: 100%; margin-bottom: 0.375rem; background: var(--surface);
+}
+
 /* Ein Aufklappmenü ohne Einträge. */
 .custom-select-empty { padding: 12px 16px; color: var(--text-tertiary); font-size: 0.875rem; }
 

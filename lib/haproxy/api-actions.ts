@@ -647,6 +647,7 @@ export async function getProxySettings(serverId?: string | null) {
     adminIps: settings.adminIps,
     adminEditable: settings.adminEditable,
     lockedServices: settings.lockedServices,
+    protection: settings.protection,
     editable: settingsEditable(settings),
     dnsHooks,
   };
@@ -678,7 +679,12 @@ export async function patchProxySettings(body: Record<string, unknown>, actor: H
     settings: input,
     actor,
   });
-  return { runId: run.$id, serverId: server.$id, adminIps: input.adminIps };
+  return {
+    runId: run.$id,
+    serverId: server.$id,
+    adminIps: input.adminIps,
+    protection: input.protection ?? settings.protection,
+  };
 }
 
 /* ── Zertifikate ── */

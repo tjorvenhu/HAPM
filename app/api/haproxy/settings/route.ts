@@ -16,6 +16,10 @@ import {
   type GlobalSettings,
 } from '@/lib/haproxy/config';
 import { LOCAL_SERVER_ID, localServer } from '@/lib/helpers';
+import { geoipTable } from '@/lib/geoip/store';
+import { knownCountries } from '@/lib/geoip/networks';
+import { lookupCountry } from '@/lib/geoip/format';
+import { lockoutReason } from '@/lib/haproxy/protection-guard';
 
 /**
  * Die globalen Einstellungen eines Reverse-Proxys: die Zeilen unter
@@ -41,7 +45,24 @@ interface SettingsRow {
   error: string | null;
 }
 
-export async function GET() {
+/** Was die Ländersperre zur Auswahl braucht, einmal für die ganze Seite: die
+ *  Länder, die die GeoIP-Tabelle kennt, und woher die Anfrage gerade kommt.
+ *  Die eigene Adresse steht da, damit man sieht, wen eine Sperre träfe. */
+interface ProtectionContext {
+  countries: string[];
+  client: { ip: string; country: string | null };
+}
+
+async function protectionContext(request: Request): Promise<ProtectionContext> {
+  const table = await geoipTable();
+  const ip = getClientIP(request);
+  return {
+    countries: table ? knownCountries(table) : [],
+    client: { ip, country: lookupCountry(table, ip) },
+  };
+}
+
+export async function GET(request: Request) {
   try {
     await requireSession();
     const { t } = await getT();
@@ -75,7 +96,8 @@ export async function GET() {
     );
 
     rows.sort((a, b) => a.name.localeCompare(b.name, 'de'));
-    return ok(rows);
+    // Der Kontext einmal neben den Zeilen, nicht in jeder.
+    return ok({ rows, protectionContext: await protectionContext(request) });
   } catch (err) {
     return handleError(err);
   }
@@ -99,6 +121,12 @@ export async function PATCH(request: Request) {
     // die Route danach ablehnt, ist schlimmer als gar keine Vorabprüfung.
     const invalid = validateGlobalSettings(input);
     if (invalid) throw new ApiError(invalid);
+
+    if (input.protection) {
+      const { client } = await protectionContext(request);
+      const lockout = lockoutReason(input.protection, input.adminIps, client);
+      if (lockout) throw new ApiError(lockout, 409);
+    }
 
     try {
       await precheckSettings(server, input);

@@ -216,6 +216,7 @@ describe('readGlobalSettingsPatch', () => {
     adminIps: ['10.0.0.0/8', '203.0.113.4'],
     adminEditable: true,
     lockedServices: [],
+    protection: { blockedIps: ['198.51.100.0/24'], blockedCountries: ['RU'], rateLimit: null },
   };
 
   /** Nimmt dem Test die Fallunterscheidung ab: hier wird der gültige Fall geprüft. */
@@ -267,6 +268,17 @@ describe('readGlobalSettingsPatch', () => {
       CURRENT
     );
     expect(result).toHaveProperty('error');
+  });
+
+  it('ändert beim Zugriffsschutz nur das Feld, das dasteht', () => {
+    expect(patch({ rateLimit: { requests: 200, period: '1m' } }).protection).toEqual({
+      blockedIps: ['198.51.100.0/24'],
+      blockedCountries: ['RU'],
+      rateLimit: { requests: 200, period: '1m' },
+    });
+    expect(patch({ blockedCountries: ['cn', 'RU'] }).protection?.blockedCountries).toEqual(['CN', 'RU']);
+    // `rateLimit: null` schaltet ab, ein fehlendes Feld nicht.
+    expect(patch({ blockedIps: [] }).protection?.rateLimit).toBeNull();
   });
 
   it('macht aus einem fehlenden Marker keine erfundenen Zeilen', () => {

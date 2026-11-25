@@ -1274,7 +1274,8 @@ Minutentakt, diese Seite alle zwei Minuten und nur, wenn sie offen ist.
 
 Was keinem Dienst gehört, sondern HAProxy als Ganzem: der Block unter
 `# Globale HTTPS-Settings` im Frontend (HSTS, `option forwardfor`, die
-`X-Forwarded-*`-Header) und die Admin-Adressliste. Sie stehen deshalb auf einer
+`X-Forwarded-*`-Header), die Admin-Adressliste und der Zugriffsschutz (eigener
+Abschnitt weiter unten). Sie stehen deshalb auf einer
 eigenen Seite und nicht im Dienst-Dialog.
 
 Eine Umleitung für unbekannte Domains (`backend default_404`) gehört bewusst
@@ -1379,6 +1380,80 @@ schickt einen ausgesperrten Kollegen in die falsche Fehlersuche.
 - Geschrieben wird über denselben Weg wie ein Dienst (Lock, Prüfsumme, `haproxy -c`,
   Backup, Reload) und als derselbe abgekoppelte Lauf, nur mit
   `action: 'settings'` und ohne Zertifikat.
+
+### Der Zugriffsschutz: Adressen, Länder, Ratenbegrenzung
+
+Drei Sperren für jeden Dienst, auf `/reverse-proxy/einstellungen` unter
+„Zugriffsschutz" und im selben Speichern wie die Admin-IPs (`protection` in
+`GlobalSettings`). In der Datei ein Block unter `# Zugriffsschutz` im
+HTTPS-Frontend, geschrieben von `protectionLines` (`config.ts`):
+
+```
+    # Zugriffsschutz
+    acl hapm_blocked_ips src 203.0.113.7 198.51.100.0/24
+    http-request deny deny_status 403 if hapm_blocked_ips
+    acl hapm_blocked_countries src -f /etc/haproxy/hapm-geo/CN.lst -f /etc/haproxy/hapm-geo/RU.lst
+    http-request deny deny_status 403 if hapm_blocked_countries !admin_ips
+    stick-table type ipv6 size 100k expire 20s store http_req_rate(10s)
+    http-request track-sc1 src
+    http-request deny deny_status 429 if { sc_http_req_rate(1) gt 300 } !admin_ips
+```
+
+- **Nur im HTTPS-Frontend.** Im HTTP-Frontend liegt die ACME-Prüfung, und
+  Let's Encrypt prüft von Rechnern in mehreren Ländern aus: eine Ländersperre
+  dort ließe HTTP-01 scheitern. Wer über HTTP kommt, landet per Umleitung ohnehin
+  vor der Sperre.
+- **Wo der Block steht:** hinter `acl admin_ips`, sonst hinter der letzten
+  `bind`-Zeile des Frontends mit dem Marker der HTTPS-Einstellungen
+  (`protectionAnchor`). Nicht die letzte `bind`-Zeile der Datei: die kann zu
+  einer TCP-Weiterleitung gehören. Damit steht er vor jeder Regel der Dienste
+  und vor den Kopfzeilen der HTTPS-Einstellungen.
+- **Admin-IPs sind von Länder- und Ratensperre ausgenommen**, von der Sperre
+  einzelner Adressen nicht (wer eine Adresse sperrt, meint sie). `!admin_ips`
+  gibt es nur, solange die ACL existiert. Deshalb schreibt
+  `applyGlobalSettings` den Block bei JEDEM Speichern neu, auch wenn das Feld
+  fehlt: wer die Admin-IPs leert, nimmt die Ausnahme mit, sonst wäre die Datei
+  „unknown acl".
+- **Er zählt nur vollständig** (`parseProtection`), wie die Passwortsperre:
+  gelesen wird ein Kandidat, und er gilt erst, wenn er neu geschrieben Zeile für
+  Zeile so dasteht. Ein von Hand geänderter Block ist `protection: null`, wirkt
+  weiter, wird nicht überschrieben, und ein Speichern mit Feld wird abgelehnt.
+- **Höchstens 64 Wörter je Zeile** liest HAProxy, der Rest wird mit einer
+  Warnung abgeschnitten. Lange Listen gehen auf mehrere Zeilen mit demselben
+  ACL-Namen (40 Adressen, 20 Länder je Zeile), die HAProxy verodert.
+- **Die Ratenbegrenzung zählt in einer `stick-table` des Frontends selbst**,
+  über `sc1` (die Passwortsperre zählt über `sc2`). Zeiträume 10 s, 1 min,
+  10 min, Ablauf das Doppelte. Ein zweites `stick-table` im selben Frontend,
+  von Hand geschrieben, lehnt `haproxy -c` ab. Vorschlag beim Einschalten:
+  300 Anfragen in 10 Sekunden, weil eine Seite beim ersten Laden leicht hundert
+  Dateien holt und mehrere Menschen hinter einem Anschluss eine Adresse teilen.
+- **Die Länder kommen als Dateien, eine je Land** (`/etc/haproxy/hapm-geo/XX.lst`,
+  `lib/geoip/networks.ts`), erzeugt aus der GeoIP-Tabelle von HAPM als
+  CIDR-Netze, IPv6 höchstens /64 (die Tabelle führt nur die oberen 64 Bit).
+  Keine Map aller Bereiche: die hielte die ganze Welt im Speicher von HAProxy,
+  auch für ein einziges Land, und welche Länder gesperrt sind, stünde nicht
+  lesbar in `haproxy.cfg`. Größen mit dem Datensatz 2026-08: DE rund 51 000 Netze
+  (0,9 MB), US rund 310 000 (5,8 MB, gut 2 s zum Erzeugen).
+- **Die Dateien müssen liegen, bevor `haproxy -c` läuft.** `stageAndCheck` legt
+  sie vor jeder Prüfung an (`ensureGeoBlockFiles`), sobald die Konfiguration auf
+  sie zeigt, verglichen über die Prüfsumme. Geschrieben wird über
+  `sh -c 'cat > "$1"'`, nicht `tee`: das gäbe Megabytes auf stdout zurück.
+  Aufgeräumt wird nicht.
+- **Eine neue GeoIP-Tabelle kommt sofort an:** nach Abruf, Upload und
+  Zurücksetzen ruft `followGeoipChange` (`lib/geoip/follow.ts`) abgekoppelt
+  `refreshGeoBlockFiles`. Hat sich eine Liste geändert, wird geprüft und neu
+  geladen. Ein Fehler steht im Log und macht den Import nicht ungültig.
+- **Ein Land, das die Tabelle nicht kennt, wird vorab abgelehnt**
+  (`precheckSettings`), sonst gäbe es eine leere Liste und eine Sperre, die
+  nichts sperrt. Ohne Tabelle lässt sich kein Land sperren.
+- **Niemand sperrt sich selbst aus.** Die Oberfläche läuft über dasselbe
+  HAProxy. Die Route `/api/haproxy/settings` lehnt mit 409 ab, wenn die eigene
+  Adresse unter eine gesperrte Adresse fällt oder ihr Land gesperrt ist und sie
+  keine Admin-IP ist (`lockoutReason`, `lib/haproxy/protection-guard.ts`). Die
+  Seite nennt die eigene Adresse und ihr Land. Über `/api/internal` und MCP gibt
+  es diese Prüfung nicht: dort ist der Aufrufer eine Maschine.
+- **Der Abgleich mit der Grundkonfiguration** sieht den Block nicht
+  (`managedIndexes` in `base-config-diff.ts`).
 
 ### Abgleich mit der Grundkonfiguration: `lib/haproxy/base-config-diff.ts`
 

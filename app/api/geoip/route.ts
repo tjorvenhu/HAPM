@@ -6,6 +6,7 @@ import { GeoTableError } from '@/lib/geoip/format';
 import { geoipOverview, setGeoipAutoRefresh } from '@/lib/geoip/fetch';
 import { importGeoipFile } from '@/lib/geoip/import';
 import { clearGeoipTable, readGeoipRefresh } from '@/lib/geoip/store';
+import { followGeoipChange } from '@/lib/geoip/follow';
 
 /**
  * Die Länder-Tabelle der Reverse-Proxy-Statistik.
@@ -126,6 +127,7 @@ export async function DELETE(request: Request) {
     const session = await requireSession();
 
     await clearGeoipTable();
+    followGeoipChange();
     await logAudit({
       userId: session.userId,
       userEmail: session.email,

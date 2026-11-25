@@ -66,8 +66,13 @@ import {
   assignServiceId,
   type GlobalSettings,
   type GlobalSettingsInput,
+  geoBlockCountries,
+  geoBlockFile,
+  GEO_BLOCK_DIR,
 } from './config';
 import { lockPages, lockPageDigestCommand, lockPageWriteCommand } from './lock-page';
+import { geoipTable } from '../geoip/store';
+import { geoBlockFileContent, knownCountries } from '../geoip/networks';
 import {
   parseErrorFiles,
   isManageableErrorFile,
@@ -782,6 +787,96 @@ async function ensureLockPages(
 }
 
 /**
+ * Die Länderlisten der Ländersperre auf die Maschine legen.
+ *
+ * Dasselbe wie bei den Seiten der Passwortsperre: HAProxy liest die Dateien
+ * beim Laden, eine fehlende lässt die ganze Konfiguration scheitern. Sie
+ * entstehen aus der GeoIP-Tabelle von HAPM (`lib/geoip/networks.ts`) und
+ * werden nur geschrieben, wenn die Prüfsumme abweicht. So kommt auch eine neue
+ * Tabelle mit dem nächsten Vorgang an. Sofort kommt sie über
+ * `refreshGeoBlockFiles`.
+ *
+ * Aufgeräumt wird nicht: die Liste eines nicht mehr gesperrten Landes stört
+ * niemanden, und eine von Hand geschriebene Regel könnte sie noch laden.
+ */
+async function ensureGeoBlockFiles(
+  ssh: Awaited<ReturnType<typeof getSSHConfig>>,
+  countries: string[]
+): Promise<{ ok: boolean; detail: string; changed: boolean }> {
+  const table = await geoipTable();
+  if (!table) {
+    return {
+      ok: false,
+      changed: false,
+      detail: 'Für die Ländersperre fehlt die GeoIP-Tabelle. Sie lässt sich unter Reverse-Proxy, Einstellungen holen.',
+    };
+  }
+
+  const files = countries.map((country) => {
+    const content = geoBlockFileContent(table, country);
+    return {
+      path: geoBlockFile(country),
+      content,
+      digest: createHash('sha256').update(content, 'utf8').digest('hex'),
+    };
+  });
+
+  const sums = await sshExec(ssh, lockPageDigestCommand(files.map((file) => file.path)), SHORT_MS);
+  const present = new Set(sums.stdout.split('\n').map((line) => line.trim().split(/\s+/)[0]));
+
+  let changed = false;
+  for (const file of files) {
+    if (present.has(file.digest)) continue;
+    // `cat` über `sh -c` mit dem Pfad als Argument: der Inhalt kommt über
+    // stdin wie bei der Konfiguration, und anders als `tee` gibt `cat > …` die
+    // Megabytes einer großen Liste nicht noch einmal auf stdout aus.
+    const write = await sshExec(
+      ssh,
+      `${buildCommand(['mkdir', '-p', GEO_BLOCK_DIR])} && ${withStdin(['sh', '-c', 'cat > "$1"', 'sh', file.path], file.content)}`,
+      RELOAD_MS
+    );
+    if (write.code !== 0) {
+      return {
+        ok: false,
+        changed,
+        detail: `Die Länderliste ${file.path} ließ sich nicht schreiben: ${tail(write.stderr)}`,
+      };
+    }
+    changed = true;
+  }
+  return { ok: true, detail: '', changed };
+}
+
+/**
+ * Die Länderlisten nach einer neuen GeoIP-Tabelle nachziehen und HAProxy neu
+ * laden, wenn sich eine geändert hat. Aufgerufen nach jedem Abruf, Upload und
+ * Zurücksetzen der Tabelle (`lib/geoip/import.ts`, `app/api/geoip`).
+ *
+ * Kein abgekoppelter Lauf: an `haproxy.cfg` ändert sich nichts, und ohne
+ * diesen Schritt sperrte HAProxy bis zum nächsten Vorgang nach dem alten Stand.
+ * Geprüft wird trotzdem vor dem Neuladen.
+ */
+export async function refreshGeoBlockFiles(server: Server): Promise<'none' | 'unchanged' | 'reloaded'> {
+  return withProxyLock(server.$id, async () => {
+    const ssh = await getSSHConfig(server);
+    const probe = await probeProxy(server);
+    if (!probe.configReadable) return 'none';
+    const countries = geoBlockCountries(probe.raw);
+    if (countries.length === 0) return 'none';
+
+    const files = await ensureGeoBlockFiles(ssh, countries);
+    if (!files.ok) throw new Error(files.detail);
+    if (!files.changed) return 'unchanged';
+
+    const check = await sshExec(ssh, buildCommand(['haproxy', '-c', '-f', HAPROXY_CFG]), SHORT_MS);
+    if (check.code !== 0) throw new Error(tail(check.stderr || check.stdout));
+    const reload = await sshExec(ssh, buildCommand(RELOAD_ARGV), RELOAD_MS);
+    if (reload.code !== 0) throw new Error(tail(reload.stderr || reload.stdout));
+    return 'reloaded';
+  });
+}
+
+/**
  * Eine Passwortsperre auf einer Maschine, deren HAProxy sie nicht kann.
  *
  * `haproxy -c` lehnte die Datei ohnehin ab, aber mit einer Meldung über ein
@@ -832,6 +927,11 @@ async function stageAndCheck(
   if (usesLockPages(text)) {
     const pages = await ensureLockPages(ssh);
     if (!pages.ok) return pages;
+  }
+  const countries = geoBlockCountries(text);
+  if (countries.length > 0) {
+    const lists = await ensureGeoBlockFiles(ssh, countries);
+    if (!lists.ok) return lists;
   }
 
   // `tee` gibt den Inhalt auf stdout wieder aus; das wird verworfen. Eine
@@ -2243,6 +2343,25 @@ export async function precheckSettings(
   // Wirft als HaproxyConfigError bei fehlendem Marker, unbekannten Zeilen im
   // Block oder fehlendem default_404 — bevor irgendetwas geschrieben wird.
   applyGlobalSettings(probe.raw, input);
+
+  // Ein Land, das die Tabelle nicht kennt, ergäbe eine leere Liste und eine
+  // Sperre, die nichts sperrt. Das soll vorher auffallen.
+  const countries = input.protection?.blockedCountries ?? [];
+  if (countries.length > 0) {
+    const table = await geoipTable();
+    if (!table) {
+      throw new ApiError(
+        msg('Für die Ländersperre fehlt die GeoIP-Tabelle. Sie lässt sich oben auf dieser Seite holen.')
+      );
+    }
+    const known = new Set(knownCountries(table));
+    const unknown = countries.filter((code) => !known.has(code));
+    if (unknown.length > 0) {
+      throw new ApiError(
+        msg('Die GeoIP-Tabelle kennt diese Länder nicht: {codes}.', { codes: unknown.join(', ') })
+      );
+    }
+  }
 }
 
 export async function updateGlobalSettings(

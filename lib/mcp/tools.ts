@@ -505,7 +505,8 @@ export const TOOLS: ToolDefinition[] = [
     title: 'Get global settings',
     description:
       'Returns what belongs to HAProxy as a whole: the global HTTPS lines (e.g. HSTS) and the admin IP list that locked domains point to. ' +
-      'lockedServices are targets currently restricted to the admin IPs; the list cannot be emptied while one exists.',
+      'lockedServices are targets currently restricted to the admin IPs; the list cannot be emptied while one exists. ' +
+      'protection holds blocked IPs/networks, blocked countries (ISO codes) and the rate limit per address; null means the block was edited by hand and is read-only.',
     input: {},
     annotations: READ_ONLY,
     run: () => getProxySettings(),
@@ -518,6 +519,7 @@ export const TOOLS: ToolDefinition[] = [
       'Partial update of the global settings: only the fields you send change. ' +
       'Use addAdminIps / removeAdminIps to change single entries, or adminIps to replace the whole list (not together). ' +
       'Removing an admin IP can lock people out of every locked domain. ' +
+      'blockedIps, blockedCountries and rateLimit set the access protection for every service; admin IPs are exempt from country block and rate limit, not from blockedIps. ' +
       'Side effects: rewrites haproxy.cfg and reloads HAProxy. Returns { runId }; poll get_run. Example: {"addAdminIps":["203.0.113.7"]}.',
     input: {
       addAdminIps: z.array(z.string()).optional().describe('IPs or CIDR ranges to add.'),
@@ -527,6 +529,19 @@ export const TOOLS: ToolDefinition[] = [
         .array(z.string())
         .optional()
         .describe('Replace the global HTTPS lines, e.g. ["http-response set-header Strict-Transport-Security max-age=31536000"].'),
+      blockedIps: z.array(z.string()).optional().describe('Replace the list of blocked IPs or CIDR ranges (403 for every service).'),
+      blockedCountries: z
+        .array(z.string())
+        .optional()
+        .describe('Replace the blocked countries, ISO 3166 alpha-2 codes like ["RU", "CN"]. Needs the GeoIP table.'),
+      rateLimit: z
+        .object({
+          requests: z.number().int().describe('More requests than this per period and address get 429 (10 to 100000).'),
+          period: z.enum(['10s', '1m', '10m']),
+        })
+        .nullable()
+        .optional()
+        .describe('Rate limit per client address; null turns it off.'),
     },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     run: async (args, ctx) => started(await patchProxySettings(args, ctx.actor)),

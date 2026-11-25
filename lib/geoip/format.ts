@@ -104,6 +104,27 @@ export function ipToKey(text: string): IpKey | null {
   return { family: 6, key: full >> 64n };
 }
 
+/**
+ * Eine Adresse mit allen Bits, für den Vergleich mit einem Netz
+ * (`lib/geoip/networks.ts`). Anders als `ipToKey` ohne Kürzung: ob eine
+ * Adresse in einem /128 liegt, lässt sich mit 64 Bit nicht sagen.
+ * IPv4-in-IPv6 wird zu IPv4 wie dort.
+ */
+export function parseAddress(text: string): IpKey | null {
+  const value = text.trim().replace(/^::ffff:(?=\d{1,3}(?:\.\d{1,3}){3}$)/i, '');
+  if (!value) return null;
+  if (!value.includes(':')) {
+    const key = ipv4ToNumber(value);
+    return key === null ? null : { family: 4, key };
+  }
+  const full = ipv6ToBigInt(value);
+  if (full === null) return null;
+  if (full >= 0xffffn << 32n && full < (0xffffn << 32n) + (1n << 32n)) {
+    return { family: 4, key: full & 0xffffffffn };
+  }
+  return { family: 6, key: full };
+}
+
 function ipv4ToNumber(value: string): bigint | null {
   const parts = value.split('.');
   if (parts.length !== 4) return null;

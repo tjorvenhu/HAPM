@@ -436,3 +436,14 @@
 
 /* PEM im Dialog „Zertifikat hochladen": Spalten wie in der Datei. */
 .form-textarea.mono { font-family: var(--font-mono); font-size: 0.8125rem; }
+
+/* Ein gesperrtes Land als Chip mit eigenem Entfernen-Knopf (Zugriffsschutz). */
+.hapm-country-chip { padding-right: 4px; }
+
+.hapm-chip-remove {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; padding: 0; border: 0; border-radius: var(--radius-full);
+  background: transparent; color: var(--text-tertiary); cursor: pointer;
+}
+
+.hapm-chip-remove:hover { background: var(--surface-muted); color: var(--text); }

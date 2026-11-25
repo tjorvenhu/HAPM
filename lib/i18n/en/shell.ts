@@ -32,6 +32,7 @@ export const shell: Dictionary = {
 
   // Globale Suche
   'Suchen': 'Search',
+  'Kein Treffer': 'No match',
   'Suche öffnen': 'Open search',
   'Strg K': 'Ctrl K',
   'Strg': 'Ctrl',

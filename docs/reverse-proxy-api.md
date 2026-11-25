@@ -527,6 +527,11 @@ type Settings = {
   adminIps: string[];
   adminEditable: boolean;       // false: die ACL steht mehrfach da, wird nicht angefasst
   lockedServices: string[];     // Dienste, die gerade auf diese Liste zeigen
+  protection: {                 // null: der Block # Zugriffsschutz ist von Hand geändert
+    blockedIps: string[];       // 403 für jeden Dienst, auch für Admin-IPs
+    blockedCountries: string[]; // ISO-Codes, 403 außer für Admin-IPs
+    rateLimit: { requests: number; period: '10s' | '1m' | '10m' } | null;
+  } | null;
   editable: boolean;
   dnsHooks: string[];
 };
@@ -541,8 +546,17 @@ PATCH { "addAdminIps": ["203.0.113.7"] }      // dazu
 PATCH { "removeAdminIps": ["203.0.113.7"] }   // weg
 PATCH { "adminIps": ["10.0.0.0/8"] }          // die ganze Liste ersetzen
 PATCH { "httpsLines": ["option forwardfor", …] }
-→ data: { runId, serverId, adminIps }
+PATCH { "blockedCountries": ["RU", "CN"] }    // die ganze Liste ersetzen
+PATCH { "blockedIps": ["203.0.113.0/24"] }
+PATCH { "rateLimit": { "requests": 300, "period": "10s" } }
+PATCH { "rateLimit": null }                   // abschalten
+→ data: { runId, serverId, adminIps, protection }
 ```
+
+Ein Land, das die GeoIP-Tabelle nicht kennt, wird mit `400` abgelehnt. Anders
+als in der Oberfläche prüft die Route nicht, ob der Aufrufer sich selbst
+aussperrt. Was die Sperren in `haproxy.cfg` schreiben, steht in
+`docs/reverse-proxy.md`, „Der Zugriffsschutz".
 
 `adminIps` zusammen mit `addAdminIps` wird mit `400` abgelehnt statt aufgelöst:
 „setze auf A und nimm B dazu" hat zwei vertretbare Ergebnisse.
