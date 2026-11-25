@@ -55,7 +55,7 @@ const SUGGESTIONS: { color: string; label: string }[] = [
 const SLOT_TEXT: Record<BrandingImageSlot, { title: string; hint: string; empty: string }> = {
   logo: {
     title: msgid('Logo'),
-    hint: msgid('In der Seitenleiste, bei der Anmeldung, im Einrichtungsassistenten, in Mails und auf den Seiten von HAProxy. Am besten ein PNG mit durchsichtigem Grund, quer, etwa 4:1: Gmail und Outlook zeigen in Mails kein SVG. Auf den Seiten von HAProxy steht es nur, wenn die ganze Seite samt Logo unter 15.000 Bytes bleibt, sonst steht dort der Name.'),
+    hint: msgid('In der Seitenleiste, bei der Anmeldung, im Einrichtungsassistenten, in Mails und auf den Seiten von HAProxy. Am besten quer, etwa 4:1, mit durchsichtigem Grund. Ein SVG rechnet HAPM für Mails in ein PNG um, weil Gmail und Outlook dort kein SVG zeigen. Auf den Seiten von HAProxy steht es nur, wenn die ganze Seite samt Logo unter 15.000 Bytes bleibt, sonst steht dort der Name.'),
     empty: msgid('Logo von HAPM'),
   },
   logoDark: {

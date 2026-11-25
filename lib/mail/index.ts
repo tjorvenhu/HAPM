@@ -71,7 +71,41 @@ const BRAND_LOGOS: { slot: BrandingImageSlot; cid: string; name: string }[] = [
   { slot: 'logoDark', cid: MAIL_BRAND_LOGO_DARK_CID, name: 'logo-dark' },
 ];
 
-const EXTENSIONS: Record<string, string> = { 'image/png': 'png', 'image/webp': 'webp', 'image/svg+xml': 'svg' };
+/**
+ * Welche Bildarten eine Mail so mitnimmt, wie sie sind. Ein SVG zeigen Gmail
+ * und das klassische Outlook gar nicht, WebP das klassische Outlook nicht: der
+ * Empfänger sah einen leeren Rahmen mit dem Namen darin. Alles andere wird vor
+ * dem Versand in ein PNG umgerechnet (`asMailPng`).
+ */
+const MAIL_SAFE = new Set(['image/png', 'image/jpeg', 'image/gif']);
+
+/** Dreimal die Anzeigehöhe (32 px, `lib/mail/branding.ts`): scharf auch auf hochauflösenden Bildschirmen. */
+const RASTER_HEIGHT = 96;
+
+const rasterCache = new Map<string, Buffer>();
+
+/** Ein Bild als PNG für die Mail. `null`, wenn es sich nicht umrechnen lässt. */
+async function asMailPng(data: string): Promise<Buffer | null> {
+  const cached = rasterCache.get(data);
+  if (cached) return cached;
+  try {
+    // Erst hier geladen: `sharp` bringt eine native Bibliothek mit, und die
+    // braucht nur, wer ein eigenes Logo in einer solchen Form hochgeladen hat.
+    const { default: sharp } = await import('sharp');
+    const png = await sharp(Buffer.from(data, 'base64'), { density: 300 })
+      .resize({ height: RASTER_HEIGHT, withoutEnlargement: false })
+      .png()
+      .toBuffer();
+    rasterCache.clear();
+    rasterCache.set(data, png);
+    return png;
+  } catch (err) {
+    console.error('[mail] Eigenes Logo ließ sich nicht in PNG umrechnen:', err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+const EXTENSIONS: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif' };
 
 /**
  * Das eigene Logo aus der Darstellung als Anhang, wenn der Rahmen darauf
@@ -85,12 +119,24 @@ async function brandLogoAttachments(html: string): Promise<Attachment[]> {
     if (!html.includes(`cid:${logo.cid}`)) continue;
     const image = await loadBrandingImage(logo.slot);
     if (!image) continue;
-    out.push({
-      filename: `${logo.name}.${EXTENSIONS[image.mime] ?? 'img'}`,
-      content: Buffer.from(image.data, 'base64'),
-      cid: logo.cid,
-      contentType: image.mime,
-    });
+    if (MAIL_SAFE.has(image.mime)) {
+      out.push({
+        filename: `${logo.name}.${EXTENSIONS[image.mime] ?? 'img'}`,
+        content: Buffer.from(image.data, 'base64'),
+        cid: logo.cid,
+        contentType: image.mime,
+      });
+      continue;
+    }
+    const png = await asMailPng(image.data);
+    if (png) {
+      out.push({ filename: `${logo.name}.png`, content: png, cid: logo.cid, contentType: 'image/png' });
+      continue;
+    }
+    // Lässt es sich nicht umrechnen, steht unter derselben Kennung das Logo von
+    // HAPM: besser als ein leerer Rahmen mit dem Namen darin.
+    const fallback = logoAttachments(`cid:${logo.cid === MAIL_BRAND_LOGO_DARK_CID ? MAIL_LOGO_DARK_CID : MAIL_LOGO_CID}`)[0];
+    if (fallback) out.push({ ...fallback, cid: logo.cid });
   }
   return out;
 }

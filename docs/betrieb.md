@@ -575,7 +575,11 @@ einzeln mit `--brand-name=`, `--brand-color=`, `--brand-logo=`).
   Programme zeigen Bilder von außen erst nach einem Klick, und bei einer
   internen Installation erreicht ein Telefon unterwegs die Adresse nicht. Der
   Preis: das Logo reist mit jeder Mail. SVG zeigen Gmail und das klassische
-  Outlook auf keinem der beiden Wege, die Seite „Darstellung“ rät zu PNG.
+  Outlook auf keinem der beiden Wege, WebP das klassische Outlook nicht. Vorher
+  stand dann ein leerer Rahmen mit dem Namen darin in der Mail. Deshalb rechnet
+  der Versand ein solches Logo mit `sharp` in ein PNG um (96 px hoch, dreimal
+  die Anzeigehöhe, im Prozess gemerkt); gelingt das nicht, hängt unter
+  derselben Kennung das Logo von HAPM.
 - **Größe.** Aus dem Kopf der Datei gelesen (`imageDimensions`), angezeigt 32
   Pixel hoch und höchstens 200 breit, mit `width` und `height` für Outlook.
   Lässt sie sich nicht lesen, bleibt der Kopf von HAPM.

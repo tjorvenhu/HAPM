@@ -16,8 +16,10 @@
  *    Adresse von HAPM nicht, und ohne eingetragene Adresse gäbe es gar keine.
  *
  * Der Preis ist die Größe: das Logo (bis 256 KB) reist mit jeder Mail. Ein SVG
- * zeigen Gmail und das klassische Outlook in keinem der beiden Wege. Die
- * Seite „Darstellung“ rät deshalb zu einem PNG.
+ * zeigen Gmail und das klassische Outlook in keinem der beiden Wege, WebP das
+ * klassische Outlook nicht. Solche Logos rechnet der Versand vorher in ein PNG
+ * um (`asMailPng` in `lib/mail/index.ts`); gelingt das nicht, steht dort das
+ * Logo von HAPM statt eines leeren Rahmens.
  *
  * ── Die Größe ──
  *
