@@ -38,6 +38,9 @@ const FIELD_LABELS: Record<keyof SettingsInput, string> = {
   notifyEvents: 'Ereignisse',
   mailLocale: 'Sprache der Mails',
   exposure: 'Art der Installation',
+  certificateSource: 'Herkunft der Zertifikate',
+  acmeDirectory: 'ACME-Server',
+  acmeHttpReachable: 'ACME-Server erreicht HAPM über Port 80',
   setupStatus: 'Einrichtung',
 };
 

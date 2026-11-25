@@ -12,9 +12,14 @@ import { getSetupState, setDnsAccess, updateSetupState } from '@/lib/setup/store
 /**
  * Schritt 3 der Einrichtung: der DNS-Anbieter.
  *
- * Drei Antworten. Zugangsdaten eintragen (`hook`, `values`), einen schon
- * eingerichteten Hook übernehmen (`keep`) oder den Schritt überspringen
- * (`skip`), was nur eine öffentliche Installation darf.
+ * Vier Antworten. Zugangsdaten eintragen (`hook`, `values`), einen schon
+ * eingerichteten Hook übernehmen (`keep`), einen eigenen DNS-Server nennen
+ * (`manual`), oder den Schritt überspringen (`skip`, aus der Zeit vor
+ * `manual`; nur eine öffentliche Installation darf es).
+ *
+ * „Eigener DNS-Server" heißt: HAPM richtet bei keinem Anbieter etwas ein und
+ * nennt stattdessen die Einträge, die von Hand gesetzt werden. Das geht intern
+ * wie öffentlich. Wie dann Zertifikate entstehen, fragt der nächste Schritt.
  *
  * Geschrieben wird über denselben Weg wie unter Reverse-Proxy, Einstellungen
  * (`writeDnsCredentials`): der Token geht nach `account.conf`. Über Erfolg
@@ -34,6 +39,7 @@ export async function PUT(request: Request) {
       values?: Record<string, unknown>;
       keep?: unknown;
       skip?: unknown;
+      manual?: unknown;
     }>(request);
 
     const state = await getSetupState();
@@ -48,6 +54,14 @@ export async function PUT(request: Request) {
         details,
         ip: getClientIP(request),
       });
+
+    if (body.manual === true) {
+      // Ohne Anbieter gibt es keine Wildcard, und das Token des Assistenten hat keinen Zweck mehr.
+      await updateSetupState({ dns: 'manual', dnsHook: null, wildcard: false, wildcardBase: null });
+      await setDnsAccess(null);
+      await audit('DNS-Anbieter: eigener DNS-Server');
+      return ok({ setup: await readSetupView(), tokenCheck: null });
+    }
 
     if (body.skip === true) {
       if (state.exposure === 'internal') {

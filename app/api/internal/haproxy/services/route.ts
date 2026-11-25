@@ -4,7 +4,7 @@ import { getT } from '@/lib/i18n/server';
 import { serviceActor } from '@/lib/audit';
 import { precheckCreate, probeProxy } from '@/lib/haproxy/provision';
 import { startHaproxyRun } from '@/lib/haproxy/runner';
-import { getSettings } from '@/lib/settings';
+import { getSettings, challengeFor } from '@/lib/settings';
 import {
   haproxyActor,
   proxyServers,
@@ -151,7 +151,7 @@ export async function POST(request: Request) {
     // Nicht Teil der Eingabe: der Hook steht in keiner Zeile der Konfiguration.
     const dnsHook = String(body.dnsHook ?? '').trim() || null;
     // Intern oder öffentlich: davon hängt ab, ob HTTP-01 überhaupt geht (`challenge.ts`).
-    const challenge = { exposure: (await getSettings()).exposure, dnsHook };
+    const challenge = challengeFor(await getSettings(), dnsHook);
 
     let input;
     try {

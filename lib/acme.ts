@@ -12,24 +12,26 @@
  */
 
 import { localExec } from './ssh';
-import { buildCommand, shellEscape } from './shell';
-import { msgid } from './i18n/translate';
+import { buildCommand, shellEscape, withStdin } from './shell';
+import { msg, msgid, type Message } from './i18n/translate';
+import { DEFAULT_ACME_SERVER, registerAccountInput, registerAccountScript, type EabInput } from './acme-server';
 
 export const ACME_HOME = '/root/.acme.sh';
 export const ACME = `${ACME_HOME}/acme.sh`;
 const ACME_SOURCE = process.env.HAPM_ACME_SOURCE || '/opt/acme.sh';
 
 /**
- * Die Zertifizierungsstelle, bei der beantragt wird: ein Name, den acme.sh kennt
- * (`letsencrypt`, `letsencrypt_test`, `zerossl`), oder die Adresse eines
- * ACME-Verzeichnisses, etwa einer eigenen CA. Vorgabe ist Let's Encrypt.
+ * Die Vorgabe für die Zertifizierungsstelle, wenn unter „Allgemein" kein
+ * eigener ACME-Server eingestellt ist: ein Name, den acme.sh kennt
+ * (`letsencrypt`, `letsencrypt_test`, `zerossl`) aus `HAPM_ACME_SERVER`, sonst
+ * Let's Encrypt. `letsencrypt_test` ist der Weg, HAPM auszuprobieren, ohne das
+ * Kontingent von Let's Encrypt anzufassen.
  *
- * Eine Einstellung der Installation und kein Feld in der Oberfläche: sie ändert
- * sich praktisch nie, und `letsencrypt_test` ist der Weg, HAPM auszuprobieren,
- * ohne das Kontingent von Let's Encrypt anzufassen.
+ * Für einen Antrag gilt nicht diese Funktion, sondern `challengeFor` in
+ * `lib/settings.ts`: dort steht die Einstellung vor der Umgebung.
  */
 export function acmeServer(): string {
-  return process.env.HAPM_ACME_SERVER?.trim() || 'letsencrypt';
+  return process.env.HAPM_ACME_SERVER?.trim() || DEFAULT_ACME_SERVER;
 }
 
 export interface AcmeStatus {
@@ -99,6 +101,40 @@ export async function ensureAcme(email: string | null): Promise<{ ok: boolean; d
   const res = await localExec(`${steps.join(' && ')} 2>&1`, 120_000);
   if (res.code !== 0) return { ok: false, detail: res.stdout.trim().slice(-500) };
   return { ok: true, detail: msgid(status.installed ? 'acme.sh ist eingerichtet.' : 'acme.sh wurde installiert.') };
+}
+
+/**
+ * Ein Konto beim ACME-Server anmelden, wahlweise mit External Account Binding.
+ *
+ * Für Let's Encrypt erledigt das `ensureAcme`. Ein eigener Server bekommt sein
+ * Konto beim Speichern unter „Allgemein" oder im Assistenten, und zwar sofort:
+ * eine falsche Adresse oder ein abgelehnter Schlüssel soll dort auffallen und
+ * nicht beim ersten Ziel, Minuten später, in einem Lauf. Das ist zugleich der
+ * Rückabgleich: gespeichert wird die Einstellung erst, wenn acme.sh das Konto
+ * angemeldet hat.
+ *
+ * Der HMAC-Schlüssel geht über stdin (`registerAccountScript`). acme.sh legt
+ * ihn danach selbst in seiner `ca.conf` zu diesem Server ab; HAPM speichert ihn
+ * nirgends.
+ */
+export async function registerAcmeAccount(
+  server: string,
+  email: string | null,
+  eab: EabInput | null
+): Promise<{ ok: true } | { ok: false; message: Message }> {
+  const res = await localExec(
+    // Kein `2>&1` dahinter: nach der Heredoc-Marke stünde es auf ihrer Zeile, und
+    // sie schlösse nicht mehr. Das Skript leitet selbst um.
+    withStdin(['sh', '-c', registerAccountScript(ACME_HOME), ACME], registerAccountInput(server, email, eab)),
+    120_000
+  );
+  if (res.code === 0) return { ok: true };
+  return {
+    ok: false,
+    message: msg('Der ACME-Server hat das Konto nicht angenommen: {detail}', {
+      detail: res.stdout.trim().slice(-500) || msgid('acme.sh nennt keinen Grund.'),
+    }),
+  };
 }
 
 /**

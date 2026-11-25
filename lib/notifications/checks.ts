@@ -11,10 +11,10 @@
 import fs from 'node:fs';
 import { localServer } from '../helpers';
 import { containerInfo, haproxyContainerName } from '../docker';
-import { probeProxy, readCertificates } from '../haproxy/provision';
+import { probeProxy, readCertificateInventory } from '../haproxy/provision';
 import { HAPROXY_CERT_DIR, serviceHealth, type BackendServerState, type HaproxyRoute } from '../haproxy/config';
 import { pemFileName } from '../haproxy/certs';
-import { CERT_WARN_DAYS, certificateDue, pemExpiry } from '../system/certificates';
+import { CERT_WARN_DAYS, UPLOAD_WARN_DAYS, certificateDue, pemExpiry, uploadedDue } from '../system/certificates';
 import { notify } from './index';
 import { pruneStates, resolveState } from './state';
 import { advanceStreaks, type Observed, type Streak } from './streaks';
@@ -180,7 +180,15 @@ export async function runHealthChecks(): Promise<void> {
 
 async function expiringCertificates(now: number): Promise<ExpiringCertificate[]> {
   const out: ExpiringCertificate[] = [];
-  for (const cert of await readCertificates(localServer())) {
+  const inventory = await readCertificateInventory(localServer());
+  // Hochgeladene erneuert niemand: die Erinnerung ist alles, was es für sie gibt.
+  for (const cert of inventory.uploaded) {
+    const due = uploadedDue(cert, now);
+    if (due.expiresAt !== null && due.daysLeft !== null && due.daysLeft < UPLOAD_WARN_DAYS) {
+      out.push({ mainDomain: due.mainDomain, expiresAt: due.expiresAt, daysLeft: due.daysLeft, uploaded: true });
+    }
+  }
+  for (const cert of inventory.acme) {
     let expiry: Date | null = null;
     try {
       expiry = pemExpiry(fs.readFileSync(`${HAPROXY_CERT_DIR}/${pemFileName(cert.mainDomain)}`, 'utf8'));

@@ -1,9 +1,19 @@
 import { localServer } from '../helpers';
-import { probeProxy } from '../haproxy/provision';
+import { probeProxy, readCertificateInventory } from '../haproxy/provision';
+import { findCertificateFor } from '../haproxy/certs';
+import { uploadedCoverage } from '../haproxy/cert-upload';
 import { getSettings, publicOrigin } from '../settings';
-import type { Exposure, SetupExecution, SetupStatus } from '../types';
+import type { CertificateSource, Exposure, SetupExecution, SetupStatus } from '../types';
 import { serverAddresses } from './address';
-import { listenPort, resumeStep, settleExecution, type SetupChoices, type SetupStep } from './rules';
+import {
+  certificateDomains,
+  certificateFactsOf,
+  listenPort,
+  resumeStep,
+  settleExecution,
+  type SetupChoices,
+  type SetupStep,
+} from './rules';
 import { setupExecutionAlive } from './run';
 import { getDnsAccess, getSetupState } from './store';
 import { zoneForDomain } from '../dns/store';
@@ -35,6 +45,16 @@ export interface SetupView extends Omit<SetupChoices, 'execution'> {
   dnsApi: boolean;
   /** Die unter „DNS" eingerichtete Zone, in der die Domain liegt. */
   dnsZone: string | null;
+  /** Aus den Einstellungen: woher Zertifikate kommen und bei welchem ACME-Server. */
+  certificateSource: CertificateSource;
+  acmeDirectory: string | null;
+  acmeHttpReachable: boolean;
+  /**
+   * Bei „nur hochladen": das Zertifikat, das die Domain der Oberfläche schon
+   * abdeckt. `null` heißt keins (oder nicht gefragt, weil Zertifikate über
+   * ACME kommen oder die Domain noch fehlt).
+   */
+  presentCertificate: { mainDomain: string; domains: string[]; notAfter: string | null } | null;
 }
 
 export async function readSetupView(): Promise<SetupView> {
@@ -47,11 +67,28 @@ export async function readSetupView(): Promise<SetupView> {
   const access = await getDnsAccess();
   const zone = state.domain ? await zoneForDomain(state.domain).catch(() => null) : null;
 
+  // Nur bei „nur hochladen": sonst stellt das Ausführen das Zertifikat selbst aus,
+  // und `acme.sh --list` im Takt des Pollens wäre verschenkt.
+  let presentCertificate: SetupView['presentCertificate'] = null;
+  if (settings.certificateSource === 'upload' && state.domain && probe) {
+    const inventory = await readCertificateInventory(localServer()).catch(() => null);
+    if (inventory) {
+      const found = findCertificateFor(
+        [...inventory.acme, ...uploadedCoverage(inventory.uploaded, Date.now())],
+        certificateDomains(state)
+      );
+      const uploaded = found ? inventory.uploaded.find((cert) => cert.mainDomain === found.mainDomain) : null;
+      presentCertificate = found
+        ? { mainDomain: found.mainDomain, domains: found.domains, notAfter: uploaded?.notAfter ?? null }
+        : null;
+    }
+  }
+
   const { execution, ...choices } = state;
   return {
     ...choices,
     status: settings.setupStatus,
-    step: resumeStep(state, { hasAccount: true, dnsHooks }),
+    step: resumeStep(state, { hasAccount: true, dnsHooks, certificates: certificateFactsOf(settings) }),
     activeExposure: settings.exposure,
     dnsHooks,
     acmeReady: probe ? probe.acmeReady : null,
@@ -61,5 +98,9 @@ export async function readSetupView(): Promise<SetupView> {
     serverAddresses: serverAddresses(),
     dnsApi: Boolean(access && access.hook === state.dnsHook && dnsProviderForHook(access.hook)),
     dnsZone: zone?.name ?? null,
+    certificateSource: settings.certificateSource,
+    acmeDirectory: settings.acmeDirectory,
+    acmeHttpReachable: settings.acmeHttpReachable,
+    presentCertificate,
   };
 }

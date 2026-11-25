@@ -41,6 +41,8 @@ export type AuditAction =
   | 'haproxy_dns_credentials_updated'
   | 'haproxy_certificate_issued'
   | 'haproxy_certificate_failed'
+  | 'haproxy_certificate_uploaded'
+  | 'haproxy_certificate_removed'
   | 'haproxy_import_started'
   | 'haproxy_import_completed'
   | 'haproxy_import_failed'

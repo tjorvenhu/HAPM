@@ -53,4 +53,6 @@ export const common: Dictionary = {
   'Mindestens 10 Zeichen mit Groß- und Kleinbuchstaben und einer Zahl.': 'At least 10 characters with uppercase and lowercase letters and a digit.',
   'Wert': 'Value',
   'Erneut versuchen': 'Try again',
+  // Zertifikate: hochladen, eigener ACME-Server, eigener DNS-Server
+  "hochgeladen": "uploaded",
 };

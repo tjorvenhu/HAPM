@@ -15,6 +15,8 @@ export interface ExpiringCertificate {
   expiresAt: string;
   /** Ganze Tage bis zum Ablauf, abgerundet. Negativ heißt abgelaufen. */
   daysLeft: number;
+  /** Hochgeladen: niemand erneuert es von selbst. Fehlt es (ältere Zeile), von acme.sh. */
+  uploaded?: boolean;
 }
 
 export type TargetKind = 'service' | 'stream';
@@ -111,7 +113,7 @@ export const NOTIFICATION_EVENT_GROUPS: NotificationEventGroup[] = [
       {
         type: 'certificate_expiring',
         label: msgid('Zertifikat läuft ab'),
-        description: msgid('Ein Zertifikat ist weniger als 14 Tage gültig. Einmal am Tag.'),
+        description: msgid('Unter 14 Tage gültig, ein hochgeladenes unter 30. Einmal am Tag.'),
       },
     ],
   },

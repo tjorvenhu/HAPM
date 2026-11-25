@@ -2,8 +2,8 @@ import { requireSession, requireCsrf } from '@/lib/session';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
 import { msg } from '@/lib/i18n';
 import { getT } from '@/lib/i18n/server';
-import { getProxyServer, probeProxy, checkStreamPort } from '@/lib/haproxy/provision';
-import { getSettings } from '@/lib/settings';
+import { getProxyServer, probeProxy, readCoverage, checkStreamPort } from '@/lib/haproxy/provision';
+import { challengeFor, getSettings } from '@/lib/settings';
 import { parseScopes } from '@/lib/haproxy/config';
 import { bindConflict } from '@/lib/haproxy/streams';
 import {
@@ -44,7 +44,8 @@ export async function POST(request: Request) {
     if (invalid) throw new ApiError(invalid, invalid.text.includes('MB') ? 413 : 400);
 
     const server = await getProxyServer(LOCAL_SERVER_ID);
-    const [probe, { exposure }] = await Promise.all([probeProxy(server), getSettings()]);
+    const [probe, settings] = await Promise.all([probeProxy(server), getSettings()]);
+    const { exposure } = settings;
     if (!probe.configReadable) {
       throw new ApiError(msg('Die HAProxy-Konfiguration ist nicht lesbar. Der Zustand steht in der Übersicht.'), 409);
     }
@@ -76,6 +77,9 @@ export async function POST(request: Request) {
           exposure,
           dnsHooks: probe.dnsHooks,
           dnsHook,
+          source: settings.certificateSource,
+          httpReachable: challengeFor(settings, dnsHook).httpReachable,
+          certificates: await readCoverage(server),
           acmeReady: probe.acmeReady,
           busyPorts,
         },

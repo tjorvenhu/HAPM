@@ -2,13 +2,15 @@ import { requireCsrf, requireSession } from '@/lib/session';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
 import { msg } from '@/lib/i18n';
 import { logAudit, getClientIP } from '@/lib/audit';
-import { updateSettings } from '@/lib/settings';
+import { getSettings, updateSettings } from '@/lib/settings';
 import { readSetupView } from '@/lib/setup';
 import { checkDomainAddress } from '@/lib/setup/address';
 import {
+  certificateFactsOf,
   normalizeSetupDomain,
   validateSetupDomain,
   validateWildcardBase,
+  wildcardPossible,
 } from '@/lib/setup/rules';
 import { getDnsAccess, getSetupState, setDnsAccess, updateSetupState } from '@/lib/setup/store';
 import { connectZone } from '@/lib/dns/connect';
@@ -74,9 +76,9 @@ export async function PUT(request: Request) {
     const wildcard = body.wildcard === true;
     let wildcardBase: string | null = null;
     if (wildcard) {
-      if (state.dns !== 'configured') {
+      if (!wildcardPossible(state, certificateFactsOf(await getSettings()))) {
         throw new ApiError(
-          msg('Ein Wildcard-Zertifikat braucht einen DNS-Anbieter. Er wird im Schritt davor eingerichtet.')
+          msg('Ein Wildcard-Zertifikat braucht einen DNS-Anbieter und Zertifikate über ACME. Beides wird in den Schritten davor gewählt.')
         );
       }
       wildcardBase = normalizeSetupDomain(String(body.wildcardBase ?? ''));

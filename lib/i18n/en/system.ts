@@ -562,8 +562,6 @@ export const system: Dictionary = {
   'Es läuft gerade eine Sicherung. Bitte warten, bis sie fertig ist.': 'A backup is running right now. Please wait until it is finished.',
 
   // Allgemein und Benutzer: `app/(app)/system`, `app/(app)/users`, `lib/settings.ts`, `app/api/settings`, `app/api/users`, `app/api/activity`, `app/api/search`
-  'Jedes neue Zertifikat wird über den DNS-Anbieter ausgestellt. Dafür müssen unter Reverse-Proxy, Einstellungen DNS-Zugangsdaten hinterlegt sein.':
-    'Every new certificate is issued through the DNS provider. This requires DNS credentials under Reverse proxy, Settings.',
   "Neue Zertifikate prüft Let's Encrypt über Port 80. Der DNS-Anbieter wird nur für Wildcards gebraucht.":
     "Let's Encrypt validates new certificates over port 80. The DNS provider is only needed for wildcards.",
   'Adresse von HAPM ändern?': 'Change the HAPM address?',
@@ -578,13 +576,10 @@ export const system: Dictionary = {
   "Die Adresse für Let's Encrypt ist gespeichert.": "The address for Let's Encrypt is saved.",
   'Auf „Nur im eigenen Netz" umstellen?': 'Switch to "Only on your own network"?',
   'Auf „Aus dem Internet erreichbar" umstellen?': 'Switch to "Reachable from the internet"?',
-  'Jedes neue Zertifikat wird danach über den DNS-Anbieter ausgestellt. Ohne hinterlegte DNS-Zugangsdaten lässt sich dann kein Ziel mehr anlegen. Bestehende Zertifikate behalten ihre Methode, auch bei der Erneuerung.':
-    'Every new certificate will then be issued through the DNS provider. Without stored DNS credentials, no new target can be created. Existing certificates keep their method, including on renewal.',
   "Neue Zertifikate werden danach über Port 80 geprüft. Erreicht Let's Encrypt den Server nicht, scheitert jeder neue Antrag. Bestehende Zertifikate behalten ihre Methode, auch bei der Erneuerung.":
     "New certificates will then be validated over port 80. If Let's Encrypt cannot reach the server, every new request fails. Existing certificates keep their method, including on renewal.",
   'Umstellen': 'Switch',
   'Die Art der Installation ist umgestellt. Sie gilt für neue Zertifikate.': 'The installation type is changed. It applies to new certificates.',
-  "Adresse, Art der Installation und der Kontakt bei Let's Encrypt.": "Address, installation type, and the contact at Let's Encrypt.",
   '127.0.0.1 und den Port von HAPM': '127.0.0.1 and the HAPM port',
   'Sie steht in den Links der Mails, und an ihre Domain werden Passkeys gebunden.': 'It is used in the links in emails, and passkeys are bound to its domain.',
   'HAPM ist unter der Domain erst erreichbar, wenn sie im Reverse-Proxy als Ziel angelegt ist und auf {target} zeigt. Dabei entsteht auch ihr Zertifikat. Die Adresse hier anzugeben richtet das nicht ein.':
@@ -668,4 +663,43 @@ export const system: Dictionary = {
   // components/SetupReminder.tsx, Rückfrage vor dem Überspringen
   "Einrichtung überspringen?": "Skip setup?",
   "Danach lässt sie sich nicht wieder öffnen. Adresse und Art der Installation stellen Sie unter „Allgemein“ ein, Ziele unter „Reverse-Proxy“.": "It cannot be reopened afterwards. Set the address and the type of installation under “General”, targets under “Reverse proxy”.",
+  // Zertifikate: hochladen, eigener ACME-Server, eigener DNS-Server
+  "Let's Encrypt erreicht den Server nicht. Neue Zertifikate gehen über den DNS-Anbieter, über einen eigenen ACME-Server, der HAPM über Port 80 erreicht, oder werden hochgeladen.": "Let's Encrypt cannot reach the server. New certificates go through the DNS provider, through your own ACME server that reaches HAPM on port 80, or are uploaded.",
+  "Jedes neue Zertifikat wird danach über den DNS-Anbieter ausgestellt, außer ein eigener ACME-Server erreicht HAPM über Port 80 oder Zertifikate werden hochgeladen. Ohne einen dieser Wege lässt sich kein Ziel mehr anlegen. Bestehende Zertifikate behalten ihre Methode, auch bei der Erneuerung.": "Every new certificate will then be issued through the DNS provider, unless your own ACME server reaches HAPM on port 80 or certificates are uploaded. Without one of these ways, no new target can be created. Existing certificates keep their method, including on renewal.",
+  "Adresse, Art der Installation, Zertifikate und der Kontakt beim ACME-Server.": "Address, installation type, certificates, and the contact at the ACME server.",
+  "Eigener ACME-Server": "Own ACME server",
+  "Eine CA mit ACME, etwa step-ca im eigenen Netz. Auf Wunsch mit External Account Binding.": "A CA with ACME, such as step-ca in your own network. With External Account Binding if needed.",
+  "Directory-URL": "Directory URL",
+  "Die Adresse, unter der der ACME-Server sein Verzeichnis anbietet. Bei step-ca etwa https://ca.example.org/acme/acme/directory. acme.sh muss sie über HTTPS mit einem Zertifikat erreichen, dem es vertraut.": "The address at which the ACME server offers its directory. For step-ca, for example https://ca.example.org/acme/acme/directory. acme.sh must reach it over HTTPS with a certificate it trusts.",
+  "EAB Key-ID": "EAB key ID",
+  "External Account Binding: nur nötig, wenn die CA es verlangt. Sie zeigt Key-ID und HMAC-Schlüssel beim Anlegen des Zugangs an.": "External Account Binding: only needed if the CA requires it. The CA shows the key ID and HMAC key when you create the access.",
+  "EAB HMAC-Schlüssel": "EAB HMAC key",
+  "Geht an acme.sh und wird in HAPM nicht gespeichert.": "Goes to acme.sh and is not stored in HAPM.",
+  "Dieser ACME-Server erreicht HAPM über HTTP (Port 80)": "This ACME server reaches HAPM over HTTP (port 80)",
+  "ACME-Server": "ACME server",
+  "Nur noch hochgeladene Zertifikate?": "Only uploaded certificates from now on?",
+  "HAPM beantragt danach kein Zertifikat mehr. Ein neues Ziel lässt sich nur anlegen, wenn für seine Domains schon eins hochgeladen ist. Bestehende Zertifikate von acme.sh werden weiter erneuert.": "HAPM will then request no more certificates. A new target can only be created if one is already uploaded for its domains. Existing certificates from acme.sh keep being renewed.",
+  "Gespeichert. acme.sh hat ein Konto beim ACME-Server angemeldet.": "Saved. acme.sh registered an account with the ACME server.",
+  "Gespeichert. Es gilt für neue Zertifikate.": "Saved. It applies to new certificates.",
+  "Woher neue Zertifikate kommen und bei welchem ACME-Server sie beantragt werden.": "Where new certificates come from and at which ACME server they are requested.",
+  "Über ACME ausstellen": "Issue through ACME",
+  "HAPM beantragt Zertifikate selbst über acme.sh und erneuert sie vor dem Ablauf.": "HAPM requests certificates itself through acme.sh and renews them before they expire.",
+  "Nur hochladen": "Upload only",
+  "HAPM beantragt nie selbst. Zertifikate laden Sie unter Reverse-Proxy, Zertifikate hoch.": "HAPM never requests anything itself. You upload certificates under Reverse proxy, Certificates.",
+  "Wirkt nur in einer internen Installation: dann geht jedes Zertifikat über HTTP-01 statt über DNS, typisch für eine CA im selben Netz. Wildcards gehen weiter nur über DNS.": "Only has an effect in an internal installation: every certificate then goes over HTTP-01 instead of DNS, typical for a CA in the same network. Wildcards still need DNS.",
+  "acme.sh merkt sich den Server je Zertifikat. Ein Wechsel gilt für neue Zertifikate, bestehende werden weiter beim bisherigen Server erneuert.": "acme.sh remembers the server for each certificate. A change applies to new certificates; existing ones keep being renewed at the previous server.",
+  "Zu den Zertifikaten": "Go to certificates",
+  "Bitte geben Sie die Directory-URL des ACME-Servers ein.": "Please enter the directory URL of the ACME server.",
+  "Die Directory-URL beginnt mit https://, zum Beispiel https://ca.example.org/acme/acme/directory.": "The directory URL starts with https://, for example https://ca.example.org/acme/acme/directory.",
+  "Die Directory-URL enthält Zeichen, die HAPM nicht an acme.sh weitergibt. Erlaubt sind Buchstaben, Ziffern und . _ ~ : / -": "The directory URL contains characters HAPM does not pass on to acme.sh. Allowed are letters, digits and . _ ~ : / -",
+  "Die Directory-URL ist keine gültige Adresse.": "The directory URL is not a valid address.",
+  "Die Directory-URL enthält keinen gültigen Servernamen.": "The directory URL contains no valid server name.",
+  "External Account Binding braucht beides: die Key-ID und den HMAC-Schlüssel.": "External Account Binding needs both: the key ID and the HMAC key.",
+  "Die Key-ID enthält Zeichen, die keine CA vergibt.": "The key ID contains characters no CA issues.",
+  "Der HMAC-Schlüssel ist kein Base64-Text. Kopieren Sie ihn so, wie ihn die CA anzeigt.": "The HMAC key is not Base64 text. Copy it exactly as the CA shows it.",
+  "Der ACME-Server hat das Konto nicht angenommen: {detail}": "The ACME server did not accept the account: {detail}",
+  "acme.sh nennt keinen Grund.": "acme.sh gives no reason.",
+  "Zertifikate kommen entweder über ACME oder werden hochgeladen.": "Certificates either come through ACME or are uploaded.",
+  "External Account Binding gibt es nur zusammen mit einem eigenen ACME-Server.": "External Account Binding is only available with your own ACME server.",
+  "Der Schalter für HTTP über Port 80 kennt nur an und aus.": "The switch for HTTP on port 80 only knows on and off.",
 };

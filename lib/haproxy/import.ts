@@ -80,8 +80,9 @@ import {
   type StreamBalance,
 } from './streams';
 import { planChallenge } from './challenge';
+import { findCertificateFor, type AcmeCertificate } from './certs';
 import { createTranslator, msg, msgid, type Message, type Translator } from '../i18n/translate';
-import type { Exposure } from '../types';
+import type { CertificateSource, Exposure } from '../types';
 
 /* ── Sprache ──
  *
@@ -1916,6 +1917,11 @@ export interface ImportEnvironment {
   exposure: Exposure;
   dnsHooks: string[];
   dnsHook: string | null;
+  /** Aus den Einstellungen. Fehlt es, gilt das Verhalten davor: acme.sh, HTTP-01 nur öffentlich. */
+  source?: CertificateSource;
+  httpReachable?: boolean;
+  /** Was schon ausgestellt oder hochgeladen ist. Ein Eintrag, den eins davon abdeckt, braucht keinen Antrag. */
+  certificates?: AcmeCertificate[];
   acmeReady: boolean;
   /** Ports, auf denen auf der Maschine schon etwas lauscht, mit Grund. */
   busyPorts: Record<number, string>;
@@ -1951,7 +1957,9 @@ function assessEntries(entries: ImportEntry[], env: ImportEnvironment): Assessed
           id: null,
         };
       }
-      if (!env.acmeReady) {
+      const covered = findCertificateFor(env.certificates ?? [], entry.service.domains) !== null;
+      const source = env.source ?? 'acme';
+      if (!covered && !env.acmeReady && source === 'acme') {
         return {
           ...entry,
           state: 'blocked',
@@ -1961,10 +1969,19 @@ function assessEntries(entries: ImportEntry[], env: ImportEnvironment): Assessed
       }
       const plan = planChallenge(
         entry.service.domains,
-        { exposure: env.exposure, dnsHook: env.dnsHook },
+        {
+          exposure: env.exposure,
+          dnsHook: env.dnsHook,
+          source,
+          // Für die Regel unerheblich, ausgestellt wird erst im Lauf.
+          acmeServer: '',
+          httpReachable: env.httpReachable ?? false,
+        },
         env.dnsHooks
       );
-      if (plan.method === 'unavailable') return { ...entry, state: 'blocked', reason: t(plan.message), id: null };
+      if (!covered && plan.method === 'unavailable') {
+        return { ...entry, state: 'blocked', reason: t(plan.message), id: null };
+      }
       const id = assignServiceId(env.config, entry.service, taken);
       taken.push(id);
       return { ...entry, state: 'ready', reason: null, id };

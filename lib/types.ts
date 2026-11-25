@@ -237,6 +237,24 @@ export interface Settings extends DbDoc {
    */
   exposure: Exposure;
   /**
+   * Woher Zertifikate kommen. `acme`: HAPM beantragt sie über acme.sh.
+   * `upload`: HAPM beantragt nie selbst, ein Ziel braucht ein hochgeladenes
+   * (oder schon vorhandenes) Zertifikat.
+   */
+  certificateSource: CertificateSource;
+  /**
+   * Die Directory-URL eines eigenen ACME-Servers, etwa einer CA im eigenen
+   * Netz. `null`: Let's Encrypt, oder was `HAPM_ACME_SERVER` nennt. Gilt für
+   * künftige Anträge, acme.sh merkt sich den Server je Zertifikat.
+   */
+  acmeDirectory: string | null;
+  /**
+   * Ob der eigene ACME-Server HAPM über Port 80 erreicht. Dann gilt HTTP-01
+   * auch in einer internen Installation (`lib/haproxy/challenge.ts`). Ohne
+   * eigenen Server bedeutungslos.
+   */
+  acmeHttpReachable: boolean;
+  /**
    * Der Stand der Einrichtung nach dem ersten Konto. `null` steht in jeder
    * Zeile, die es vor dem Assistenten gab: mit Konto gilt sie als abgeschlossen.
    */
@@ -244,6 +262,8 @@ export interface Settings extends DbDoc {
 }
 
 export type Exposure = 'internal' | 'public';
+
+export type CertificateSource = 'acme' | 'upload';
 
 /** `skipped`: ausdrücklich nicht zu Ende geführt, die Übersicht erinnert nicht mehr. */
 export type SetupStatus = 'open' | 'done' | 'skipped';
@@ -274,9 +294,20 @@ export interface SetupExecution {
 export interface SetupState extends DbDoc {
   /** `null`, solange im Assistenten nichts gewählt wurde. */
   exposure: Exposure | null;
-  dns: 'pending' | 'configured' | 'skipped';
+  /**
+   * `manual`: eigener DNS-Server, HAPM legt bei keinem Anbieter etwas an und
+   * nennt stattdessen die Einträge. `skipped` steht in Zeilen von vor dieser
+   * Wahl und heißt dasselbe, nur für eine öffentliche Installation.
+   */
+  dns: 'pending' | 'configured' | 'skipped' | 'manual';
   /** Der acme.sh-Hook des gewählten Anbieters. */
   dnsHook: string | null;
+  /**
+   * Ob die Frage nach den Zertifikaten beantwortet ist. Was gewählt wurde,
+   * steht in den Einstellungen (`certificateSource`, `acmeDirectory`,
+   * `acmeHttpReachable`): die Wahl gilt sofort, wie die Erreichbarkeit.
+   */
+  certificates: 'pending' | 'set';
   address: 'pending' | 'set' | 'skipped';
   domain: string | null;
   wildcard: boolean;

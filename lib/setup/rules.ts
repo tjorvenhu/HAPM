@@ -2,7 +2,7 @@
  * Die Regeln des Assistenten der Einrichtung, ohne Datenbank und ohne Netz.
  *
  * Der Assistent fragt nach dem ersten Konto vier Dinge ab (Erreichbarkeit,
- * DNS-Anbieter, Adresse der Oberfläche) und führt sie aus. Was er weiß, steht
+ * DNS-Anbieter, Zertifikate, Adresse der Oberfläche) und führt sie aus. Was er weiß, steht
  * in einer Zeile (`SetupState`), und welcher Schritt als Nächstes kommt, wird
  * daraus abgeleitet und nicht daneben gespeichert: ein gemerkter Schritt wäre
  * nach einem Abbruch genau dann falsch, wenn sich dazwischen etwas geändert
@@ -17,11 +17,13 @@ import { certCovers } from '../haproxy/certs';
 import { needsDnsChallenge } from '../haproxy/challenge';
 import { msg, msgid, type Message } from '../i18n/translate';
 import type {
+  CertificateSource,
   Exposure,
   SetupExecution,
   SetupStage,
   SetupStageKey,
   SetupState,
+  Settings,
 } from '../types';
 
 /** Die Gruppe und das Ziel, die der Assistent anlegt. */
@@ -31,13 +33,14 @@ export const DEFAULT_LISTEN_PORT = 7080;
 
 export type SetupChoices = Pick<
   SetupState,
-  'exposure' | 'dns' | 'dnsHook' | 'address' | 'domain' | 'wildcard' | 'wildcardBase' | 'execution'
+  'exposure' | 'dns' | 'dnsHook' | 'certificates' | 'address' | 'domain' | 'wildcard' | 'wildcardBase' | 'execution'
 >;
 
 export const EMPTY_SETUP: SetupChoices = {
   exposure: null,
   dns: 'pending',
   dnsHook: null,
+  certificates: 'pending',
   address: 'pending',
   domain: null,
   wildcard: false,
@@ -47,13 +50,14 @@ export const EMPTY_SETUP: SetupChoices = {
 
 /* ── Welcher Schritt als Nächstes ── */
 
-export type SetupStep = 'account' | 'exposure' | 'dns' | 'address' | 'run' | 'done';
+export type SetupStep = 'account' | 'exposure' | 'dns' | 'certificates' | 'address' | 'run' | 'done';
 
 /** Die Schritte in der Reihenfolge der Anzeige („Schritt 2 von 5"). */
 export const SETUP_STEPS: readonly Exclude<SetupStep, 'done'>[] = [
   'account',
   'exposure',
   'dns',
+  'certificates',
   'address',
   'run',
 ];
@@ -62,15 +66,63 @@ export interface SetupFacts {
   hasAccount: boolean;
   /** Die bei acme.sh eingerichteten DNS-Hooks. `null` heißt unbekannt (HAProxy antwortet nicht). */
   dnsHooks: string[] | null;
+  /** Was in den Einstellungen zu den Zertifikaten steht. Fehlt es, die Vorgabe: Let's Encrypt. */
+  certificates?: CertificateFacts;
+}
+
+/** Die Zertifikatsfrage, wie sie in den Einstellungen steht (`certificateSource`, `acmeDirectory`, `acmeHttpReachable`). */
+export interface CertificateFacts {
+  source: CertificateSource;
+  /** Ein eigener ACME-Server statt Let's Encrypt. */
+  customServer: boolean;
+  /** Der eigene Server erreicht HAPM über Port 80. Ohne eigenen Server immer `false`. */
+  httpReachable: boolean;
+}
+
+export const DEFAULT_CERTIFICATE_FACTS: CertificateFacts = { source: 'acme', customServer: false, httpReachable: false };
+
+export function certificateFactsOf(
+  settings: Pick<Settings, 'certificateSource' | 'acmeDirectory' | 'acmeHttpReachable'>
+): CertificateFacts {
+  const customServer = settings.acmeDirectory !== null;
+  return {
+    source: settings.certificateSource,
+    customServer,
+    httpReachable: customServer && settings.acmeHttpReachable,
+  };
+}
+
+/**
+ * Ob mit dieser Wahl ein Zertifikat für die Oberfläche entstehen kann.
+ *
+ * Hochladen geht immer. Über ACME geht es öffentlich (HTTP-01), mit einem
+ * DNS-Anbieter (DNS-01) oder mit einem eigenen ACME-Server, der HAPM über Port
+ * 80 erreicht. Eine interne Installation mit eigenem DNS-Server und
+ * Let's Encrypt hat keinen dieser Wege: Let's Encrypt erreicht sie weder über
+ * HTTP noch über DNS.
+ */
+export function certificatePathOpen(
+  state: Pick<SetupChoices, 'exposure' | 'dns'>,
+  facts: CertificateFacts
+): boolean {
+  if (facts.source === 'upload') return true;
+  return state.exposure === 'public' || state.dns === 'configured' || facts.httpReachable;
+}
+
+/** Eine Wildcard stellt nur acme.sh über einen DNS-Anbieter aus. Hochgeladen wird, was das Zertifikat abdeckt. */
+export function wildcardPossible(state: Pick<SetupChoices, 'dns'>, facts: CertificateFacts): boolean {
+  return state.dns === 'configured' && facts.source === 'acme';
 }
 
 /**
  * Der erste Schritt, der noch nicht beantwortet ist.
  *
  * Eine Antwort zählt nur, solange sie zur Lage passt: „übersprungen" gilt beim
- * DNS-Anbieter und bei der Adresse nur für eine öffentliche Installation, und
- * ein gewählter Anbieter nur, solange sein Hook bei acme.sh noch eingerichtet
- * ist. Sind die Hooks unbekannt, wird die gespeicherte Antwort geglaubt: das
+ * DNS-Anbieter und bei der Adresse nur für eine öffentliche Installation, ein
+ * gewählter Anbieter nur, solange sein Hook bei acme.sh noch eingerichtet ist,
+ * und die Zertifikatsfrage nur, solange es mit ihr einen Weg zum Zertifikat
+ * gibt (`certificatePathOpen`). „Eigener DNS-Server" ist eine Antwort, intern
+ * wie öffentlich: was dann intern fehlt, fragt der Schritt danach. Sind die Hooks unbekannt, wird die gespeicherte Antwort geglaubt: das
  * Ausführen prüft sie ohnehin noch einmal.
  */
 export function resumeStep(state: SetupChoices, facts: SetupFacts): SetupStep {
@@ -81,13 +133,17 @@ export function resumeStep(state: SetupChoices, facts: SetupFacts): SetupStep {
     state.dnsHook !== null && (facts.dnsHooks === null || facts.dnsHooks.includes(state.dnsHook));
   const dnsAnswered =
     (state.dns === 'configured' && hookPresent) ||
-    (state.dns === 'skipped' && state.exposure === 'public');
+    (state.dns === 'skipped' && state.exposure === 'public') ||
+    state.dns === 'manual';
   if (!dnsAnswered) return 'dns';
+
+  const certificates = facts.certificates ?? DEFAULT_CERTIFICATE_FACTS;
+  if (state.certificates !== 'set' || !certificatePathOpen(state, certificates)) return 'certificates';
 
   if (state.address === 'skipped' && state.exposure === 'public') return 'done';
   if (state.address !== 'set' || !state.domain || validateSetupDomain(state.domain)) return 'address';
   // Eine Wildcard ohne DNS-Anbieter lässt sich nicht ausstellen.
-  if (state.wildcard && state.dns !== 'configured') return 'address';
+  if (state.wildcard && !wildcardPossible(state, certificates)) return 'address';
 
   return 'run';
 }
@@ -251,12 +307,19 @@ export const STAGE_LABELS: Record<SetupStageKey, string> = {
   publicUrl: msgid('Adresse von HAPM eintragen'),
 };
 
-/** Die Schritte des Ausführens. Die DNS-Zugangsdaten nur, wenn das Zertifikat über DNS-01 geht. */
+/**
+ * Die Schritte des Ausführens. Die DNS-Zugangsdaten nur, wenn das Zertifikat
+ * über DNS-01 beantragt wird: nicht bei „nur hochladen" und nicht, wenn ein
+ * eigener ACME-Server HAPM über Port 80 erreicht.
+ */
 export function executionPlan(
-  state: Pick<SetupChoices, 'exposure' | 'domain' | 'wildcard' | 'wildcardBase'>
+  state: Pick<SetupChoices, 'exposure' | 'domain' | 'wildcard' | 'wildcardBase'>,
+  certificates: CertificateFacts = DEFAULT_CERTIFICATE_FACTS
 ): SetupStageKey[] {
   const exposure: Exposure = state.exposure ?? 'public';
-  const overDns = needsDnsChallenge(certificateDomains(state), exposure);
+  const overDns =
+    certificates.source === 'acme' &&
+    needsDnsChallenge(certificateDomains(state), exposure, certificates.httpReachable);
   return [...(overDns ? (['dns'] as const) : []), 'scope', 'certificate', 'service', 'publicUrl'];
 }
 

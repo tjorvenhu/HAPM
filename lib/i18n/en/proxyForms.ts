@@ -439,4 +439,8 @@ export const proxyForms: Dictionary = {
   'Datensatz bei DB-IP': 'Dataset at DB-IP',
   'Auf mitgelieferte zurück': 'Back to bundled table',
   'Länderdaten: {link}, Lizenz CC BY 4.0.': 'Country data: {link}, license CC BY 4.0.',
+  // Zertifikate: hochladen, eigener ACME-Server, eigener DNS-Server
+  "Diese Installation stellt keine Zertifikate selbst aus. Laden Sie zuerst unter Reverse-Proxy, Zertifikate eins hoch, das die Domains abdeckt.": "This installation does not issue certificates itself. First upload one under Reverse proxy, Certificates that covers the domains.",
+  "Diese Installation stellt keine Zertifikate selbst aus, und für diese Domains liegt keins vor. Laden Sie es zuerst unter {page} hoch.": "This installation does not issue certificates itself, and there is none for these domains. Upload it first under {page}.",
+  "Ein vorhandenes Zertifikat deckt diese Domains ab. Es wird keins beantragt.": "An existing certificate covers these domains. None will be requested.",
 };

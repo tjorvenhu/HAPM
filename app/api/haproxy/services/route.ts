@@ -2,9 +2,9 @@ import { requireSession, requireCsrf } from '@/lib/session';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
 import { getT } from '@/lib/i18n/server';
 import { getClientIP } from '@/lib/audit';
-import { getProxyServer, probeProxy, precheckCreate } from '@/lib/haproxy/provision';
+import { getProxyServer, probeProxy, precheckCreate, readPemCoverage } from '@/lib/haproxy/provision';
 import { startHaproxyRun } from '@/lib/haproxy/runner';
-import { getSettings } from '@/lib/settings';
+import { getSettings, challengeFor } from '@/lib/settings';
 import { selectedDnsDomains } from '@/lib/dns/zones';
 import { readServiceRequest } from '@/lib/haproxy/password-lock';
 import {
@@ -23,7 +23,7 @@ import type { HeaderDirection } from '@/lib/haproxy/config';
 import type { HaproxyStream } from '@/lib/haproxy/streams';
 import { surfaceTarget, type SurfaceTarget } from '@/lib/haproxy/protected';
 import { LOCAL_SERVER_ID, localServer } from '@/lib/helpers';
-import type { Exposure } from '@/lib/types';
+import type { CertificateSource, Exposure } from '@/lib/types';
 
 /**
  * Die Reverse-Proxy-Ziele.
@@ -52,6 +52,12 @@ interface ProxyRow {
   /** Intern oder öffentlich. Bei `internal` geht jedes Zertifikat über DNS-01,
    *  und das Formular zeigt die Auswahl des Hooks auch ohne Wildcard. */
   exposure: Exposure;
+  /** `upload`: HAPM beantragt nie selbst, ein Ziel braucht ein vorhandenes Zertifikat. */
+  certificateSource: CertificateSource;
+  /** Ein eigener ACME-Server erreicht HAPM über Port 80: HTTP-01 auch intern. */
+  httpChallenge: boolean;
+  /** Die Domains jeder gültigen PEM-Datei. Deckt eine davon ein Ziel ab, wird nichts beantragt. */
+  presentCertificates: string[][];
   services: HaproxyService[];
   /**
    * Das Ziel, über das die Adresse von HAPM läuft, und seine Gruppe. Beide
@@ -94,13 +100,18 @@ export async function GET() {
     const { t } = await getT();
 
     const servers = [localServer()];
-    const { exposure, publicUrl } = await getSettings();
+    const settings = await getSettings();
+    const { exposure, publicUrl } = settings;
+    const certificateBase = {
+      certificateSource: settings.certificateSource,
+      httpChallenge: challengeFor(settings, null).httpReachable,
+    };
 
     // Ein Fehler steht in der Zeile und wirft nicht: HAProxy, das gerade nicht
     // antwortet, ist eine Auskunft.
     const rows: ProxyRow[] = await Promise.all(
       servers.map(async (server) => {
-        const base = { $id: server.$id, name: server.name, host: server.host, exposure };
+        const base = { $id: server.$id, name: server.name, host: server.host, exposure, ...certificateBase };
         try {
           const probe = await probeProxy(server);
           if (!probe.configReadable) {
@@ -109,6 +120,7 @@ export async function GET() {
               version: probe.version,
               acmeReady: probe.acmeReady,
               dnsHooks: probe.dnsHooks,
+              presentCertificates: [],
               services: [],
               surface: null,
               streams: [],
@@ -124,6 +136,7 @@ export async function GET() {
             version: probe.version,
             acmeReady: probe.acmeReady,
             dnsHooks: probe.dnsHooks,
+            presentCertificates: await readPemCoverage(server),
             // Ohne Hash und Cookie-Wert der Passwortsperre: der Cookie-Wert
             // ist der Durchlass selbst und gehört nicht in den Browser.
             services: probe.services.map(withoutLockSecret),
@@ -152,6 +165,7 @@ export async function GET() {
             version: null,
             acmeReady: false,
             dnsHooks: [],
+            presentCertificates: [],
             services: [],
             surface: null,
             streams: [],
@@ -212,7 +226,7 @@ export async function POST(request: Request) {
     // siehe `RunOptions.dnsHook`.
     const dnsHook = String(body.dnsHook ?? '').trim() || null;
     // Intern oder öffentlich: davon hängt ab, ob HTTP-01 überhaupt geht (`challenge.ts`).
-    const challenge = { exposure: (await getSettings()).exposure, dnsHook };
+    const challenge = challengeFor(await getSettings(), dnsHook);
 
     let input;
     try {

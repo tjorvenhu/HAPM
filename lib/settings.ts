@@ -5,10 +5,13 @@ import { validateEmail, validateHostname } from './validation';
 import { DEFAULT_SMTP_PORT, SMTP_SECURITIES, parseSender } from './mail/config';
 import { rememberPublicUrl } from './mail/installation';
 import { isLocale, msg, type Locale } from './i18n';
+import { normalizeAcmeDirectory, validateAcmeDirectory } from './acme-server';
+import { challengeChoice, type ChallengeChoice } from './haproxy/challenge';
 import {
   COLLECTIONS,
   NOTIFICATION_EVENT_TYPES,
   SETTINGS_ID,
+  type CertificateSource,
   type Exposure,
   type NotificationEventType,
   type SetupStatus,
@@ -41,10 +44,15 @@ const DEFAULTS: SettingsData = {
   mailLocale: 'de',
   // Die Vorgabe ist das Verhalten vor dieser Einstellung: HTTP-01, DNS-01 nur für Wildcards.
   exposure: 'public',
+  // Die Vorgabe ist das Verhalten vor diesen Einstellungen: acme.sh, bei Let's Encrypt.
+  certificateSource: 'acme',
+  acmeDirectory: null,
+  acmeHttpReachable: false,
   setupStatus: null,
 };
 
 export const EXPOSURES: readonly Exposure[] = ['internal', 'public'];
+export const CERTIFICATE_SOURCES: readonly CertificateSource[] = ['acme', 'upload'];
 const SETUP_STATUSES: readonly SetupStatus[] = ['open', 'done', 'skipped'];
 
 /**
@@ -66,6 +74,11 @@ export function withDefaults(row: Partial<Settings>): SettingsData {
     notifyEvents: { ...DEFAULTS.notifyEvents, ...(merged.notifyEvents ?? {}) },
     mailLocale: isLocale(merged.mailLocale) ? merged.mailLocale : DEFAULTS.mailLocale,
     exposure: EXPOSURES.includes(merged.exposure) ? merged.exposure : DEFAULTS.exposure,
+    certificateSource: CERTIFICATE_SOURCES.includes(merged.certificateSource)
+      ? merged.certificateSource
+      : DEFAULTS.certificateSource,
+    acmeDirectory: typeof merged.acmeDirectory === 'string' && merged.acmeDirectory ? merged.acmeDirectory : null,
+    acmeHttpReachable: merged.acmeHttpReachable === true,
     setupStatus: SETUP_STATUSES.includes(merged.setupStatus as SetupStatus) ? merged.setupStatus : null,
   };
 }
@@ -106,6 +119,9 @@ export function settingsView(settings: Settings): SettingsView {
     notifyEvents: settings.notifyEvents,
     mailLocale: settings.mailLocale,
     exposure: settings.exposure,
+    certificateSource: settings.certificateSource,
+    acmeDirectory: settings.acmeDirectory,
+    acmeHttpReachable: settings.acmeHttpReachable,
     setupStatus: settings.setupStatus,
     listenPort: Number.isInteger(port) ? port : null,
   };
@@ -204,6 +220,10 @@ export interface SettingsInput {
   notifyEvents?: Partial<Record<NotificationEventType, boolean>>;
   mailLocale?: Locale;
   exposure?: Exposure;
+  certificateSource?: CertificateSource;
+  /** `null` heißt: zurück zu Let's Encrypt (oder `HAPM_ACME_SERVER`). */
+  acmeDirectory?: string | null;
+  acmeHttpReachable?: boolean;
   setupStatus?: SetupStatus;
 }
 
@@ -295,12 +315,44 @@ export function settingsPatch(
     }
     patch.exposure = input.exposure;
   }
+  if (input.certificateSource !== undefined) {
+    if (!CERTIFICATE_SOURCES.includes(input.certificateSource)) {
+      throw new ApiError(msg('Zertifikate kommen entweder über ACME oder werden hochgeladen.'));
+    }
+    patch.certificateSource = input.certificateSource;
+  }
+  if (input.acmeDirectory !== undefined) {
+    const url = input.acmeDirectory === null ? '' : normalizeAcmeDirectory(input.acmeDirectory);
+    if (url) {
+      const invalid = validateAcmeDirectory(url);
+      if (invalid) throw new ApiError(invalid);
+    }
+    patch.acmeDirectory = url || null;
+  }
+  if (input.acmeHttpReachable !== undefined) {
+    if (typeof input.acmeHttpReachable !== 'boolean') {
+      throw new ApiError(msg('Der Schalter für HTTP über Port 80 kennt nur an und aus.'));
+    }
+    patch.acmeHttpReachable = input.acmeHttpReachable;
+  }
   if (input.setupStatus !== undefined) {
     if (!SETUP_STATUSES.includes(input.setupStatus)) throw new ApiError(msg('Unbekannter Stand der Einrichtung.'));
     patch.setupStatus = input.setupStatus;
   }
 
   return patch;
+}
+
+/**
+ * Die Angabe zur Challenge für einen Vorgang, aus den Einstellungen. Die
+ * Routen rufen das und geben das Ergebnis an `provision.ts` weiter, das selbst
+ * keine Datenbank fragt.
+ */
+export function challengeFor(
+  settings: Parameters<typeof challengeChoice>[0],
+  dnsHook: string | null
+): ChallengeChoice {
+  return challengeChoice(settings, dnsHook, process.env.HAPM_ACME_SERVER);
 }
 
 export async function updateSettings(input: SettingsInput): Promise<Settings> {

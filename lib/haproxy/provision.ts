@@ -33,7 +33,6 @@
 
 import { createHash } from 'node:crypto';
 import { sshExec } from '../ssh';
-import { acmeServer } from '../acme';
 import { getSSHConfig, getServer } from '../helpers';
 import { buildCommand, withEnv, withStdin, batchCommands, splitSections, shellEscape } from '../shell';
 import { ApiError } from '../api';
@@ -101,6 +100,14 @@ import {
   pemFileName,
   type AcmeCertificate,
 } from './certs';
+import {
+  certListingCommand,
+  parseCertListing,
+  uploadedCertificates,
+  uploadedCoverage,
+  type InspectedUpload,
+  type UploadedCertificate,
+} from './cert-upload';
 import {
   findDnsProvider,
   credentialLines,
@@ -342,6 +349,64 @@ async function probeCertificates(
 /** Die Zertifikate einer Maschine für die Anzeige. */
 export async function readCertificates(server: Server): Promise<AcmeCertificate[]> {
   return probeCertificates(await getSSHConfig(server));
+}
+
+/**
+ * Die PEM-Dateien in `/etc/haproxy/certs`, die acme.sh nicht führt
+ * (`cert-upload.ts`). Gelesen wird je Datei nur das erste Zertifikat, nie der
+ * Schlüssel. Ein Fehlschlag heißt: keine bekannt, nicht „keine da".
+ */
+async function probeUploaded(
+  ssh: Awaited<ReturnType<typeof getSSHConfig>>,
+  acme: AcmeCertificate[]
+): Promise<UploadedCertificate[]> {
+  const res = await sshExec(ssh, certListingCommand(HAPROXY_CERT_DIR), SHORT_MS).catch(() => null);
+  return res ? uploadedCertificates(parseCertListing(res.stdout), acme) : [];
+}
+
+/** Was acme.sh führt und was hochgeladen ist, für die Zertifikatsseite und die Prüfungen. */
+export async function readCertificateInventory(
+  server: Server
+): Promise<{ acme: AcmeCertificate[]; uploaded: UploadedCertificate[] }> {
+  const ssh = await getSSHConfig(server);
+  const acme = await probeCertificates(ssh);
+  return { acme, uploaded: await probeUploaded(ssh, acme) };
+}
+
+/**
+ * Die Domains jeder gültigen PEM-Datei im Zertifikatsverzeichnis, ohne
+ * `acme.sh --list`: für das Formular eines Ziels, das wissen will, ob für
+ * seine Domains schon ein Zertifikat daliegt. Ob es von acme.sh kommt oder
+ * hochgeladen ist, spielt dafür keine Rolle, und die Übersicht pollt im
+ * Minutentakt.
+ */
+export async function readPemCoverage(server: Server): Promise<string[][]> {
+  const ssh = await getSSHConfig(server);
+  const res = await sshExec(ssh, certListingCommand(HAPROXY_CERT_DIR), SHORT_MS).catch(() => null);
+  if (!res) return [];
+  const now = Date.now();
+  return uploadedCertificates(parseCertListing(res.stdout), [])
+    .filter((cert) => cert.notAfter !== null && Date.parse(cert.notAfter) > now && cert.domains.length > 0)
+    .map((cert) => cert.domains);
+}
+
+/** Was eine Domain jetzt schon abdeckt, für eine Vorschau ohne Lock (Import). */
+export async function readCoverage(server: Server): Promise<AcmeCertificate[]> {
+  return (await probeCoverage(await getSSHConfig(server))).certs;
+}
+
+/**
+ * Alles, was eine Domain abdecken kann: was acme.sh ausgestellt hat und was
+ * hochgeladen und noch gültig ist. Danach richtet sich `findCertificateFor`,
+ * damit für eine Domain mit hochgeladenem Zertifikat nichts beantragt wird.
+ */
+async function probeCoverage(ssh: Awaited<ReturnType<typeof getSSHConfig>>): Promise<{
+  certs: AcmeCertificate[];
+  uploaded: UploadedCertificate[];
+}> {
+  const acme = await probeCertificates(ssh);
+  const uploaded = await probeUploaded(ssh, acme);
+  return { certs: [...acme, ...uploadedCoverage(uploaded, Date.now())], uploaded };
 }
 
 /**
@@ -796,24 +861,34 @@ function pemPath(mainDomain: string): string {
 }
 
 /**
- * Ob sich für diese Domains überhaupt ein Zertifikat ausstellen lässt, und wie:
- * geprüft, bevor irgendetwas geschrieben wird.
+ * Ob es für diese Domains ein Zertifikat geben wird, und wie: geprüft, bevor
+ * irgendetwas geschrieben wird.
  *
  * Die Regel selbst steht in `challenge.ts` (HTTP-01, außer bei einer Wildcard
- * oder einer internen Installation). Hier kommt dazu, was die Maschine sagt:
- * ob acme.sh da ist und welche DNS-Hooks eingerichtet sind.
+ * oder einer internen Installation; nie bei „nur hochladen"). Hier kommt
+ * dazu, was die Maschine sagt: ob acme.sh da ist, welche DNS-Hooks
+ * eingerichtet sind, und, nur wenn sonst nichts ginge, ob schon ein passendes
+ * Zertifikat daliegt.
  *
- * Der Hook wird verlangt, sobald DNS-01 nötig ist, auch wenn ein passendes
- * Zertifikat vielleicht schon auf der Maschine liegt. Das nachzusehen wäre
- * eine zweite Runde in jeder Vorabprüfung. Ist es doch da, kostet der Hook
- * nichts: `issueAndDeploy` beantragt dann gar nicht erst.
+ * Nachgesehen wird erst im Fehlerfall. Geht der Antrag, kostet die Frage eine
+ * Runde `acme.sh --list` in jeder Vorabprüfung, und `issueAndDeploy` sieht
+ * ohnehin nach, bevor es beantragt. Geht er nicht, ist ein vorhandenes
+ * Zertifikat (eine Wildcard von früher, ein hochgeladenes) der Unterschied
+ * zwischen „geht" und „geht nicht".
  */
-function assertIssuable(
+async function assertIssuable(
+  ssh: Awaited<ReturnType<typeof getSSHConfig>>,
   probe: ProxyProbe,
   domains: string[],
   challenge: ChallengeChoice
-): ChallengePlan {
-  if (!probe.acmeReady) {
+): Promise<ChallengePlan> {
+  const plan = planChallenge(domains, challenge, probe.dnsHooks);
+  if (probe.acmeReady && plan.method !== 'unavailable') return plan;
+
+  const { certs } = await probeCoverage(ssh);
+  if (findCertificateFor(certs, domains)) return plan;
+
+  if (!probe.acmeReady && challenge.source === 'acme') {
     throw new ApiError(
       msg(
         'acme.sh ({acme}) oder das Zertifikatsverzeichnis ({dir}) fehlt. Ohne beides lässt sich kein Zertifikat ausstellen. HAPM legt beides beim Start an. Ob das geklappt hat, steht in der Übersicht.',
@@ -821,7 +896,6 @@ function assertIssuable(
       )
     );
   }
-  const plan = planChallenge(domains, challenge, probe.dnsHooks);
   if (plan.method === 'unavailable') throw new ApiError(plan.message);
   return plan;
 }
@@ -839,9 +913,11 @@ async function issueAndDeploy(
   ssh: Awaited<ReturnType<typeof getSSHConfig>>,
   domains: string[],
   plan: ChallengePlan,
-  certs: AcmeCertificate[],
+  coverage: { certs: AcmeCertificate[]; uploaded: UploadedCertificate[] },
+  acmeServer: string,
   steps: StepLog
 ): Promise<boolean> {
+  const { certs } = coverage;
   const mainDomain = domains[0];
 
   /* ── Erst nachsehen, dann beantragen ──
@@ -867,7 +943,7 @@ async function issueAndDeploy(
       ACME,
       '--issue',
       '--server',
-      acmeServer(),
+      acmeServer,
       ...challengeArgs(plan, ACME_PORT),
       '--keylength',
       'ec-256',
@@ -888,7 +964,12 @@ async function issueAndDeploy(
   await steps.push({
     label: msgid(issue.code === 2 ? 'Zertifikat war noch gültig' : 'Zertifikat ausgestellt'),
     ok: true,
-    detail: `${domains.join(', ')} (${plan.method === 'dns' ? `DNS-01 über ${plan.hook}` : 'HTTP-01'})`,
+    detail:
+      `${domains.join(', ')} (${plan.method === 'dns' ? `DNS-01 über ${plan.hook}` : 'HTTP-01'}, ${acmeServer})` +
+      // Der Deploy-Hook schreibt unter demselben Namen: das hochgeladene ist danach weg.
+      (coverage.uploaded.some((cert) => cert.file === pemFileName(mainDomain))
+        ? `. Es ersetzt das hochgeladene Zertifikat ${pemFileName(mainDomain)}.`
+        : ''),
   });
 
   const deploy = await sshExec(
@@ -1005,7 +1086,7 @@ export async function createService(
         })
       );
     }
-    const plan = assertIssuable(probe, input.domains, challenge);
+    const plan = await assertIssuable(ssh, probe, input.domains, challenge);
     assertLockSupported(server, probe, input);
 
     // Wirft bei doppelter ID oder belegter Domain — bevor irgendetwas passiert,
@@ -1015,8 +1096,8 @@ export async function createService(
 
     /* ── Zertifikat ── */
     await steps.phase('certificate');
-    const certs = await probeCertificates(ssh);
-    if (!(await issueAndDeploy(ssh, input.domains, plan, certs, steps))) {
+    const coverage = await probeCoverage(ssh);
+    if (!(await issueAndDeploy(ssh, input.domains, plan, coverage, challenge.acmeServer, steps))) {
       return { steps: steps.steps };
     }
 
@@ -1089,6 +1170,19 @@ export async function deleteService(
       ? (certs.find((c) => c.mainDomain.toLowerCase() === mainDomain.toLowerCase()) ?? null)
       : null;
     const sharedWith = cert ? certificateUsers(cert, parseHaproxyConfig(nextConfig)) : [];
+    // Ein hochgeladenes Zertifikat unter demselben Namen entsteht nicht mit dem
+    // Dienst und vergeht nicht mit ihm: entfernt wird es auf der Zertifikatsseite.
+    const uploadedHere =
+      mainDomain !== null &&
+      (await probeUploaded(ssh, certs)).some((u) => u.file === pemFileName(mainDomain));
+
+    if (uploadedHere) {
+      await steps.push({
+        label: msgid('Hochgeladenes Zertifikat bleibt stehen'),
+        ok: true,
+        detail: `${pemFileName(mainDomain!)} wird unter Reverse-Proxy, Zertifikate entfernt, nicht mit dem Ziel.`,
+      });
+    }
 
     if (cert && sharedWith.length > 0) {
       await steps.push({
@@ -1100,7 +1194,7 @@ export async function deleteService(
       });
     }
 
-    const keepCertificate = sharedWith.length > 0;
+    const keepCertificate = sharedWith.length > 0 || uploadedHere;
     const pem = mainDomain && !keepCertificate ? pemPath(mainDomain) : null;
     const parked = pem ? `${pem}.hapm-removing` : null;
 
@@ -1215,12 +1309,12 @@ export async function updateService(
     const newMain = input.domains[0];
     const mainChanged = oldMain !== null && oldMain.toLowerCase() !== newMain.toLowerCase();
 
-    const plan = certNeeded ? assertIssuable(probe, input.domains, challenge) : null;
+    const plan = certNeeded ? await assertIssuable(ssh, probe, input.domains, challenge) : null;
 
     await steps.phase('certificate');
     if (plan) {
-      const certs = await probeCertificates(ssh);
-      if (!(await issueAndDeploy(ssh, input.domains, plan, certs, steps))) {
+      const coverage = await probeCoverage(ssh);
+      if (!(await issueAndDeploy(ssh, input.domains, plan, coverage, challenge.acmeServer, steps))) {
         return { steps: steps.steps };
       }
     } else {
@@ -1257,14 +1351,20 @@ export async function updateService(
 
       // Dieselbe Frage wie beim Löschen: das alte Zertifikat kann ein Wildcard
       // sein, an dem noch andere Dienste hängen.
-      const oldCert = (await probeCertificates(ssh)).find(
-        (c) => c.mainDomain.toLowerCase() === oldMain.toLowerCase()
-      );
+      const acmeNow = await probeCertificates(ssh);
+      const oldCert = acmeNow.find((c) => c.mainDomain.toLowerCase() === oldMain.toLowerCase());
       const sharedWith = oldCert
         ? certificateUsers(oldCert, parseHaproxyConfig(nextConfig))
         : [];
+      const oldUploaded = (await probeUploaded(ssh, acmeNow)).some((u) => u.file === pemFileName(oldMain));
 
-      if (sharedWith.length > 0) {
+      if (oldUploaded) {
+        await steps.push({
+          label: msgid('Hochgeladenes Zertifikat bleibt stehen'),
+          ok: true,
+          detail: `${pemFileName(oldMain)} wird unter Reverse-Proxy, Zertifikate entfernt, nicht mit dem Ziel.`,
+        });
+      } else if (sharedWith.length > 0) {
         await steps.push({
           label: msgid('Altes Zertifikat bleibt stehen'),
           ok: true,
@@ -1350,7 +1450,7 @@ export async function precheckCreate(
   challenge: ChallengeChoice
 ): Promise<CreateServiceInput> {
   const probe = await readableProbe(server);
-  assertIssuable(probe, input.domains, challenge);
+  await assertIssuable(await getSSHConfig(server), probe, input.domains, challenge);
   assertLockSupported(server, probe, input);
 
   // Vergeben und vormerken ohne ein `await` dazwischen: sonst läse ein zweiter
@@ -1390,7 +1490,7 @@ export async function precheckUpdate(
     throw new ApiError(serviceNotEditable(oldId, current.extras));
   }
   if (certificateChanged(current.domains, input.domains)) {
-    assertIssuable(probe, input.domains, challenge);
+    await assertIssuable(await getSSHConfig(server), probe, input.domains, challenge);
   }
   assertLockSupported(server, probe, input);
   replaceService(probe.raw, oldId, input);
@@ -1427,7 +1527,7 @@ export async function precheckCertificate(
   const invalid = validateCertificateDomains(domains);
   if (invalid) throw new ApiError(invalid);
   const probe = await readableProbe(server);
-  assertIssuable(probe, domains, challenge);
+  await assertIssuable(await getSSHConfig(server), probe, domains, challenge);
 }
 
 export async function issueCertificate(
@@ -1445,12 +1545,239 @@ export async function issueCertificate(
 
     const ssh = await getSSHConfig(server);
     const probe = await probeProxy(server);
-    const plan = assertIssuable(probe, domains, challenge);
+    const plan = await assertIssuable(ssh, probe, domains, challenge);
 
     await steps.phase('certificate');
-    const certs = await probeCertificates(ssh);
-    await issueAndDeploy(ssh, domains, plan, certs, steps);
+    await issueAndDeploy(ssh, domains, plan, await probeCoverage(ssh), challenge.acmeServer, steps);
     return { steps: steps.steps };
+  });
+}
+
+/* ── Hochgeladene Zertifikate ──
+ *
+ * Synchron und ohne Lauf-Zeile, wie die DNS-Zugangsdaten: es wird nichts
+ * beantragt, der Vorgang ist in Sekunden durch. Der wichtigere Grund ist der
+ * Schlüssel. Ein Lauf trägt seine Angaben in `haproxy_runs`, bis er startet;
+ * der private Schlüssel stünde dann in der Datenbank. So geht er aus der
+ * Anfrage über stdin in die Datei und nirgends sonst hin.
+ *
+ * Dieselben Riegel wie an `haproxy.cfg`: der Lock gegen HAPM selbst, die
+ * bisherige Datei neben dem Verzeichnis als Rückweg, `haproxy -c` vor dem
+ * Neuladen, und ein Neuladen, das scheitert, spielt den alten Stand zurück.
+ *
+ * Die Zwischendateien liegen in `/etc/haproxy` und nicht in
+ * `/etc/haproxy/certs`: HAProxy lädt das Verzeichnis als Ganzes, jede Datei
+ * darin wäre beim nächsten Neuladen ein Zertifikat, auch eine halbe. */
+
+const UPLOAD_STAGING = '/etc/haproxy/hapm-upload.pem.hapm-new';
+const UPLOAD_PREVIOUS = '/etc/haproxy/hapm-upload.pem.hapm-previous';
+const UPLOAD_OLD = '/etc/haproxy/hapm-upload-old.pem.hapm-previous';
+
+/** Die Dienste, die nach dem Wegnehmen dieses Zertifikats ohne eines dastünden. */
+function strandedServices(
+  domains: string[],
+  services: HaproxyService[],
+  others: AcmeCertificate[]
+): { id: string; domains: string[] }[] {
+  return services
+    .map((service) => ({
+      id: service.id,
+      domains: service.domains.filter(
+        (domain) =>
+          domains.some((p) => certCovers(p, domain)) &&
+          !others.some((cert) => cert.domains.some((p) => certCovers(p, domain)))
+      ),
+    }))
+    .filter((entry) => entry.domains.length > 0);
+}
+
+/** Prüfen und neu laden; scheitert eins davon, kommt `restore` und ein zweites Neuladen. */
+async function checkAndReload(
+  ssh: Awaited<ReturnType<typeof getSSHConfig>>,
+  restore: () => Promise<void>
+): Promise<void> {
+  const check = await sshExec(ssh, buildCommand(['haproxy', '-c', '-f', HAPROXY_CFG]), SHORT_MS);
+  if (check.code !== 0) {
+    await restore();
+    throw new ApiError(
+      msg('HAProxy nimmt die Zertifikate so nicht an. Es wurde nichts geändert: {detail}', {
+        detail: tail(check.stderr || check.stdout),
+      })
+    );
+  }
+  const reload = await sshExec(ssh, buildCommand(RELOAD_ARGV), RELOAD_MS);
+  if (reload.code !== 0) {
+    await restore();
+    await sshExec(ssh, buildCommand(RELOAD_ARGV), RELOAD_MS).catch(() => null);
+    throw new ApiError(
+      msg('HAProxy ließ sich nicht neu laden. Der vorherige Stand ist zurückgespielt: {detail}', {
+        detail: tail(reload.stderr || reload.stdout),
+      })
+    );
+  }
+}
+
+/**
+ * Ein geprüftes Zertifikat (`inspectUpload`) nach `/etc/haproxy/certs` legen
+ * und HAProxy neu laden.
+ *
+ * `replace` ist die Datei, die es ersetzt. Ohne sie wird eine vorhandene Datei
+ * gleichen Namens nicht überschrieben: wer ersetzen will, sagt das. Was die
+ * bisherige Datei abgedeckt hat und ein Ziel braucht, muss das neue auch
+ * abdecken, sonst stünde dieses Ziel nach dem Neuladen ohne Zertifikat da.
+ */
+export async function uploadCertificate(
+  server: Server,
+  upload: InspectedUpload,
+  replace: string | null
+): Promise<void> {
+  await withProxyLock(server.$id, async () => {
+    const ssh = await getSSHConfig(server);
+    const probe = await readableProbe(server);
+    const acme = await probeCertificates(ssh);
+    const uploaded = await probeUploaded(ssh, acme);
+
+    if (acme.some((cert) => cert.createdAt !== null && pemFileName(cert.mainDomain) === upload.file)) {
+      throw new ApiError(
+        msg(
+          'Für {domain} führt acme.sh ein Zertifikat unter demselben Dateinamen. Ein hochgeladenes an seiner Stelle überschriebe die nächste Erneuerung.',
+          { domain: upload.mainDomain }
+        ),
+        409
+      );
+    }
+
+    const previous = replace ? uploaded.find((cert) => cert.file === replace) : null;
+    if (replace && !previous) {
+      throw new ApiError(msg('Das Zertifikat {file} ist kein hochgeladenes. Ersetzt werden können nur hochgeladene.', { file: replace }), 404);
+    }
+    const sameName = uploaded.find((cert) => cert.file === upload.file);
+    if (sameName && sameName.file !== replace) {
+      throw new ApiError(
+        msg('Unter {file} liegt schon ein hochgeladenes Zertifikat. Ersetzen Sie es über seine Zeile.', { file: upload.file }),
+        409
+      );
+    }
+
+    if (previous) {
+      const others = [
+        ...acme.filter((cert) => cert.createdAt !== null),
+        ...uploadedCoverage(
+          uploaded.filter((cert) => cert.file !== previous.file),
+          Date.now()
+        ),
+        { mainDomain: upload.mainDomain, domains: upload.domains, keyLength: null, createdAt: upload.notBefore, renewAt: null },
+      ];
+      const stranded = strandedServices(previous.domains, probe.services, others);
+      if (stranded.length > 0) {
+        throw new ApiError(
+          msg('Das neue Zertifikat deckt nicht ab, was das bisherige für diese Ziele abgedeckt hat: {list}.', {
+            list: stranded.map((entry) => `${entry.id} (${entry.domains.join(', ')})`).join('; '),
+          }),
+          409
+        );
+      }
+    }
+
+    const target = `${HAPROXY_CERT_DIR}/${upload.file}`;
+    const write = await sshExec(
+      ssh,
+      withStdin(['sh', '-c', 'umask 077 && cat > "$1"', 'sh', UPLOAD_STAGING], upload.pem),
+      SHORT_MS
+    );
+    if (write.code !== 0) {
+      throw new ApiError(msg('Das Zertifikat ließ sich nicht ablegen: {detail}', { detail: tail(write.stderr || write.stdout) }));
+    }
+
+    // Der bisherige Stand liegt neben dem Verzeichnis, nicht darin.
+    const hadTarget =
+      (await sshExec(
+        ssh,
+        `test -f ${shellEscape(target)} && cp -a ${shellEscape(target)} ${shellEscape(UPLOAD_PREVIOUS)} && echo ja`,
+        SHORT_MS
+      )).stdout.trim() === 'ja';
+    const oldFile = previous && previous.file !== upload.file ? `${HAPROXY_CERT_DIR}/${previous.file}` : null;
+    if (oldFile) {
+      await sshExec(ssh, buildCommand(['mv', oldFile, UPLOAD_OLD]), SHORT_MS);
+    }
+
+    const restore = async () => {
+      await sshExec(
+        ssh,
+        hadTarget
+          ? `cat ${shellEscape(UPLOAD_PREVIOUS)} > ${shellEscape(target)}`
+          : buildCommand(['rm', '-f', '--', target]),
+        SHORT_MS
+      ).catch(() => null);
+      if (oldFile) await sshExec(ssh, buildCommand(['mv', UPLOAD_OLD, oldFile]), SHORT_MS).catch(() => null);
+    };
+
+    // `cat >` und nicht `cp`: eine vorhandene Datei behält ihren Inode, eine neue
+    // entsteht unter `umask 077`. `chmod` danach, falls die alte offener stand.
+    const install = await sshExec(
+      ssh,
+      `umask 077 && cat ${shellEscape(UPLOAD_STAGING)} > ${shellEscape(target)} && chmod 600 ${shellEscape(target)}`,
+      SHORT_MS
+    );
+    if (install.code !== 0) {
+      await restore();
+      await sshExec(ssh, buildCommand(['rm', '-f', '--', UPLOAD_STAGING]), SHORT_MS).catch(() => null);
+      throw new ApiError(msg('Das Zertifikat ließ sich nicht einsetzen: {detail}', { detail: tail(install.stderr || install.stdout) }));
+    }
+
+    await sshExec(ssh, buildCommand(['rm', '-f', '--', UPLOAD_STAGING]), SHORT_MS).catch(() => null);
+    // Scheitert es, bleiben die Sicherungen liegen: sie sind dann der einzige Rückweg von Hand.
+    await checkAndReload(ssh, restore);
+    await sshExec(ssh, buildCommand(['rm', '-f', '--', UPLOAD_PREVIOUS, UPLOAD_OLD]), SHORT_MS).catch(() => null);
+  });
+}
+
+/**
+ * Ein hochgeladenes Zertifikat entfernen. Nur, wenn kein Ziel es braucht:
+ * gebraucht heißt, eine Domain eines Ziels deckt danach kein anderes
+ * Zertifikat mehr ab. Sonst antwortete HAProxy dort mit dem Platzhalter.
+ */
+export async function removeUploadedCertificate(server: Server, file: string): Promise<UploadedCertificate> {
+  return withProxyLock(server.$id, async () => {
+    const ssh = await getSSHConfig(server);
+    const probe = await readableProbe(server);
+    const acme = await probeCertificates(ssh);
+    const uploaded = await probeUploaded(ssh, acme);
+    const cert = uploaded.find((entry) => entry.file === file);
+    if (!cert) {
+      throw new ApiError(
+        msg('{file} ist kein hochgeladenes Zertifikat. Zertifikate von acme.sh vergehen mit ihrem Ziel.', { file }),
+        404
+      );
+    }
+
+    const others = [
+      ...acme.filter((entry) => entry.createdAt !== null),
+      ...uploadedCoverage(
+        uploaded.filter((entry) => entry.file !== file),
+        Date.now()
+      ),
+    ];
+    const stranded = strandedServices(cert.domains, probe.services, others);
+    if (stranded.length > 0) {
+      throw new ApiError(
+        msg('Das Zertifikat wird noch gebraucht: {list}. Entfernen Sie zuerst die Ziele oder laden Sie ein anderes Zertifikat für sie hoch.', {
+          list: stranded.map((entry) => `${entry.id} (${entry.domains.join(', ')})`).join('; '),
+        }),
+        409
+      );
+    }
+
+    const path = `${HAPROXY_CERT_DIR}/${file}`;
+    const move = await sshExec(ssh, buildCommand(['mv', path, UPLOAD_OLD]), SHORT_MS);
+    if (move.code !== 0) {
+      throw new ApiError(msg('Das Zertifikat ließ sich nicht entfernen: {detail}', { detail: tail(move.stderr || move.stdout) }));
+    }
+    await checkAndReload(ssh, async () => {
+      await sshExec(ssh, buildCommand(['mv', UPLOAD_OLD, path]), SHORT_MS).catch(() => null);
+    });
+    await sshExec(ssh, buildCommand(['rm', '-f', '--', UPLOAD_OLD]), SHORT_MS).catch(() => null);
+    return cert;
   });
 }
 

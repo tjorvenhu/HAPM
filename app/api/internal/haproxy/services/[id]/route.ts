@@ -4,7 +4,7 @@ import { msg } from '@/lib/i18n';
 import { serviceActor } from '@/lib/audit';
 import { precheckDelete, precheckUpdate, probeProxy } from '@/lib/haproxy/provision';
 import { startHaproxyRun } from '@/lib/haproxy/runner';
-import { getSettings } from '@/lib/settings';
+import { getSettings, challengeFor } from '@/lib/settings';
 import {
   haproxyActor,
   readDnsDomains,
@@ -94,7 +94,7 @@ export async function PATCH(request: Request, { params }: Params) {
     const dnsHook = String(body.dnsHook ?? '').trim() || null;
     // Intern oder öffentlich: davon hängt ab, ob HTTP-01 überhaupt geht (`challenge.ts`).
     const settings = await getSettings();
-    const challenge = { exposure: settings.exposure, dnsHook };
+    const challenge = challengeFor(settings, dnsHook);
     // Das Ziel, über das die Oberfläche läuft, behält deren Domain (`protected.ts`).
     const protection = { publicUrl: settings.publicUrl };
 

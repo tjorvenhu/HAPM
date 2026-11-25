@@ -3,6 +3,8 @@ import {
   EMPTY_SETUP,
   INTERRUPTED,
   certificateDomains,
+  certificateFactsOf,
+  certificatePathOpen,
   executionOutcome,
   executionPlan,
   hapmServiceInput,
@@ -17,6 +19,8 @@ import {
   validateSetupDomain,
   validateWildcardBase,
   wildcardBaseOf,
+  wildcardPossible,
+  type CertificateFacts,
   type SetupChoices,
 } from '@/lib/setup/rules';
 import { validateCreateInput } from '@/lib/haproxy/config';
@@ -53,7 +57,12 @@ describe('resumeStep', () => {
   });
 
   it('öffentlich darf den DNS-Anbieter überspringen', () => {
-    expect(resumeStep(state({ exposure: 'public', dns: 'skipped' }), ACCOUNT)).toBe('address');
+    expect(resumeStep(state({ exposure: 'public', dns: 'skipped' }), ACCOUNT)).toBe('certificates');
+  });
+
+  it('ein eigener DNS-Server ist eine Antwort, intern wie öffentlich', () => {
+    expect(resumeStep(state({ exposure: 'internal', dns: 'manual' }), ACCOUNT)).toBe('certificates');
+    expect(resumeStep(state({ exposure: 'public', dns: 'manual' }), ACCOUNT)).toBe('certificates');
   });
 
   it('intern nicht: ein übersprungener Anbieter kommt wieder', () => {
@@ -62,7 +71,7 @@ describe('resumeStep', () => {
   });
 
   it('ein gewählter Anbieter zählt nur, solange sein Hook eingerichtet ist', () => {
-    const chosen = state({ exposure: 'internal', dns: 'configured', dnsHook: 'dns_cf' });
+    const chosen = state({ exposure: 'internal', dns: 'configured', dnsHook: 'dns_cf', certificates: 'set' });
     expect(resumeStep(chosen, { hasAccount: true, dnsHooks: ['dns_cf'] })).toBe('address');
     // Jemand hat die Zugangsdaten inzwischen entfernt.
     expect(resumeStep(chosen, { hasAccount: true, dnsHooks: [] })).toBe('dns');
@@ -71,7 +80,7 @@ describe('resumeStep', () => {
 
   it('unbekannte Hooks werfen niemanden zurück', () => {
     // HAProxy antwortet gerade nicht: das ist keine Auskunft über die Zugangsdaten.
-    const chosen = state({ exposure: 'internal', dns: 'configured', dnsHook: 'dns_cf' });
+    const chosen = state({ exposure: 'internal', dns: 'configured', dnsHook: 'dns_cf', certificates: 'set' });
     expect(resumeStep(chosen, { hasAccount: true, dnsHooks: null })).toBe('address');
   });
 
@@ -80,6 +89,7 @@ describe('resumeStep', () => {
       exposure: 'internal',
       dns: 'configured',
       dnsHook: 'dns_cf',
+      certificates: 'set',
       address: 'set',
       domain: 'hapm.example.org',
       wildcard: true,
@@ -89,10 +99,12 @@ describe('resumeStep', () => {
   });
 
   it('öffentlich ohne Adresse ist fertig, intern nicht', () => {
-    expect(resumeStep(state({ exposure: 'public', dns: 'skipped', address: 'skipped' }), ACCOUNT)).toBe('done');
+    expect(
+      resumeStep(state({ exposure: 'public', dns: 'skipped', certificates: 'set', address: 'skipped' }), ACCOUNT)
+    ).toBe('done');
     expect(
       resumeStep(
-        state({ exposure: 'internal', dns: 'configured', dnsHook: 'dns_cf', address: 'skipped' }),
+        state({ exposure: 'internal', dns: 'configured', dnsHook: 'dns_cf', certificates: 'set', address: 'skipped' }),
         { hasAccount: true, dnsHooks: ['dns_cf'] }
       )
     ).toBe('address');
@@ -102,6 +114,7 @@ describe('resumeStep', () => {
     const broken = state({
       exposure: 'public',
       dns: 'skipped',
+      certificates: 'set',
       address: 'set',
       domain: 'hapm.example.org',
       wildcard: true,
@@ -115,6 +128,7 @@ describe('resumeStep', () => {
     const failed = state({
       exposure: 'public',
       dns: 'skipped',
+      certificates: 'set',
       address: 'set',
       domain: 'hapm.example.org',
       execution: {
@@ -124,6 +138,64 @@ describe('resumeStep', () => {
       },
     });
     expect(resumeStep(failed, ACCOUNT)).toBe('run');
+  });
+});
+
+describe('die Zertifikatsfrage', () => {
+  const LE: CertificateFacts = { source: 'acme', customServer: false, httpReachable: false };
+  const CUSTOM: CertificateFacts = { source: 'acme', customServer: true, httpReachable: false };
+  const CUSTOM_HTTP: CertificateFacts = { source: 'acme', customServer: true, httpReachable: true };
+  const UPLOAD: CertificateFacts = { source: 'upload', customServer: false, httpReachable: false };
+
+  it('kommt nach dem DNS-Anbieter und bleibt, bis sie beantwortet ist', () => {
+    const answered = state({ exposure: 'public', dns: 'manual', certificates: 'set' });
+    expect(resumeStep({ ...answered, certificates: 'pending' }, { ...ACCOUNT, certificates: LE })).toBe('certificates');
+    expect(resumeStep(answered, { ...ACCOUNT, certificates: LE })).toBe('address');
+  });
+
+  it("intern mit eigenem DNS-Server: Let's Encrypt hat keinen Weg", () => {
+    const manual = { exposure: 'internal' as const, dns: 'manual' as const };
+    expect(certificatePathOpen(manual, LE)).toBe(false);
+    expect(certificatePathOpen(manual, CUSTOM)).toBe(false);
+    expect(certificatePathOpen(manual, CUSTOM_HTTP)).toBe(true);
+    expect(certificatePathOpen(manual, UPLOAD)).toBe(true);
+    // Eine gespeicherte Antwort ohne Weg zählt nicht: zurück zur Frage.
+    const stuck = state({ ...manual, certificates: 'set' });
+    expect(resumeStep(stuck, { ...ACCOUNT, certificates: LE })).toBe('certificates');
+    expect(resumeStep(stuck, { ...ACCOUNT, certificates: CUSTOM_HTTP })).toBe('address');
+    expect(resumeStep(stuck, { ...ACCOUNT, certificates: UPLOAD })).toBe('address');
+  });
+
+  it('öffentlich oder mit DNS-Anbieter geht jeder Weg', () => {
+    for (const facts of [LE, CUSTOM, CUSTOM_HTTP, UPLOAD]) {
+      expect(certificatePathOpen({ exposure: 'public', dns: 'manual' }, facts)).toBe(true);
+      expect(certificatePathOpen({ exposure: 'internal', dns: 'configured' }, facts)).toBe(true);
+    }
+  });
+
+  it('eine Wildcard gibt es nur über ACME mit DNS-Anbieter', () => {
+    expect(wildcardPossible({ dns: 'configured' }, LE)).toBe(true);
+    expect(wildcardPossible({ dns: 'configured' }, CUSTOM_HTTP)).toBe(true);
+    expect(wildcardPossible({ dns: 'configured' }, UPLOAD)).toBe(false);
+    expect(wildcardPossible({ dns: 'manual' }, LE)).toBe(false);
+    const wildcard = state({
+      exposure: 'internal',
+      dns: 'configured',
+      dnsHook: 'dns_cf',
+      certificates: 'set',
+      address: 'set',
+      domain: 'hapm.example.org',
+      wildcard: true,
+      wildcardBase: 'example.org',
+    });
+    expect(resumeStep(wildcard, { hasAccount: true, dnsHooks: ['dns_cf'], certificates: UPLOAD })).toBe('address');
+  });
+
+  it('liest die Einstellungen: HTTP nur mit eigenem Server', () => {
+    expect(certificateFactsOf({ certificateSource: 'acme', acmeDirectory: null, acmeHttpReachable: true })).toEqual(LE);
+    expect(
+      certificateFactsOf({ certificateSource: 'acme', acmeDirectory: 'https://ca.example.org/dir', acmeHttpReachable: true })
+    ).toEqual(CUSTOM_HTTP);
   });
 });
 
@@ -230,6 +302,20 @@ describe('executionPlan', () => {
     expect(
       executionPlan({ exposure: 'public', domain: 'hapm.example.org', wildcard: true, wildcardBase: 'example.org' })[0]
     ).toBe('dns');
+  });
+
+  it('intern mit einem ACME-Server, der HAPM über Port 80 erreicht: ohne DNS-Schritt', () => {
+    expect(
+      executionPlan({ ...base, exposure: 'internal' }, { source: 'acme', customServer: true, httpReachable: true })[0]
+    ).toBe('scope');
+  });
+
+  it('nur hochladen: nie ein DNS-Schritt, auch nicht mit Wildcard', () => {
+    const upload = { source: 'upload' as const, customServer: false, httpReachable: false };
+    expect(executionPlan({ ...base, exposure: 'internal' }, upload)).not.toContain('dns');
+    expect(
+      executionPlan({ exposure: 'public', domain: 'hapm.example.org', wildcard: true, wildcardBase: 'example.org' }, upload)
+    ).not.toContain('dns');
   });
 });
 

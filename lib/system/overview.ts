@@ -17,10 +17,11 @@ import { acmeStatus } from '../acme';
 import { bootstrapState, type BootstrapState } from '../bootstrap';
 import { schedulerStatus } from '../scheduler';
 import { logFollowerStatus } from '../haproxy-log';
-import { probeProxy, readCertificates, type ProxyProbe } from '../haproxy/provision';
+import { probeProxy, readCertificateInventory, type ProxyProbe } from '../haproxy/provision';
+import type { UploadedCertificate } from '../haproxy/cert-upload';
 import { HAPROXY_CERT_DIR, parseScopes, scopeSlug, serviceHealth, type ServiceHealth } from '../haproxy/config';
 import { pemFileName, type AcmeCertificate } from '../haproxy/certs';
-import { CERT_WARN_DAYS, certificateDue, pemExpiry, type CertificateDue } from './certificates';
+import { CERT_WARN_DAYS, certificateDue, pemExpiry, uploadedDue, warnDaysFor, type CertificateDue } from './certificates';
 import { readUpdateStates } from '../updates/check';
 import { msgid } from '../i18n';
 
@@ -314,14 +315,19 @@ function readExpiry(mainDomain: string): Date | null {
  * alle paar Sekunden. Die Liste gilt deshalb zwei Minuten.
  */
 const CERT_CACHE_MS = 2 * 60 * 1000;
-const certCache = globalThis as unknown as { __hapmCertList?: { at: number; list: AcmeCertificate[] } };
+interface CertificateInventory {
+  acme: AcmeCertificate[];
+  uploaded: UploadedCertificate[];
+}
 
-async function cachedCertificates(): Promise<AcmeCertificate[]> {
+const certCache = globalThis as unknown as { __hapmCertList?: { at: number; list: CertificateInventory } };
+
+async function cachedCertificates(): Promise<CertificateInventory> {
   const cached = certCache.__hapmCertList;
   if (cached && Date.now() - cached.at < CERT_CACHE_MS) return cached.list;
-  const list = await readCertificates(localServer());
+  const list = await readCertificateInventory(localServer());
   // Eine leere Liste kann auch ein gescheiterter Aufruf sein. Sie wird nicht aufgehoben.
-  if (list.length > 0) certCache.__hapmCertList = { at: Date.now(), list };
+  if (list.acme.length + list.uploaded.length > 0) certCache.__hapmCertList = { at: Date.now(), list };
   return list;
 }
 
@@ -340,17 +346,22 @@ async function readCertificateSummary(probe: Promise<ProxyProbe>): Promise<Syste
       return { ...unknown, error: msgid('acme.sh oder das Zertifikatsverzeichnis fehlt.') };
     }
     const now = Date.now();
-    const all = (await cachedCertificates()).map((cert) => certificateDue(cert, readExpiry(cert.mainDomain), now));
+    const inventory = await cachedCertificates();
+    const all = [
+      ...inventory.acme.map((cert) => certificateDue(cert, readExpiry(cert.mainDomain), now)),
+      // Hochgeladene haben ihr Ablaufdatum schon aus der Datei.
+      ...inventory.uploaded.map((cert) => uploadedDue(cert, now)),
+    ];
     const readable = all.filter((cert) => cert.daysLeft !== null);
     return {
       total: all.length,
       expiring:
         all.length > 0 && readable.length === 0
           ? null
-          : readable.filter((cert) => (cert.daysLeft as number) < CERT_WARN_DAYS).length,
+          : readable.filter((cert) => (cert.daysLeft as number) < warnDaysFor(cert)).length,
       unreadable: all.length - readable.length,
       due: all
-        .filter((cert) => cert.renewalOverdue || (cert.daysLeft !== null && cert.daysLeft < CERT_WARN_DAYS))
+        .filter((cert) => cert.renewalOverdue || (cert.daysLeft !== null && cert.daysLeft < warnDaysFor(cert)))
         .sort((a, b) => (a.daysLeft ?? Number.MAX_SAFE_INTEGER) - (b.daysLeft ?? Number.MAX_SAFE_INTEGER)),
       warnDays: CERT_WARN_DAYS,
       error: null,

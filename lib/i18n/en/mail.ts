@@ -281,7 +281,6 @@ export const mail: Dictionary = {
   'Erneuerung gescheitert': 'Renewal failed',
   'Der tägliche Lauf von acme.sh meldet einen Fehler.': 'The daily acme.sh run reports an error.',
   'Zertifikat läuft ab': 'Certificate expiring',
-  'Ein Zertifikat ist weniger als 14 Tage gültig. Einmal am Tag.': 'A certificate is valid for less than 14 days. Once a day.',
   'Kein Ziel antwortet': 'No target responds',
   'Ziele antworten wieder': 'Targets respond again',
   'Ein Eintrag, dessen Ausfall gemeldet wurde, antwortet wieder.': 'An entry whose outage was reported responds again.',
@@ -466,4 +465,8 @@ export const mail: Dictionary = {
   'Benachrichtigungen öffnen': 'Open notifications',
   // Anmeldename am SMTP-Server. Nicht „Benutzer": das ist der Menüpunkt (Users).
   'Benutzername': 'Username',
+  // Zertifikate: hochladen, eigener ACME-Server, eigener DNS-Server
+  "Unter 14 Tage gültig, ein hochgeladenes unter 30. Einmal am Tag.": "Valid for under 14 days, an uploaded one under 30. Once a day.",
+  "Was zu tun ist: hochgeladene Zertifikate erneuert niemand von selbst. Beantragen Sie bei Ihrer CA ein neues und ersetzen Sie das alte unter Reverse-Proxy, Zertifikate. Nach dem Ablauf zeigen Browser für die Domain eine Warnung.": "What to do: nobody renews uploaded certificates automatically. Request a new one from your CA and replace the old one under Reverse proxy, Certificates. After expiry, browsers show a warning for the domain.",
+  "Was zu tun ist: acme.sh erneuert seine Zertifikate von selbst vor dem Ablauf. Steht eines davon hier, ist das bisher nicht gelungen, die Ausgabe der letzten Erneuerung steht in der Übersicht. Hochgeladene erneuert niemand: ersetzen Sie sie unter Reverse-Proxy, Zertifikate. Nach dem Ablauf zeigen Browser für die Domain eine Warnung.": "What to do: acme.sh renews its certificates automatically before they expire. If one of them is listed here, that has not worked so far; the output of the last renewal is on the overview. Nobody renews uploaded ones: replace them under Reverse proxy, Certificates. After expiry, browsers show a warning for the domain.",
 };

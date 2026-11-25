@@ -102,7 +102,11 @@ describe('Meldungen des Reverse-Proxys über handleError', () => {
   });
 
   it('übersetzt, warum sich ein Zertifikat nicht ausstellen lässt', async () => {
-    const plan = planChallenge(['*.example.org'], { exposure: 'public', dnsHook: 'dns_hetznercloud' }, ['dns_cf']);
+    const plan = planChallenge(
+      ['*.example.org'],
+      { exposure: 'public', dnsHook: 'dns_hetznercloud', source: 'acme', acmeServer: 'letsencrypt', httpReachable: false },
+      ['dns_cf']
+    );
     expect(plan.method).toBe('unavailable');
     if (plan.method !== 'unavailable') return;
 

@@ -10,6 +10,7 @@ export async function getSetupState(): Promise<SetupChoices> {
     exposure: row.exposure ?? EMPTY_SETUP.exposure,
     dns: row.dns ?? EMPTY_SETUP.dns,
     dnsHook: row.dnsHook ?? null,
+    certificates: row.certificates === 'set' ? 'set' : 'pending',
     address: row.address ?? EMPTY_SETUP.address,
     domain: row.domain ?? null,
     wildcard: row.wildcard === true,

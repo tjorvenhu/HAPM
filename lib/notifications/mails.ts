@@ -27,7 +27,7 @@ import {
   type MailFact,
   type MailInstallation,
 } from '../mail/layout';
-import { CERT_WARN_DAYS } from '../system/certificates';
+import { CERT_WARN_DAYS, UPLOAD_WARN_DAYS } from '../system/certificates';
 import type { HaproxyAction, UpdateComponent } from '../types';
 import type { ExpiringCertificate, NotificationEvent, TargetKind } from './events';
 
@@ -160,7 +160,10 @@ function certificateSubject(certificates: ExpiringCertificate[], w: Writer): str
       { count: certificates.length, expired }
     );
   }
-  return w.t('{count} Zertifikate laufen in weniger als {days} Tagen ab', { count: certificates.length, days: CERT_WARN_DAYS });
+  return w.t('{count} Zertifikate laufen in weniger als {days} Tagen ab', {
+    count: certificates.length,
+    days: certificates.some((cert) => cert.uploaded) ? UPLOAD_WARN_DAYS : CERT_WARN_DAYS,
+  });
 }
 
 function targetName(kind: TargetKind, id: string, addresses: string[], w: Writer): string {
@@ -210,6 +213,9 @@ function draft(event: NotificationEvent, ctx: NotificationMailContext, w: Writer
     case 'certificate_expiring': {
       const certificates = [...event.certificates].sort((a, b) => a.daysLeft - b.daysLeft);
       const subject = certificateSubject(certificates, w);
+      const uploaded = certificates.filter((cert) => cert.uploaded);
+      // Hochgeladene melden sich früher: die Zahl im Satz ist die größere, sobald eins dabei ist.
+      const warnDays = uploaded.length > 0 ? UPLOAD_WARN_DAYS : CERT_WARN_DAYS;
       return {
         subject,
         eyebrow: t('Zertifikate'),
@@ -219,22 +225,33 @@ function draft(event: NotificationEvent, ctx: NotificationMailContext, w: Writer
             certificates.length === 1
               ? t('Auf {node} ist ein Zertifikat weniger als {days} Tage gültig oder schon abgelaufen.', {
                   node,
-                  days: CERT_WARN_DAYS,
+                  days: warnDays,
                 })
               : t('Auf {node} sind {count} Zertifikate weniger als {days} Tage gültig oder schon abgelaufen.', {
                   node,
                   count: certificates.length,
-                  days: CERT_WARN_DAYS,
+                  days: warnDays,
                 })
           ) +
           mailFacts(
-            certificates.map((cert) => ({ label: cert.mainDomain, value: certificateState(cert, w) })),
+            certificates.map((cert) => ({
+              label: cert.mainDomain,
+              value: cert.uploaded ? `${certificateState(cert, w)}, ${t('hochgeladen')}` : certificateState(cert, w),
+            })),
             { stacked: true }
           ) +
           mailText(
-            t(
-              'Was zu tun ist: acme.sh erneuert Zertifikate von selbst vor dem Ablauf. Steht eines hier, ist das bisher nicht gelungen. Die Ausgabe der letzten Erneuerung steht in der Übersicht. Nach dem Ablauf zeigen Browser für die Domain eine Warnung.'
-            )
+            uploaded.length === certificates.length
+              ? t(
+                  'Was zu tun ist: hochgeladene Zertifikate erneuert niemand von selbst. Beantragen Sie bei Ihrer CA ein neues und ersetzen Sie das alte unter Reverse-Proxy, Zertifikate. Nach dem Ablauf zeigen Browser für die Domain eine Warnung.'
+                )
+              : uploaded.length > 0
+                ? t(
+                    'Was zu tun ist: acme.sh erneuert seine Zertifikate von selbst vor dem Ablauf. Steht eines davon hier, ist das bisher nicht gelungen, die Ausgabe der letzten Erneuerung steht in der Übersicht. Hochgeladene erneuert niemand: ersetzen Sie sie unter Reverse-Proxy, Zertifikate. Nach dem Ablauf zeigen Browser für die Domain eine Warnung.'
+                  )
+                : t(
+                    'Was zu tun ist: acme.sh erneuert Zertifikate von selbst vor dem Ablauf. Steht eines hier, ist das bisher nicht gelungen. Die Ausgabe der letzten Erneuerung steht in der Übersicht. Nach dem Ablauf zeigen Browser für die Domain eine Warnung.'
+                  )
           ),
         action: { label: t('Zertifikate ansehen'), path: '/reverse-proxy/zertifikate' },
       };

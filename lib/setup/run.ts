@@ -27,8 +27,9 @@ import { ApiError } from '../api';
 import { msg, msgid } from '../i18n/translate';
 import { logAudit } from '../audit';
 import { localServer } from '../helpers';
-import { getSettings, updateSettings } from '../settings';
+import { challengeFor, getSettings, updateSettings } from '../settings';
 import { findCertificateFor } from '../haproxy/certs';
+import { uploadedCoverage } from '../haproxy/cert-upload';
 import { planChallenge, type ChallengeChoice } from '../haproxy/challenge';
 import {
   HaproxyConfigError,
@@ -42,7 +43,7 @@ import {
   precheckScope,
   precheckUpdate,
   probeProxy,
-  readCertificates,
+  readCertificateInventory,
 } from '../haproxy/provision';
 import { WITHOUT_SURFACE_PROTECTION } from '../haproxy/protected';
 import { parseSteps, startHaproxyRun, waitForRun, type HaproxyActor } from '../haproxy/runner';
@@ -51,6 +52,7 @@ import {
   SETUP_SCOPE,
   SETUP_SERVICE_ID,
   certificateDomains,
+  certificateFactsOf,
   executionPlan,
   hapmServiceInput,
   listenPort,
@@ -140,8 +142,19 @@ const STAGES: Record<SetupStageKey, (context: StageContext) => Promise<string>> 
   async certificate(context) {
     const server = localServer();
     const domains = certificateDomains(context.state);
-    const existing = findCertificateFor(await readCertificates(server), domains);
+    const inventory = await readCertificateInventory(server);
+    const existing = findCertificateFor(
+      [...inventory.acme, ...uploadedCoverage(inventory.uploaded, Date.now())],
+      domains
+    );
     if (existing) return `Schon vorhanden: ${existing.domains.join(', ')}.`;
+    if (context.challenge.source === 'upload') {
+      throw new ApiError(
+        msg('Für {domains} ist kein Zertifikat hochgeladen. HAPM stellt in dieser Installation keins selbst aus.', {
+          domains: domains.join(', '),
+        })
+      );
+    }
 
     await precheckCertificate(server, domains, context.challenge);
     const run = await startHaproxyRun({
@@ -222,15 +235,16 @@ export async function startSetupExecution(actor: HaproxyActor): Promise<SetupExe
   if (setupExecutionAlive()) throw new ApiError(msg('Die Einrichtung läuft bereits.'), 409);
 
   const state = await getSetupState();
+  const settings = await getSettings();
+  const certificates = certificateFactsOf(settings);
   // Die Hooks prüft der erste Schritt an der Maschine, hier zählt nur, ob alles beantwortet ist.
-  if (resumeStep(state, { hasAccount: true, dnsHooks: null }) !== 'run') {
+  if (resumeStep(state, { hasAccount: true, dnsHooks: null, certificates }) !== 'run') {
     throw new ApiError(msg('Die Einrichtung ist noch nicht vollständig beantwortet.'));
   }
 
-  const settings = await getSettings();
-  const challenge: ChallengeChoice = { exposure: settings.exposure, dnsHook: state.dnsHook };
+  const challenge: ChallengeChoice = challengeFor(settings, state.dnsHook);
 
-  let execution = newExecution(executionPlan(state), new Date().toISOString());
+  let execution = newExecution(executionPlan(state, certificates), new Date().toISOString());
   g.__hapm_setup_alive = true;
   try {
     await updateSetupState({ execution });
