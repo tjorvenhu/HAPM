@@ -1330,6 +1330,62 @@ schickt einen ausgesperrten Kollegen in die falsche Fehlersuche.
   Backup, Reload) und als derselbe abgekoppelte Lauf, nur mit
   `action: 'settings'` und ohne Zertifikat.
 
+### Abgleich mit der Grundkonfiguration: `lib/haproxy/base-config-diff.ts`
+
+Die Grundkonfiguration (`base-config.ts`) entsteht nur, wenn `haproxy.cfg`
+fehlt. Danach ist die Datei die Wahrheit, und eine neue Vorgabe von HAPM
+(zuletzt `limited-quic` in `global`) kommt bei einer bestehenden Installation
+nie an. Die Karte „Grundkonfiguration" auf `/reverse-proxy/einstellungen` zeigt,
+wo die Datei von dem abweicht, was `renderBaseConfig` mit den Optionen dieser
+Installation ergäbe, und schreibt ausgewählte Punkte hinein. Die Vorgaben sind
+die Konfiguration, die der Betreiber produktiv fährt und als Best Practice
+festgelegt hat, deshalb lohnt sich das Nachziehen.
+
+- **Verglichen wird nur, was die Grundkonfiguration besitzt:** `global`,
+  `defaults` und die beiden Frontends, gefunden zuerst am Namen, sonst an der
+  Rolle (Marker der globalen Einstellungen oder `bind :443` für HTTPS,
+  `bind :80` für HTTP). Ein Abschnitt, der so nicht zu finden ist, wird
+  genannt und nicht angelegt. Kommentare, Leerzeilen und die Reihenfolge zählen
+  nicht. Die IPv6-Option steht in der Datei (`detectIpv6`), die Fehlerseiten
+  sind alle, die HAPM kennt (`bootstrap.ts` legt die Dateien beim Start an).
+- **Drei Arten Abweichung**: eine Zeile fehlt, sie hat einen anderen Wert, oder
+  es gibt sie nur in der Datei. „Dieselbe Zeile" heißt derselbe Schlüssel
+  (`directiveKey`): `timeout client`, `bind :443`,
+  `http-response set-header alt-svc`. `*:443`, `0.0.0.0:443` und `:443` gelten
+  als dieselbe Adresse, sonst schlüge der Abgleich einen zweiten Listener auf
+  denselben Port vor.
+- **Nie vorgeschlagen:** die Zeilen der globalen Einstellungen (Block unter
+  `# Globale HTTPS-Settings`, `acl admin_ips`), weil zwei Stellen für dieselben
+  Zeilen sich widersprechen; `log` in `global`, weil `raw` Absicht ist
+  (`lib/haproxy-log.ts`); eine vorhandene `errorfile`-Zeile mit anderer Datei
+  (503 mit der Seite der 404 ist ein verbreiteter Griff); alles zwischen
+  `# BEGIN AUTO …` und `# END AUTO …`, also auch alte Kennungen wie
+  `vsm_lock_…`.
+- **Es wird nichts gelöscht.** Eine Zeile, die es nur in der Datei gibt, ist
+  meist bewusst gesetzt und steht als Hinweis da, ohne Auswahl. `daemon`
+  bekommt eine Begründung: das Abbild startet HAProxy mit `-db`, das hebt die
+  Zeile auf.
+- **Wohin eine fehlende Zeile kommt:** hinter ihren direkten Vorgänger aus der
+  Grundkonfiguration, sonst vor ihren direkten Nachfolger. Steht sie dort als
+  eigene Gruppe, kommt sie mit Leerzeile und ihrem Kommentar hinter die Gruppe
+  des nächsten Vorgängers. Übernommen wird eine Abweichung nach der anderen,
+  vor jeder wird neu verglichen. Der Test hält fest, dass eine ältere Datei nach
+  dem Übernehmen aller Punkte Zeichen für Zeichen `renderBaseConfig` ergibt.
+- **Die Auswahl geht als IDs an die Route** (`/api/haproxy/base-config`), und
+  der Vorgang rechnet innerhalb des Locks neu. Gibt es eine ID nicht mehr,
+  bricht er ab, statt etwas anderes zu schreiben als angeklickt.
+- **Geschrieben wird synchron** wie bei den Fehlerseiten (kein Zertifikat),
+  aber über denselben Weg wie jeder Vorgang an `haproxy.cfg`: Lock, Prüfsumme,
+  `haproxy -c` neben der gültigen Datei, Backup, Reload, Rollback
+  (`updateBaseConfig` in `provision.ts`). Audit: `haproxy_base_config_updated`
+  bzw. `_failed`.
+- Fehlen Zeilen, trägt die Karte von HAProxy auf `/reverse-proxy` eine Marke
+  „N neue Vorgaben" mit Link auf die Karte (`baseConfigMissing` in
+  `/api/haproxy/services`, aus demselben Text gerechnet, ohne eigene Runde).
+- **Wer `base-config.ts` ändert**, schreibt zur neuen Zeile eine Begründung in
+  `HINTS` (`base-config-diff.ts`) und prüft, ob `directiveKey` sie als
+  dieselbe Direktive wie eine bestehende Zeile erkennt.
+
 ### Die Passwortsperre
 
 Die zweite Art, eine Domain zu sperren: statt auf die Admin-IPs zu prüfen, zeigt

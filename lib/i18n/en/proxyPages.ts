@@ -448,4 +448,32 @@ export const proxyPages: Dictionary = {
   "Aus Datei laden": "Load from file",
   "Privater Schlüssel (PEM)": "Private key (PEM)",
   "Unverschlüsselt, HAProxy fragt beim Laden nach keinem Passwort. Er geht direkt in die Datei auf dem Server und wird in HAPM nicht gespeichert.": "Unencrypted, HAProxy asks for no password when loading. It goes straight into the file on the server and is not stored in HAPM.",
+
+  // Grundkonfiguration (`components/reverse-proxy/BaseConfigPanel.tsx`)
+  'Ausgewählte Zeilen übernehmen?': 'Apply the selected lines?',
+  '{count} Zeile wird in haproxy.cfg geschrieben. HAProxy prüft die Datei vorher und lädt danach neu. Scheitert das, bleibt die bisherige Fassung stehen.':
+    '{count} line will be written to haproxy.cfg. HAProxy checks the file first and reloads afterwards. If that fails, the previous version stays in place.',
+  '{count} Zeilen werden in haproxy.cfg geschrieben. HAProxy prüft die Datei vorher und lädt danach neu. Scheitert das, bleibt die bisherige Fassung stehen.':
+    '{count} lines will be written to haproxy.cfg. HAProxy checks the file first and reloads afterwards. If that fails, the previous version stays in place.',
+  'Übernehmen': 'Apply',
+  'Übernehmen fehlgeschlagen': 'Apply failed',
+  'Grundkonfiguration': 'Base configuration',
+  'Übernommen, geprüft und HAProxy neu geladen.': 'Applied, checked and HAProxy reloaded.',
+  'HAPM schreibt die Grundkonfiguration nur, wenn haproxy.cfg fehlt. Neue Vorgaben kommen bei einer bestehenden Installation deshalb nicht von selbst an. Verglichen werden global, defaults und die beiden Frontends, ohne die Bereiche der Gruppen und ohne die Einstellungen auf dieser Seite.':
+    'HAPM writes the base configuration only when haproxy.cfg is missing. New defaults therefore do not reach an existing installation on their own. Compared are global, defaults and the two frontends, without the group sections and without the settings on this page.',
+  'Wo haproxy.cfg von den Vorgaben von HAPM abweicht.': 'Where haproxy.cfg differs from the HAPM defaults.',
+  'Ausgewählte übernehmen': 'Apply selected',
+  'Der Abgleich konnte nicht geladen werden.': 'The comparison could not be loaded.',
+  'Nicht gefunden: {sections}. Diese Abschnitte werden nicht abgeglichen und nicht angelegt.':
+    'Not found: {sections}. These sections are neither compared nor created.',
+  'Die Datei entspricht der Grundkonfiguration von HAPM.': 'The file matches the HAPM base configuration.',
+  'Vorschlag': 'Proposed',
+  'In der Datei': 'In the file',
+  'Auswählen': 'Select',
+  'fehlt': 'missing',
+  'Nur hier, bleibt stehen': 'Only here, stays',
+  'In haproxy.cfg fehlen Zeilen, die HAPM heute in die Grundkonfiguration schreibt. Unter Einstellungen lassen sie sich einzeln übernehmen.':
+    'haproxy.cfg lacks lines that HAPM now writes into the base configuration. They can be applied one by one under Settings.',
+  '{count} neue Vorgabe': '{count} new default',
+  '{count} neue Vorgaben': '{count} new defaults',
 };

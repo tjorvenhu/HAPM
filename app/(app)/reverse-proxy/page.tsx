@@ -424,6 +424,20 @@ export default function ReverseProxyPage() {
                         <span>{t('acme.sh fehlt')}</span>
                       </EntityTag>
                     )}
+                    {!proxy.error && (proxy.baseConfigMissing ?? 0) > 0 && (
+                      <EntityTag
+                        tooltip={t(
+                          'In haproxy.cfg fehlen Zeilen, die HAPM heute in die Grundkonfiguration schreibt. Unter Einstellungen lassen sie sich einzeln übernehmen.'
+                        )}
+                      >
+                        <Link href="/reverse-proxy/einstellungen#grundkonfiguration">
+                          {plural(proxy.baseConfigMissing ?? 0, {
+                            one: '{count} neue Vorgabe',
+                            other: '{count} neue Vorgaben',
+                          })}
+                        </Link>
+                      </EntityTag>
+                    )}
                   </EntityTags>
                   {proxy.error && (
                     <EntityField label={t('Fehler')}>

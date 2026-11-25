@@ -2920,8 +2920,10 @@ export interface GlobalSettingsInput {
 }
 
 /** Wo der Einstellungsblock steht: Marker-Zeile und die Zeilen darunter bis zur
- *  nächsten Leerzeile, dem nächsten Kommentar oder dem nächsten Abschnitt. */
-function httpsBlockRange(lines: string[]): { start: number; end: number } | null {
+ *  nächsten Leerzeile, dem nächsten Kommentar oder dem nächsten Abschnitt.
+ *  Exportiert für `base-config-diff.ts`: was hier steht, gleicht der Abgleich
+ *  der Grundkonfiguration nicht ab. */
+export function httpsBlockRange(lines: string[]): { start: number; end: number } | null {
   const start = lines.findIndex((line) => clean(line) === HTTPS_MARKER);
   if (start === -1) return null;
   let end = start + 1;

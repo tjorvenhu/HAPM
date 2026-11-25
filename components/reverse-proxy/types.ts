@@ -22,6 +22,9 @@ export interface ProxyRow {
   host: string;
   version: string | null;
   acmeReady: boolean;
+  /** Wie viele Zeilen der Grundkonfiguration in der Datei fehlen. Fehlt das
+   *  Feld (andere Routen), ist es unbekannt. */
+  baseConfigMissing?: number;
   /** Die eingerichteten acme.sh-DNS-Hooks. Leer heißt: keine
    *  Wildcard ausstellbar, denn HTTP-01 kann sie nicht. */
   dnsHooks: string[];
