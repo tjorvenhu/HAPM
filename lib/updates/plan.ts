@@ -37,3 +37,17 @@ export function remainingSteps(component: UpdateComponent, done: { label: string
   const last = done.reduce((index, step) => Math.max(index, plan.indexOf(step.label)), -1);
   return plan.slice(last + 1);
 }
+
+/**
+ * Ob der Stand eines Bestandteils noch von vor seinem letzten Lauf stammt.
+ *
+ * Nach einem Update gilt erst wieder, was eine Prüfung danach ergeben hat:
+ * sonst stünde dort „Update verfügbar" für das, was gerade eingespielt wurde.
+ */
+export function needsCheckAfterRun(
+  lastRun: { status: string; completedAt: string | null } | null,
+  state: { checkedAt: string | null } | undefined
+): boolean {
+  if (!lastRun || lastRun.status === 'running' || !lastRun.completedAt) return false;
+  return !state?.checkedAt || lastRun.completedAt > state.checkedAt;
+}

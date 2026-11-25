@@ -1,7 +1,7 @@
 import { requireCsrf, requireSession } from '@/lib/session';
 import { ok, handleError } from '@/lib/api';
 import { getSettings } from '@/lib/settings';
-import { checkUpdates, readUpdateStates } from '@/lib/updates/check';
+import { checkUpdates, isCheckRunning, readUpdateStates, settleAfterRuns } from '@/lib/updates/check';
 import { listUpdateRuns } from '@/lib/updates/apply';
 import { parseSteps } from '@/lib/haproxy/runner';
 
@@ -9,6 +9,7 @@ const HISTORY = 30;
 
 async function overview() {
   const [states, runs, settings] = await Promise.all([readUpdateStates(), listUpdateRuns(HISTORY), getSettings()]);
+  settleAfterRuns(states, runs);
   return {
     states,
     runs: runs.map((run) => ({ ...run, steps: parseSteps(run.steps) })),
@@ -16,6 +17,7 @@ async function overview() {
     // Aus der Historie und nicht aus dem Prozess: bei der Übergabe von HAPM
     // bleibt der Lauf offen, bis der neue Container ihn schließt.
     running: runs.some((run) => run.status === 'running'),
+    checking: isCheckRunning(),
   };
 }
 

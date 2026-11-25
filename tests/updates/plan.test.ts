@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import { HANDOVER_STEP, UPDATE_PLAN, remainingSteps } from '@/lib/updates/plan';
+import { HANDOVER_STEP, UPDATE_PLAN, needsCheckAfterRun, remainingSteps } from '@/lib/updates/plan';
 
 describe('UPDATE_PLAN', () => {
   // `apply.ts` schreibt die Schritte als Text. Heißt dort einer anders, zeigt die
@@ -46,5 +46,20 @@ describe('remainingSteps', () => {
       HANDOVER_STEP,
       'Neuer Container',
     ]);
+  });
+});
+
+describe('needsCheckAfterRun', () => {
+  const done = { status: 'success', completedAt: '2026-11-25T18:00:10.000Z' };
+
+  it('verlangt eine Prüfung, die nach dem Ende des Laufs begann', () => {
+    expect(needsCheckAfterRun(done, { checkedAt: '2026-11-25T18:00:05.000Z' })).toBe(true);
+    expect(needsCheckAfterRun(done, { checkedAt: '2026-11-25T18:00:11.000Z' })).toBe(false);
+    expect(needsCheckAfterRun(done, undefined)).toBe(true);
+  });
+
+  it('wartet nicht, solange der Lauf noch läuft oder es keinen gibt', () => {
+    expect(needsCheckAfterRun({ status: 'running', completedAt: null }, { checkedAt: null })).toBe(false);
+    expect(needsCheckAfterRun(null, { checkedAt: null })).toBe(false);
   });
 });

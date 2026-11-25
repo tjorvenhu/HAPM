@@ -33,7 +33,7 @@ import {
   formatDateTime,
   versionStep,
 } from '@/components/system/format';
-import { HANDOVER_STEP, remainingSteps } from '@/lib/updates/plan';
+import { HANDOVER_STEP, needsCheckAfterRun, remainingSteps } from '@/lib/updates/plan';
 import { msgid, type Translator } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
 import type { HaproxyStep, UpdateComponent, UpdateRun, UpdateState } from '@/lib/types';
@@ -50,6 +50,8 @@ interface UpdatesData {
   runs: RunView[];
   settings: UpdateSettings;
   running: boolean;
+  /** Der Server prüft gerade (nach einem Lauf, nach dem Start oder im Takt). */
+  checking: boolean;
 }
 
 const COMPONENTS: UpdateComponent[] = ['haproxy', 'hapm', 'acme'];
@@ -74,7 +76,6 @@ const CONSEQUENCES: Record<UpdateComponent, string> = {
 };
 
 const POLL_IDLE_MS = 30_000;
-const POLL_SETTLING_MS = 5000;
 const POLL_RUNNING_MS = 2000;
 
 /** Ab hier sagt die Übergabe von HAPM, dass sie länger dauert als üblich. */
@@ -206,11 +207,8 @@ export default function UpdatesPage() {
    * durch ist. So lange steht dort nicht „Update verfügbar" für etwas, das
    * gerade eingespielt wurde.
    */
-  const isSettling = (component: UpdateComponent, state: UpdateState | undefined): boolean => {
-    const last = lastRunOf(component);
-    if (!last || last.status === 'running' || !last.completedAt) return false;
-    return !state?.checkedAt || last.completedAt > state.checkedAt;
-  };
+  const isSettling = (component: UpdateComponent, state: UpdateState | undefined): boolean =>
+    needsCheckAfterRun(lastRunOf(component), state);
 
   const settling = data
     ? COMPONENTS.some((component) =>
@@ -221,7 +219,9 @@ export default function UpdatesPage() {
       )
     : false;
 
-  usePolling(load, locked || offline ? POLL_RUNNING_MS : settling ? POLL_SETTLING_MS : POLL_IDLE_MS);
+  // Solange etwas läuft oder auf eine Prüfung wartet, im Takt eines Laufs: der
+  // Wechsel auf „Aktuell" soll erscheinen, sobald die Prüfung durch ist.
+  usePolling(load, locked || offline || settling || data?.checking ? POLL_RUNNING_MS : POLL_IDLE_MS);
 
   /* Das Ende eines Laufs melden, den diese Seite hat laufen sehen. */
   const watchedRun = useRef<string | null>(null);
@@ -516,7 +516,12 @@ export default function UpdatesPage() {
                 </span>
               );
             } else if (stale) {
-              badge = (
+              badge = data.checking ? (
+                <span className="badge-status badge-neutral">
+                  <Loader2 size={12} strokeWidth={1.5} className="spin" />
+                  {t('Wird geprüft')}
+                </span>
+              ) : (
                 <span className="badge-status badge-neutral">
                   <span className="dot" />
                   {t('Prüfung steht aus')}

@@ -23,6 +23,7 @@ import { containerInfo, haproxyContainerName, ownContainer, registryArchitecture
 import { remoteDetails, remoteDigest } from '../docker/registry';
 import { acmeStatus, isNewerVersion, latestAcmeVersion } from '../acme';
 import { notify } from '../notifications';
+import { needsCheckAfterRun } from './plan';
 
 type StateData = Omit<UpdateState, '$id' | '$createdAt' | '$updatedAt'>;
 
@@ -165,6 +166,52 @@ export function checkUpdates(): Promise<UpdateState[]> {
     }
   })();
   return running;
+}
+
+/** Ob gerade eine Prüfung läuft. Die Seite zeigt dann „Wird geprüft" statt „Prüfung steht aus". */
+export function isCheckRunning(): boolean {
+  return running !== null;
+}
+
+/**
+ * Eine Prüfung, die sicher NACH diesem Aufruf beginnt.
+ *
+ * `checkUpdates` gibt eine laufende Prüfung zurück, statt eine zweite zu
+ * starten. Nach einem Update ist das zu wenig: eine Prüfung, die vor dem Ende
+ * des Laufs begann, kennt das neue Abbild nicht, und ihr `checkedAt` liegt vor
+ * dem Ende des Laufs. Die Seite stünde dann bis zur nächsten Prüfung, also
+ * Stunden, auf „Prüfung steht aus".
+ */
+export async function checkUpdatesAfterNow(): Promise<UpdateState[]> {
+  if (running) await running.catch(() => undefined);
+  return checkUpdates();
+}
+
+/** Wie oft `settleAfterRuns` höchstens eine Prüfung anstößt. */
+const SETTLE_RETRY_MS = 30_000;
+let lastSettle = 0;
+
+/**
+ * Prüfen, wenn ein Bestandteil seit seinem letzten Lauf nicht geprüft wurde.
+ *
+ * Das Netz unter der Prüfung nach jedem Lauf (`apply.ts`) und beim Start
+ * (`reconcileUpdateRuns`): ging dort etwas schief, holt der nächste Aufruf der
+ * Seite die Prüfung nach, statt den alten Stand stehen zu lassen.
+ */
+export function settleAfterRuns(
+  states: UpdateState[],
+  runs: { component: UpdateComponent; status: string; completedAt: string | null }[]
+): void {
+  if (running || Date.now() - lastSettle < SETTLE_RETRY_MS) return;
+  const stale = ORDER.some((component) =>
+    needsCheckAfterRun(
+      runs.find((run) => run.component === component) ?? null,
+      states.find((state) => state.component === component)
+    )
+  );
+  if (!stale) return;
+  lastSettle = Date.now();
+  void checkUpdates().catch(() => undefined);
 }
 
 const ORDER: UpdateComponent[] = ['haproxy', 'hapm', 'acme'];

@@ -293,6 +293,7 @@ export const system: Dictionary = {
   '{component} wird aktualisiert': 'Updating {component}',
   'Wird aktualisiert': 'Updating',
   'Prüfung steht aus': 'Check pending',
+  'Wird geprüft': 'Checking',
   'Stellt die Zertifikate aus': 'Issues the certificates',
   'Version unbekannt': 'Version unknown',
   'Verfügbar': 'Available',

@@ -26,7 +26,7 @@ import { containerInfo, engine, haproxyContainerName, ownContainer } from '../do
 import { replaceContainer } from '../docker/replace.mjs';
 import { HAPROXY_CFG } from '../haproxy/config';
 import { acmeStatus, upgradeAcme } from '../acme';
-import { checkUpdates } from './check';
+import { checkUpdatesAfterNow } from './check';
 import { notify } from '../notifications';
 
 export interface UpdateActor {
@@ -296,7 +296,7 @@ async function execute(run: UpdateRun, actor: UpdateActor): Promise<void> {
     await finish(run, 'error', { error: message(err) }, actor);
   } finally {
     globalLock.__hapmUpdateRunning = false;
-    await checkUpdates().catch(() => undefined);
+    await checkUpdatesAfterNow().catch(() => undefined);
   }
 }
 
@@ -427,4 +427,7 @@ export async function reconcileUpdateRuns(): Promise<void> {
       announce(run, restarted, null);
     }
   }
+  // Gleich prüfen und nicht erst mit der ersten Prüfung nach dem Start: bis dahin
+  // stünde auf der Seite der Stand von vor dem Update.
+  if (open.length > 0) void checkUpdatesAfterNow().catch(() => undefined);
 }
