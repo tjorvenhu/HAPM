@@ -23,8 +23,8 @@ import type { HaproxyMetric } from '../types';
  * Der Erfassungstakt.
  *
  * Er steht hier und nicht in `./stats-collect.ts`, wo erfasst wird, und der
- * Grund ist die Oberfläche: die Statistik-Seite pollt in genau diesem Takt und
- * bräuchte die Zahl. `stats-collect.ts` zieht über `lib/db` und `lib/ssh` den
+ * Grund ist die Oberfläche: die Live-Kennzahlen (`./stats-live.ts`, im Browser
+ * importiert) rechnen damit. `stats-collect.ts` zieht über `lib/db` und `lib/ssh` den
  * Postgres-Treiber und `node:child_process` hinter sich her — ein Import von dort in eine
  * Client-Komponente fällt nicht beim Typecheck auf, sondern erst im Build als
  * `Module not found: Can't resolve 'net'`. Diese Datei hat außer einem reinen

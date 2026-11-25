@@ -498,3 +498,43 @@
 .viz-subheading:not(:first-child) {
   margin-top: 14px;
 }
+
+/* ── Verlaufslinie in einer Kachel (Sparkline) ──
+   Die Farbe kommt über `color`, damit Strich und Verlauf dieselbe Quelle haben. Der Strich
+   bleibt bei jeder Breite gleich dick (`vector-effect`), obwohl die Fläche gestreckt wird. */
+.viz-spark {
+  width: 100%;
+  color: var(--accent);
+}
+
+.viz-spark--warning {
+  color: var(--warning);
+}
+
+.viz-spark--danger {
+  color: var(--danger);
+}
+
+.viz-spark__svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.viz-spark__stop {
+  stop-color: currentColor;
+}
+
+.viz-spark__line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.viz-spark__dot {
+  fill: currentColor;
+}

@@ -72,6 +72,57 @@
 /* Zeilen einer Liste in einer Karte schließen mit deren Rand ab. */
 .hapm-list .activity-row { padding-left: 0; padding-right: 0; }
 
+/* ── Live-Kennzahlen (Übersicht und Statistik) ──
+ * Sechs Kacheln: in voller Breite eine Reihe, darunter drei und zwei Spalten,
+ * nie fünf und eine. Die Breite misst der Abschnitt selbst, die Seitenleiste
+ * nimmt der Seite je nach Fenster unterschiedlich viel. */
+.live-kpis { container-type: inline-size; }
+
+.live-kpis-head {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
+  margin-bottom: 10px; font-size: 0.8125rem; color: var(--text-secondary);
+}
+
+.live-kpis-head strong { color: var(--text); font-weight: 600; }
+
+.live-kpis-stamp { color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+
+.live-kpis-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  background: var(--text-tertiary);
+}
+
+.live-kpis-dot.is-live { background: var(--success); animation: hapm-breathe 2.4s ease-in-out infinite; }
+
+.live-kpis-dot.is-stale { background: var(--warning); }
+
+.live-kpi-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+
+/* Zwei Spalten auf dem Handy: ohne das Symbol bleibt Platz für „1.023 KB/s"
+   und eine Beschriftung in zwei Zeilen. */
+@container (max-width: 559px) {
+  .live-kpi .kpi-icon { display: none; }
+}
+
+@container (min-width: 560px) {
+  .live-kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@container (min-width: 1040px) {
+  .live-kpi-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}
+
+/* Die Verlaufslinie unter Zahl und Beschriftung, über die ganze Breite der Kachel. */
+.kpi.live-kpi { flex-direction: column; align-items: stretch; gap: 8px; padding-bottom: 10px; }
+
+.live-kpi-top { display: flex; align-items: center; gap: 11px; min-width: 0; }
+
+.live-kpi .kpi-value small { margin-left: 1px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .live-kpis-dot.is-live { animation: none; }
+}
+
 /* ── Updates ── */
 .hapm-version { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -16,9 +16,7 @@ import CountryFlag from '@/components/CountryFlag';
 import { countryName } from '@/lib/country-flags';
 import MetricChart, { ChartCard } from '@/components/systems/MetricChart';
 import { seriesColor } from '@/lib/systems/series';
-// Aus dem reinen Modul und NICHT aus stats-collect: das zieht lib/db und
-// lib/ssh nach sich und bricht den Build. Siehe dort.
-import { HAPROXY_METRICS_INTERVAL_MS } from '@/lib/haproxy/stats-series';
+import LiveTraffic from '@/components/reverse-proxy/LiveTraffic';
 import type { ChartPoint } from '@/lib/systems/series';
 import { formatBytes, formatCount, formatDateTime, formatShare, formatTime, msgid } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
@@ -33,17 +31,23 @@ import { STATS_FORMATS, seriesPerLocale } from './format';
  * ist der Grund für ihren Aufbau:
  *
  *  - **Wie viel** lief, über die Zeit. Das kommt aus `haproxy_metrics`, also aus
- *    der Datenbank, und ist billig: ein Ladevorgang ist eine Abfrage. Die Seite
- *    pollt ihn deshalb.
+ *    der Datenbank, und ist billig: ein Ladevorgang ist eine Abfrage. Oben
+ *    stehen die Live-Kennzahlen (`LiveTraffic`, dieselben wie auf der
+ *    Übersicht), die alle fünfzehn Sekunden fragen. Sie melden, wenn der
+ *    Sammler eine neue Runde geschrieben hat, und erst dann lädt die Seite die
+ *    Zeitreihe nach: der neue Punkt steht da, ohne dass ein Zeitraum von dreißig
+ *    Tagen alle fünfzehn Sekunden neu gelesen wird.
  *  - **Wer** zugegriffen hat: Adressen, Länder, Pfade. Das steht nur im
  *    Access-Log auf der Maschine, und ein Lauf liest dort bis zu 200 000 Zeilen.
- *    Das ist eine Handlung und kein Hintergrundtakt — er läuft beim Öffnen, beim
- *    Wechsel des Dienstes und sonst auf Knopfdruck.
+ *    Deshalb ein eigener, langsamer Takt (`TRAFFIC_POLL_MS`), und nie zwei
+ *    Läufe gleichzeitig.
  *
- * Sie in EINE Route zu legen hätte geheißen, dass jeder Poll-Takt auf jede
- * Proxy-Maschine geht. Deshalb zwei Routen und zwei Ladezustände, sichtbar
- * getrennt: der untere Block trägt seinen eigenen Knopf und seinen eigenen
- * Zeitstempel.
+ * Sie in EINE Route zu legen hätte geheißen, dass jeder Poll-Takt das Log
+ * liest. Deshalb zwei Routen und zwei Ladezustände, sichtbar getrennt: der
+ * untere Block trägt seinen eigenen Knopf und seinen eigenen Zeitstempel.
+ *
+ * Nachladen ist immer leise: kein Platzhalter, kein Spinner. Den gibt es nur
+ * beim ersten Laden und nach einer Handlung (Zeitraum, Dienst, Knopf).
  *
  * ── Warum der Zeitraum nur für die obere Hälfte gilt ──
  *
@@ -125,6 +129,16 @@ interface TrafficResponse {
 /* ══════════════════════════════════════════════════════════════════════
  * Konstanten — stabil, weil MetricChart memoisiert ist
  * ══════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Wie oft das Access-Log neu ausgewertet wird, solange die Seite offen ist.
+ *
+ * Ein Lauf liest bis zu 200 000 Zeilen (`/api/haproxy/traffic`), das ist
+ * Arbeit für die Maschine und keine Abfrage. Zwei Minuten, weil sich Länder,
+ * Adressen und Pfade in kürzerer Zeit kaum verschieben und das Diagramm
+ * darüber in Stunden rechnet. Ein verdeckter Tab fragt nicht (`usePolling`).
+ */
+const TRAFFIC_POLL_MS = 120_000;
 
 const RANGES = [
   { value: '6', label: msgid('Letzte 6 Stunden') },
@@ -261,10 +275,10 @@ function StatsView() {
     loadStats();
   }, [loadStats]);
 
-  // Derselbe Takt, in dem erfasst wird: jeder Poll holt damit genau einen neuen
-  // Punkt. Schneller zu fragen hieße, die Datenbank für dieselbe Antwort zu
-  // befragen; langsamer hieße, dass die Kurve älter aussieht, als sie ist.
-  usePolling(() => loadStats(true), HAPROXY_METRICS_INTERVAL_MS);
+  // Kein eigener Takt: `LiveTraffic` meldet die neue Runde des Sammlers, und
+  // genau dann gibt es einen neuen Punkt. Ein fester Takt von einer Minute lag
+  // bis zu einer Minute daneben, ein schnellerer läse dieselben Zeilen mehrfach.
+  const onRound = useCallback(() => void loadStats(true), [loadStats]);
 
   /** Eigener Zustand für den Knopf, damit die Liste stehen bleibt statt hinter
    *  einem Platzhalter zu verschwinden — siehe docs/ui.md. */
@@ -281,28 +295,44 @@ function StatsView() {
 
   /* ── Das Access-Log ── */
 
-  const loadTraffic = useCallback(async () => {
-    setTrafficLoading(true);
-    setTrafficError('');
-    try {
-      const params = new URLSearchParams();
-      if (scope) params.set('scope', scope);
-      const res = await apiFetch(`/api/haproxy/traffic?${params}`);
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error);
-      setTraffic(data.data as TrafficResponse);
-    } catch {
-      setTrafficError(t('Die Zugriffe konnten nicht ausgewertet werden.'));
-    } finally {
-      setTrafficLoading(false);
-    }
-  }, [apiFetch, scope, t]);
+  /** Läuft gerade eine Auswertung? Dann startet der Takt keine zweite. */
+  const trafficBusy = useRef(false);
+
+  const loadTraffic = useCallback(
+    async (quiet = false) => {
+      if (quiet && trafficBusy.current) return;
+      trafficBusy.current = true;
+      if (!quiet) {
+        setTrafficLoading(true);
+        setTrafficError('');
+      }
+      try {
+        const params = new URLSearchParams();
+        if (scope) params.set('scope', scope);
+        const res = await apiFetch(`/api/haproxy/traffic?${params}`);
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+        setTraffic(data.data as TrafficResponse);
+        setTrafficError('');
+      } catch {
+        // Leise gescheitert: die letzte Auswertung bleibt stehen, ihr
+        // Zeitstempel zeigt, wie alt sie ist.
+        if (!quiet) setTrafficError(t('Die Zugriffe konnten nicht ausgewertet werden.'));
+      } finally {
+        trafficBusy.current = false;
+        if (!quiet) setTrafficLoading(false);
+      }
+    },
+    [apiFetch, scope, t]
+  );
 
   // Beim Öffnen und bei jedem Wechsel des Dienstes. NICHT
   // beim Zeitraum: der gilt für die Zeitreihe, das Log liest immer sein Fenster.
   useEffect(() => {
     loadTraffic();
   }, [loadTraffic]);
+
+  usePolling(() => loadTraffic(true), TRAFFIC_POLL_MS);
 
   /* ── Aus den Antworten Diagramme ── */
 
@@ -413,6 +443,9 @@ function StatsView() {
 
       {error && <div className="alert alert-danger sys-block">{error}</div>}
 
+      {/* Neu eingehängt je Dienst: sonst meldete der Wechsel eine „neue Runde". */}
+      <LiveTraffic key={scope} scope={scope || undefined} onRound={onRound} />
+
       {loading ? (
         <SkeletonRows />
       ) : (
@@ -436,7 +469,12 @@ function StatsView() {
             </div>
           )}
 
-          {/* ── Kennzahlen ── */}
+          {/* ── Kennzahlen ── Summen über den gewählten Zeitraum. Die Zeile
+              darüber nennt ihn, sonst liest man sie neben den Live-Werten als
+              dieselbe Art Zahl. */}
+          <div className="live-kpis-head">
+            <strong>{t(RANGES.find((range) => range.value === hours)?.label ?? RANGES[1].label)}</strong>
+          </div>
           <div className="kpi-grid sys-block">
             <Kpi
               icon={<Activity size={16} />}
@@ -519,6 +557,14 @@ function StatsView() {
               Also Linien, wie überall sonst auf dieser Seite, wo mehrere Reihen
               nebeneinanderliegen. Der Preis ist ehrlich: die Gesamtzahl ist
               nicht mehr die Höhe des Bandes. Sie steht als Kennzahl oben.
+
+              Unter den Linien liegt trotzdem eine Fläche (`area`, OHNE
+              `stacked`), wie bei jedem Diagramm dieser Seite. Das ist kein
+              Rückfall in den Stapel: ungestapelt zeichnet `TimeSeriesChart` je
+              Reihe einen eigenen Verlauf, der nach unten ausläuft, bei drei und
+              mehr Reihen mit 18 % Deckkraft oben. Die Flächen überlagern sich
+              durchscheinend, keine trägt eine andere, und die Linie bleibt das,
+              was man liest. Deckend und massiv ist nur der Stapel.
             */}
             <ChartCard
               title={t('Anfragen nach Statusklasse')}
@@ -532,6 +578,7 @@ function StatsView() {
                 series={STATUS_SERIES[locale]}
                 format={fmt.countShort}
                 rangeMs={rangeMs}
+                area
               />
             </ChartCard>
 
@@ -546,6 +593,7 @@ function StatsView() {
                 series={TRAFFIC_SERIES[locale]}
                 format={fmt.kb}
                 rangeMs={rangeMs}
+                area
               />
             </ChartCard>
 
@@ -564,6 +612,7 @@ function StatsView() {
                 series={TIMING_SERIES[locale]}
                 format={fmt.ms}
                 rangeMs={rangeMs}
+                area
               />
             </ChartCard>
 
@@ -586,13 +635,15 @@ function StatsView() {
                 'Abgewiesen heißt: von einer Regel gestoppt, etwa der Sperre auf Admin-Adressen. Wiederholt heißt: HAProxy hat es an einem anderen Ziel erneut versucht. Das kennt nur ein Backend. Fehler und Abweisungen sind die Eingangs- und die Zielseite zusammengezählt.'
               )}
             >
-              {/* Drei unabhängige Größen, also drei Linien: gestapelt läse man
-                  eine Gesamtzahl „Probleme", die keine Bedeutung hat. */}
+              {/* Drei unabhängige Größen, also drei Linien mit je eigener
+                  Fläche: gestapelt läse man eine Gesamtzahl „Probleme", die
+                  keine Bedeutung hat. */}
               <MetricChart
                 data={points}
                 series={PROBLEM_SERIES[locale]}
                 format={fmt.countShort}
                 rangeMs={rangeMs}
+                area
               />
             </ChartCard>
 
@@ -629,7 +680,7 @@ function StatsView() {
             traffic={traffic}
             loading={trafficLoading}
             error={trafficError}
-            onReload={loadTraffic}
+            onReload={() => loadTraffic()}
             scope={scope}
           />
 
@@ -718,7 +769,7 @@ function TrafficSection({
                   lines: formatCount(locale, traffic.totals.lines),
                   time: formatTime(locale, traffic.collectedAt, true),
                 })
-              : t('Wird nicht im Hintergrund erfasst: jeder Lauf liest das Log neu.')}
+              : t('Wird alle zwei Minuten neu ausgewertet, solange die Seite offen ist.')}
           </p>
         </div>
         <button className="btn btn-secondary btn-sm" onClick={onReload} disabled={loading}>

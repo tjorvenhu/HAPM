@@ -28,11 +28,12 @@ import type { Server } from '@/lib/types';
  * kommt aus der Datenbank und ist billig, diese hier wertet das Zugriffslog
  * aus.
  *
- * ── Warum sie NICHT gepollt wird ──
+ * ── Warum sie langsamer gepollt wird als die Zeitreihe ──
  *
- * Ein Lauf liest bis zu 200 000 Zeilen. Das ist eine Handlung, kein
- * Hintergrundtakt — die Seite holt ihn beim Öffnen und danach nur auf Knopfdruck
- * oder bei einem Wechsel des Dienstes. Deshalb steht auch dabei, wann er lief.
+ * Ein Lauf liest bis zu 200 000 Zeilen. Die Statistik-Seite fragt deshalb
+ * nur alle zwei Minuten (`TRAFFIC_POLL_MS` dort), nie zwei Läufe zugleich und
+ * nicht in einem verdeckten Tab, dazu beim Öffnen, auf Knopfdruck und beim
+ * Wechsel des Dienstes. Deshalb steht auch dabei, wann er lief.
  *
  * ── Warum die Adressen nicht an den Browser gehen ──
  *

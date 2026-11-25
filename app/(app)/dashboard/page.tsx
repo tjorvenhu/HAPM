@@ -35,6 +35,7 @@ import { usePolling } from '@/components/usePolling';
 import { useNow } from '@/components/useNow';
 import Skeleton, { SkeletonRows } from '@/components/Skeleton';
 import GeoipReminder from '@/components/GeoipReminder';
+import LiveTraffic from '@/components/reverse-proxy/LiveTraffic';
 import SetupReminder from '@/components/SetupReminder';
 import {
   COMPONENT_LABELS,
@@ -781,6 +782,9 @@ export default function DashboardPage() {
           </Link>
         </div>
       )}
+
+      {/* Ohne Ziel läuft nichts über HAProxy: dann stünden sechs Striche da. */}
+      {!empty && <LiveTraffic href="/reverse-proxy/statistiken" />}
 
       <div className="kpi-grid sys-block">
         <Kpi

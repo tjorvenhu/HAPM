@@ -12,6 +12,7 @@
 import { readHaproxyMetrics } from './stats-collect';
 import { proxyServers } from './internal';
 import { bucketMs, bucketise, foldInBackends, sumUp, type Point } from './stats-series';
+import { liveStats, LIVE_WINDOW_MINUTES, type LiveStats } from './stats-live';
 
 export interface StatsOverview {
   hours: number;
@@ -93,4 +94,18 @@ export async function readStatsOverview(options: {
       .sort((a, b) => b.requests - a.requests),
     proxies: servers.map((server) => ({ $id: server.$id, name: server.name })),
   };
+}
+
+/**
+ * Die Live-Kennzahlen (Übersicht und Statistik-Seite). Eine halbe Stunde
+ * Zeilen, beide Sorten, und zwei Takte mehr: die älteste Runde im Fenster
+ * braucht eine Vorgängerin, sonst ist die Länge ihres Fensters unbekannt.
+ */
+export async function readLiveStats(options: { scope?: string } = {}): Promise<LiveStats> {
+  const now = Date.now();
+  const since = new Date(now - (LIVE_WINDOW_MINUTES + 2) * 60_000).toISOString();
+  const rows = await readHaproxyMetrics(
+    options.scope ? { since, kind: 'backend', scope: options.scope } : { since }
+  );
+  return liveStats(rows, now, options.scope);
 }

@@ -25,7 +25,11 @@ interface MetricChartProps {
   rangeMs: number;
   /** Gestapelte Flächen (Speicherbänder, Container) statt Linien. */
   stacked?: boolean;
-  /** Fläche unter der Linie. Für eine einzelne Reihe. */
+  /**
+   * Fläche unter jeder Linie, ungestapelt: je Reihe ein Verlauf, der nach unten
+   * ausläuft und mit mehr Reihen blasser wird (`TimeSeriesChart`). Geht deshalb
+   * auch bei mehreren Reihen, anders als `stacked`, dessen Bänder deckend sind.
+   */
   area?: boolean;
   /** Balken für Summen über ein Fenster („Anfragen je Stunde"), mehrere Reihen gestapelt. */
   bars?: boolean;

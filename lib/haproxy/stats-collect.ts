@@ -38,8 +38,8 @@ import type { HaproxyMetric, Server } from '../types';
 /**
  * Der Takt — definiert in `./stats-series.ts` und hier nur weitergereicht.
  *
- * Dort, weil die Statistik-Seite ihn ebenfalls braucht (sie pollt in genau
- * diesem Takt) und diese Datei über `lib/db` und `lib/ssh` nichts ist, was eine
+ * Dort, weil die Oberfläche ihn ebenfalls braucht (die Live-Kennzahlen in
+ * `./stats-live.ts` rechnen damit) und diese Datei über `lib/db` und `lib/ssh` nichts ist, was eine
  * Client-Komponente importieren darf. Hier, weil der Scheduler ihn bei der
  * Erfassung sucht und nicht bei der Darstellung.
  */

@@ -144,6 +144,14 @@ export function formatKb(locale: Locale, value: number): string {
   return `${formatNumber(locale, Math.round(value))} KB`;
 }
 
+/**
+ * Eine Rate pro Sekunde, ohne Einheit. Unter zehn mit einer Nachkommastelle:
+ * 0,4 Anfragen pro Sekunde sind ein ruhiger Betrieb und keine 0.
+ */
+export function formatPerSecond(locale: Locale, value: number): string {
+  return formatNumber(locale, value, value > 0 && value < 10 ? 1 : 0);
+}
+
 /** Bytes in der passenden Einheit. */
 export function formatBytes(locale: Locale, value: number): string {
   return formatKb(locale, value / 1024);

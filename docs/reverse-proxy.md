@@ -2000,8 +2000,9 @@ Zahl herauskommt.
   Selbstheilung steckt in der Bedingung: liefert `show stat`
   über den gemerkten Pfad nichts, wird die Datei neu gelesen, und ein umgezogener
   Socket findet sich in der nächsten Runde von selbst.
-- **Der Takt steht in `stats-series.ts` und nicht bei der Erfassung.** Die Seite
-  pollt in genau diesem Takt und braucht die Zahl; `stats-collect.ts` zieht über
+- **Der Takt steht in `stats-series.ts` und nicht bei der Erfassung.** Die
+  Live-Kennzahlen im Browser rechnen damit (`stats-live.ts`: Takt des Pollens,
+  ab wann eine Runde veraltet ist); `stats-collect.ts` zieht über
   `lib/db` und `lib/ssh` Node-Module hinter sich her (`postgres`,
   `node:child_process`), und ein
   Import von dort in eine Client-Komponente fällt erst im Build auf.
@@ -2054,8 +2055,8 @@ Zahl herauskommt.
   fehlt. Die Seite sagt das als eigene Fläche, solange weniger als zwei
   Rasterpunkte vorliegen (`samples`) — ohne den Satz stehen fünf Diagramme auf
   „keine Messwerte", und das liest niemand als „warte ein paar Minuten".
-- **Gezeichnet werden Linien, und eine Fläche nur bei einer
-  einzelnen Reihe** (`components/systems/MetricChart.tsx`). Zwei naheliegende
+- **Gezeichnet werden Linien mit einer ungestapelten Fläche darunter**
+  (`components/systems/MetricChart.tsx`, `area` ohne `stacked`). Zwei naheliegende
   Alternativen sind begründet und trotzdem falsch. Balken, mit dem Argument:
   ein Punkt ist die Summe über ein Fenster, eine Linie dazwischen behauptet
   einen Zwischenwert, den es nicht gibt. Nur teilt Recharts die Zeichenfläche
@@ -2066,6 +2067,45 @@ Zahl herauskommt.
   massive Farbfläche neben vier Diagrammen mit feinen Linien. Der Preis der
   Linien ist ehrlich: das Gesamtaufkommen ist nicht die Höhe eines Bandes, es
   steht als Kennzahl darüber.
+  Die Fläche darunter ist kein Rückfall in den Stapel: ungestapelt zeichnet
+  `TimeSeriesChart` je Reihe einen eigenen Verlauf, der nach unten ausläuft
+  (bei drei und mehr Reihen oben 18 % Deckkraft). Die Flächen überlagern sich
+  durchscheinend, keine trägt eine andere. Deckend ist nur `stacked`, und das
+  bleibt draußen. Ohne `area` füllte `TimeSeriesChart` nur bis drei Reihen,
+  „Anfragen nach Statusklasse" mit fünf stand deshalb als einziges Diagramm
+  ohne Fläche da.
+- **Die Live-Kennzahlen** (`components/reverse-proxy/LiveTraffic.tsx`) stehen
+  oben auf der Übersicht und auf dieser Seite, eine Komponente für beide:
+  Anfragen und Datenrate pro Sekunde, Antwortzeit der Ziele, offene
+  Verbindungen, Anteil 5xx und 4xx, je mit der letzten halben Stunde als
+  Verlaufslinie (`ui/charts/Sparkline.tsx`). Die Route
+  `/api/haproxy/stats/live` liest dieselbe Tabelle wie die Zeitreihe und fragt
+  HAProxy **nicht**: neue Zahlen gibt es nur, wenn der Sammler seine Runde
+  dreht, einmal je Minute. Gepollt wird alle 15 s (`LIVE_POLL_MS`), damit eine
+  neue Runde höchstens so spät erscheint.
+  - **Gerechnet wird nach Runden, nicht nach Raster** (`lib/haproxy/stats-live.ts`).
+    Eine Runde schreibt alle Zeilen mit demselben `collectedAt`, ihre
+    Differenzen gelten seit der vorigen Runde, also ist deren Abstand das
+    Fenster der Rate. Im Minutenraster lägen bei wanderndem Takt zwei Runden
+    in einem Fenster, und die Rate verdoppelte sich für einen Punkt.
+  - Fehlt einer Runde die Differenz (Reload), steht die Zahl der vorigen da,
+    solange sie jünger als drei Takte ist. Ist die letzte Runde älter
+    (`LIVE_STALE_MS`), stehen Striche: eine eingefrorene Rate sähe aus wie
+    ruhiger Betrieb. Die Fehlerquote gilt für fünf Minuten, ohne Anfragen gibt
+    es keine (Strich, nicht 0 %).
+  - Im Drilldown (`?scope=`) alles aus der Backend-Zeile des Dienstes, sonst
+    wie oben Flussgrößen aus den Frontends, Antwortzeit aus den Backends.
+  - „Ziele erreichbar" ist keine Live-Kachel: der Zustand kommt aus
+    `probeProxy` (Konfiguration und Socket) und steht auf der Übersicht als
+    Kachel „Backend nicht erreichbar" darunter, im Takt der Übersicht.
+- **Nachladen ist leise.** Die Zeitreihe hat keinen eigenen Takt mehr:
+  `LiveTraffic` meldet eine neue Runde (`onRound`), und erst dann lädt die
+  Seite sie nach. Ein Zeitraum von dreißig Tagen wird so einmal je Minute
+  gelesen und nicht alle fünfzehn Sekunden. Das Access-Log wertet die Seite
+  alle zwei Minuten neu aus (`TRAFFIC_POLL_MS`), nie zwei Läufe zugleich, ohne
+  Platzhalter; ein leiser Fehlschlag lässt die letzte Auswertung mit ihrem
+  Zeitstempel stehen. Platzhalter gibt es nur nach einer Handlung (Zeitraum,
+  Dienst, Knopf).
 
 **Der Weg zu einem einzelnen Dienst geht auf drei Arten**, und das ist Absicht:
 über die Dienstliste unten, über die Auswahl oben rechts (die auch im Drilldown

@@ -7,6 +7,7 @@ import {
   formatDuration,
   formatMs,
   formatNumber,
+  formatPerSecond,
   formatRelative,
   formatShare,
 } from '@/lib/i18n';
@@ -21,6 +22,12 @@ describe('Zahlen', () => {
   it('trennt Tausender und Nachkommastellen nach der Sprache', () => {
     expect(formatNumber('de', 1234.5, 1)).toBe('1.234,5');
     expect(formatNumber('en', 1234.5, 1)).toBe('1,234.5');
+  });
+
+  it('schreibt kleine Raten mit einer Nachkommastelle', () => {
+    expect(formatPerSecond('de', 0.4)).toBe('0,4');
+    expect(formatPerSecond('de', 0)).toBe('0');
+    expect(formatPerSecond('en', 1234.4)).toBe('1,234');
   });
 
   it('schreibt Prozent mit und ohne Leerzeichen', () => {

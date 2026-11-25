@@ -137,6 +137,20 @@ export const proxyPages: Dictionary = {
   'Die Zugriffe konnten nicht ausgewertet werden.': 'The requests could not be analyzed.',
   'Alle Dienste': 'All services',
   'Statistik: {scope}': 'Statistics: {scope}',
+  // Live-Kennzahlen (components/reverse-proxy/LiveTraffic.tsx), auch auf der Übersicht
+  'Die Live-Werte konnten nicht geladen werden.': 'The live figures could not be loaded.',
+  'Live': 'Live',
+  'Noch keine Messung. HAPM liest die Zähler von HAProxy jede Minute.': 'No measurement yet. HAPM reads the HAProxy counters every minute.',
+  'Letzte Messung {ago}. Seitdem kam keine neue.': 'Last measurement {ago}. None since.',
+  'Messung von {time}': 'Measured at {time}',
+  'HAPM liest die Zähler von HAProxy jede Minute. Die Werte gelten für die letzte Minute, die Fehlerquoten für die letzten {minutes} Minuten. Die Linie zeigt die letzte halbe Stunde.':
+    'HAPM reads the HAProxy counters every minute. The figures cover the last minute, the error rates the last {minutes} minutes. The line shows the last half hour.',
+  'Anfragen pro Sekunde': 'Requests per second',
+  'Ausgehend, an die Besucher': 'Outgoing, to visitors',
+  'Eingehend, von den Besuchern': 'Incoming, from visitors',
+  'Ø Antwortzeit der Ziele': 'Avg. response time of targets',
+  'Offene Verbindungen': 'Open connections',
+  'Serverfehler (5xx) in {minutes} Min. · 4xx: {share}': 'Server errors (5xx) in {minutes} min · 4xx: {share}',
   'Reverse-Proxy-Statistik': 'Reverse proxy statistics',
   'Nur dieser Dienst. Die Zahlen kommen aus HAProxys eigener Statistik, die Zugriffe aus seinem Log.':
     'This service only. The numbers come from HAProxy’s own statistics, the requests from its log.',
@@ -173,7 +187,7 @@ export const proxyPages: Dictionary = {
   'Zugriffe': 'Requests',
   'Aus dem Access-Log von HAProxy.': 'From the HAProxy access log.',
   '{parsed} von {lines} gelesenen Zeilen ausgewertet, zuletzt {time}.': '{parsed} of {lines} lines read were analyzed, last at {time}.',
-  'Wird nicht im Hintergrund erfasst: jeder Lauf liest das Log neu.': 'Not collected in the background: each run reads the log again.',
+  'Wird alle zwei Minuten neu ausgewertet, solange die Seite offen ist.': 'Analyzed again every two minutes while the page is open.',
   'Neu auswerten': 'Analyze again',
   'Es wurde kein HAProxy-Log gefunden. HAPM schreibt das Log des HAProxy-Containers mit. Liegt dort nichts, hat HAProxy noch keine Anfrage protokolliert. Die Zahlen oben (aus HAProxys eigener Statistik) stimmen trotzdem.':
     'No HAProxy log was found. HAPM records the log of the HAProxy container. If it is empty, HAProxy has not logged a request yet. The numbers above (from HAProxy’s own statistics) are still correct.',
