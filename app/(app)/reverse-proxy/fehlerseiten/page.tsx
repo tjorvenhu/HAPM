@@ -38,10 +38,7 @@ import {
 } from '@/lib/haproxy/page-design';
 import {
   cleanCustomSource,
-  closesStyle,
-  CUSTOM_PAGE_PLACEHOLDERS,
   CUSTOM_PAGE_STARTER,
-  type CustomPage,
 } from '@/lib/haproxy/custom-page';
 import {
   DESIGN_PAGES,
@@ -73,7 +70,7 @@ import type { ProvisionStep } from '@/lib/haproxy/provision';
  * Vorgabetexte, auch in den Feldern und in der Vorschau.
  *
  * Oben steht die Art (`design.mode`): die Seite von HAPM, „Selbst gestalten“
- * oder eigenes HTML und CSS. Gezeigt werden nur die Felder der gewählten Art,
+ * oder eine eigene HTML-Datei. Gezeigt werden nur die Felder der gewählten Art,
  * die der anderen bleiben im Entwurf und werden mit gespeichert.
  */
 
@@ -114,8 +111,8 @@ const MODES: { mode: PageMode; label: string; hint: string }[] = [
   },
   {
     mode: 'custom',
-    label: msgid('Eigenes HTML und CSS'),
-    hint: msgid('Eine eigene Vorlage für alle Fehlerseiten.'),
+    label: msgid('Eigene HTML-Datei'),
+    hint: msgid('Ihre Datei, unverändert für alle Fehlerseiten.'),
   },
 ];
 
@@ -156,19 +153,17 @@ function previewable(draft: PageDesign): PageDesign {
 }
 
 /**
- * Eigenes HTML, solange es noch nicht gültig ist: die Vorschau zeigt, was
- * dasteht. Ein unbekannter Platzhalter bleibt als Text stehen, ein CSS mit
- * `</style>` fällt weg, bis es repariert ist. Die Meldung dazu steht über der Seite.
+ * Eigenes HTML, solange es noch nicht gültig ist (zu groß, leer): die Vorschau
+ * zeigt trotzdem, was dasteht. Die Meldung dazu steht über der Seite.
  */
 function previewableCustom(draft: PageDesign): PageDesign {
   const parsed = parsePageDesign(draft);
   if (parsed.ok) return parsed.design;
-  const css = cleanCustomSource(draft.custom.css);
   return {
     ...defaultPageDesign(),
     mode: 'custom',
     locale: draft.locale,
-    custom: { html: cleanCustomSource(draft.custom.html), css: closesStyle(css) ? '' : css },
+    custom: { html: cleanCustomSource(draft.custom.html) },
   };
 }
 
@@ -326,22 +321,21 @@ export default function ErrorPagesDesignPage() {
 
   function chooseMode(mode: PageMode) {
     if (!current || current.mode === mode) return;
-    // Beim ersten Wechsel auf eigenes HTML steht eine Vorlage in den Feldern,
-    // die schon jeden Platzhalter benutzt.
-    const empty = !current.custom.html.trim() && !current.custom.css.trim();
+    // Beim ersten Wechsel auf eigenes HTML steht eine kleine, ganze Seite im Feld.
+    const empty = !current.custom.html.trim();
     edit(mode === 'custom' && empty ? { mode, custom: CUSTOM_PAGE_STARTER } : { mode });
   }
 
-  function setCustom(field: keyof CustomPage, value: string) {
+  function setCustomHtml(html: string) {
     if (!current) return;
-    edit({ custom: { ...current.custom, [field]: value } });
+    edit({ custom: { html } });
   }
 
   async function insertStarter() {
     if (!current) return;
     const ok = await confirm({
       title: t('Vorlage einsetzen?'),
-      message: t('HTML und CSS werden durch die Vorlage von HAPM ersetzt. Gespeichert ist damit noch nichts.'),
+      message: t('Das HTML wird durch die Vorlage von HAPM ersetzt. Gespeichert ist damit noch nichts.'),
       confirmLabel: t('Einsetzen'),
       variant: 'warning',
     });
@@ -474,7 +468,7 @@ export default function ErrorPagesDesignPage() {
     const ok = await confirm({
       title: t('Zurück auf das Design von HAPM?'),
       message: t(
-        'Art, Farben, Logo, Schriftzug, Fußzeile, Sprache, alle Texte und das eigene HTML und CSS gehen auf die Vorgabe zurück. Danach schreibt HAPM die Seiten neu und lädt HAProxy neu.'
+        'Art, Farben, Logo, Schriftzug, Fußzeile, Sprache, alle Texte und die eigene HTML-Datei gehen auf die Vorgabe zurück. Danach schreibt HAPM die Seiten neu und lädt HAProxy neu.'
       ),
       confirmLabel: t('Zurücksetzen'),
       variant: 'warning',
@@ -626,10 +620,10 @@ export default function ErrorPagesDesignPage() {
                   </span>
                   <div>
                     <div className="form-section-title">
-                      {t('HTML und CSS')}
-                      <InfoHint text={t('Das HTML ist der Inhalt von <body>, das CSS steht in einem <style>. Doctype, Zeichensatz, Titel und noindex setzt HAPM. Die Platzhalter werden im HTML ersetzt, mit den Texten von HAPM in der Sprache der Vorgabetexte. Bilder und Schriften von anderen Adressen lädt der Browser des Besuchers nach, HAPM bettet nichts ein.')} />
+                      {t('Eigene HTML-Datei')}
+                      <InfoHint text={t('Die Datei geht unverändert hinaus, für jeden Fehler dieselbe. HAPM setzt nichts ein und legt keinen Rahmen darum. CSS steht in einem <style> der Datei. Bilder und Schriften von anderen Adressen lädt der Browser des Besuchers nach.')} />
                     </div>
-                    <div className="form-section-sub">{t('Eine Vorlage für jeden Status.')}</div>
+                    <div className="form-section-sub">{t('Eine Datei für jeden Status, so wie sie hier steht.')}</div>
                   </div>
                 </div>
 
@@ -646,34 +640,12 @@ export default function ErrorPagesDesignPage() {
                   <textarea
                     id="design-custom-html"
                     className="form-textarea mono"
-                    rows={12}
+                    rows={20}
                     spellCheck={false}
                     autoCapitalize="off"
                     autoCorrect="off"
                     value={current.custom.html}
-                    onChange={(event) => setCustom('html', event.target.value)}
-                  />
-                  <span className="form-hint hapm-placeholders">
-                    {t('Platzhalter:')}
-                    {CUSTOM_PAGE_PLACEHOLDERS.map((name) => (
-                      <code key={name}>{`{{${name}}}`}</code>
-                    ))}
-                  </span>
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label" htmlFor="design-custom-css">
-                    CSS
-                  </label>
-                  <textarea
-                    id="design-custom-css"
-                    className="form-textarea mono"
-                    rows={12}
-                    spellCheck={false}
-                    autoCapitalize="off"
-                    autoCorrect="off"
-                    value={current.custom.css}
-                    onChange={(event) => setCustom('css', event.target.value)}
+                    onChange={(event) => setCustomHtml(event.target.value)}
                   />
                 </div>
 

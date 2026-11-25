@@ -101,7 +101,7 @@ Konfiguration, prüft sie mit HAProxy, lädt neu und holt die Zertifikate.
 **Schutz und Darstellung**
 - Domains nur für bestimmte IP-Adressen freigeben
 - Passwortabfrage vor einer Domain, ausgeliefert von HAProxy selbst
-- Fehlerseiten: Standard, selbst gestaltet oder eigenes HTML und CSS
+- Fehlerseiten: Standard, selbst gestaltet oder eine eigene HTML-Datei
 - Konten mit Passwort, zweitem Faktor und Passkeys
 
 </td>

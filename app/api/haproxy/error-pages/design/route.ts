@@ -84,7 +84,7 @@ function describe(design: PageDesign): string {
   if (design.mode === 'standard') return ['Seite von HAPM', language].filter(Boolean).join(', ');
   if (design.mode === 'custom') {
     const size = (text: string) => new TextEncoder().encode(text).length;
-    return [`eigenes HTML (${size(design.custom.html)} Bytes) und CSS (${size(design.custom.css)} Bytes)`, language]
+    return [`eigene HTML-Datei (${size(design.custom.html)} Bytes)`, language]
       .filter(Boolean)
       .join(', ');
   }

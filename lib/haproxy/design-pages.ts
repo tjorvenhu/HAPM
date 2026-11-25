@@ -153,7 +153,7 @@ export function designSizeError(design: PageDesign, messages: Locale = DEFAULT_L
     max: formatNumber(messages, PAGE_MAX_BYTES),
   };
   if (design.mode === 'custom' && largest.page.kind === 'error') {
-    return t('Mit diesem HTML und CSS hätte „{page}“ {bytes} Bytes, HAProxy lädt höchstens {max}. Kürzen Sie HTML oder CSS.', values);
+    return t('Als Fehlerseite hätte die Datei {bytes} Bytes, HAProxy lädt höchstens {max}. Kürzen Sie das HTML.', values);
   }
   if (design.mode === 'designed' && design.logo.kind === 'custom') {
     return t(

@@ -158,26 +158,26 @@ describe('PUT /api/haproxy/error-pages/design', () => {
     expect(calls.applied).toBe(0);
   });
 
-  it('speichert eigenes HTML und CSS', async () => {
-    const custom = { html: '<h1>{{title}}</h1>', css: 'h1{color:red}' };
+  it('speichert die eigene HTML-Datei, wie sie ist', async () => {
+    const custom = { html: '<!doctype html><h1>{{title}}</h1>' };
     const res = await PUT(put({ ...defaultPageDesign(), mode: 'custom', custom }));
     expect(res.status).toBe(200);
     expect(calls.saved).toEqual([{ ...defaultPageDesign(), mode: 'custom', custom }]);
     expect(calls.applied).toBe(1);
   });
 
-  it('lehnt eigenes HTML ab, mit dem eine Seite zu groß würde, mit derselben Meldung wie das Formular', async () => {
-    const res = await PUT(put({ ...defaultPageDesign(), mode: 'custom', custom: { html: 'x'.repeat(14_900), css: '' } }));
+  it('lehnt eine Datei ab, mit der eine Seite zu groß würde, mit derselben Meldung wie das Formular', async () => {
+    const res = await PUT(put({ ...defaultPageDesign(), mode: 'custom', custom: { html: 'x'.repeat(14_900) } }));
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toMatch(/^Mit diesem HTML und CSS hätte .+ Kürzen Sie HTML oder CSS\.$/);
+    expect((await res.json()).error).toMatch(/^Als Fehlerseite hätte die Datei .+ Kürzen Sie das HTML\.$/);
     expect(calls.saved).toEqual([]);
     expect(calls.applied).toBe(0);
   });
 
-  it('lehnt einen unbekannten Platzhalter ab, ohne zu speichern', async () => {
-    const res = await PUT(put({ ...defaultPageDesign(), mode: 'custom', custom: { html: '{{code}}', css: '' } }));
+  it('lehnt eine leere Datei ab, ohne zu speichern', async () => {
+    const res = await PUT(put({ ...defaultPageDesign(), mode: 'custom', custom: { html: '   ' } }));
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toContain('{{code}}');
+    expect((await res.json()).error).toContain('leer');
     expect(calls.saved).toEqual([]);
   });
 

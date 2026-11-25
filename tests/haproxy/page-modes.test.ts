@@ -38,7 +38,7 @@ describe('eine Zeile von vor der Wahl', () => {
     const read = parsed(OWN);
     expect(read.mode).toBe('designed');
     expect(renderErrorFile(503, read)).toContain('<h1>Wartung</h1>');
-    expect(read.custom).toEqual({ html: '', css: '' });
+    expect(read.custom).toEqual({ html: '' });
   });
 
   it('ist ohne eigenes Design „Standard“, auch mit englischen Vorgabetexten', () => {
@@ -106,38 +106,27 @@ describe('die Seite von HAPM', () => {
   });
 });
 
-describe('eigenes HTML und CSS', () => {
-  const custom = parsed({
-    mode: 'custom',
-    custom: { html: '<div class="x">{{ status }}: {{title}}</div>\r\n<p>{{text}}</p>', css: '.x{color:red}' },
-  });
+describe('eigene HTML-Datei', () => {
+  const FILE = '<!doctype html>\r\n<html><head><style>.x{color:red}</style></head><body><p class="x">{{status}} bleibt stehen</p></body></html>';
+  const custom = parsed({ mode: 'custom', custom: { html: FILE } });
 
-  it('setzt Status, Überschrift und Text ein, in einem Rahmen von HAPM', () => {
+  it('liefert die Datei unverändert aus, ohne Rahmen und ohne Platzhalter', () => {
     const file = renderErrorFile(503, custom);
     expect(file.startsWith('HTTP/1.1 503 Service Unavailable\r\n')).toBe(true);
+    expect(file).toContain('Content-Type: text/html; charset=utf-8');
     const page = body(file);
-    expect(page.startsWith('<!doctype html><html lang="de"><head><meta charset="utf-8">')).toBe(true);
-    expect(page).toContain('<meta name="robots" content="noindex, nofollow">');
-    expect(page).toContain('<title>Gerade nicht erreichbar (503)</title>');
-    expect(page).toContain('<style>.x{color:red}</style>');
-    expect(page).toContain('<div class="x">503: Gerade nicht erreichbar</div>\n<p>Die Seite ist im Moment');
-    expect(page.includes('\r')).toBe(false);
+    expect(page).toBe(`${FILE.replace('\r\n', '\n')}\n`);
+    expect(page).toContain('{{status}} bleibt stehen');
+    expect(page).not.toContain('noindex');
   });
 
-  it('nimmt für jeden Status dessen Texte, für die 404 die des Proxys', () => {
-    expect(renderErrorFile(404, custom)).toContain('404: Seite nicht gefunden');
-    expect(renderErrorFile(404, custom)).toContain('Unter dieser Adresse ist nichts eingerichtet.');
-    expect(renderErrorFile(403, { ...custom, locale: 'en' })).toContain('<html lang="en">');
+  it('nimmt für jeden Status dieselbe Datei', () => {
+    expect(body(renderErrorFile(404, custom))).toBe(body(renderErrorFile(503, custom)));
+    expect(body(renderErrorFile(403, { ...custom, locale: 'en' }))).toBe(body(renderErrorFile(503, custom)));
   });
 
-  it('maskiert, was es einsetzt', () => {
-    const page = renderCustomPage(
-      { html: '<h1>{{title}}</h1>', css: '' },
-      { status: '503', title: '<script>"&', text: '' },
-      'de'
-    );
-    expect(page).toContain('<h1>&lt;script&gt;&quot;&amp;</h1>');
-    expect(page).not.toContain('<style>');
+  it('setzt nichts ein, auch nichts, was nach Markup aussieht', () => {
+    expect(renderCustomPage({ html: '<h1>{{title}}</h1>' })).toBe('<h1>{{title}}</h1>\n');
   });
 
   it('lässt die Passwortabfrage bei der von HAPM', () => {
@@ -150,50 +139,43 @@ describe('eigenes HTML und CSS', () => {
     expect(custom.custom.html).not.toContain('\r');
   });
 
+  it('vergisst ein CSS aus einer früheren Fassung', () => {
+    const old = parsed({ mode: 'custom', custom: { html: '<p>x</p>', css: 'p{}' } });
+    expect(old.custom).toEqual({ html: '<p>x</p>' });
+  });
+
   it('nimmt die Vorlage, mit der das Formular beginnt', () => {
     const starter = parsed({ mode: 'custom', custom: CUSTOM_PAGE_STARTER });
     expect(starter.custom).toEqual(CUSTOM_PAGE_STARTER);
     expect(designSizeError(starter)).toBeNull();
   });
 
-  it('lehnt ab, was die Seite kaputt machte', () => {
-    const reject = (html: string, css = '') => parsePageDesign({ mode: 'custom', custom: { html, css } });
-    expect(reject('<!DOCTYPE html><p>x</p>')).toEqual({ ok: false, error: expect.stringContaining('Inhalt von <body>') });
-    expect(reject('<html><p>x</p></html>').ok).toBe(false);
-    expect(reject('<BODY>x</BODY>').ok).toBe(false);
-    expect(reject('<p>{{status}} {{code}}</p>')).toEqual({
-      ok: false,
-      error: 'Den Platzhalter {{code}} gibt es nicht. Erlaubt sind {{status}}, {{title}}, {{text}}.',
-    });
-    expect(reject('<p>x</p>', 'p{}</STYLE><script>')).toEqual({ ok: false, error: expect.stringContaining('</style>') });
-    expect(reject('  \n ')).toEqual({ ok: false, error: expect.stringContaining('Das HTML ist leer') });
-    // Ein Wort mit „body“ darin ist kein Rahmen.
-    expect(reject('<p>nobody <bodyguard></p>').ok).toBe(true);
+  it('lehnt nur eine leere Datei ab, alles andere geht so hinaus', () => {
+    const check = (html: string) => parsePageDesign({ mode: 'custom', custom: { html } });
+    expect(check('  \n ')).toEqual({ ok: false, error: expect.stringContaining('Das HTML ist leer') });
+    expect(check('<!DOCTYPE html><html><body>x</body></html>').ok).toBe(true);
+    expect(check('nur Text').ok).toBe(true);
   });
 
-  it('hält eine halbe Vorlage bei einer anderen Art nicht auf', () => {
-    const half = parsed({ mode: 'designed', ...OWN, custom: { html: '{{unbekannt}}', css: '</style>' } });
+  it('hält eine leere Vorlage bei einer anderen Art nicht auf', () => {
+    const half = parsed({ mode: 'designed', ...OWN, custom: { html: '' } });
     expect(half.mode).toBe('designed');
     expect(parsePageDesign({ ...half, mode: 'custom' }).ok).toBe(false);
   });
 
-  it('lehnt ein Feld über der Grenze einer Seite gleich ab', () => {
-    const result = parsePageDesign({ mode: 'custom', custom: { html: 'x'.repeat(PAGE_MAX_BYTES + 1), css: '' } });
+  it('lehnt eine Datei über der Grenze einer Seite gleich ab', () => {
+    const result = parsePageDesign({ mode: 'custom', custom: { html: 'x'.repeat(PAGE_MAX_BYTES + 1) } });
     expect(result).toEqual({ ok: false, error: expect.stringContaining('Das HTML hat 15.001 Bytes') });
-    const css = parsePageDesign({ mode: 'designed', custom: { html: '', css: 'ü'.repeat(PAGE_MAX_BYTES / 2 + 1) } }, 'en');
-    expect(css).toEqual({ ok: false, error: 'The CSS has 15,002 bytes. A whole page may have at most 15,000 bytes.' });
   });
 
-  it('misst die fertige Datei und nennt HTML und CSS, wenn sie zu groß wird', () => {
-    const fill = (html: string) => parsed({ mode: 'custom', custom: { html, css: '' } });
-    // Die Passwortabfrage bleibt die von HAPM und ist hier klein. Gemessen wird
-    // die größte Fehlerseite: ihr Text steht schon in `frame`, der Rest ist Platz.
-    const frame = designPageSizes(fill('{{text}}')).find((size) => size.page.kind === 'error')!.bytes;
-    const fits = fill(`{{text}}${'x'.repeat(PAGE_MAX_BYTES - frame)}`);
+  it('misst die fertige Datei samt Kopfzeilen', () => {
+    const fill = (html: string) => parsed({ mode: 'custom', custom: { html } });
+    const frame = designPageSizes(fill('x')).find((size) => size.page.kind === 'error')!.bytes - 1;
+    const fits = fill('x'.repeat(PAGE_MAX_BYTES - frame));
     expect(designPageSizes(fits)[0].bytes).toBe(PAGE_MAX_BYTES);
     expect(designSizeError(fits)).toBeNull();
 
-    const over = fill(`{{text}}${'x'.repeat(PAGE_MAX_BYTES - frame + 1)}`);
-    expect(designSizeError(over)).toMatch(/^Mit diesem HTML und CSS hätte „5\d\d · .+“ 15\.001 Bytes, HAProxy lädt höchstens 15\.000\. Kürzen Sie HTML oder CSS\.$/);
+    const over = fill('x'.repeat(PAGE_MAX_BYTES - frame + 1));
+    expect(designSizeError(over)).toMatch(/^Als Fehlerseite hätte die Datei 15\.001 Bytes, HAProxy lädt höchstens 15\.000\. Kürzen Sie das HTML\.$/);
   });
 });

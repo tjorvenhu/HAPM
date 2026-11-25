@@ -1333,8 +1333,8 @@ Karte. Die Passwortabfrage aus demselben Modul ist dagegen die Anmeldekarte.
   Sprache der Vorgabetexte.
 - **Selbst gestalten** (`designed`): dieselbe Seite mit eigenen Farben, Logo,
   Name, Fußzeile und Texten, siehe „Das Design“.
-- **Eigenes HTML und CSS** (`custom`, `lib/haproxy/custom-page.ts`): eine
-  Vorlage für alle Fehlerseiten, siehe unten.
+- **Eigene HTML-Datei** (`custom`, `lib/haproxy/custom-page.ts`): eine Datei
+  für alle Fehlerseiten, unverändert ausgeliefert, siehe unten.
 
 Die Felder der anderen Arten bleiben beim Wechsel gespeichert, was gilt, sagt
 nur `mode` (`builtInDesign`). Eine Zeile ohne `mode` (von vor der Wahl) ist
@@ -1354,29 +1354,29 @@ Prüfsummen der Fehlerseiten geändert (die der Passwortabfrage nicht): eine
 bestehende Installation sieht ihre Fehlerdateien nach dem Update als „Andere
 Seite“, und der Knopf schreibt sie neu.
 
-**Eigenes HTML und CSS** (`custom-page.ts`):
+**Eigene HTML-Datei** (`custom-page.ts`):
 
-- Das HTML ist der **Inhalt von `<body>`**, das CSS der Inhalt eines `<style>`.
-  Den Rahmen setzt HAPM: Doctype, `<html lang>`, Zeichensatz, Viewport,
-  `noindex`, Titel im Tab. Ein Doctype, `<html>`, `<head>` oder `<body>` im
-  HTML wird abgelehnt statt verschachtelt.
-- **Platzhalter im HTML:** `{{status}}`, `{{title}}`, `{{text}}` (Leerzeichen
-  in den Klammern erlaubt), maskiert eingesetzt, mit den Texten von HAPM je
-  Status in der Sprache der Vorgabetexte (für die 404 die des Proxys). Die
-  eigenen Texte aus „Selbst gestalten“ gelten hier nicht. Ein unbekannter
-  Platzhalter wird abgelehnt. Im CSS wird nichts ersetzt.
-- `</style>` im CSS wird abgelehnt: der Stil endete dort, der Rest stünde als
-  Text auf der Seite.
+- **Die Datei geht so hinaus, wie sie eingegeben wurde**, für jeden Status
+  dieselbe. HAPM setzt nichts ein und legt keinen Rahmen darum: kein Doctype,
+  kein Titel, kein `noindex`, keine Platzhalter. CSS gehört in ein `<style>` der
+  Datei. Eine erste Fassung trennte HTML (Inhalt von `<body>`) und CSS, legte den
+  Rahmen selbst darum und setzte Status und Texte über `{{status}}`, `{{title}}`
+  und `{{text}}` ein. Gewünscht war das Gegenteil: wer eigenes HTML hinterlegt,
+  will genau diese Datei ausgeliefert sehen. Ein früher gespeichertes `css`
+  fällt beim Lesen weg.
+- Den Zeichensatz nennt der Kopf der Antwort (`Content-Type: text/html;
+  charset=utf-8`), den HAPM vor die Datei schreibt. Umlaute stimmen also auch
+  ohne `<meta charset>` in der Datei.
 - Gespeichert wird mit LF, ohne Steuerzeichen außer Tab, ohne Leerraum an den
   Enden: ein CR im Rumpf gäbe je nach Weg auf die Platte eine andere Prüfsumme.
 - **Die Größe:** dieselbe Grenze wie beim Design, 15.000 Bytes je fertiger
-  Datei samt Kopfzeilen (`PAGE_MAX_BYTES`), gemessen mit dem längsten Titel und
-  Text, die die Platzhalter einsetzen (`designSizeError`). Ein einzelnes Feld
-  über dieser Zahl lehnt schon `parsePageDesign` ab. Formular und Route rufen
+  Datei samt Kopfzeilen (`PAGE_MAX_BYTES`, `designSizeError`). Eine Datei über
+  dieser Zahl lehnt schon `parsePageDesign` ab. Abgelehnt wird sonst nur eine
+  leere Datei. Formular und Route rufen
   dieselben Funktionen, die Meldung ist dieselbe. Die Route liest höchstens
   128 KB Rumpf.
-- Geprüft wird der Inhalt nur, wenn `custom` gewählt ist: eine halbe Vorlage
-  hält das Speichern bei einer anderen Art nicht auf.
+- Geprüft wird nur, wenn `custom` gewählt ist: eine leere Datei hält das
+  Speichern bei einer anderen Art nicht auf.
 - Nicht geprüft und nicht verändert wird, was das HTML tut. Ein Skript bleibt
   stehen (wer HAPM bedient, bestimmt ohnehin, was der Proxy ausliefert), ein
   Bild oder eine Schrift von einer anderen Adresse lädt der Browser des

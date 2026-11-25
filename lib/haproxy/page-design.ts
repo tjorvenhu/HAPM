@@ -13,7 +13,7 @@
  *
  *  - `standard`: die Seite von HAPM, nur die Sprache ist wählbar.
  *  - `designed`: dieselbe Seite mit eigenen Farben, Logo und Texten.
- *  - `custom`: die Fehlerseiten aus eigenem HTML und CSS (`custom-page.ts`).
+ *  - `custom`: eine eigene HTML-Datei für alle Fehlerseiten (`custom-page.ts`).
  *    Die Passwortabfrage bleibt dabei die von HAPM: sie braucht ein Formular,
  *    das die Regel in `haproxy.cfg` versteht.
  *
@@ -73,14 +73,7 @@
 
 import { ERROR_PAGE_STATUSES, isHexColor, type StaticTheme } from '@/ui/static/page';
 import { createTranslator, formatNumber, isLocale, DEFAULT_LOCALE, type Locale, type Translator } from '@/lib/i18n';
-import {
-  cleanCustomSource,
-  closesStyle,
-  hasDocumentFrame,
-  unknownPlaceholders,
-  CUSTOM_PAGE_PLACEHOLDERS,
-  type CustomPage,
-} from './custom-page';
+import { cleanCustomSource, type CustomPage } from './custom-page';
 
 /** Was eine fertige Seite samt Logo höchstens wiegen darf, in Bytes. */
 export const PAGE_MAX_BYTES = 15_000;
@@ -135,7 +128,7 @@ export interface PageDesign {
   lock: LockTexts;
   /** Sprache der Vorgabetexte. Eigene Texte bleiben, wie sie sind. */
   locale: Locale;
-  /** Eigenes HTML und CSS, nur bei `mode: 'custom'` in Gebrauch. */
+  /** Die eigene HTML-Datei, nur bei `mode: 'custom'` in Gebrauch. */
   custom: CustomPage;
 }
 
@@ -149,7 +142,7 @@ export function defaultPageDesign(): PageDesign {
     errors: {},
     lock: { title: null, subtitle: null, submit: null },
     locale: 'de',
-    custom: { html: '', css: '' },
+    custom: { html: '' },
   };
 }
 
@@ -332,7 +325,7 @@ function byteSize(text: string): number {
   return new TextEncoder().encode(text).length;
 }
 
-/** Ein Feld des eigenen HTML oder CSS. Die Größe der ganzen Seite prüft `designSizeError`. */
+/** Die eigene HTML-Datei. Die Größe der ganzen Seite prüft `designSizeError`. */
 function readSource(value: unknown, name: string, t: T, locale: Locale): { value: string } | { error: string } {
   if (value === null || value === undefined) return { value: '' };
   if (typeof value !== 'string') return { error: t('{name} ist kein Text.', { name }) };
@@ -351,38 +344,19 @@ function readSource(value: unknown, name: string, t: T, locale: Locale): { value
 }
 
 function readCustom(value: unknown, mode: PageMode, t: T, locale: Locale): { value: CustomPage } | { error: string } {
-  if (value !== null && value !== undefined && !isRecord(value)) return { error: t('Das eigene HTML und CSS ist ungültig.') };
+  if (value !== null && value !== undefined && !isRecord(value)) return { error: t('Die eigene HTML-Datei ist ungültig.') };
   const raw = isRecord(value) ? value : {};
 
+  // Ein früher gespeichertes `css` fällt hier weg: die Datei ist jetzt das HTML allein.
   const html = readSource(raw.html, t('Das HTML'), t, locale);
   if ('error' in html) return html;
-  const css = readSource(raw.css, t('Das CSS'), t, locale);
-  if ('error' in css) return css;
 
-  // Den Inhalt prüft nur, wer ihn ausliefert: liegt eine halbe Vorlage bei
-  // einer anderen Art, soll sie das Speichern dort nicht aufhalten. Beim
-  // Wechsel auf `custom` wird sie hier geprüft.
-  if (mode !== 'custom') return { value: { html: html.value, css: css.value } };
-
-  if (hasDocumentFrame(html.value)) {
-    return { error: t('Das HTML ist nur der Inhalt von <body>. Doctype, <html>, <head> und <body> setzt HAPM selbst.') };
+  // Leer stört nur, wer die Datei ausliefert: liegt bei einer anderen Art eine
+  // leere Vorlage, soll sie das Speichern dort nicht aufhalten.
+  if (mode === 'custom' && !html.value) {
+    return { error: t('Das HTML ist leer. Geben Sie die ganze Seite ein oder wählen Sie eine andere Art.') };
   }
-  const unknown = unknownPlaceholders(html.value);
-  if (unknown.length > 0) {
-    return {
-      error: t('Den Platzhalter {found} gibt es nicht. Erlaubt sind {allowed}.', {
-        found: unknown[0],
-        allowed: CUSTOM_PAGE_PLACEHOLDERS.map((name) => `{{${name}}}`).join(', '),
-      }),
-    };
-  }
-  if (closesStyle(css.value)) {
-    return { error: t('Das CSS darf kein </style> enthalten. Dort endete der Stil, und der Rest stünde als Text auf der Seite.') };
-  }
-  if (!html.value) {
-    return { error: t('Das HTML ist leer. Geben Sie den Inhalt der Seite ein oder wählen Sie eine andere Art.') };
-  }
-  return { value: { html: html.value, css: css.value } };
+  return { value: { html: html.value } };
 }
 
 /** Für die Route, die einen zu großen Rumpf gar nicht erst liest: dort kann das Logo oder das eigene HTML schuld sein. */

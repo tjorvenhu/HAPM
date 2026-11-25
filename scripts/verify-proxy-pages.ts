@@ -456,13 +456,12 @@ async function verifyEnglish(version: string): Promise<void> {
   }
 }
 
-/** Eigenes HTML, aufgefüllt bis die größte Fehlerseite genau `PAGE_MAX_BYTES` hat. */
+/** Eine eigene HTML-Datei, aufgefüllt bis die Fehlerseite genau `PAGE_MAX_BYTES` hat. */
 function customDesign(): PageDesign {
   const raw = (filler: string) => ({
     mode: 'custom',
     custom: {
-      html: `<main><p class="c">{{status}}</p><h1>{{title}}</h1><p>{{text}}</p><!--${filler}--></main>`,
-      css: 'body{font-family:system-ui,sans-serif}.c{color:#1a5c4c}',
+      html: `<!doctype html><html><head><meta charset="utf-8"><style>body{font-family:system-ui,sans-serif}</style></head><body><h1>Nicht erreichbar</h1><!--${filler}--></body></html>`,
     },
   });
   const probe = parsePageDesign(raw(''));
@@ -478,7 +477,7 @@ function customDesign(): PageDesign {
 async function verifyCustom(version: string): Promise<void> {
   const design = customDesign();
   const largest = designPageSizes(design).find((size) => size.page.kind === 'error')!;
-  console.log(`\nHAProxy ${version}, eigenes HTML und CSS (${largest.bytes} von ${PAGE_MAX_BYTES} Bytes)`);
+  console.log(`\nHAProxy ${version}, eigene HTML-Datei (${largest.bytes} von ${PAGE_MAX_BYTES} Bytes)`);
 
   const { dir, mounts } = stage(createPasswordLock(PASSWORD), createPasswordLock('zweites'), design);
   const name = `hapm-lock-verify-html-${version.replace(/\W/g, '-')}`;
@@ -506,8 +505,8 @@ async function verifyCustom(version: string): Promise<void> {
       const file = renderErrorFile(status, design);
       const page = await call({ host });
       check(
-        `die ${status}-Seite kommt aus der eigenen Vorlage, Byte für Byte`,
-        page.status === status && page.body === file.slice(file.indexOf('\r\n\r\n') + 4) && page.body.includes(`<p class="c">${status}</p>`),
+        `die ${status}-Seite ist die eigene Datei, Byte für Byte`,
+        page.status === status && page.body === file.slice(file.indexOf('\r\n\r\n') + 4) && page.body.startsWith('<!doctype html>'),
         `Status ${page.status}, ${Buffer.byteLength(page.body)} Bytes`
       );
     }

@@ -535,44 +535,35 @@ export const proxyServer: Dictionary = {
   "{file} ist kein hochgeladenes Zertifikat. Zertifikate von acme.sh vergehen mit ihrem Ziel.": "{file} is not an uploaded certificate. Certificates from acme.sh are removed with their target.",
   "Das Zertifikat wird noch gebraucht: {list}. Entfernen Sie zuerst die Ziele oder laden Sie ein anderes Zertifikat für sie hoch.": "The certificate is still needed: {list}. Remove the targets first or upload another certificate for them.",
   "Das Zertifikat ließ sich nicht entfernen: {detail}": "The certificate could not be removed: {detail}",
-  // Fehlerseiten: Art der Seiten, eigenes HTML und CSS (app/(app)/reverse-proxy/fehlerseiten, lib/haproxy/page-design.ts, design-pages.ts)
+  // Fehlerseiten: Art der Seiten, eigene HTML-Datei (app/(app)/reverse-proxy/fehlerseiten, lib/haproxy/page-design.ts, design-pages.ts)
   'Standard': 'Standard',
   'Die Fehlerseite von HAPM, hell oder dunkel nach dem Gerät des Besuchers.':
     "HAPM's error page, light or dark depending on the visitor's device.",
   'Selbst gestalten': 'Custom design',
   'Die Seite von HAPM mit eigenen Farben, Logo und Texten.': "HAPM's page with your own colors, logo and texts.",
-  'Eigenes HTML und CSS': 'Own HTML and CSS',
-  'Eine eigene Vorlage für alle Fehlerseiten.': 'Your own template for all error pages.',
+  'Eigene HTML-Datei': 'Own HTML file',
+  'Ihre Datei, unverändert für alle Fehlerseiten.': 'Your file, unchanged for all error pages.',
   'Vorlage einsetzen?': 'Insert template?',
-  'HTML und CSS werden durch die Vorlage von HAPM ersetzt. Gespeichert ist damit noch nichts.':
-    'HTML and CSS are replaced by the template from HAPM. Nothing is saved yet.',
+  'Das HTML wird durch die Vorlage von HAPM ersetzt. Gespeichert ist damit noch nichts.':
+    'The HTML is replaced by the template from HAPM. Nothing is saved yet.',
   'Einsetzen': 'Insert',
-  'Art, Farben, Logo, Schriftzug, Fußzeile, Sprache, alle Texte und das eigene HTML und CSS gehen auf die Vorgabe zurück. Danach schreibt HAPM die Seiten neu und lädt HAProxy neu.':
-    'Type, colors, logo, name, footer, language, all texts and your own HTML and CSS return to the defaults. HAPM then rewrites the pages and reloads HAProxy.',
+  'Art, Farben, Logo, Schriftzug, Fußzeile, Sprache, alle Texte und die eigene HTML-Datei gehen auf die Vorgabe zurück. Danach schreibt HAPM die Seiten neu und lädt HAProxy neu.':
+    'Type, colors, logo, name, footer, language, all texts and your own HTML file return to the defaults. HAPM then rewrites the pages and reloads HAProxy.',
   'Art der Seiten': 'Page type',
   'Gilt für alle Fehlerseiten.': 'Applies to all error pages.',
-  'HTML und CSS': 'HTML and CSS',
-  'Das HTML ist der Inhalt von <body>, das CSS steht in einem <style>. Doctype, Zeichensatz, Titel und noindex setzt HAPM. Die Platzhalter werden im HTML ersetzt, mit den Texten von HAPM in der Sprache der Vorgabetexte. Bilder und Schriften von anderen Adressen lädt der Browser des Besuchers nach, HAPM bettet nichts ein.':
-    "The HTML is the content of <body>, the CSS goes into a <style>. HAPM sets the doctype, character set, title and noindex. The placeholders are replaced in the HTML with HAPM's texts in the language of the default texts. The visitor's browser loads images and fonts from other addresses itself, HAPM embeds nothing.",
-  'Eine Vorlage für jeden Status.': 'One template for every status.',
+  'Die Datei geht unverändert hinaus, für jeden Fehler dieselbe. HAPM setzt nichts ein und legt keinen Rahmen darum. CSS steht in einem <style> der Datei. Bilder und Schriften von anderen Adressen lädt der Browser des Besuchers nach.':
+    "The file is delivered unchanged, the same one for every error. HAPM inserts nothing and adds no wrapper. CSS goes into a <style> in the file. The visitor's browser loads images and fonts from other addresses itself.",
+  'Eine Datei für jeden Status, so wie sie hier steht.': 'One file for every status, exactly as it is here.',
   'Vorlage einsetzen': 'Insert template',
-  'Platzhalter:': 'Placeholders:',
   'Die Passwortabfrage behält das Design von HAPM.': 'The password prompt keeps the design from HAPM.',
-  'Mit diesem HTML und CSS hätte „{page}“ {bytes} Bytes, HAProxy lädt höchstens {max}. Kürzen Sie HTML oder CSS.':
-    'With this HTML and CSS, "{page}" would have {bytes} bytes, HAProxy loads at most {max}. Shorten the HTML or CSS.',
+  'Als Fehlerseite hätte die Datei {bytes} Bytes, HAProxy lädt höchstens {max}. Kürzen Sie das HTML.':
+    'As an error page, the file would have {bytes} bytes, HAProxy loads at most {max}. Shorten the HTML.',
   '{name} hat {bytes} Bytes. Eine ganze Seite darf höchstens {max} Bytes haben.':
     '{name} has {bytes} bytes. A whole page may have at most {max} bytes.',
-  'Das eigene HTML und CSS ist ungültig.': 'The custom HTML and CSS are invalid.',
+  'Die eigene HTML-Datei ist ungültig.': 'The custom HTML file is invalid.',
   'Das HTML': 'The HTML',
-  'Das CSS': 'The CSS',
-  'Das HTML ist nur der Inhalt von <body>. Doctype, <html>, <head> und <body> setzt HAPM selbst.':
-    'The HTML is only the content of <body>. HAPM sets the doctype, <html>, <head> and <body> itself.',
-  'Den Platzhalter {found} gibt es nicht. Erlaubt sind {allowed}.':
-    'The placeholder {found} does not exist. Allowed are {allowed}.',
-  'Das CSS darf kein </style> enthalten. Dort endete der Stil, und der Rest stünde als Text auf der Seite.':
-    'The CSS must not contain </style>. The style would end there, and the rest would appear as text on the page.',
-  'Das HTML ist leer. Geben Sie den Inhalt der Seite ein oder wählen Sie eine andere Art.':
-    'The HTML is empty. Enter the content of the page or choose another type.',
+  'Das HTML ist leer. Geben Sie die ganze Seite ein oder wählen Sie eine andere Art.':
+    'The HTML is empty. Enter the whole page or choose another type.',
   'Die Eingabe ist zu groß. Jede Seite darf samt Logo oder eigenem HTML höchstens {max} Bytes haben.':
     'The input is too large. Each page, including the logo or your own HTML, may have at most {max} bytes.',
   'Die Art der Fehlerseiten ist unbekannt.': 'The type of error pages is unknown.',

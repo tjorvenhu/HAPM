@@ -192,10 +192,8 @@ export function renderErrorFile(status: number, design: PageDesign = activeDesig
 }
 
 function errorPageDocument(status: number, design: PageDesign): string {
-  if (design.mode === 'custom') {
-    const { title, text } = defaultErrorPageText(status, design.locale);
-    return renderCustomPage(design.custom, { status: String(status), title, text }, design.locale);
-  }
+  // Die eigene Datei geht für jeden Status unverändert hinaus.
+  if (design.mode === 'custom') return renderCustomPage(design.custom);
   const built = builtInDesign(design);
   return renderErrorPage(
     status,

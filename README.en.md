@@ -105,7 +105,7 @@ has HAProxy check it, reloads and fetches the certificates.
 **Protection and appearance**
 - Allow domains only for specific IP addresses
 - Password prompt in front of a domain, served by HAProxy itself
-- Error pages: standard, custom design, or your own HTML and CSS
+- Error pages: standard, custom design, or your own HTML file
 - Accounts with password, second factor and passkeys
 
 </td>
