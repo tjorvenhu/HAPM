@@ -2,18 +2,23 @@
 
 import { usePathname } from 'next/navigation';
 import { useT } from '@/lib/i18n/react';
+import { useBrand } from '@/ui/primitives/brand';
 import { activeArea } from './Sidebar';
 
-/** Der Produktname, wie er im Tab steht. */
+/** Der Produktname, wie er im Tab steht, solange unter „Darstellung" kein eigener gesetzt ist. */
 export const APP_SHORT_NAME = 'HAPM';
 
 /**
  * Der Browsertitel zu einer Adresse: „Zertifikate · HAPM". Die Seite kommt aus
  * der Navigation, `translate` übersetzt ihren Namen (ohne Angabe bleibt er deutsch).
  */
-export function documentTitle(pathname: string, translate: (text: string) => string = (text) => text): string {
+export function documentTitle(
+  pathname: string,
+  translate: (text: string) => string = (text) => text,
+  appName: string = APP_SHORT_NAME
+): string {
   const page = activeArea(pathname);
-  return page ? `${translate(page)} · ${APP_SHORT_NAME}` : APP_SHORT_NAME;
+  return page ? `${translate(page)} · ${appName}` : appName;
 }
 
 /**
@@ -29,5 +34,6 @@ export function documentTitle(pathname: string, translate: (text: string) => str
 export default function DocumentTitle() {
   const pathname = usePathname();
   const { t } = useT();
-  return <title>{documentTitle(pathname, t)}</title>;
+  const brand = useBrand();
+  return <title>{documentTitle(pathname, t, brand.name ?? APP_SHORT_NAME)}</title>;
 }

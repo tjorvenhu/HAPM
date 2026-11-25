@@ -6,7 +6,12 @@
  * „Einrichtung“), damit ein Schritt ohne Scrollen ins Fenster passt.
  *
  * Doppelte Klasse (`.hapm-setup.auth-page`) statt `!important`: sie gewinnt
- * gegen die Grundregeln, ohne von der Reihenfolge der Stylesheets abzuhängen. */
+ * gegen die Grundregeln, ohne von der Reihenfolge der Stylesheets abzuhängen.
+ *
+ * Getönte Flächen (Auswahl, Hinweis, Sprachwahl, Fortschritt) nehmen
+ * `--brand-tint`: ohne eigene Farbe gibt es den Wert nicht, und es gilt
+ * `--success` wie bisher. Eine eigene Akzentfarbe (`lib/branding`) setzt ihn.
+ * Der Abschluss bleibt im Grün von `--success`: dort heißt es „fertig". */
 
 /* ── Seite und Karte ── */
 
@@ -60,7 +65,7 @@
 
 .hapm-stepper ol::after {
   width: calc((100% - 100% / var(--count)) * var(--fill));
-  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent), var(--success) 45%));
+  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent), var(--brand-tint, var(--success)) 45%));
   transition: width 0.6s cubic-bezier(0.65, 0, 0.35, 1);
 }
 
@@ -117,18 +122,18 @@
 
 .hapm-setup.auth-page .hapm-choice.is-selected {
   border-color: var(--accent);
-  background: linear-gradient(150deg, color-mix(in srgb, var(--success) 9%, var(--surface)), var(--surface) 75%);
+  background: linear-gradient(150deg, color-mix(in srgb, var(--brand-tint, var(--success)) 9%, var(--surface)), var(--surface) 75%);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 .hapm-setup.auth-page .hapm-choice > svg {
   padding: 10px; border-radius: 12px;
-  background: linear-gradient(145deg, color-mix(in srgb, var(--success) 10%, var(--surface)), color-mix(in srgb, var(--success) 20%, var(--surface)));
+  background: linear-gradient(145deg, color-mix(in srgb, var(--brand-tint, var(--success)) 10%, var(--surface)), color-mix(in srgb, var(--brand-tint, var(--success)) 20%, var(--surface)));
 }
 
 .hapm-setup.auth-page .hapm-setup-note {
   border-color: color-mix(in srgb, var(--border) 80%, transparent); border-radius: 18px;
-  background: linear-gradient(160deg, color-mix(in srgb, var(--success) 5%, var(--surface)), var(--surface) 70%);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--brand-tint, var(--success)) 5%, var(--surface)), var(--surface) 70%);
 }
 
 .hapm-setup.auth-page .alert { border-radius: 14px; }
@@ -184,7 +189,7 @@
 }
 
 .hapm-setup.auth-page .auth-language__option[aria-pressed="true"] {
-  background: color-mix(in srgb, var(--success) 14%, var(--surface)); color: var(--text);
+  background: color-mix(in srgb, var(--brand-tint, var(--success)) 14%, var(--surface)); color: var(--text);
 }
 
 /* Der Schritt gleitet herein und wird dabei scharf. */

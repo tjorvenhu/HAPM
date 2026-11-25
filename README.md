@@ -117,6 +117,7 @@ Konfiguration, prüft sie mit HAProxy, lädt neu und holt die Zertifikate.
 - API mit Token für Skripte und andere Dienste
 - MCP-Server: HAPM aus Claude und anderen KI-Clients steuern
 - Oberfläche auf Deutsch und Englisch
+- Eigenes Logo, Name und Akzentfarbe, um HAPM als eigenes Werkzeug zu zeigen
 
 </td>
 </tr>

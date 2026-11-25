@@ -433,4 +433,5 @@ export const COLLECTIONS = {
   RESTORE_RUNS: 'restore_runs',
   SETUP_STATE: 'setup_state',
   SAVED_TARGETS: 'saved_targets',
+  BRANDING: 'branding',
 } as const;

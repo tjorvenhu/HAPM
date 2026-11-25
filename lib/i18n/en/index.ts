@@ -20,6 +20,7 @@ import { system } from './system';
 import { mail } from './mail';
 import { logs } from './logs';
 import { mcp } from './mcp';
+import { branding } from './branding';
 
 export type Dictionary = Readonly<Record<string, string>>;
 
@@ -38,6 +39,7 @@ export const PARTS: Readonly<Record<string, Dictionary>> = {
   mail,
   logs,
   mcp,
+  branding,
 };
 
 export const en: Dictionary = Object.freeze(Object.assign({}, ...Object.values(PARTS)));

@@ -3,11 +3,13 @@ import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { AuthCard } from '@/ui/auth/AuthCard';
 import { getT } from '@/lib/i18n/server';
+import { loadToolName } from '@/lib/branding/store';
 
 // Steht außerhalb der App-Hülle, `DocumentTitle` greift hier nicht.
 export async function generateMetadata(): Promise<Metadata> {
   const { t } = await getT();
-  return { title: `${t('Seite nicht gefunden')} · HAPM` };
+  const name = await loadToolName();
+  return { title: `${t('Seite nicht gefunden')} · ${name}` };
 }
 
 /**

@@ -31,6 +31,14 @@ const nextConfig: NextConfig = {
         { key: 'Content-Security-Policy', value: CSP },
       ],
     },
+    {
+      // Hochgeladene Bilder der Darstellung, ohne Anmeldung erreichbar. Ein SVG, das
+      // jemand direkt öffnet, ist sonst ein Dokument der Oberfläche: `sandbox` hält
+      // darin alles an. Steht nach der Regel oben, damit dieser Wert gewinnt; was eine
+      // Route selbst setzt, überschreibt Next mit diesen Regeln.
+      source: '/api/branding/:path(logo/.*|favicon)',
+      headers: [{ key: 'Content-Security-Policy', value: "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox" }],
+    },
   ],
 };
 

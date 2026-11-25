@@ -398,6 +398,63 @@ die Adresse von HAPM eingetragen ist. Alle
 Mails ansehen, ohne etwas zu verschicken:
 `node node_modules/tsx/dist/cli.mjs scripts/preview-mail.ts`.
 
+## Darstellung: `lib/branding/`
+
+Unter „Darstellung" (`app/(app)/system/darstellung`) gibt der Betreiber der
+Oberfläche ein eigenes Logo (dazu eine helle Fassung für dunkle Flächen und
+ein Symbol für den Tab), eine Pille neben dem Logo, einen Namen für den
+Browser-Tab und eine Akzentfarbe. Ohne Einstellung ist alles wie vorher: das
+Layout schreibt dann nichts in den Kopf der Seite und lässt die Favicons aus
+`public/` stehen.
+
+- **Wo es liegt.** Collection `branding`: die Zeile `main` mit Name, Pille,
+  Farbe und je Bild Art, Größe und Fingerabdruck, je Bild eine eigene Zeile
+  (`image-logo`, `image-logoDark`, `image-icon`) mit der Datei als Base64. Das
+  Layout liest bei jeder Seite nur `main`, über den Schlüssel, ohne
+  Zwischenspeicher im Prozess (Layout und Routen laufen in Next in getrennten
+  Modulgraphen, ein Speicher zeigte nach dem Speichern an einer Stelle das
+  Alte). Die Sicherung nimmt alles mit, es steht in der Datenbank.
+- **Farben an der Wurzel, Server-gerendert.** `brandingStyle` schreibt eine
+  Regel `:root:root{--accent:…}` in den Kopf: die doppelte Pseudoklasse
+  schlägt `:root` und `html:has(.app-shell)` aus `ui/css`, unabhängig von der
+  Reihenfolge der Stylesheets. Gesetzt werden `--accent`, `--accent-hover`,
+  `--accent-light`, `--accent-subtle`, `--accent-glow`, die Neutralskala
+  `--n-*` im Farbton des Akzents, `--overlay` und `--brand-tint` (getönte
+  Flächen im Assistenten, ohne eigene Farbe `--success`). Alle Werte rechnet
+  `lib/branding/color.ts` aus, aus der Eingabe geht nichts unverändert hinein.
+- **Kontrast.** Auf dem Akzent steht weiße Schrift, und derselbe Wert
+  (`--primary-fg`) steht auf „Löschen" und „Warnung". Erreicht Weiß auf der
+  gewählten Farbe nicht 4,5:1 (WCAG AA), nimmt die Oberfläche die hellste
+  dunklere Fassung in OKLCH, die es schafft. Die Seite zeigt beide Farben und
+  den Kontrast. Gespeichert bleibt die gewählte Farbe.
+- **Bilder.** SVG, PNG und WebP bis 256 KB, geprüft an den ersten Bytes
+  (`sniffLogoType` aus den Fehlerseiten). Ein SVG mit Skript, Ereignis,
+  `javascript:`, `foreignObject` oder Entitäten wird abgelehnt. Ausgeliefert
+  ohne Anmeldung von `/api/branding/logo/light|dark` und
+  `/api/branding/favicon`, mit `?v=<Fingerabdruck>` ein Jahr im Cache, ohne
+  ihn `no-cache` mit ETag. Dort gilt `Content-Security-Policy: sandbox`, eine
+  eigene Regel in `next.config.ts`: die allgemeine CSP von dort überschriebe
+  eine, die die Route selbst setzt.
+- **Symbol im Tab.** Ein hochgeladenes gilt immer. Sonst mit Namen dessen
+  Anfangsbuchstabe auf dem Akzent, mit Farbe allein das Zeichen von HAPM in
+  der Farbe. Aus einem breiten Logo wird kein Quadrat geschnitten.
+- **Logo in Bausteinen.** `ui/primitives/Logo.tsx` liest `useBrand()`
+  (`ui/primitives/brand.tsx`, Provider im Wurzel-Layout) und zeigt das eigene
+  Logo samt Pille. Seitenleiste, Anmeldung, Assistent und die Fehlerseiten der
+  Oberfläche bekommen es damit ohne Änderung. Die helle Fassung nimmt
+  `<Logo background="dark">`; die Oberfläche hat heute keine dunkle Fläche,
+  zu sehen ist sie in der Vorschau.
+- **Der Name** steht im Tab (`DocumentTitle`, `generateMetadata` der Seiten
+  außerhalb der Hülle) und als Alternativtext des Logos. Texte, die „HAPM"
+  sagen, bleiben: sie meinen die Software.
+- **Was nicht folgt.** Mails (`ui/mail/`) und die Fehlerseiten von HAProxy
+  haben eigene Einstellungen: eine Mail geht auch an Empfänger ohne Bezug zur
+  Oberfläche, eine Fehlerseite sieht der Besucher eines Ziels. Ebenso bleiben
+  der Name in Authenticator-Apps (`lib/totp.ts`) und bei Passkeys: ein
+  geänderter Name dort passte nicht mehr zu schon eingerichteten Geräten. Die
+  Palette der Diagramme (`--viz-*` in `ui/css/charts.css`) ist gegen
+  Farbsehschwächen geprüft und bleibt ebenfalls.
+
 ## Sicherung: `lib/backup/`
 
 Unter „Sicherung" stellt man einen Ordner **auf dem Server** ein, eine Uhrzeit

@@ -76,6 +76,7 @@ export type AuditAction =
   | 'backup_restore_completed'
   | 'backup_restore_failed'
   | 'settings_updated'
+  | 'branding_updated'
   | 'mail_test_sent'
   | 'mail_test_failed';
 

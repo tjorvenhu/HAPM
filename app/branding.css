@@ -1,0 +1,496 @@
+/*
+ * Das eigene Aussehen (`lib/branding/`): Logo mit Pille überall, wo ein Logo
+ * steht, und die Seite „Darstellung" mit ihrer Vorschau.
+ *
+ * Eingebunden im Wurzel-Layout, weil das Logo auch auf Anmeldung,
+ * Einrichtung und Fehlerseiten der Oberfläche steht. Die Farben selbst stehen
+ * nicht hier: sie kommen als Variablen an die Wurzel (`brandingStyle`), und
+ * alles hier rechnet mit ihnen.
+ */
+
+/* ── Logo und Pille ── */
+
+.brand-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 100%;
+  min-width: 0;
+}
+
+/* Ein eigenes Logo hat ein unbekanntes Seitenverhältnis. Die größte Breite und
+   Höhe setzt `Logo` am Element, die Regeln des Rahmens (feste Breite) gelten
+   hier nicht. */
+.brand-logo__img,
+.shell-sidebar__logo .brand-logo__img,
+.shell-topbar__logo .brand-logo__img {
+  display: block;
+  width: auto;
+  object-fit: contain;
+}
+
+.auth-logo .brand-logo__img {
+  margin: 0 auto;
+}
+
+/* Mit Pille muss das Logo von HAPM Platz machen: die Leiste ist 16rem breit. */
+.shell-sidebar__logo .brand-logo img:not(.brand-logo__img) {
+  width: 7.5rem;
+}
+
+.shell-topbar__logo .brand-logo img:not(.brand-logo__img) {
+  width: 6rem;
+}
+
+.brand-pill {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  height: 1.375rem;
+  padding: 0 0.5rem;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  color: var(--primary-fg);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.auth-logo .brand-logo {
+  gap: 0.625rem;
+}
+
+.auth-logo .brand-pill {
+  height: 1.625rem;
+  padding: 0 0.625rem;
+  font-size: 0.8125rem;
+}
+
+/* ── Seite „Darstellung" ── */
+
+.brand-assets {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.brand-asset {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+.brand-asset__thumb {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 5.5rem;
+  height: 3rem;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+}
+
+.brand-asset__thumb img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.brand-asset__thumb--dark {
+  background: var(--n-950);
+}
+
+.brand-asset__thumb--icon img {
+  width: 2rem;
+  height: 2rem;
+}
+
+.brand-asset__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.brand-asset__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: 0.875rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.brand-asset__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  white-space: nowrap;
+}
+
+.brand-asset__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 560px) {
+  .brand-asset { flex-wrap: wrap; }
+  .brand-asset__actions { width: 100%; justify-content: flex-end; }
+}
+
+.brand-counter {
+  margin-left: auto;
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.brand-error {
+  color: var(--danger-fg);
+}
+
+.brand-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.brand-swatch {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--border);
+  color: var(--primary-fg);
+  cursor: pointer;
+  transition: transform var(--shell-fast) var(--shell-ease), box-shadow var(--shell-fast);
+}
+
+.brand-swatch:hover:not(:disabled) {
+  transform: scale(1.08);
+}
+
+.brand-swatch.is-active {
+  box-shadow: 0 0 0 2px var(--text);
+}
+
+.brand-swatch:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}
+
+.brand-contrast {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-contrast__chip {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: var(--radius-input);
+  color: var(--primary-fg);
+  font-weight: 600;
+}
+
+.brand-contrast__ratio {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.brand-adjusted {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-adjusted__chips {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.brand-adjusted__chip {
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+}
+
+.brand-adjusted__chip + .brand-adjusted__chip {
+  margin-left: -6px;
+}
+
+.brand-reset {
+  margin-left: auto;
+}
+
+/* ── Vorschau ──
+   Eine verkleinerte Oberfläche aus den Werten des Rahmens. Die Farben setzt
+   `BrandingPreview` an `.brand-stage`. */
+
+.brand-stage {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--bg);
+  font-size: 0.75rem;
+  user-select: none;
+}
+
+.brand-browser {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  padding: 8px 10px 0;
+  background: var(--bg-alt);
+}
+
+.brand-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 15rem;
+  max-width: 80%;
+  height: 2rem;
+  padding: 0 10px;
+  border-radius: 10px 10px 0 0;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.brand-tab__icon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
+.brand-tab__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.brand-tab svg,
+.brand-browser__plus {
+  color: var(--text-tertiary);
+}
+
+.brand-browser__plus {
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  margin-bottom: 2px;
+}
+
+.brand-app {
+  display: flex;
+  gap: 10px;
+  min-height: 17rem;
+  padding: 10px;
+}
+
+.brand-app__sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex-shrink: 0;
+  width: 11.5rem;
+  padding: 12px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-muted);
+}
+
+.brand-app__logo {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 2.25rem;
+  margin-bottom: 6px;
+}
+
+.brand-app__logo .brand-logo img:not(.brand-logo__img) {
+  width: 5.5rem;
+  height: auto;
+}
+
+.brand-app__logo .brand-pill,
+.brand-dark .brand-pill {
+  height: 1.125rem;
+  padding: 0 0.375rem;
+  font-size: 0.625rem;
+}
+
+.brand-app__search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 1.75rem;
+  margin-bottom: 4px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  color: var(--text-tertiary);
+}
+
+.brand-app__nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 1.875rem;
+  padding: 0 10px;
+  border-radius: var(--radius-full);
+  color: var(--text);
+  font-weight: 500;
+}
+
+.brand-app__nav.is-active {
+  background: var(--primary);
+  color: var(--primary-fg);
+}
+
+.brand-app__main {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+.brand-app__title {
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.brand-app__card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.brand-app__line {
+  height: 0.5rem;
+  border-radius: var(--radius-full);
+  background: var(--bg-alt);
+}
+
+.brand-app__line--short {
+  width: 60%;
+}
+
+.brand-app__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.brand-app__btn {
+  display: inline-flex;
+  align-items: center;
+  height: 1.75rem;
+  padding: 0 12px;
+  border-radius: var(--radius-full);
+  background: var(--primary);
+  box-shadow: var(--shadow-solid);
+  color: var(--primary-fg);
+  font-weight: 500;
+}
+
+.brand-app__btn--secondary {
+  background: var(--secondary);
+  box-shadow: none;
+  color: var(--text);
+}
+
+.brand-app__toggle {
+  position: relative;
+  width: 2rem;
+  height: 1.125rem;
+  margin-left: 4px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+}
+
+.brand-app__toggle::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 0.875rem;
+  height: 0.875rem;
+  border-radius: 50%;
+  background: var(--surface);
+}
+
+.brand-app__link {
+  color: var(--accent);
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.brand-dark {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 10px 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-lg);
+  background: var(--n-950);
+}
+
+
+.brand-dark .brand-logo img:not(.brand-logo__img) {
+  width: 5.5rem;
+  height: auto;
+}
+
+.brand-dark__label {
+  color: var(--n-300);
+  font-size: 0.6875rem;
+}
+
+@media (max-width: 640px) {
+  .brand-app__sidebar { width: 9.5rem; }
+}

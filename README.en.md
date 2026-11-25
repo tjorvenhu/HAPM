@@ -121,6 +121,7 @@ has HAProxy check it, reloads and fetches the certificates.
 - API with tokens for scripts and other services
 - MCP server: control HAPM from Claude and other AI clients
 - Web interface in German and English
+- Your own logo, name and accent color to present HAPM as your own tool
 
 </td>
 </tr>

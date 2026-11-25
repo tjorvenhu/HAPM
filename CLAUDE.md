@@ -19,6 +19,7 @@ Next.js (App Router) mit TypeScript strict, pnpm. Drei Container: HAPM, HAProxy
 | `lib/docker/`, `lib/updates/`, `lib/bootstrap.ts`, `Dockerfile`, Compose, `install.sh` | [`docs/betrieb.md`](docs/betrieb.md) |
 | `app/setup/`, `app/api/setup/`, `lib/setup/`, `lib/haproxy/challenge.ts` | [`docs/betrieb.md`](docs/betrieb.md), Abschnitt „Ersteinrichtung", und [`docs/reverse-proxy.md`](docs/reverse-proxy.md), „Interne Installation" |
 | `lib/db/`, `lib/setup-db.ts`, `bin/hapm-admin.mjs` | [`docs/betrieb.md`](docs/betrieb.md), Abschnitt „Postgres" |
+| `lib/branding/`, `app/(app)/system/darstellung/`, `app/branding.css`, `ui/primitives/Logo.tsx` | [`docs/betrieb.md`](docs/betrieb.md), Abschnitt „Darstellung" |
 | `lib/auth/`, `lib/session.ts`, `lib/two-factor.ts`, `app/api/auth/`, `app/api/account/` | die Köpfe der Dateien: dort steht zu jeder Stelle, warum sie so ist |
 | `ui/`, `components/`, `app/globals.css`, `app/hapm.css` | unten „Regeln, die überall gelten", Punkte „Oberfläche" und „Design" |
 | `lib/i18n/`, jeder Text für Nutzer (Seiten, Meldungen, Datum, Zahlen) | [`docs/i18n.md`](docs/i18n.md): `t()`, `msg()`, Wörterbuch, Glossar |

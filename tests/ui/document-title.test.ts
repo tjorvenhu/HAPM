@@ -39,6 +39,12 @@ describe('documentTitle', () => {
     expect(documentTitle('/reverse-proxy/einstellungen')).toBe('Einstellungen · HAPM');
   });
 
+  it('nimmt den eigenen Namen aus „Darstellung“, die Seite selbst gewinnt gegen „Allgemein“', () => {
+    expect(documentTitle('/system/darstellung')).toBe('Darstellung · HAPM');
+    expect(documentTitle('/updates', (text) => text, 'Nordwind')).toBe('Updates · Nordwind');
+    expect(documentTitle('/nirgends', (text) => text, 'Nordwind')).toBe('Nordwind');
+  });
+
   it('bleibt ohne passenden Eintrag beim nackten Produktnamen', () => {
     expect(documentTitle('/gibtsnicht')).toBe('HAPM');
   });
