@@ -217,7 +217,9 @@ nicht gibt, legt die Funktion an und lässt Route und Werkzeug sie rufen.
 ### Die Schemas
 
 Die Schemas (`zod`, im SDK zu JSON Schema umgewandelt) prüfen nur die Form:
-Typen, Pflichtfelder, Aufzählungen wie `balance`. Was eine gültige Domain oder
+Typen, Pflichtfelder, Aufzählungen wie `balance` und `backendTls` (dieselbe
+Allow-Liste `BACKEND_TLS` wie in `validateCreateInput`, am Ziel und an jeder
+Pfad-Regel). Was eine gültige Domain oder
 ein freier Port ist, entscheidet die Bibliothek, mit derselben Meldung wie bei
 der API. Zwei Regelwerke für dieselbe Eingabe laufen auseinander.
 

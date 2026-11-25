@@ -131,5 +131,5 @@ Die Tests gegen die Datenbank (Treiber, Konten, `hapm-admin`) laufen nur, wenn
 `TEST_DATABASE_URL` auf ein Postgres zeigt, sonst werden sie übersprungen und
 sagen das. Wie man eines startet, steht in `tests/helpers/test-database.ts`.
 Was nur ein echtes HAProxy zeigen kann (Passwortsperre, Fehlerseiten), prüft
-`pnpm haproxy:verify-pages` mit Docker. Den ganzen Stack lokal:
+`pnpm haproxy:verify-pages` mit Docker, HTTPS zum Ziel `pnpm haproxy:verify-tls`. Den ganzen Stack lokal:
 `docker compose -f docker-compose.dev.yml up -d --build`.

@@ -35,7 +35,7 @@ import { z } from 'zod';
 import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import type { Locale } from '../i18n';
 import type { HaproxyActor } from '../haproxy/runner';
-import { HAPROXY_BALANCE } from '../haproxy/config';
+import { BACKEND_TLS, HAPROXY_BALANCE } from '../haproxy/config';
 import { STREAM_BALANCE } from '../haproxy/streams';
 import {
   RUN_ACTIONS,
@@ -145,6 +145,16 @@ const serverEntry = z.object({
     ),
 });
 
+/** Dieselbe Allow-Liste wie `validateCreateInput`; das Schema sagt es nur früher. */
+const backendTls = z
+  .enum(BACKEND_TLS)
+  .optional()
+  .describe(
+    'How HAProxy talks to the upstream. Omit or "off": plain HTTP. "insecure": HTTPS without checking the certificate ' +
+      '(self-signed, e.g. Proxmox on 8006, TrueNAS). "verify": HTTPS, certificate checked against the system CAs ' +
+      '(needs HAProxy 2.6+). Both HTTPS modes send the request Host as SNI.'
+  );
+
 const routeEntry = z.object({
   name: z.string().describe('Rule name, a-z 0-9 _, e.g. "terminal".'),
   paths: z
@@ -157,6 +167,9 @@ const routeEntry = z.object({
     .boolean()
     .optional()
     .describe('Plain TCP check on these upstreams (no HTTP check: a WebSocket endpoint does not answer GET / with 200).'),
+  backendTls: backendTls.describe(
+    'Own setting per rule, not inherited from the target: off, insecure or verify (see backendTls of the target).'
+  ),
 });
 
 const headerRule = z.object({
@@ -188,7 +201,7 @@ const serviceFields = {
     })
     .nullable()
     .optional()
-    .describe('Redirect the domains instead of proxying them. Excludes servers, routes, headers, tunnel, balance and sticky.'),
+    .describe('Redirect the domains instead of proxying them. Excludes servers, routes, headers, tunnel, balance, sticky and backendTls.'),
   routes: z
     .array(routeEntry)
     .optional()
@@ -227,6 +240,7 @@ const serviceFields = {
     .boolean()
     .optional()
     .describe('HTTP health check against domains[0]. Default false. Ignored when domains[0] is a wildcard or redirect is set.'),
+  backendTls,
   dnsDomains: z
     .union([z.literal('auto'), z.array(z.string())])
     .optional()
@@ -347,7 +361,7 @@ export const TOOLS: ToolDefinition[] = [
     title: 'Update target',
     description:
       'Replaces a target with a COMPLETE new definition. This is not a partial patch: every field you omit is reset ' +
-      '(servers, routes, headers, tunnel, healthcheck, lockedDomains). Always call get_service first, modify its result, and send all fields. ' +
+      '(servers, routes, headers, tunnel, healthcheck, backendTls, lockedDomains). Always call get_service first, modify its result, and send all fields. ' +
       'Exception: omitting passwordLock keeps the current lock type and password. ' +
       'Domains removed from the list lose their DNS record if HAPM created it. ' +
       'Refused when editable=false, and for the surface target when the HAPM domain would be removed. ' +

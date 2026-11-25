@@ -299,6 +299,7 @@ describe('addStream', () => {
         requestHeaders: [],
         tunnel: false,
         healthcheck: true,
+        backendTls: 'off',
       })
     ).toThrow(/bereits vergeben/);
   });

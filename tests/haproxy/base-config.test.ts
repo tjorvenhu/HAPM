@@ -41,6 +41,7 @@ const SERVICE: CreateServiceInput = {
   requestHeaders: [],
   tunnel: false,
   healthcheck: true,
+  backendTls: 'off',
 };
 
 const STREAM: CreateStreamInput = {

@@ -18,6 +18,7 @@
     "typecheck": "tsc --noEmit",
     "geoip:build": "tsx lib/geoip/build.ts",
     "haproxy:verify-pages": "tsx scripts/verify-proxy-pages.ts",
+    "haproxy:verify-tls": "tsx scripts/verify-backend-tls.ts",
     "i18n:report": "tsx scripts/i18n-report.ts",
     "test": "vitest run"
   },

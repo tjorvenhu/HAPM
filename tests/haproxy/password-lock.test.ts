@@ -94,6 +94,7 @@ const SERVICE: CreateServiceInput = {
   requestHeaders: [],
   tunnel: false,
   healthcheck: true,
+  backendTls: 'off',
 };
 
 function find(text: string, id: string) {
@@ -208,6 +209,7 @@ describe('Mit Passwort sperren', () => {
           paths: ['/terminal'],
           servers: [{ name: 'term', target: '10.10.0.4:6002' }],
           check: true,
+          backendTls: 'off',
         },
       ],
     };

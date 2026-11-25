@@ -572,4 +572,13 @@ export const proxyServer: Dictionary = {
   'Dunkel': 'Dark',
   'Die Gruppe {scope} gehört der Oberfläche von HAPM. Weitere Ziele und Weiterleitungen kommen in eine andere Gruppe.':
     'The group {scope} belongs to the HAPM web interface. Put other targets and forwards into another group.',
+  // HTTPS zum Ziel
+  'Unbekannte Angabe, wie das Ziel angesprochen wird. Erlaubt sind off, insecure und verify.':
+    'Unknown setting for how the target is addressed. Allowed are off, insecure and verify.',
+  'HTTPS zum Ziel gehört zu einem Backend mit Zielen. Eine Weiterleitung hat keine.':
+    'HTTPS to the target belongs to a backend with targets. A redirect has none.',
+  'Unbekannte Angabe, wie die Ziele der Pfad-Regel „{name}" angesprochen werden.':
+    'Unknown setting for how the targets of the path rule "{name}" are addressed.',
+  'Das Zertifikat des Ziels gegen die CAs des Systems zu prüfen braucht HAProxy 2.6 oder neuer. Hier läuft {version}. HTTPS ohne Prüfung geht dort.':
+    'Verifying the target certificate against the system CAs needs HAProxy 2.6 or newer. This one runs {version}. HTTPS without verification works there.',
 };

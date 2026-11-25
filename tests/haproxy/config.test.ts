@@ -105,6 +105,7 @@ const INPUT: CreateServiceInput = {
   requestHeaders: [],
   tunnel: false,
   healthcheck: true,
+  backendTls: 'off',
 };
 
 describe('parseHaproxyConfig', () => {
@@ -131,10 +132,10 @@ describe('parseHaproxyConfig', () => {
 
   it('liest Backend-Server samt check-Flag', () => {
     expect(services[1].servers).toEqual([
-      { name: 'blog', target: '10.10.0.20:80', check: true, weight: null },
-      { name: 'blog2', target: '10.10.0.21:80', check: true, weight: null },
+      { name: 'blog', target: '10.10.0.20:80', check: true, weight: null, tls: 'off' },
+      { name: 'blog2', target: '10.10.0.21:80', check: true, weight: null, tls: 'off' },
     ]);
-    expect(services[2].servers).toEqual([{ name: 'alt', target: '10.10.0.99:8080', check: false, weight: null }]);
+    expect(services[2].servers).toEqual([{ name: 'alt', target: '10.10.0.99:8080', check: false, weight: null, tls: 'off' }]);
   });
 
   it('erkennt den Healthcheck am option httpchk des Backends', () => {
@@ -195,7 +196,7 @@ describe('addService', () => {
     const created = services.find((s) => s.id === 'shop_mueller')!;
     expect(created.scope).toBe('KUNDEN');
     expect(created.domains).toEqual(['shop-mueller.example', 'www.shop-mueller.example']);
-    expect(created.servers).toEqual([{ name: 'mueller', target: '10.10.0.30:80', check: true, weight: null }]);
+    expect(created.servers).toEqual([{ name: 'mueller', target: '10.10.0.30:80', check: true, weight: null, tls: 'off' }]);
     expect(created.healthcheck).toBe(true);
     expect(created.removable).toBe(true);
   });
@@ -271,7 +272,7 @@ describe('removeService', () => {
     const services = parseHaproxyConfig(removeService(CONFIG, 'website_blog'));
     expect(services.map((s) => s.id)).toEqual(['nextcloud_intern', 'altbestand']);
     expect(services[0].servers).toEqual([
-      { name: 'intern-nextcloud', target: '10.10.0.3:80', check: true, weight: null },
+      { name: 'intern-nextcloud', target: '10.10.0.3:80', check: true, weight: null, tls: 'off' },
     ]);
   });
 

@@ -811,7 +811,61 @@ export interface HaproxyBackendServer {
    * niemand angefordert hat. Dieselbe Regel wie bei `balance`.
    */
   weight: number | null;
+  /** Wie HAProxy dieses Ziel anspricht, siehe `BackendTls`. Gelesen wird es je
+   *  Zeile; das Formular kennt es je Backend (`CreateServiceInput.backendTls`). */
+  tls: BackendTls;
 }
+
+/**
+ * Wie HAProxy mit dem Ziel spricht: `off` ist HTTP, `insecure` HTTPS ohne
+ * Prüfung des Zertifikats (`ssl verify none`, für selbst signierte wie bei
+ * Proxmox oder TrueNAS), `verify` HTTPS mit Prüfung gegen die CAs des Systems
+ * (`ssl verify required ca-file @system-ca`).
+ *
+ * EIN Feld mit drei Werten und nicht zwei Schalter: „prüfen ohne HTTPS" gibt
+ * es nicht, und ein Modell, das den Zustand zulässt, braucht eine Regel mehr,
+ * die ihn ablehnt. Siehe docs/reverse-proxy.md, „Ziele, die HTTPS sprechen".
+ */
+export const BACKEND_TLS = ['off', 'insecure', 'verify'] as const;
+export type BackendTls = (typeof BACKEND_TLS)[number];
+
+/** Die Parameter je Art, genau in dieser Reihenfolge geschrieben und gelesen. */
+const BACKEND_TLS_PARAMS: Record<Exclude<BackendTls, 'off'>, readonly string[]> = {
+  // Ohne `verify none` lehnt HAProxy die Zeile ab: `ssl-server-verify` steht
+  // in `global` auf `required`, und ohne `ca-file` gibt es nichts zu prüfen.
+  insecure: ['ssl', 'verify', 'none'],
+  verify: ['ssl', 'verify', 'required', 'ca-file', '@system-ca'],
+};
+
+/** SNI aus dem Host der Anfrage: dasselbe, was der Browser bei HAProxy als SNI
+ *  geschickt hat. Ein Ziel mit mehreren Zertifikaten wählt danach. */
+const BACKEND_SNI = ['sni', 'req.hdr(host)'] as const;
+
+/** Die Parameter einer HTTPS-Zeile als Text, für Doku, Hinweise und Tests. */
+export function backendTlsParams(tls: BackendTls): string {
+  return tls === 'off' ? '' : [...BACKEND_TLS_PARAMS[tls], ...BACKEND_SNI].join(' ');
+}
+
+/**
+ * Der SNI des Healthchecks: die Hauptdomain, solange das Ziel HTTPS spricht,
+ * geprüft wird und sie keine Wildcard ist. Sonst keiner.
+ *
+ * Der Check ist keine Anfrage, `req.hdr(host)` gibt es dort nicht, und ohne
+ * `check-sni` geht er ohne SNI hinaus. Ein Ziel, das ohne SNI kein Zertifikat
+ * herausgibt (Caddy, Traefik), fiele damit durch, und HAProxy nähme ein
+ * funktionierendes Ziel aus dem Betrieb. Die Hauptdomain, weil der
+ * HTTP-Healthcheck sie ohnehin als Host-Header schickt.
+ */
+export function backendCheckSni(check: boolean, tls: BackendTls, mainDomain: string): string | null {
+  if (!check || tls === 'off' || !mainDomain || isWildcardDomain(mainDomain)) return null;
+  return mainDomain;
+}
+
+/**
+ * Ports, auf denen ein Ziel meist HTTPS spricht. Nur ein Hinweis im Formular:
+ * entschieden wird nichts danach.
+ */
+export const HTTPS_PORT_HINTS: readonly number[] = [443, 8006, 8443, 9443];
 
 /**
  * Was für eine Sorte Eintrag das ist.
@@ -883,6 +937,10 @@ export interface HaproxyRoute {
    *  ohne `option httpchk`: eine WebSocket-Strecke antwortet auf ein `GET /`
    *  nicht mit 200, und ein HTTP-Check nähme sie damit aus dem Betrieb. */
   check: boolean;
+  /** Wie die Ziele der Regel angesprochen werden. Eigen und nicht vom Dienst
+   *  geerbt: eine Regel zeigt auf einen anderen Port, oft ein anderes
+   *  Programm, und ob dort HTTPS spricht, ist eine Eigenschaft dieses Ports. */
+  backendTls: BackendTls;
 }
 
 /**
@@ -980,6 +1038,10 @@ export interface HaproxyService {
   requestHeaders: HeaderRule[];
   /** `TUNNEL_LINE` steht da: offene Verbindungen bleiben eine Stunde. */
   tunnel: boolean;
+  /** Wie die Ziele des eigenen Backends angesprochen werden. Stehen dort
+   *  verschiedene Arten nebeneinander, gilt die der ersten Zeile, und der
+   *  Eintrag ist nur lesbar. */
+  backendTls: BackendTls;
   /** Trägt den `# AUTO: id`-Kommentar, stammt also aus einem Vorgang wie diesem. */
   auto: boolean;
   /**
@@ -1053,6 +1115,8 @@ export interface RouteInput {
   paths: string[];
   servers: RouteServerInput[];
   check: boolean;
+  /** Eigen je Regel, siehe `HaproxyRoute.backendTls`. */
+  backendTls: BackendTls;
 }
 
 export interface CreateServiceInput {
@@ -1092,6 +1156,10 @@ export interface CreateServiceInput {
   requestHeaders: HeaderRule[];
   tunnel: boolean;
   healthcheck: boolean;
+  /** Wie HAProxy die Ziele des eigenen Backends anspricht. Gilt für jede
+   *  server-Zeile darin, nicht für die der Pfad-Regeln (die haben ihr eigenes).
+   *  Setzt Ziele voraus und schließt eine Weiterleitung aus. */
+  backendTls: BackendTls;
 }
 
 /**
@@ -1135,6 +1203,11 @@ function validateService(input: CreateServiceInput, idGiven: boolean): Message |
   // und kein Freitextfeld, aus demselben Grund wie bei den DNS-Anbietern.
   if (input.balance !== null && !HAPROXY_BALANCE.includes(input.balance)) {
     return msg('Unbekanntes Verteilverfahren.');
+  }
+  // Dasselbe für HTTPS zum Ziel: die Art entscheidet über Wörter auf der
+  // server-Zeile, also nur, was die Liste kennt.
+  if (!BACKEND_TLS.includes(input.backendTls)) {
+    return msg('Unbekannte Angabe, wie das Ziel angesprochen wird. Erlaubt sind off, insecure und verify.');
   }
 
   if (input.domains.length === 0) return msg('Mindestens eine Domain wird benötigt.');
@@ -1190,6 +1263,9 @@ function validateService(input: CreateServiceInput, idGiven: boolean): Message |
     }
     if (input.sticky) {
       return msg('Eine Sitzungsbindung gehört zu einem Backend mit Zielen. Eine Weiterleitung hat keine.');
+    }
+    if (input.backendTls !== 'off') {
+      return msg('HTTPS zum Ziel gehört zu einem Backend mit Zielen. Eine Weiterleitung hat keine.');
     }
   } else {
     const serversInvalid = validateServers(input.servers, null);
@@ -1256,6 +1332,10 @@ function validateService(input: CreateServiceInput, idGiven: boolean): Message |
       // HAProxy die erste passende Weiche nimmt.
       if (seenPaths.has(path)) return msg('Der Pfad {path} steht in zwei Regeln.', { path });
       seenPaths.add(path);
+    }
+
+    if (!BACKEND_TLS.includes(route.backendTls)) {
+      return msg('Unbekannte Angabe, wie die Ziele der Pfad-Regel „{name}" angesprochen werden.', { name });
     }
 
     const routeServers = validateServers(route.servers, name);
@@ -1444,6 +1524,8 @@ export function readServerParams(rest: string): {
   check: boolean;
   weight: number | null;
   cookie: string | null;
+  tls: BackendTls;
+  checkSni: string | null;
   leftover: string[];
 } {
   const tokens = rest.trim().split(/\s+/).filter(Boolean);
@@ -1469,7 +1551,29 @@ export function readServerParams(rest: string): {
     at += 2;
   }
 
-  return { check, weight, cookie, leftover: tokens.slice(at) };
+  /* HTTPS zählt nur als ganze Folge, Wort für Wort so, wie `serverParams` sie
+   * schreibt. `ssl verify none` ohne SNI, ein `verifyhost`, eine andere
+   * `ca-file` oder ein `alpn h2` bleiben stehen und machen die Zeile nur
+   * lesbar: neu geschrieben fehlte, was dort steht. */
+  let tls: BackendTls = 'off';
+  for (const mode of ['insecure', 'verify'] as const) {
+    const expected = [...BACKEND_TLS_PARAMS[mode], ...BACKEND_SNI];
+    if (expected.every((word, offset) => tokens[at + offset] === word)) {
+      tls = mode;
+      at += expected.length;
+      break;
+    }
+  }
+
+  // Nur hinter einer erkannten HTTPS-Folge. Ob der Wert der richtige ist
+  // (`backendCheckSni`), weiß erst, wer die Hauptdomain kennt.
+  let checkSni: string | null = null;
+  if (tls !== 'off' && tokens[at] === 'check-sni' && tokens[at + 1] !== undefined) {
+    checkSni = tokens[at + 1];
+    at += 2;
+  }
+
+  return { check, weight, cookie, tls, checkSni, leftover: tokens.slice(at) };
 }
 
 /** Die Parameter hinter dem Ziel, in der Reihenfolge, die `readServerParams`
@@ -1478,17 +1582,24 @@ export function serverParams(input: {
   check: boolean;
   weight: number | null;
   cookie: string | null;
+  tls: BackendTls;
+  checkSni: string | null;
 }): string {
   return [
     input.check ? ' check' : '',
     input.weight === null ? '' : ` weight ${input.weight}`,
     input.cookie === null ? '' : ` cookie ${input.cookie}`,
+    input.tls === 'off' ? '' : ` ${backendTlsParams(input.tls)}`,
+    input.tls === 'off' || input.checkSni === null ? '' : ` check-sni ${input.checkSni}`,
   ].join('');
 }
 
 /** Ein Backend-Block beim Lesen, bevor feststeht, zu welchem Dienst er gehört. */
 interface ParsedBackend {
   servers: HaproxyBackendServer[];
+  /** Je server-Zeile, in derselben Reihenfolge: ihr Text und ihr `check-sni`.
+   *  Erst am Ende ausgewertet, wenn die Hauptdomain feststeht. */
+  serverLines: { text: string; checkSni: string | null }[];
   /** Die Zeilen der Healthcheck-Gruppe, wie sie dastehen. Erst am Ende
    *  ausgewertet: sie müssen vollständig sein UND den richtigen Host-Header
    *  tragen, sonst schriebe ein Neuschreiben etwas anderes hin. */
@@ -1513,6 +1624,32 @@ interface ParsedBackend {
   lockTable: boolean;
   extras: string[];
   index: number;
+}
+
+/**
+ * Wie die Ziele eines Backends angesprochen werden, und welche server-Zeilen
+ * das nicht so tragen, wie ein Neuschreiben es täte.
+ *
+ * Es gilt die Art der ersten Zeile. Eine Zeile mit einer anderen ist nicht
+ * reproduzierbar: das Formular kennt eine Art je Backend, und neu geschrieben
+ * spräche HAProxy das Ziel danach anders an. Dasselbe gilt für einen
+ * `check-sni`, der nicht der ist, den `backendCheckSni` schriebe, etwa unter
+ * einer inzwischen anders heißenden Hauptdomain: die Regel des Host-Headers im
+ * Healthcheck.
+ */
+function readBackendTls(
+  backend: ParsedBackend,
+  check: boolean,
+  mainDomain: string
+): { tls: BackendTls; extras: string[] } {
+  const tls = backend.servers[0]?.tls ?? 'off';
+  const expectedSni = backendCheckSni(check, tls, mainDomain);
+  const extras = backend.servers.flatMap((server, position) => {
+    const line = backend.serverLines[position];
+    if (!line || backend.extras.includes(line.text)) return [];
+    return server.tls !== tls || line.checkSni !== expectedSni ? [line.text] : [];
+  });
+  return { tls, extras };
 }
 
 /**
@@ -1575,6 +1712,7 @@ export function parseHaproxyConfig(text: string): HaproxyService[] {
       if (!backends.has(currentBackend)) {
         backends.set(currentBackend, {
           servers: [],
+          serverLines: [],
           checkLines: [],
           responseHeaders: [],
           requestHeaders: [],
@@ -1607,9 +1745,10 @@ export function parseHaproxyConfig(text: string): HaproxyService[] {
          * sie es nicht. Eine anders sortierte Zeile käme beim Speichern
          * umsortiert heraus, und ein Diff, in dem sich Zeilen bewegen, ohne
          * dass sich etwas ändert, ist der, den beim Nachsehen niemand liest. */
-        const { check, weight, cookie, leftover } = readServerParams(server[3] ?? '');
+        const { check, weight, cookie, tls, checkSni, leftover } = readServerParams(server[3] ?? '');
 
-        entry.servers.push({ name, target: server[2], check, weight });
+        entry.servers.push({ name, target: server[2], check, weight, tls });
+        entry.serverLines.push({ text: line, checkSni });
         // Die Marke MUSS der eigene Servername sein: HAProxy schickt den Wert
         // aus dem Cookie an genau den Server, der so heißt. Ein abweichender
         // Wert bindet an ein anderes Ziel, und neu geschrieben stünde dort der
@@ -1781,7 +1920,17 @@ export function parseHaproxyConfig(text: string): HaproxyService[] {
     for (const other of useBackends) {
       if (other === use || !other.conditions.includes(aclName)) continue;
 
-      const route = readRoute(id, aclName, other, pathAcls, backends, aclUses, backendUses, backendScope);
+      const route = readRoute(
+        id,
+        aclName,
+        domains[0] ?? '',
+        other,
+        pathAcls,
+        backends,
+        aclUses,
+        backendUses,
+        backendScope
+      );
       if (!route) {
         routesClean = false;
         extras.push(other.text);
@@ -1883,6 +2032,13 @@ export function parseHaproxyConfig(text: string): HaproxyService[] {
       expectedCheck.every((l) => checkLines.includes(l));
     if (checkLines.length > 0 && !healthcheck) extras.push(...checkLines);
 
+    // HTTPS zum Ziel: eine Art für alle Zeilen, und der SNI des Healthchecks
+    // ist der, den ein Neuschreiben setzen würde.
+    const backendTls = backend
+      ? readBackendTls(backend, healthcheck, domains[0] ?? '')
+      : { tls: 'off' as const, extras: [] };
+    extras.push(...backendTls.extras);
+
     // `option httpchk` ohne `check` auf der server-Zeile prüft nichts; unsere
     // Ausgabe setzt immer beides. Ein Neuschreiben würde also etwas ändern.
     const serversMatchCheck = (backend?.servers ?? []).every((s) => s.check === healthcheck);
@@ -1951,6 +2107,7 @@ export function parseHaproxyConfig(text: string): HaproxyService[] {
       responseHeaders: backend?.responseHeaders ?? [],
       requestHeaders: backend?.requestHeaders ?? [],
       tunnel: backend?.tunnel ?? false,
+      backendTls: backendTls.tls,
       auto: autoIds.has(id),
       extras,
       removable,
@@ -1991,6 +2148,7 @@ type ParsedRoute = HaproxyRoute & { extras: string[]; addonLines: string[]; inde
 function readRoute(
   id: string,
   hostAcl: string,
+  mainDomain: string,
   use: { backend: string; conditions: string[]; index: number },
   pathAcls: Map<string, string[]>,
   backends: Map<string, ParsedBackend>,
@@ -2025,6 +2183,7 @@ function readRoute(
   const servers = backend.servers;
   const check = servers.length > 0 && servers.every((s) => s.check);
   const mixed = servers.some((s) => s.check !== check);
+  const tls = readBackendTls(backend, check, mainDomain);
 
   return {
     name,
@@ -2033,6 +2192,7 @@ function readRoute(
     paths,
     servers,
     check,
+    backendTls: tls.tls,
     // Eine Pfad-Regel schreibt keine httpchk-Zeilen: eine WebSocket-Strecke
     // antwortet auf ein `GET /` nicht mit 200. Stehen dort welche, hat sie
     // jemand von Hand gesetzt, und ein Neuschreiben nähme sie weg.
@@ -2047,6 +2207,7 @@ function readRoute(
       ...servers
         .filter((s) => s.weight !== null)
         .map((s) => `server ${s.name} ${s.target} weight ${s.weight}`),
+      ...tls.extras,
     ],
     addonLines: addonLines(backend),
     index: use.index,
@@ -2218,6 +2379,8 @@ export function renderBackendBlock(input: CreateServiceInput): string[] {
         // schickt den Wert aus dem Cookie an den Server, der so heißt — ein
         // zweiter Name daneben wäre eine zweite Quelle für dieselbe Zuordnung.
         cookie: input.sticky ? name : null,
+        tls: input.backendTls,
+        checkSni: backendCheckSni(input.healthcheck, input.backendTls, input.domains[0]),
       })}`
     );
   });
@@ -2261,6 +2424,8 @@ export function renderRouteBackend(input: CreateServiceInput, route: RouteInput)
         check: route.check,
         weight: null,
         cookie: null,
+        tls: route.backendTls,
+        checkSni: backendCheckSni(route.check, route.backendTls, input.domains[0]),
       })}`
     );
   });
@@ -2684,6 +2849,26 @@ export function supportsPasswordLock(version: string | null): boolean | null {
   if (!match) return null;
   const major = Number(match[1]);
   return major > 2 || (major === 2 && Number(match[2]) >= 4);
+}
+
+/**
+ * Ob dieses HAProxy `ca-file @system-ca` kennt, die CAs des Systems. `null`
+ * heißt unbekannt, dann entscheidet `haproxy -c` im Vorgang.
+ *
+ * Die Grenze ist 2.6: im Handbuch von 2.4 fehlt `@system-ca`, in dem von 2.6
+ * steht es (2.5 ist keine LTS-Fassung und nicht nachgesehen). Das offizielle
+ * Abbild bringt `ca-certificates` dafür mit.
+ */
+export function supportsSystemCa(version: string | null): boolean | null {
+  const match = /^(\d+)\.(\d+)/.exec(version ?? '');
+  if (!match) return null;
+  const major = Number(match[1]);
+  return major > 2 || (major === 2 && Number(match[2]) >= 6);
+}
+
+/** Ob eine Eingabe irgendwo `verify` verlangt, im Backend oder in einer Regel. */
+export function usesSystemCa(input: Pick<CreateServiceInput, 'backendTls' | 'routes'>): boolean {
+  return input.backendTls === 'verify' || input.routes.some((route) => route.backendTls === 'verify');
 }
 
 /** Ob diese Konfiguration die Seiten der Abfrage braucht. Sie müssen auf der
@@ -3700,6 +3885,7 @@ export function toCreateInput(service: HaproxyService): CreateServiceInput {
       paths: [...route.paths],
       servers: route.servers.map((s) => ({ name: s.name, target: s.target })),
       check: route.check,
+      backendTls: route.backendTls,
     })),
     balance: service.balance,
     sticky: service.sticky,
@@ -3712,6 +3898,7 @@ export function toCreateInput(service: HaproxyService): CreateServiceInput {
     requestHeaders: service.requestHeaders.map((rule) => ({ ...rule })),
     tunnel: service.tunnel,
     healthcheck: service.healthcheck,
+    backendTls: service.backendTls,
   };
 }
 
@@ -3808,6 +3995,7 @@ export function readServiceInput(body: unknown): CreateServiceInput {
           // Schreiben — siehe `RouteServerInput`.
           servers: readServers(r.servers).map((s) => ({ name: s.name, target: s.target })),
           check: r.check === true,
+          backendTls: readBackendTlsInput(r.backendTls),
         };
       })
     : [];
@@ -3901,6 +4089,9 @@ export function readServiceInput(body: unknown): CreateServiceInput {
     // beantworten kann. Dasselbe bei einer Weiterleitung: sie hat kein Ziel,
     // das sich prüfen ließe.
     healthcheck: raw.healthcheck === true && !redirect && healthcheckPossible(domains),
+    // Wie `balance`: bei einer Weiterleitung gibt es keine Ziele, die etwas
+    // sprechen könnten, und ihr Formular zeigt die Frage nicht.
+    backendTls: redirect ? 'off' : readBackendTlsInput(raw.backendTls),
   };
 }
 
@@ -4007,6 +4198,19 @@ function readServers(value: unknown): BackendServerInput[] {
       weight: readWeight(s.weight),
     };
   });
+}
+
+/**
+ * Wie das Ziel angesprochen wird, aus einem Request-Rumpf.
+ *
+ * Fehlt das Feld, heißt das HTTP: so stand jede Zeile da, bevor es die Frage
+ * gab, und ein Aufrufer, der davon nichts weiß, soll nichts verändern. Ein
+ * UNBEKANNTER Wert wird durchgereicht und von `validateCreateInput` abgelehnt,
+ * aus demselben Grund wie bei `balance`.
+ */
+export function readBackendTlsInput(value: unknown): BackendTls {
+  const raw = String(value ?? '').trim();
+  return (raw === '' ? 'off' : raw) as BackendTls;
 }
 
 /**

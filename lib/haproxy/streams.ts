@@ -541,11 +541,13 @@ export function parseStreams(text: string): HaproxyStream[] {
     if (server) {
       // Dieselbe Zeilenform wie in einem Backend, also derselbe Leser. Ein
       // eigener hier wäre der, der die Gewichtung vergisst.
-      const { check, weight, cookie, leftover } = readServerParams(server[3] ?? '');
-      current.servers.push({ name: server[1], target: server[2], check, weight });
+      const { check, weight, cookie, tls, leftover } = readServerParams(server[3] ?? '');
+      current.servers.push({ name: server[1], target: server[2], check, weight, tls });
       // Eine Cookie-Marke gibt es in `mode tcp` nicht: sie setzt HTTP voraus.
-      // Steht sie da, hat sie jemand von Hand hingeschrieben.
-      if (leftover.length > 0 || cookie !== null) current.extras.push(line);
+      // Steht sie da, hat sie jemand von Hand hingeschrieben. Dasselbe für
+      // `ssl`: eine Weiterleitung reicht durch, was kommt, und entschlüsselt
+      // nichts (docs/reverse-proxy.md, „Ziele, die HTTPS sprechen").
+      if (leftover.length > 0 || cookie !== null || tls !== 'off') current.extras.push(line);
       return;
     }
 
@@ -591,6 +593,8 @@ export function renderStreamBlock(input: CreateStreamInput): string[] {
         check: input.check,
         weight: server.weight,
         cookie: null,
+        tls: 'off',
+        checkSni: null,
       })}`
     );
   });

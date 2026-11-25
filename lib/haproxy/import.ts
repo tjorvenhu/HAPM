@@ -1481,6 +1481,7 @@ function emptyService(domains: string[]): CreateServiceInput {
     requestHeaders: [],
     tunnel: false,
     healthcheck: false,
+    backendTls: 'off',
   };
 }
 
@@ -1589,6 +1590,8 @@ function httpEntry(
       paths: path.paths,
       servers: read.servers.map((s) => ({ name: s.name, target: s.target })),
       check: checks > 0 && checks === read.servers.length,
+      // `ssl` auf einer server-Zeile übernimmt der Import nicht (`readServer`).
+      backendTls: 'off',
     };
     service.routes.push(routeInput);
   }

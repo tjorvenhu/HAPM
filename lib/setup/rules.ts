@@ -239,6 +239,8 @@ export function hapmServiceInput(domain: string, listenPort: number): CreateServ
     // Der Check ruft `GET /` mit dem Host der Domain auf und erwartet 200 bis
     // 399. HAPM antwortet dort mit einer Weiterleitung auf die Übersicht.
     healthcheck: true,
+    // HAPM selbst spricht HTTP auf seinem Port.
+    backendTls: 'off',
   };
 }
 

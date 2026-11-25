@@ -155,6 +155,7 @@ const INPUT: CreateServiceInput = {
   requestHeaders: [],
   tunnel: false,
   healthcheck: false,
+  backendTls: 'off',
 };
 
 function find(text: string, id: string) {
@@ -500,7 +501,7 @@ describe('assignServiceId', () => {
       /^backend nichts/m,
       'backend app_example_org_api\n    server x 10.0.0.1:80\n\nbackend nichts'
     );
-    const routes = [{ name: 'api', paths: ['/api'], servers: [{ name: '', target: '10.0.0.1:81' }], check: true }];
+    const routes = [{ name: 'api', paths: ['/api'], servers: [{ name: '', target: '10.0.0.1:81' }], check: true, backendTls: 'off' as const }];
     expect(assignServiceId(withBackend, { domains: ['app.example.org'], routes: [] })).toBe(
       'app_example_org'
     );

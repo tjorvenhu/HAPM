@@ -73,6 +73,7 @@ describe('Meldungen des Reverse-Proxys über handleError', () => {
       requestHeaders: [],
       tunnel: false,
       healthcheck: false,
+      backendTls: 'off',
     });
     expect(invalid).not.toBeNull();
 

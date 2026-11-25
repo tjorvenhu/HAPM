@@ -58,6 +58,8 @@ import {
   isValidDomain,
   usesLockPages,
   supportsPasswordLock,
+  supportsSystemCa,
+  usesSystemCa,
   LOCK_PAGE_DIR,
   INHERIT_LOCK,
   HaproxyConfigError,
@@ -689,6 +691,22 @@ function assertLockSupported(server: Server, probe: ProxyProbe, input: CreateSer
 }
 
 /**
+ * Ein Ziel, dessen Zertifikat gegen die CAs des Systems geprüft werden soll,
+ * auf einem HAProxy, das `@system-ca` nicht kennt. Wie bei der Passwortsperre:
+ * `haproxy -c` lehnte es ohnehin ab, aber erst im Vorgang und ohne den Grund.
+ */
+function assertTlsSupported(probe: ProxyProbe, input: CreateServiceInput): void {
+  if (usesSystemCa(input) && supportsSystemCa(probe.version) === false) {
+    throw new ApiError(
+      msg(
+        'Das Zertifikat des Ziels gegen die CAs des Systems zu prüfen braucht HAProxy 2.6 oder neuer. Hier läuft {version}. HTTPS ohne Prüfung geht dort.',
+        { version: String(probe.version) }
+      )
+    );
+  }
+}
+
+/**
  * Die neue Datei ablegen und prüfen, ohne die gültige anzufassen.
  *
  * Der Inhalt geht über stdin und nie als Argument: eine Konfiguration auf der
@@ -1094,6 +1112,7 @@ export async function createService(
     }
     const plan = await assertIssuable(ssh, probe, input.domains, challenge);
     assertLockSupported(server, probe, input);
+    assertTlsSupported(probe, input);
 
     // Wirft bei doppelter ID oder belegter Domain — bevor irgendetwas passiert,
     // und insbesondere bevor ein Zertifikat beantragt wird. Ein Fehlversuch bei
@@ -1304,6 +1323,7 @@ export async function updateService(
     }
 
     assertLockSupported(server, probe, input);
+    assertTlsSupported(probe, input);
 
     // Wirft bei einer Domain, die inzwischen woanders geroutet wird — bevor ein
     // Zertifikat beantragt wird. Die eigenen Domains stehen dem nicht im Weg:
@@ -1463,6 +1483,7 @@ export async function precheckCreate(
   }
   await assertIssuable(await getSSHConfig(server), probe, input.domains, challenge);
   assertLockSupported(server, probe, input);
+  assertTlsSupported(probe, input);
 
   // Vergeben und vormerken ohne ein `await` dazwischen: sonst läse ein zweiter
   // Aufruf die Liste, bevor dieser sich eingetragen hat.
@@ -1507,6 +1528,7 @@ export async function precheckUpdate(
     await assertIssuable(await getSSHConfig(server), probe, input.domains, challenge);
   }
   assertLockSupported(server, probe, input);
+  assertTlsSupported(probe, input);
   replaceService(probe.raw, oldId, input);
   return current;
 }

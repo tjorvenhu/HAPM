@@ -210,6 +210,111 @@ an und gesperrt mit „Gilt schon für alle Ziele“, solange das Ziel keine eig
 Zeile hat; eingeschaltet schriebe er dieselbe Wirkung ein zweites Mal hin. Hat
 ein Ziel trotzdem eine, bleibt er bedienbar, damit sie sich entfernen lässt.
 
+### Ziele, die HTTPS sprechen
+
+Manche Ziele sprechen selbst nur HTTPS: Proxmox auf 8006, TrueNAS, eine
+Anwendung mit eigenem Zertifikat. Ohne Zusatz spricht HAProxy dort Klartext
+und bekommt einen Fehler oder einen Verbindungsabbruch zurück. Das Feld dafür
+heißt `backendTls` und hat drei Werte; geschrieben wird es auf **jede**
+server-Zeile des Backends (`serverParams`, `backendTlsParams`):
+
+| `backendTls` | Formular | An der server-Zeile |
+|---|---|---|
+| `off` (Vorgabe) | HTTP | nichts |
+| `insecure` | HTTPS | `ssl verify none sni req.hdr(host)` |
+| `verify` | HTTPS, Zertifikat prüfen | `ssl verify required ca-file @system-ca sni req.hdr(host)` |
+
+Mit Healthcheck (beim Dienst) bzw. Verbindungsprüfung (bei einer Regel) kommt
+`check-sni <Hauptdomain>` dazu, siehe unten. Die Belege stehen im Handbuch der
+Fassung hinter `haproxy:lts` (heute 3.4,
+<https://www.haproxy.org/download/3.4/doc/configuration.txt>, Abschnitt 5.2).
+
+- **Ein Feld mit drei Werten und nicht zwei Schalter.** „Prüfen ohne HTTPS"
+  gibt es nicht, und ein Modell, das den Zustand zulässt, braucht eine Regel
+  mehr, die ihn ablehnt. Die Werte kommen aus einer Allow-Liste
+  (`BACKEND_TLS`), aus demselben Grund wie bei `balance`: die Art entscheidet
+  über Wörter in der Datei.
+- **Je Backend und nicht je Zeile.** Die Ziele einer Lastverteilung sind
+  gleichartige Server; eine Wahl je Zeile wäre eine Spalte, die fast immer
+  dieselbe Antwort hat. Gelesen wird trotzdem je Zeile
+  (`HaproxyBackendServer.tls`). Stehen verschiedene Arten nebeneinander, gilt
+  die der ersten Zeile, die anderen landen in `extras`, und der Eintrag ist nur
+  lesbar (`readBackendTls`).
+- **Eine Pfad-Regel hat ihre eigene Einstellung** (`RouteInput.backendTls`)
+  und erbt nicht die des Dienstes. Eine Regel zeigt auf einen anderen Port,
+  oft auf ein anderes Programm, und ob dort HTTPS gesprochen wird, ist eine
+  Eigenschaft dieses Ports. Eine neue Regel beginnt mit HTTP.
+- **`verify none` steht ausdrücklich da.** Ohne `verify` gilt die Vorgabe aus
+  `global`, und die ist `required` („Unless "ssl_server_verify" appears in the
+  global section, "verify" is set to "required" by default."). Ohne CA-Datei
+  gibt es dann nichts, wogegen geprüft würde; `pnpm haproxy:verify-tls`
+  prüft, dass `haproxy -c` ein nacktes `ssl` ablehnt.
+- **`verify` prüft gegen die CAs des Systems, `ca-file @system-ca`.** „In
+  order to use the trusted CAs of your system, the "@system-ca" parameter could
+  be used in place of the cafile." Im Handbuch von 2.4 fehlt es, ab 2.6 steht
+  es da (`supportsSystemCa`). Das offizielle Abbild installiert dafür
+  `ca-certificates` (Dockerfile von 3.4, mit dem Kommentar „@system-ca").
+  Auf einem älteren HAProxy lehnt die Vorabprüfung `verify` mit Grund ab
+  (`assertTlsSupported` in `provision.ts`), und das Formular sperrt die Wahl.
+  Eine eigene CA-Datei (interne CA) bietet HAPM nicht an: die Datei müsste
+  HAPM verwalten. Eine Zeile mit eigener `ca-file` wird gelesen und ist nur
+  lesbar.
+- **SNI ist die Domain der Anfrage, `sni req.hdr(host)`.** Das Handbuch sagt
+  zu `sni`: „SNI in HTTPS must always match the Host field" und verweist für
+  HTTPS auf `req.hdr(host)`. Die Hauptdomain als fester SNI wäre bei einem
+  Eintrag mit mehreren Domains falsch: ein Ziel mit einem Zertifikat je Domain
+  (Caddy, Traefik, nginx mit mehreren `server`-Blöcken) gäbe für jede Domain
+  das der Hauptdomain heraus, und mit `verify` scheiterte die Prüfung für alle
+  anderen. Mit `verify` wird das Zertifikat gegen diesen Namen geprüft („the
+  resulting name will also be matched against the server certificate's
+  names"). Das Ziel braucht also ein Zertifikat für die öffentliche Domain;
+  eins nur für `pve.lan` passt zu „HTTPS" ohne Prüfung. Leerlaufende
+  Verbindungen teilt HAProxy nur zwischen Anfragen mit demselben SNI („the SNI
+  is assigned to the connection name for "http-reuse""), das kostet bei vielen
+  Domains auf einem Ziel ein paar Verbindungen mehr. Ab 3.3 setzt HAProxy
+  dasselbe von selbst (`sni-auto`, `req.hdr(host),field(1,:)`); geschrieben
+  wird es trotzdem, weil 2.6 bis 3.2 das nicht tun. Das `field(1,:)` (Port
+  abschneiden) fehlt mit Absicht: die Host-ACL trifft nur Domains ohne Port,
+  eine Anfrage mit `Host: x:8443` kommt hier nie an.
+- **Der Healthcheck läuft von selbst über TLS**, aber ohne SNI. „When this
+  option is used, health checks are automatically sent in SSL too unless there
+  is a "port" or an "addr" directive", also kein `check-ssl`. Aber: „When
+  "sni" or "alpn" are set on the server line, their value is not used for
+  health checks", und ein Check ist keine Anfrage, `req.hdr(host)` gibt es
+  dort nicht. Ein Ziel, das ohne SNI kein Zertifikat herausgibt (Caddy lehnt
+  den Handshake ab), fiele durch, und HAProxy nähme ein funktionierendes Ziel
+  aus dem Betrieb. Deshalb `check-sni <Hauptdomain>` (`backendCheckSni`): der
+  HTTP-Healthcheck schickt sie ohnehin als Host-Header. `check-sni-auto` gibt
+  es erst ab 3.3 und nur für den HTTP-Check, nicht für die TCP-Prüfung einer
+  Regel. Ist die Hauptdomain eine Wildcard, gibt es keinen Namen und keinen
+  `check-sni`. Für ihn gilt die Regel des Host-Headers im Healthcheck: ein
+  `check-sni` mit einer anderen Domain würde beim Speichern still
+  umgeschrieben, also ist er ein `extras`-Eintrag; ändert sich die
+  Hauptdomain, zieht er mit.
+- **Kein `alpn h2`.** Ohne ALPN spricht HAProxy HTTP/1.1 mit dem Ziel; „ALPN
+  is required to connect to HTTP/2 servers", und nötig ist es für die Fälle
+  hier nicht. Eine Zeile mit `alpn` ist nur lesbar.
+- **Gelesen wird nur die ganze Folge**, Wort für Wort in der Reihenfolge, in
+  der `serverParams` sie schreibt: `check`, `weight`, `cookie`, die
+  HTTPS-Wörter, `check-sni`. Für HAProxy ist die Reihenfolge beliebig, hier
+  nicht, aus demselben Grund wie bei den übrigen Parametern. Was davon
+  abweicht (`ssl` allein, `verify none` ohne SNI, `verifyhost`, ein fester
+  SNI, eine andere Reihenfolge), bleibt in `extras`
+  (`tests/haproxy/backend-tls.test.ts` hält die Varianten fest).
+- **Nicht bei TCP-Weiterleitungen.** Dort reicht HAProxy durch, was kommt; ob
+  dahinter TLS gesprochen wird, macht der Client mit dem Ziel aus. Ein `ssl`
+  auf einer server-Zeile eines `listen`-Abschnitts ist ein `extras`-Eintrag.
+- **Nicht bei einer Weiterleitung**: sie hat keine Ziele. Die Prüfung lehnt
+  es ab, `readServiceInput` setzt es dort auf `off` wie `balance`.
+- **Die Art eines Eintrags (`serviceKind`) hängt nicht daran.** HTTPS gibt es
+  im Reverse-Proxy- und im Lastverteilungs-Formular gleich.
+- **Die Karte** trägt an jeder Zeile mit HTTPS ein Schild „HTTPS" mit
+  `LockKeyhole`, an einer Regel das Symbol im Chip. Bewusst nicht das Schloss
+  der Sperre: das sagt etwas darüber, wer hereinkommt, dieses darüber, wie
+  HAProxy weiterspricht.
+- **Der Import** (`lib/haproxy/import.ts`) übernimmt `ssl` auf einer
+  server-Zeile weiterhin nicht und nennt den Grund.
+
 ### Gruppen
 
 **Welche Gruppen es gibt, sagt die Datei und nicht der Code.** Eine Gruppe ist

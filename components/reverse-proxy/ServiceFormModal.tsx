@@ -29,6 +29,7 @@ import {
   readWeight,
   shortVersion,
   supportsPasswordLock,
+  supportsSystemCa,
   validateLockPassword,
   validateCreateInput,
   validateNewService,
@@ -38,6 +39,7 @@ import {
   serviceKind,
   type HaproxyScope,
   type HaproxyBalance,
+  type BackendTls,
   type HeaderDirection,
   type HeaderRule,
   type ServiceKind,
@@ -52,6 +54,7 @@ import { msgid } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
 import type { ProxyRow } from './types';
 import SavedTargetPick, { useSavedTargets } from './SavedTargetPick';
+import BackendTlsPick from './BackendTlsPick';
 
 /**
  * Anlegen und Bearbeiten eines Reverse-Proxy-Ziels.
@@ -93,6 +96,7 @@ interface RouteRow {
   paths: string[];
   servers: ServerRow[];
   check: boolean;
+  backendTls: BackendTls;
 }
 
 /** Die Wörter aus `TargetKindDialog`, damit die Überschrift dieselben trägt.
@@ -126,6 +130,9 @@ const EMPTY_ROUTE: RouteRow = {
   paths: [''],
   servers: [{ ...EMPTY_SERVER }],
   check: true,
+  // HTTP und nicht die Wahl des Backends: eine Regel zeigt auf einen anderen
+  // Port, und dort spricht oft ein anderes Programm.
+  backendTls: 'off',
 };
 
 interface Props {
@@ -294,6 +301,7 @@ export default function ServiceFormModal({
           ? route.servers.map((s) => ({ name: s.name, target: s.target, weight: s.weight === null ? '' : String(s.weight) }))
           : [{ ...EMPTY_SERVER }],
       check: route.check,
+      backendTls: route.backendTls,
     })) ?? []
   );
   /** Zugeklappt, auch wenn es Regeln gibt: der Abschnitt ist aufgeklappt so
@@ -326,6 +334,9 @@ export default function ServiceFormModal({
   /** Zugeklappt wie die Pfad-Regeln, aus demselben Grund. */
   const [addonsOpen, setAddonsOpen] = useState(false);
   const [healthcheck, setHealthcheck] = useState(edit?.service.healthcheck ?? true);
+  /** Wie HAProxy mit den Zielen spricht. Beim Bearbeiten aus der Datei gelesen
+   *  (`readServerParams`), sonst HTTP. */
+  const [backendTls, setBackendTls] = useState<BackendTls>(edit?.service.backendTls ?? 'off');
   /**
    * Der Zugriff: offen, nur für die Admin-IPs oder mit Passwort.
    *
@@ -367,6 +378,9 @@ export default function ServiceFormModal({
   /** `null` (Version unbekannt) sperrt nichts: dann entscheidet der Vorgang. */
   const proxyVersion = proxies.find((p) => p.$id === serverId)?.version ?? null;
   const passwordPossible = supportsPasswordLock(proxyVersion) !== false;
+  /** Die Version, wenn sie `@system-ca` nicht kennt. Unbekannt sperrt nichts. */
+  const verifyUnsupported =
+    supportsSystemCa(proxyVersion) === false ? shortVersion(proxyVersion ?? '') : null;
   /* Eine Art, der gerade etwas fehlt, lässt sich nicht wählen. Wer sie schon
    * hat, behält sie: der Eintrag soll sich öffnen lassen, auch wenn inzwischen
    * die Voraussetzung fehlt. */
@@ -508,6 +522,7 @@ export default function ServiceFormModal({
             .map((s) => ({ name: s.name.trim(), target: s.target.trim() }))
             .filter((s) => s.target),
           check: route.check,
+          backendTls: route.backendTls,
         })),
     balance: balancing ? balance : null,
     sticky: balancing && sticky,
@@ -527,6 +542,8 @@ export default function ServiceFormModal({
       !redirecting &&
       healthcheck &&
       healthcheckPossible(domainList),
+    // Das Weiterleitungs-Formular zeigt die Frage nicht, also schickt es HTTP.
+    backendTls: redirecting ? 'off' : backendTls,
   };
   // Dieselbe Funktion, die die Route aufruft. Zwei Regelwerke wären ein Dialog,
   // der etwas durchlässt, was der Server danach ablehnt.
@@ -1462,6 +1479,16 @@ export default function ServiceFormModal({
                   </span>
                 )}
 
+                <div className="form-subsection">
+                  <BackendTlsPick
+                    value={backendTls}
+                    onChange={setBackendTls}
+                    label={balancing ? msgid('Ziele sprechen') : msgid('Ziel spricht')}
+                    targets={backends.map((b) => b.target)}
+                    verifyUnsupported={verifyUnsupported}
+                  />
+                </div>
+
                 {/* ── Verfahren und Bindung ──
                     Nur im Lastverteilungs-Formular. Bei einem Ziel gibt es
                     nichts zu verteilen und nichts zu binden; die Frage stünde
@@ -1953,6 +1980,14 @@ export default function ServiceFormModal({
                           </button>
                         </div>
                       </div>
+
+                      <BackendTlsPick
+                        value={route.backendTls}
+                        onChange={(value) => update({ backendTls: value })}
+                        label={msgid('Ziele dieser Regel sprechen')}
+                        targets={route.servers.map((s) => s.target)}
+                        verifyUnsupported={verifyUnsupported}
+                      />
 
                       <div className="form-subsection-head">
                         <div>

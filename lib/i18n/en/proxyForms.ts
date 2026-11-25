@@ -452,4 +452,22 @@ export const proxyForms: Dictionary = {
   "Diese Installation stellt keine Zertifikate selbst aus. Laden Sie zuerst unter Reverse-Proxy, Zertifikate eins hoch, das die Domains abdeckt.": "This installation does not issue certificates itself. First upload one under Reverse proxy, Certificates that covers the domains.",
   "Diese Installation stellt keine Zertifikate selbst aus, und für diese Domains liegt keins vor. Laden Sie es zuerst unter {page} hoch.": "This installation does not issue certificates itself, and there is none for these domains. Upload it first under {page}.",
   "Ein vorhandenes Zertifikat deckt diese Domains ab. Es wird keins beantragt.": "An existing certificate covers these domains. None will be requested.",
+  // HTTPS zum Ziel (BackendTlsPick, ServiceCard)
+  'HTTP': 'HTTP',
+  'HTTPS': 'HTTPS',
+  'HTTPS, Zertifikat prüfen': 'HTTPS, verify certificate',
+  'HAProxy spricht unverschlüsselt mit dem Ziel.': 'HAProxy talks to the target unencrypted.',
+  'Verschlüsselt. Das Zertifikat des Ziels wird nicht geprüft.': 'Encrypted. The target certificate is not verified.',
+  'Verschlüsselt. Das Zertifikat muss von einer bekannten CA stammen.': 'Encrypted. The certificate must come from a known CA.',
+  'Für Ziele, die selbst verschlüsseln, etwa Proxmox auf 8006 oder TrueNAS. Ohne Prüfung passt das für selbst signierte Zertifikate. Mit Prüfung muss das Zertifikat von einer CA stammen, der das System vertraut, und für die aufgerufene Domain gelten. HAProxy schickt die Domain der Anfrage als SNI. In der Konfiguration: „{insecure}" oder „{verify}" an jeder server-Zeile.':
+    'For targets that encrypt themselves, such as Proxmox on 8006 or TrueNAS. Without verification this works for self-signed certificates. With verification the certificate must come from a CA the system trusts and be valid for the requested domain. HAProxy sends the domain of the request as SNI. In the configuration: "{insecure}" or "{verify}" on every server line.',
+  'Die Prüfung des Zertifikats braucht HAProxy 2.6 oder neuer. Hier läuft {version}.':
+    'Verifying the certificate needs HAProxy 2.6 or newer. This one runs {version}.',
+  'Auf Port {port} spricht ein Ziel meist HTTPS.': 'A target on port {port} usually speaks HTTPS.',
+  'HAProxy spricht HTTPS mit dem Ziel, ohne das Zertifikat zu prüfen':
+    'HAProxy talks HTTPS to the target without verifying the certificate',
+  'HAProxy spricht HTTPS mit dem Ziel und prüft das Zertifikat': 'HAProxy talks HTTPS to the target and verifies the certificate',
+  'Ziel spricht': 'Target speaks',
+  'Ziele sprechen': 'Targets speak',
+  'Ziele dieser Regel sprechen': 'Targets of this rule speak',
 };

@@ -62,12 +62,14 @@ const COOLIFY: CreateServiceInput = {
       paths: ['/terminal/ws'],
       servers: [{ name: 'coolify', target: '10.10.0.5:6002' }],
       check: true,
+      backendTls: 'off',
     },
     {
       name: 'realtime',
       paths: ['/app'],
       servers: [{ name: 'coolify', target: '10.10.0.5:6001' }],
       check: true,
+      backendTls: 'off',
     },
   ],
   balance: null,
@@ -79,6 +81,7 @@ const COOLIFY: CreateServiceInput = {
   // Früher das Preset „Coolify".
   tunnel: true,
   healthcheck: false,
+  backendTls: 'off',
 };
 
 function find(text: string, id: string) {
@@ -368,8 +371,9 @@ describe('readServiceInput', () => {
       // Feld fällt hier weg und nicht erst beim Schreiben.
       servers: [{ name: '', target: '10.0.0.1:1' }],
       check: true,
+      backendTls: 'off',
     });
-    expect(input.routes[1]).toEqual({ name: '', paths: [], servers: [], check: false });
+    expect(input.routes[1]).toEqual({ name: '', paths: [], servers: [], check: false, backendTls: 'off' });
   });
 
   it('macht aus einem Rumpf ohne Regeln eine leere Liste', () => {

@@ -65,6 +65,7 @@ const INPUT: CreateServiceInput = {
   requestHeaders: [],
   tunnel: false,
   healthcheck: true,
+  backendTls: 'off',
 };
 
 describe('parseScopes', () => {

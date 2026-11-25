@@ -61,6 +61,7 @@ const INPUT: CreateServiceInput = {
   requestHeaders: [],
   tunnel: false,
   healthcheck: true,
+  backendTls: 'off',
 };
 
 function find(text: string, id: string) {
@@ -262,6 +263,7 @@ describe('Gewichtung', () => {
           paths: ['/api'],
           servers: [{ name: 'api1', target: '10.10.0.12:80' }],
           check: true,
+          backendTls: 'off',
         },
       ],
     };
@@ -279,7 +281,7 @@ describe('Gewichtung', () => {
       ...INPUT,
       sticky: false,
       routes: [
-        { name: 'api', paths: ['/api'], servers: [{ name: 'api1', target: '10.10.0.12:80' }], check: true },
+        { name: 'api', paths: ['/api'], servers: [{ name: 'api1', target: '10.10.0.12:80' }], check: true, backendTls: 'off' },
       ],
     };
     const kaputt = addService(CONFIG, mitRoute).replace(

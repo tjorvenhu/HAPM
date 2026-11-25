@@ -85,6 +85,7 @@ const INPUT: CreateServiceInput = {
   requestHeaders: [],
   tunnel: false,
   healthcheck: true,
+  backendTls: 'off',
 };
 
 function find(text: string, id: string) {
@@ -110,9 +111,10 @@ describe('replaceService', () => {
       requestHeaders: [],
       tunnel: false,
       healthcheck: true,
+      backendTls: 'off',
     });
     expect(find(next, 'website_blog').servers).toEqual([
-      { name: 'blog', target: '10.10.0.99:8080', check: true, weight: null },
+      { name: 'blog', target: '10.10.0.99:8080', check: true, weight: null, tls: 'off' },
     ]);
     expect(parseHaproxyConfig(next).map((s) => s.id)).toContain('nextcloud_intern');
   });

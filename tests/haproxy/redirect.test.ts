@@ -51,6 +51,7 @@ const INPUT: CreateServiceInput = {
   requestHeaders: [],
   tunnel: false,
   healthcheck: false,
+  backendTls: 'off',
 };
 
 function find(text: string, id: string) {
@@ -108,7 +109,7 @@ describe('Weiterleitung statt Backend', () => {
     });
     expect(withBackend).not.toContain('http-request redirect');
     expect(find(withBackend, 'altdomain').servers).toEqual([
-      { name: 'web', target: '10.0.0.5:80', check: false, weight: null },
+      { name: 'web', target: '10.0.0.5:80', check: false, weight: null, tls: 'off' },
     ]);
     expect(find(withBackend, 'altdomain').redirect).toBeNull();
   });
@@ -155,7 +156,7 @@ backend mix
     expect(
       de(validateCreateInput({
         ...INPUT,
-        routes: [{ name: 'api', paths: ['/api'], servers: [], check: true }],
+        routes: [{ name: 'api', paths: ['/api'], servers: [], check: true, backendTls: 'off' }],
       }))
     ).toMatch(/Pfad-Regeln/);
     // Die Weiterleitung beantwortet HAProxy selbst: Header und Timeout hätten

@@ -5,12 +5,13 @@ import Link from 'next/link';
 import {
   Globe, Activity, GitBranch, Server, Lock, LockOpen, Pencil, Trash2, Loader2, ArrowRight,
   EyeOff, ChevronDown, ChevronRight, CornerUpRight, Scale, Cookie, BarChart3, KeyRound, ShieldCheck,
-  SlidersHorizontal,
+  SlidersHorizontal, LockKeyhole,
 } from 'lucide-react';
 import {
   BALANCE_LABELS,
   BALANCE_HINTS,
   shortTarget,
+  type BackendTls,
   type HaproxyService,
   type ServiceHealth,
 } from '@/lib/haproxy/config';
@@ -127,6 +128,12 @@ interface Tag {
 
 /** Wie viele Marken nebeneinander passen, ohne dass die Zeile umbricht. */
 const MAX_TAGS = 2;
+
+/** Was das Schloss an einer Zeile heißt, im Tooltip. */
+const TLS_TOOLTIPS: Record<Exclude<BackendTls, 'off'>, string> = {
+  insecure: msgid('HAProxy spricht HTTPS mit dem Ziel, ohne das Zertifikat zu prüfen'),
+  verify: msgid('HAProxy spricht HTTPS mit dem Ziel und prüft das Zertifikat'),
+};
 
 /**
  * Der Zustand steckt in der Healthcheck-Marke, nicht in einem eigenen Zeichen.
@@ -467,17 +474,27 @@ export default function ServiceCard({
             // beim Schreiben. Was zählt, ist die Adresse, und wenn sie als
             // Backend-Server hinterlegt ist, dessen Name.
             const saved = findSavedTarget(server.target, savedTargets);
+            const address = saved ? `${saved.name} · ${server.target}` : server.target;
             return (
               <div
                 className="rp-row"
                 key={server.name}
-                data-tooltip={saved ? `${saved.name} · ${server.target}` : server.target}
+                data-tooltip={server.tls === 'off' ? address : `${address} · ${t(TLS_TOOLTIPS[server.tls])}`}
               >
                 <span className="rp-row-icon">
                   <Server size={14} />
                 </span>
                 <span className="rp-row-name rp-row-address">{server.target}</span>
                 {saved && <span className="rp-chip">{saved.name}</span>}
+                {/* HAProxy spricht HTTPS mit dem Ziel. Ein anderes Schloss als
+                    das der Sperre: das hier sagt nichts darüber, wer
+                    hereinkommt. */}
+                {server.tls !== 'off' && (
+                  <span className="rp-chip">
+                    <LockKeyhole size={12} />
+                    {t('HTTPS')}
+                  </span>
+                )}
               </div>
             );
           })
@@ -512,7 +529,9 @@ export default function ServiceCard({
               <div
                 className="rp-row rp-route"
                 key={route.name}
-                data-tooltip={`${route.paths.join(' ')} → ${route.servers.map((s) => s.target).join(', ')}`}
+                data-tooltip={`${route.paths.join(' ')} → ${route.servers.map((s) => s.target).join(', ')}${
+                  route.backendTls === 'off' ? '' : ` · ${t(TLS_TOOLTIPS[route.backendTls])}`
+                }`}
               >
                 <span className="rp-chip is-accent">{route.paths.join(' ')}</span>
                 <span className="rp-route-line" />
@@ -523,6 +542,7 @@ export default function ServiceCard({
                     wie das Standard-Backend. Eine andere Adresse steht voll da,
                     sonst behauptete die Karte eine Maschine, die es nicht ist. */}
                 <span className="rp-chip is-accent">
+                  {route.backendTls !== 'off' && <LockKeyhole size={12} />}
                   {route.servers
                     .map((s) => shortTarget(s.target, service.servers[0]?.target))
                     .join(', ')}

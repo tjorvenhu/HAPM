@@ -210,6 +210,7 @@ type Service = {
     paths: string[];
     servers: { name: string; target: string; check: boolean }[];
     check: boolean;
+    backendTls: 'off' | 'insecure' | 'verify';   // eigen je Regel, siehe unten
   }[];
   // Das Verteilverfahren. null heißt: keine balance-Zeile, es gilt der
   // defaults-Block der Konfiguration — nicht "roundrobin".
@@ -221,6 +222,9 @@ type Service = {
   requestHeaders: { name: string; value: string }[];
   tunnel: boolean;             // `timeout tunnel 1h`: offene Verbindungen bleiben
   healthcheck: boolean;
+  // Wie HAProxy die Ziele anspricht: HTTP, HTTPS ohne Prüfung des Zertifikats
+  // oder HTTPS mit Prüfung gegen die CAs des Systems.
+  backendTls: 'off' | 'insecure' | 'verify';
   editable: boolean;           // false → PATCH wird abgelehnt
   removable: boolean;          // false → DELETE wird abgelehnt
   // true: über dieses Ziel läuft die Adresse von HAPM. DELETE wird abgelehnt,
@@ -261,6 +265,7 @@ Feld, bevor du aus einer leeren Liste einen Schluss ziehst.**
   "requestHeaders": [],               // optional
   "tunnel": false,                    // optional: lange Verbindungen (WebSocket, Terminal)
   "healthcheck": true,
+  "backendTls": "off",                // optional: "insecure" oder "verify", wenn das Ziel HTTPS spricht
   "dnsDomains": "auto",               // optional
   "dnsHook": "dns_cf"                 // nur für DNS-01, und nur bei mehreren Hooks nötig
 }
@@ -594,6 +599,7 @@ Token weg, und auffallen würde es zwei Monate später.
 | `tunnel` | `true` schreibt `timeout tunnel 1h` in jedes Backend des Eintrags. Ohne das reißen WebSocket, Terminal und Live-Ansicht nach der Zeit aus dem `defaults`-Block ab, üblicherweise nach einer Minute ohne Daten. |
 | `preset` | Nur noch angenommen, nie gemeldet: `nextcloud` wird zu den beiden Headern der Antwort, `coolify` zu `tunnel: true`, `default` zu nichts. Ein anderer Wert ergibt `400`. |
 | `healthcheck` | **Geht nicht, wenn `domains[0]` eine Wildcard ist** — `*.kunde.example` ist als Host-Header kein gültiger Name, das Ziel antwortete mit 404 und HAProxy nähme ein funktionierendes Backend aus dem Betrieb. Der Wert wird in dem Fall stillschweigend auf `false` normalisiert, nicht abgelehnt. |
+| `backendTls` | Wie HAProxy die Ziele anspricht. **Fehlt oder `"off"`: HTTP**, wie bisher. `"insecure"`: HTTPS, das Zertifikat des Ziels wird nicht geprüft (`ssl verify none`), für selbst signierte wie bei Proxmox (8006) oder TrueNAS. `"verify"`: HTTPS, das Zertifikat muss von einer CA stammen, der das System vertraut, und für die aufgerufene Domain gelten (`ssl verify required ca-file @system-ca`); braucht HAProxy 2.6 oder neuer, sonst `400`. In beiden HTTPS-Fällen geht die Domain der Anfrage als SNI hinaus (`sni req.hdr(host)`), der Healthcheck bekommt `domains[0]` (`check-sni`). Gilt für alle `servers`; jede Pfad-Regel hat ein eigenes `routes[].backendTls` und erbt es **nicht**. Ein anderer Wert ergibt `400`, ebenso ein HTTPS-Wert zusammen mit `redirect`. |
 | `dnsDomains` | Fehlt → beim DNS-Anbieter wird nichts angefasst. `"auto"` → jede Domain, für die unter `/dns` eine Zone eingerichtet ist. Eine Liste → genau diese, geschnitten mit `domains`. |
 | `dnsHook` | Der acme.sh-Hook für DNS-01, aus `dnsHooks` von `GET /proxies`. DNS-01 gilt bei einer Wildcard und, in einer als intern eingerichteten Installation, bei jeder Domain. Ist genau ein Hook eingerichtet, darf das Feld fehlen. Bei mehreren muss es gesetzt sein. |
 

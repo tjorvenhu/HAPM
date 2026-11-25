@@ -42,6 +42,7 @@ import {
   parseScopes,
   scopeSlug,
   serviceHealth,
+  type BackendTls,
   type HeaderRule,
   type HaproxyService,
   type HaproxyScopeInfo,
@@ -180,6 +181,7 @@ export interface ServiceView {
     paths: string[];
     servers: { name: string; target: string; check: boolean }[];
     check: boolean;
+    backendTls: BackendTls;
   }[];
   /** Das Verteilverfahren. `null` heißt: keine `balance`-Zeile, es gilt der
    *  `defaults`-Block der Maschine. Nicht „roundrobin" — was dort steht, weiß
@@ -194,6 +196,9 @@ export interface ServiceView {
   requestHeaders: HeaderRule[];
   tunnel: boolean;
   healthcheck: boolean;
+  /** Wie HAProxy die Ziele anspricht: `off` HTTP, `insecure` HTTPS ohne
+   *  Prüfung des Zertifikats, `verify` HTTPS gegen die CAs des Systems. */
+  backendTls: BackendTls;
   editable: boolean;
   removable: boolean;
   /**
@@ -234,6 +239,7 @@ export function serviceView(
       paths: route.paths,
       servers: route.servers.map((s) => ({ name: s.name, target: s.target, check: s.check })),
       check: route.check,
+      backendTls: route.backendTls,
     })),
     balance: service.balance,
     sticky: service.sticky,
@@ -241,6 +247,7 @@ export function serviceView(
     requestHeaders: service.requestHeaders,
     tunnel: service.tunnel,
     healthcheck: service.healthcheck,
+    backendTls: service.backendTls,
     editable: service.editable,
     removable: service.removable,
     surface: surface?.serviceId === service.id,
