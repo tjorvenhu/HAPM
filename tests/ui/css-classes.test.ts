@@ -28,7 +28,7 @@ function uiCss(entry: string): string {
 
 const GLOBALS = readFileSync('app/globals.css', 'utf8');
 /** Stylesheets einzelner Seiten, eingebunden in deren `page.tsx`. */
-const PAGE_CSS = ['app/logs.css'];
+const PAGE_CSS = ['app/logs.css', 'app/setup/setup.css'];
 
 const CSS = [
   uiCss('tool.css'),
