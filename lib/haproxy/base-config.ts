@@ -75,6 +75,13 @@ export function renderBaseConfig(options: BaseConfigOptions): string {
     // und setzt den Kopf davor (lib/haproxy-log.ts).
     '    log stdout format raw local0 info',
     '',
+    // Ohne die Zeile schaltet ein HAProxy, dessen TLS-Bibliothek keine QUIC-API
+    // hat (gewöhnliches OpenSSL vor 3.5), die QUIC-Listener ab, und `bind quic4@`
+    // brächte kein HTTP/3. Wo die Bibliothek QUIC kann, ist sie laut Handbuch
+    // wirkungslos (docs.haproxy.org, „limited-quic“). Aus der Konfiguration, die
+    // der Nutzer produktiv betreibt und als Vorgabe gesetzt hat.
+    '    limited-quic',
+    '',
     '    chroot /var/lib/haproxy',
     '',
     `    stats socket ${STATS_SOCKET} mode 660 level admin`,

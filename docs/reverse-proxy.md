@@ -36,6 +36,17 @@ Backend-Adresse (`matchesSearch`, rein und getestet).
   (`000-hapm-default.pem`, damit `crt /etc/haproxy/certs/` nie leer ist), die
   Grundkonfiguration (`lib/haproxy/base-config.ts`, nur wenn `haproxy.cfg`
   fehlt) und acme.sh.
+- **Vorbild der Grundkonfiguration und jedes geschriebenen Blocks** ist die
+  Konfiguration, die der Betreiber von HAPM produktiv fährt: TLS-Optionen,
+  Timeouts, errorfiles, Umleitung auf HTTPS mit Ausnahme für ACME,
+  `strict-sni`, HTTP/3 mit `alt-svc` und `limited-quic`, die globalen Header,
+  dazu Healthcheck, Sperren, Wildcards und Pfad-Regeln je Ziel. Was HAPM
+  schreibt, soll dort genauso stehen. Bewusst anders sind nur zwei Zeilen im
+  `global`-Block, beide wegen des Containers: kein `daemon` (HAProxy läuft im
+  Vordergrund unter dem Master-Socket) und `log stdout format raw` statt
+  `short` (HAPM schreibt das Log selbst mit, `lib/haproxy-log.ts`). Eine
+  bestehende `haproxy.cfg` fasst das nicht an: die Grundkonfiguration entsteht
+  nur, wenn die Datei fehlt.
 - **acme.sh richtet HAPM ein und hält es aktuell** (`lib/acme.ts`): installiert
   aus `/opt/acme.sh` im Abbild in das Volume `/root/.acme.sh`, mit `--no-cron`
   (im Container gibt es keinen Cron) und Let's Encrypt als Vorgabe. Die tägliche
