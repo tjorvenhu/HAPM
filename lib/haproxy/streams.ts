@@ -53,6 +53,7 @@ import {
   isValidSourceAddress,
   isValidWeight,
   readServerParams,
+  serverNames,
   readWeight,
   scopeMarkers,
   scopeResolver,
@@ -582,8 +583,9 @@ export function renderStreamBlock(input: CreateStreamInput): string[] {
   if (input.balance) lines.push(`    balance ${input.balance}`);
 
   lines.push('');
+  const names = serverNames(input.servers);
   input.servers.forEach((server, position) => {
-    const name = server.name || `server${position + 1}`;
+    const name = names[position];
     lines.push(
       `    server ${name} ${server.target}${serverParams({
         check: input.check,

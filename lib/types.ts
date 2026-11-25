@@ -178,6 +178,13 @@ export interface DnsZone extends DbDoc {
   lastError: string | null;
 }
 
+/** Ein gespeichertes Ziel, siehe `lib/haproxy/saved-targets.ts`. */
+export interface SavedTargetDoc extends DbDoc {
+  name: string;
+  host: string;
+  port: number | null;
+}
+
 export interface ServiceToken extends DbDoc {
   name: string;
   tokenHash: string;
@@ -392,4 +399,5 @@ export const COLLECTIONS = {
   BACKUP_RUNS: 'backup_runs',
   RESTORE_RUNS: 'restore_runs',
   SETUP_STATE: 'setup_state',
+  SAVED_TARGETS: 'saved_targets',
 } as const;

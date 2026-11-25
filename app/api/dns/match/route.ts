@@ -12,6 +12,7 @@ import {
   type DomainMatch,
 } from '@/lib/dns/zones';
 import type { DnsRecord } from '@/lib/dns/records';
+import { checkDomainAddress } from '@/lib/setup/address';
 import type { DnsZone } from '@/lib/types';
 
 /**
@@ -28,7 +29,21 @@ import type { DnsZone } from '@/lib/types';
  *
  * Der Anbieter der Zone geht mit zurück (`zone.provider`): der Dialog nennt ihn
  * und sagt nur bei Cloudflare etwas über den Proxy.
+ *
+ * Dazu für jede Domain, worauf sie gerade auflöst (`resolution`), auch ohne
+ * Zone: der Dialog zeigt die Adresse oder schlägt den Eintrag vor.
  */
+
+/**
+ * Worauf die Domain auflöst, gefragt aus diesem Container und damit über
+ * denselben Resolver, den auch der Server hat. Läuft neben dem Lesen der Zone
+ * und nicht danach. Eine Wildcard hat keine eigene Adresse.
+ */
+async function resolutionOf(domain: string): Promise<DomainMatch['resolution']> {
+  if (domain.startsWith('*.')) return null;
+  const check = await checkDomainAddress(domain);
+  return { addresses: check.resolved, verdict: check.verdict };
+}
 
 export async function GET(request: Request) {
   try {
@@ -59,9 +74,10 @@ export async function GET(request: Request) {
 
     const matches: DomainMatch[] = await Promise.all(
       domains.map(async (domain) => {
+        const resolution = resolutionOf(domain);
         const zone = matchZone(domain, zones);
         if (!zone) {
-          return { domain, zone: null, plan: null, blocked: null, existing: null, error: null };
+          return { domain, zone: null, plan: null, blocked: null, existing: null, error: null, resolution: await resolution };
         }
 
         const plan = proxyRecordPlan(domain, zone.name);
@@ -79,6 +95,7 @@ export async function GET(request: Request) {
             ),
             existing: null,
             error: null,
+            resolution: await resolution,
           };
         }
 
@@ -98,6 +115,7 @@ export async function GET(request: Request) {
                 }
               : null,
             error: null,
+            resolution: await resolution,
           };
         } catch (err) {
           // Kein 502 für die ganze Antwort: die anderen Domains sind davon
@@ -108,6 +126,7 @@ export async function GET(request: Request) {
             blocked: null,
             existing: null,
             error: zoneErrorText(err, locale),
+            resolution: await resolution,
           };
         }
       })

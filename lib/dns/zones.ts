@@ -1,7 +1,7 @@
 /**
  * Domain → Zone, und was daraus für einen Eintrag folgt.
  *
- * **Ohne Import außer dem reinen `lib/i18n`**, aus demselben Grund wie
+ * **Ohne Import außer dem reinen `lib/i18n`** (Typen ausgenommen), aus demselben Grund wie
  * `lib/haproxy/config.ts`: das Formular im Browser stellt dieselbe Frage wie
  * die Route auf dem Server — „liegt diese Domain in einer Zone, die wir
  * verwalten, und wie hieße der Eintrag dort?". Zwei Antworten darauf wären ein
@@ -14,6 +14,7 @@
  */
 
 import { msgid } from '../i18n';
+import type { AddressVerdict } from '../setup/rules';
 
 /** Die Eintragsart, die dieses Werkzeug für ein Proxy-Ziel setzt. */
 export const PROXY_RECORD_TYPE = 'CNAME';
@@ -250,6 +251,12 @@ export interface DomainMatch {
   existing: { type: string; content: string; managed: boolean } | null;
   /** Der Bestand der Zone war nicht lesbar — `existing` sagt dann nichts aus. */
   error: string | null;
+  /**
+   * Worauf die Domain gerade auflöst, gefragt vom Server aus und unabhängig
+   * davon, ob eine Zone angebunden ist. `null` bei einer Wildcard: die hat
+   * keine eigene Adresse.
+   */
+  resolution: { addresses: string[] | null; verdict: AddressVerdict } | null;
 }
 
 /**

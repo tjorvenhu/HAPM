@@ -298,6 +298,16 @@ Zone und kommt ohne Punkt zurück, `isProxyRecord` erkennt ihn also unverändert
 `proxyRecordPlan` trägt weiter `ttl: 1` und `proxied: false`: das ist der Plan in der
 Schreibweise von Cloudflare, und wer schreibt, nimmt die Vorgabe seines Anbieters.
 
+**Jede Domain wird außerdem aufgelöst**, auch ohne angebundene Zone
+(`resolution` in `DomainMatch`, `checkDomainAddress` aus `lib/setup/address.ts`,
+derselbe Resolver wie im Einrichtungsassistenten). Der Abschnitt zeigt dann je
+Domain, worauf sie zeigt und ob das eine Adresse dieses Servers ist. Löst sie
+nicht auf und liegt sie in einer angebundenen Zone, ist das der Vorschlag: der
+Schalter steht schon an, und die Zeile sagt, dass er den Eintrag anlegt. Gefragt
+wird parallel zum Lesen der Zone, eine gescheiterte Abfrage heißt unbekannt und
+nicht „kein Eintrag". Eine Wildcard wird nicht aufgelöst, sie hat keine eigene
+Adresse.
+
 Vier Zustände, und jeder sagt etwas anderes:
 
 | Was gefunden wird | Schalter | Grund |

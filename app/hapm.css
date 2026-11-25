@@ -131,13 +131,103 @@
  * Anmeldeformular: Auswahlkarten und die Schritte des Ausführens. */
 .hapm-setup .auth-card { max-width: 46rem; }
 
-.hapm-setup-progress { display: flex; flex-direction: column; gap: 6px; margin-bottom: 1.5rem; }
+/* Ein Schritt soll möglichst ohne Scrollen ins Fenster passen. Die festen
+ * Abstände der Anmeldekarte sind für ein Formular mit zwei Feldern gemacht;
+ * hier folgen sie der Höhe des Fensters und erreichen ihren Wert erst auf
+ * einem hohen Bildschirm. Die Breite nutzen zweispaltige Felder und Auswahlkarten. */
+.hapm-setup.auth-page { padding: clamp(0.75rem, 3vh, 1.5rem); }
+
+.hapm-setup .auth-card { padding: clamp(1.25rem, 4.5vh, 2.5rem) clamp(1.25rem, 5vw, 2.5rem); }
+
+.hapm-setup .auth-logo { margin-bottom: clamp(0.5rem, 2.5vh, 1.5rem); }
+
+.hapm-setup .auth-logo img { width: clamp(140px, 22vh, 200px); height: auto; }
+
+.hapm-setup .auth-title { font-size: clamp(1.375rem, 3.5vh, 1.75rem); }
+
+.hapm-setup .auth-subtitle { margin-bottom: clamp(0.75rem, 3vh, 2rem); }
+
+.hapm-setup .auth-form { gap: clamp(0.75rem, 2.2vh, 1.25rem); }
+
+.hapm-setup .auth-submit { margin-top: clamp(0px, 1vh, 0.5rem); }
+
+.hapm-setup .auth-footer { margin-top: clamp(0.5rem, 2vh, 1.5rem); }
+
+.hapm-setup .auth-language { margin-top: clamp(0.5rem, 2vh, 1.5rem); }
+
+/* Zwei Felder nebeneinander, auf schmalen Bildschirmen untereinander. */
+.hapm-setup-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: inherit; }
+
+.hapm-setup-progress { display: flex; flex-direction: column; gap: 6px; margin-bottom: clamp(0.75rem, 2.5vh, 1.5rem); }
 
 .hapm-setup-progress span { font-size: 0.8125rem; color: var(--text-secondary); text-align: center; }
 
-.hapm-setup-bar { height: 4px; border-radius: var(--radius-full); background: var(--surface-muted); overflow: hidden; }
+/* Ein Segment je Schritt: erledigte voll, das aktuelle füllt sich beim Betreten. */
+.hapm-setup-bar { display: flex; gap: 6px; margin: 0; padding: 0; list-style: none; }
 
-.hapm-setup-bar i { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+.hapm-setup-bar li { flex: 1; height: 4px; border-radius: var(--radius-full); background: var(--surface-muted); overflow: hidden; }
+
+.hapm-setup-bar i { display: block; width: 0; height: 100%; border-radius: inherit; background: var(--accent); }
+
+.hapm-setup-bar li.is-done i { width: 100%; }
+
+.hapm-setup-bar li.is-current i { width: 100%; animation: hapm-fill 0.6s cubic-bezier(0.65, 0, 0.35, 1) 0.1s both; }
+
+/* ── Bewegung im Assistenten ──
+ * Zwei Farbflächen ziehen langsam hinter der Karte, die Karte gleitet beim
+ * ersten Laden herein, jeder Schritt aus der Richtung, in die es geht. */
+.hapm-setup.auth-page { isolation: isolate; }
+
+.hapm-setup.auth-page::before,
+.hapm-setup.auth-page::after {
+  content: ""; position: fixed; z-index: -1; width: 55vmax; height: 55vmax; border-radius: 50%;
+  pointer-events: none; filter: blur(40px);
+  background: radial-gradient(circle, color-mix(in oklch, var(--accent), transparent 82%), transparent 65%);
+  animation: hapm-drift 26s ease-in-out infinite alternate;
+}
+
+.hapm-setup.auth-page::before { top: -20vmax; left: -15vmax; }
+
+.hapm-setup.auth-page::after {
+  right: -20vmax; bottom: -25vmax; animation-duration: 32s; animation-direction: alternate-reverse;
+  background: radial-gradient(circle, color-mix(in oklch, var(--success), transparent 85%), transparent 65%);
+}
+
+.hapm-setup .auth-card { animation: hapm-card-in 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+.hapm-step-enter { animation: hapm-step-forward 0.38s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+.hapm-step-enter.is-back { animation-name: hapm-step-back; }
+
+.hapm-setup .auth-submit svg { transition: transform var(--shell-fast) ease-out; }
+
+.hapm-setup .auth-submit:hover:not(:disabled) svg { transform: translateX(3px); }
+
+.hapm-setup .hapm-step.is-running { animation: hapm-breathe 1.6s ease-in-out infinite; }
+
+@keyframes hapm-fill { from { width: 0; } }
+
+@keyframes hapm-drift {
+  from { transform: translate(0, 0) scale(1); }
+  to { transform: translate(8vmax, 6vmax) scale(1.15); }
+}
+
+@keyframes hapm-card-in {
+  from { transform: translateY(14px) scale(0.985); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+@keyframes hapm-step-forward {
+  from { transform: translateX(18px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+@keyframes hapm-step-back {
+  from { transform: translateX(-18px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+@keyframes hapm-breathe { 50% { opacity: 0.55; } }
 
 /* Eine Auswahl aus wenigen Möglichkeiten, jede mit ihrer Folge darunter. */
 .hapm-choices { display: flex; flex-direction: column; gap: 12px; }
@@ -150,6 +240,33 @@
 
 .hapm-choice:hover:not(:disabled) { border-color: var(--accent); }
 
+/* In der Einrichtung: die Karte hebt sich unter dem Zeiger, die gewählte trägt einen Haken. */
+.hapm-setup .hapm-choice {
+  position: relative; padding-right: 36px;
+  transition: border-color var(--shell-fast) ease-out, box-shadow var(--shell-fast) ease-out, transform var(--shell-fast) ease-out;
+}
+
+.hapm-setup .hapm-choice:hover:not(:disabled) { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+
+@media (prefers-reduced-motion: reduce) {
+  .hapm-setup .hapm-choice:hover:not(:disabled) { transform: none; }
+}
+
+.hapm-setup .hapm-choice.is-selected { background: color-mix(in srgb, var(--accent-light), var(--surface) 40%); }
+
+.hapm-setup .hapm-choice > svg {
+  box-sizing: content-box; padding: 8px; margin-top: 0;
+  border-radius: var(--radius); background: var(--accent-light);
+}
+
+.hapm-choice-check {
+  position: absolute; top: 10px; right: 10px; display: grid; place-items: center;
+  width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: var(--surface);
+  animation: hapm-check-pop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes hapm-check-pop { from { transform: scale(0); } }
+
 .hapm-choice.is-selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 
 .hapm-choice:disabled { opacity: 0.6; cursor: not-allowed; }
@@ -161,6 +278,9 @@
 .hapm-choice-text strong { font-weight: 600; }
 
 .hapm-choice-text span { font-size: 0.875rem; line-height: 1.45; color: var(--text-secondary); }
+
+/* In der Einrichtung nebeneinander, solange jede Karte 15rem behält. */
+.hapm-setup .hapm-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
 
 /* Knöpfe unter einem Schritt: der Hauptknopf oben, die Nebenwege darunter in einer Zeile. */
 .hapm-setup-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
@@ -183,6 +303,102 @@
 
 .hapm-setup-note .detail-grid dd { font-size: 0.875rem; overflow-wrap: anywhere; }
 
+/* Der DNS-Eintrag hat vier kurze Angaben: auf breiten Bildschirmen zwei je Zeile. */
+@media (min-width: 720px) {
+  .hapm-setup-note .detail-grid.hapm-setup-record { grid-template-columns: repeat(2, minmax(48px, max-content) 1fr); }
+}
+
+/* Nach der Einrichtung: der Kreis zieht sich, der Haken folgt, ein Kranz von
+ * Punkten fliegt aus, dann laufen die erledigten Schritte nacheinander ein.
+ * Wer weniger Bewegung will, sieht gleich das Endbild. */
+.hapm-success { display: flex; flex-direction: column; align-items: center; }
+
+.hapm-success-mark {
+  position: relative; display: grid; place-items: center;
+  width: clamp(64px, 11vh, 88px); aspect-ratio: 1; margin: clamp(0.25rem, 1.5vh, 0.75rem) 0 clamp(0.75rem, 2.5vh, 1.25rem);
+  container-type: inline-size;
+}
+
+.hapm-success-mark svg { width: 100%; height: 100%; overflow: visible; }
+
+.hapm-success-disc {
+  fill: var(--success-light); transform-box: fill-box; transform-origin: center;
+  animation: hapm-success-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.35s both;
+}
+
+.hapm-success-ring {
+  fill: none; stroke: var(--success); stroke-width: 4; stroke-linecap: round;
+  stroke-dasharray: 1; stroke-dashoffset: 1; transform: rotate(-90deg); transform-box: fill-box; transform-origin: center;
+  animation: hapm-success-draw 0.6s cubic-bezier(0.65, 0, 0.35, 1) forwards;
+}
+
+.hapm-success-check {
+  fill: none; stroke: var(--success); stroke-width: 6; stroke-linecap: round; stroke-linejoin: round;
+  stroke-dasharray: 1; stroke-dashoffset: 1;
+  animation: hapm-success-draw 0.35s cubic-bezier(0.65, 0, 0.35, 1) 0.6s forwards;
+}
+
+/* Eine Welle, die einmal vom Kreis weg läuft. */
+.hapm-success-mark::before {
+  content: ""; position: absolute; inset: 0; border: 2px solid var(--success); border-radius: 50%;
+  opacity: 0; animation: hapm-success-wave 0.9s ease-out 0.75s;
+}
+
+.hapm-success-mark i {
+  position: absolute; top: 50%; left: 50%; width: 7px; height: 7px; margin: -3.5px;
+  border-radius: 50%; background: var(--success); opacity: 0;
+  animation: hapm-success-burst 0.8s cubic-bezier(0.2, 0.7, 0.3, 1) 0.7s;
+}
+
+.hapm-success-mark i:nth-child(3n + 2) { background: var(--accent); }
+
+.hapm-success-mark i:nth-child(3n) { width: 5px; height: 5px; margin: -2.5px; background: var(--warning); }
+
+.hapm-success .auth-title,
+.hapm-success .auth-subtitle { animation: hapm-success-rise 0.45s ease-out 0.55s both; }
+
+.hapm-success-body .hapm-step { animation: hapm-success-rise 0.35s ease-out both; animation-delay: calc(0.9s + var(--i, 0) * 70ms); }
+
+.hapm-success-body > :not(.hapm-steps) { animation: hapm-success-rise 0.4s ease-out 1.3s both; }
+
+@keyframes hapm-success-draw { to { stroke-dashoffset: 0; } }
+
+@keyframes hapm-success-pop { from { transform: scale(0); } to { transform: scale(1); } }
+
+@keyframes hapm-success-wave {
+  from { transform: scale(1); opacity: 0.5; }
+  to { transform: scale(1.7); opacity: 0; }
+}
+
+@keyframes hapm-success-burst {
+  0% { transform: rotate(var(--angle)) translateY(-40cqw) scale(0.4); opacity: 0; }
+  20% { opacity: 1; }
+  100% { transform: rotate(var(--angle)) translateY(-78cqw) scale(1); opacity: 0; }
+}
+
+@keyframes hapm-success-rise {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hapm-setup.auth-page::before,
+  .hapm-setup.auth-page::after,
+  .hapm-setup .auth-card,
+  .hapm-step-enter,
+  .hapm-setup-bar i,
+  .hapm-choice-check,
+  .hapm-setup .hapm-step.is-running,
+  .hapm-success-mark *,
+  .hapm-success-mark::before,
+  .hapm-success .auth-title,
+  .hapm-success .auth-subtitle,
+  .hapm-success-body * { animation: none !important; }
+
+  .hapm-success-ring,
+  .hapm-success-check { stroke-dashoffset: 0; }
+}
+
 /* Das Zeichen eines DNS-Anbieters, in der Auswahl und neben seinem Namen. */
 .hapm-provider-logo { flex-shrink: 0; border-radius: var(--radius); }
 
@@ -200,6 +416,55 @@
 /* ── Dialog eines Reverse-Proxy-Ziels ──
  * Knöpfe unter einer Liste: „hinzufügen" und daneben die Vorschläge. */
 .hapm-inline-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+/* Die DNS-Zeile einer Domain: Name, darunter worauf sie auflöst. Ohne Zone steht
+ * statt des Schalters ein Zeichen, gleich breit, damit die Texte untereinander beginnen. */
+.hapm-dns-text { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+
+.hapm-dns-state { display: inline-flex; flex-shrink: 0; justify-content: center; width: 44px; color: var(--text-tertiary); }
+
+.hapm-dns-state.is-matches { color: var(--success); }
+
+.hapm-dns-state.is-unresolved { color: var(--text-tertiary); }
+
+.hapm-dns-state.is-elsewhere,
+.hapm-dns-state.is-unknown { color: var(--warning); }
+
+/* ── Gespeicherte Ziele (Reverse-Proxy, Einstellungen) ──
+ * Eine Zeile je Ziel: Name, Adresse, Knöpfe. Bearbeitet wird in der Zeile selbst. */
+.hapm-target-list { display: flex; flex-direction: column; gap: 6px; }
+
+.hapm-target-row {
+  display: grid; grid-template-columns: minmax(8rem, 1fr) minmax(8rem, 1.4fr) auto; align-items: center; gap: 12px;
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+}
+
+.hapm-target-name {
+  display: inline-flex; align-items: center; gap: 8px; min-width: 0;
+  font-size: 0.875rem; font-weight: 500; overflow-wrap: anywhere;
+}
+
+.hapm-target-name svg { flex-shrink: 0; color: var(--accent); }
+
+.hapm-target-row.is-editing { display: block; }
+
+/* Der Knopf im Kopf eines Abschnitts rückt ans rechte Ende. */
+.hapm-section-action { margin-left: auto; align-self: center; }
+
+.hapm-target-list .form-list-empty { display: inline-flex; align-items: center; gap: 6px; }
+
+.hapm-target-address { font-size: 0.8125rem; color: var(--text-secondary); overflow-wrap: anywhere; }
+
+.hapm-target-actions { display: flex; gap: 4px; }
+
+.hapm-target-form { display: grid; grid-template-columns: 1fr 1.4fr 7rem auto; align-items: center; gap: 8px; }
+
+@media (max-width: 720px) {
+  .hapm-target-form { grid-template-columns: 1fr; }
+}
+
+/* Die Auswahl eines gespeicherten Ziels neben dem Adressfeld: schmal, sie ersetzt nur das Tippen. */
+.hapm-target-pick { flex: 0 0 10.5rem; min-width: 0; }
 
 /* Ein Kennzeichen am Ende einer Zeile, das nichts tut: die Domain ist gesperrt. */
 .hapm-row-mark { display: inline-flex; flex-shrink: 0; padding: 0 9px; color: var(--text-tertiary); }

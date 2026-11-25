@@ -837,6 +837,59 @@ export default function DashboardPage() {
         />
       </div>
 
+      <div className="card sys-block">
+        <div className="card-header">
+          <h2 className="card-title">{t('Schnellzugriffe')}</h2>
+        </div>
+        <div className="kind-grid">
+          <Link className="kind-card" href="/reverse-proxy">
+            <span className="kind-card-icon">
+              <Plus size={17} strokeWidth={1.5} />
+            </span>
+            <span className="kind-card-text">
+              <span className="kind-card-title">{t('Ziel anlegen')}</span>
+              <span className="kind-card-sub">{t('Domain, Backend und Zertifikat in einem Vorgang.')}</span>
+            </span>
+          </Link>
+          <Link className="kind-card" href="/reverse-proxy/statistiken">
+            <span className="kind-card-icon">
+              <BarChart3 size={17} strokeWidth={1.5} />
+            </span>
+            <span className="kind-card-text">
+              <span className="kind-card-title">{t('Statistik')}</span>
+              <span className="kind-card-sub">{t('Anfragen, Statuscodes, Antwortzeiten und wer zugreift.')}</span>
+            </span>
+          </Link>
+          <Link className="kind-card" href="/reverse-proxy/logs">
+            <span className="kind-card-icon">
+              <ScrollText size={17} strokeWidth={1.5} />
+            </span>
+            <span className="kind-card-text">
+              <span className="kind-card-title">{t('Protokoll')}</span>
+              <span className="kind-card-sub">{t('Jeder Vorgang am Reverse-Proxy mit seinen Schritten.')}</span>
+            </span>
+          </Link>
+          <Link className="kind-card" href="/reverse-proxy/einstellungen">
+            <span className="kind-card-icon">
+              <Settings2 size={17} strokeWidth={1.5} />
+            </span>
+            <span className="kind-card-text">
+              <span className="kind-card-title">{t('Einstellungen')}</span>
+              <span className="kind-card-sub">{t('Was für alle Ziele gilt.')}</span>
+            </span>
+          </Link>
+          <Link className="kind-card" href="/updates">
+            <span className="kind-card-icon">
+              <Container size={17} strokeWidth={1.5} />
+            </span>
+            <span className="kind-card-text">
+              <span className="kind-card-title">{t('Updates')}</span>
+              <span className="kind-card-sub">{t('Neue Abbilder prüfen und einspielen.')}</span>
+            </span>
+          </Link>
+        </div>
+      </div>
+
       <div className="hapm-cols sys-block">
         <div className="card">
           <div className="card-header">
@@ -1138,58 +1191,6 @@ export default function DashboardPage() {
         <CertificatesCard certificates={certificates} />
       </div>
 
-      <div className="card">
-        <div className="card-header">
-          <h2 className="card-title">{t('Schnellzugriffe')}</h2>
-        </div>
-        <div className="kind-grid">
-          <Link className="kind-card" href="/reverse-proxy">
-            <span className="kind-card-icon">
-              <Plus size={17} strokeWidth={1.5} />
-            </span>
-            <span className="kind-card-text">
-              <span className="kind-card-title">{t('Ziel anlegen')}</span>
-              <span className="kind-card-sub">{t('Domain, Backend und Zertifikat in einem Vorgang.')}</span>
-            </span>
-          </Link>
-          <Link className="kind-card" href="/reverse-proxy/statistiken">
-            <span className="kind-card-icon">
-              <BarChart3 size={17} strokeWidth={1.5} />
-            </span>
-            <span className="kind-card-text">
-              <span className="kind-card-title">{t('Statistik')}</span>
-              <span className="kind-card-sub">{t('Anfragen, Statuscodes, Antwortzeiten und wer zugreift.')}</span>
-            </span>
-          </Link>
-          <Link className="kind-card" href="/reverse-proxy/logs">
-            <span className="kind-card-icon">
-              <ScrollText size={17} strokeWidth={1.5} />
-            </span>
-            <span className="kind-card-text">
-              <span className="kind-card-title">{t('Protokoll')}</span>
-              <span className="kind-card-sub">{t('Jeder Vorgang am Reverse-Proxy mit seinen Schritten.')}</span>
-            </span>
-          </Link>
-          <Link className="kind-card" href="/reverse-proxy/einstellungen">
-            <span className="kind-card-icon">
-              <Settings2 size={17} strokeWidth={1.5} />
-            </span>
-            <span className="kind-card-text">
-              <span className="kind-card-title">{t('Einstellungen')}</span>
-              <span className="kind-card-sub">{t('Was für alle Ziele gilt.')}</span>
-            </span>
-          </Link>
-          <Link className="kind-card" href="/updates">
-            <span className="kind-card-icon">
-              <Container size={17} strokeWidth={1.5} />
-            </span>
-            <span className="kind-card-text">
-              <span className="kind-card-title">{t('Updates')}</span>
-              <span className="kind-card-sub">{t('Neue Abbilder prüfen und einspielen.')}</span>
-            </span>
-          </Link>
-        </div>
-      </div>
     </>
   );
 }

@@ -18,6 +18,7 @@ import {
   type ProxyRow,
 } from '@/components/reverse-proxy/types';
 import { takeScopeRun, type ScopeRunHandover } from '@/components/reverse-proxy/scopeHandover';
+import SavedTargetsPanel from '@/components/reverse-proxy/SavedTargetsPanel';
 import { shortVersion, validateScopeName, scopeLabel } from '@/lib/haproxy/config';
 import { SkeletonCards } from '@/components/Skeleton';
 import { useT } from '@/lib/i18n/react';
@@ -314,12 +315,16 @@ export default function ReverseProxyPage() {
                     const services = servicesInScope(proxies, page.scope).length;
                     const streams = streamsInScope(proxies, page.scope).length;
                     const count = services + streams;
+                    // Die Gruppe, über die HAPM selbst erreichbar ist. Erkannt an `publicUrl`
+                    // (`surface`) und nicht am Namen, wie der Schutz in `protected.ts`.
+                    const system = !!page.surface;
                     return (
                       <Link key={page.slug} href={`/reverse-proxy/${page.slug}`} className="entity-link">
                         <EntityCard
-                          icon={<Globe size={17} />}
+                          icon={system ? <ShieldCheck size={17} /> : <Globe size={17} />}
                           name={page.title}
-                          subtitle={t('Gruppe')}
+                          subtitle={system ? t('Gruppe von HAPM') : t('Gruppe')}
+                          tone={system ? 'system' : undefined}
                           badge={<ChevronRight size={16} className="entity-card-chevron" />}
                         >
                           <EntityField label={t('Einträge')}>
@@ -367,6 +372,9 @@ export default function ReverseProxyPage() {
               </div>
             )}
           </div>
+
+          {/* Zwischen Gruppen und HAProxy: Server im Backend, auf die Ziele aller Gruppen zeigen. */}
+          <SavedTargetsPanel />
 
           <div className="sys-block">
             <div className="section-header">

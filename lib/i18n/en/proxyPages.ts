@@ -16,6 +16,7 @@ export const proxyPages: Dictionary = {
   'Endgültig löschen': 'Delete permanently',
   'Gruppe anlegen': 'Create group',
   'Gruppe entfernen': 'Remove group',
+  'Gruppe von HAPM': 'HAPM group',
   'Konfiguration importieren': 'Import configuration',
   'Dienst': 'Service',
   'Dienste': 'Services',

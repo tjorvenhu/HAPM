@@ -154,6 +154,35 @@ Eintrag unbearbeitbar.
 - Eine Weiterleitung schließt beides aus, ablehnend statt still: sie hat keine
   Ziele, auf die sich etwas verteilen ließe.
 
+### Servernamen und gespeicherte Ziele
+
+**Die Dialoge fragen keinen Servernamen mehr.** Eine Zeile ist eine Adresse
+(`host:port`), der Name entsteht beim Schreiben (`serverNames` in `config.ts`,
+für Dienste, Pfad-Regeln und TCP-Weiterleitungen gleich). Gelesene Namen bleiben
+im Zustand des Formulars und gehen unverändert zurück: an ihnen hängt die
+Sitzungsbindung (die Cookie-Marke ist der Servername, siehe oben), und ein
+Umbenennen schickte gebundene Sitzungen still auf ein anderes Ziel. Eine leere
+Zeile bekommt den ersten freien Namen `serverN` ab ihrer Position und nicht stur
+den Namen ihrer Position. Sonst hieße nach dem Entfernen von `server1` und dem
+Anhängen einer neuen Zeile die neue ebenfalls `server2`, und zwei gleich
+benannte Server lehnt HAProxy ab (`tests/haproxy/server-names.test.ts`).
+
+**Gespeicherte Ziele sind eine Eingabehilfe und keine Verknüpfung**
+(`lib/haproxy/saved-targets.ts`, Collection `saved_targets`, Routen
+`/api/haproxy/targets`). In der Oberfläche heißen sie **Backend-Server** und
+stehen als eigener Abschnitt auf `/reverse-proxy` zwischen Gruppen und HAProxy
+(`SavedTargetsPanel`): „Ziel" ist in HAPM der Eintrag am Reverse-Proxy, und
+dasselbe Wort für zwei Dinge auf einer Seite wäre eine Verwechslung. Nicht in
+einer Gruppe, weil ein Server Ziele in mehreren Gruppen tragen kann. Ein Eintrag hat
+Name, Host und einen freiwilligen Port. Neben jedem Adressfeld der Dialoge steht
+die Auswahl (`SavedTargetPick`): mit Port setzt sie die ganze Adresse ein, ohne
+Port nur den Host, und der Port im Feld bleibt stehen. Der Fall dafür ist ein
+Server mit mehreren Diensten auf verschiedenen Ports. In `haproxy.cfg` steht
+danach die Adresse selbst und keine Kennung: eine Verknüpfung müsste
+`toCreateInput` beim Zurücklesen erfinden. Ein gespeichertes Ziel zu ändern oder
+zu löschen fasst deshalb keinen Eintrag an. Die Auswahl zeigt beim Öffnen das
+Ziel, dessen Adresse im Feld steht (`findSavedTarget`, mit Port vor ohne).
+
 ### Gruppen
 
 **Welche Gruppen es gibt, sagt die Datei und nicht der Code.** Eine Gruppe ist

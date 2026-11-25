@@ -5,6 +5,7 @@ import Link from 'next/link';
 import {
   Plus, Trash2, Loader2, X, Server, Waypoints, Info, Globe, Lock,
   ChevronDown, ChevronRight, CornerUpRight, Scale, RefreshCw, ShieldCheck, SlidersHorizontal,
+  CircleCheck, CircleDashed, CircleAlert,
 } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { suggestPassword } from '@/components/suggestPassword';
@@ -49,6 +50,7 @@ import type { DomainMatch } from '@/lib/dns/zones';
 import { msgid } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
 import type { ProxyRow } from './types';
+import SavedTargetPick, { useSavedTargets } from './SavedTargetPick';
 
 /**
  * Anlegen und Bearbeiten eines Reverse-Proxy-Ziels.
@@ -180,6 +182,14 @@ interface Props {
   }) => void;
 }
 
+/** Ausgeschrieben, damit `tests/ui/css-classes.test.ts` jede Klasse findet. */
+const DNS_STATE_CLASS = {
+  matches: 'hapm-dns-state is-matches',
+  elsewhere: 'hapm-dns-state is-elsewhere',
+  unresolved: 'hapm-dns-state is-unresolved',
+  unknown: 'hapm-dns-state is-unknown',
+} as const;
+
 export default function ServiceFormModal({
   proxies,
   edit,
@@ -247,6 +257,7 @@ export default function ServiceFormModal({
   const [domains, setDomains] = useState<string[]>(
     edit && edit.service.domains.length > 0 ? [...edit.service.domains] : ['']
   );
+  const savedTargets = useSavedTargets();
   const [backends, setBackends] = useState<ServerRow[]>(
     edit && edit.service.servers.length > 0
       ? edit.service.servers.map((s) => ({ name: s.name, target: s.target, weight: s.weight === null ? '' : String(s.weight) }))
@@ -650,6 +661,31 @@ export default function ServiceFormModal({
 
   /** Die Domains, für die es hier überhaupt etwas zu entscheiden gibt. */
   const dnsRows = dnsMatches.filter((match) => match.zone !== null);
+  /** Was der Abschnitt zeigt: dazu jede Domain, deren Auflösung etwas sagt. */
+  const dnsShown = dnsMatches.filter((match) => match.zone !== null || match.resolution !== null);
+
+  /**
+   * Worauf die Domain gerade zeigt, in einem Satz. Löst sie nicht auf und kann
+   * HAPM den Eintrag setzen, ist das der Vorschlag dazu: der Schalter daneben
+   * steht dann schon an.
+   */
+  function resolutionText(match: DomainMatch): string | null {
+    const resolution = match.resolution;
+    if (!resolution) return null;
+    const addresses = (resolution.addresses ?? []).join(', ');
+    switch (resolution.verdict) {
+      case 'matches':
+        return t('Zeigt auf {addresses}, diesen Server.', { addresses });
+      case 'elsewhere':
+        return t('Zeigt auf {addresses}. Das ist keine Adresse dieses Servers.', { addresses });
+      case 'unresolved':
+        return match.zone && match.plan && !match.existing && !match.error
+          ? t('Löst noch nicht auf. Der Schalter legt den Eintrag beim Speichern an.')
+          : t('Löst noch nicht auf. Der DNS-Eintrag fehlt.');
+      default:
+        return t('Die DNS-Abfrage ist gescheitert.');
+    }
+  }
   /** Was mitgeschickt wird: möglich, noch nicht vorhanden und nicht abgewählt. */
   const dnsDomains = dnsRows
     .filter((m) => m.plan && !m.existing && !m.error && dnsWanted[m.domain] !== false)
@@ -949,10 +985,11 @@ export default function ServiceFormModal({
                     der Liste steht. Der Satz zur Sperre bleibt davon
                     unberührt. */}
                 {/* ── DNS ──
-                    Nur da, wenn mindestens eine Domain in einer Zone liegt, die
-                    hier eingerichtet ist. Ein Abschnitt, der bei fremden Domains
-                    leer dastünde, wäre eine Frage ohne Antwortmöglichkeit. */}
-                {dnsRows.length > 0 && (
+                    Je Domain eine Zeile: worauf sie gerade auflöst, und liegt
+                    sie in einer Zone, die hier eingerichtet ist, der Schalter
+                    für den Eintrag. Eine Wildcard ohne Zone fehlt: sie hat
+                    keine eigene Adresse, und es gäbe nichts zu entscheiden. */}
+                {dnsShown.length > 0 && (
                   <div className="form-group">
                     {/* Flex und nicht einfach nebeneinander: das Icon säße
                         sonst auf der Textgrundlinie und hinge unter der
@@ -963,16 +1000,40 @@ export default function ServiceFormModal({
                       style={{ display: 'flex', alignItems: 'center', gap: 6 }}
                     >
                       {t('DNS-Einträge')}
-                      <InfoHint
-                        text={t(
-                          'Der Eintrag zeigt auf die Domain der Zone selbst, deren A-Eintrag auf diesen Server zeigt. Beim Löschen des Ziels wird angeboten, ihn mitzunehmen.'
-                        )}
-                      />
+                      {dnsRows.length > 0 && (
+                        <InfoHint
+                          text={t(
+                            'Der Eintrag zeigt auf die Domain der Zone selbst, deren A-Eintrag auf diesen Server zeigt. Beim Löschen des Ziels wird angeboten, ihn mitzunehmen.'
+                          )}
+                        />
+                      )}
                       {dnsChecking && <Loader2 size={13} className="spin" />}
                     </label>
                     <div className="form-list">
-                      {dnsRows.map((match) => {
-                        const zoneName = match.zone?.name ?? '';
+                      {dnsShown.map((match) => {
+                        const resolution = resolutionText(match);
+                        if (!match.zone) {
+                          const verdict = match.resolution?.verdict ?? 'unknown';
+                          return (
+                            <div className="form-list-row" key={match.domain}>
+                              <span className={DNS_STATE_CLASS[verdict]}>
+                                {verdict === 'matches' ? (
+                                  <CircleCheck size={16} />
+                                ) : verdict === 'unresolved' ? (
+                                  <CircleDashed size={16} />
+                                ) : (
+                                  <CircleAlert size={16} />
+                                )}
+                              </span>
+                              <span className="hapm-dns-text">
+                                <span>{match.domain}</span>
+                                {resolution && <span className="form-hint">{resolution}</span>}
+                              </span>
+                            </div>
+                          );
+                        }
+
+                        const zoneName = match.zone.name;
                         // Vier Zustände, und jeder sagt etwas anderes darüber,
                         // ob hier noch eine Entscheidung offen ist.
                         const settled = !!match.existing?.managed;
@@ -996,7 +1057,7 @@ export default function ServiceFormModal({
                                 })
                               : impossible
                                 ? (match.blocked ? t(match.blocked) : '')
-                                : match.zone?.provider === 'cloudflare'
+                                : match.zone.provider === 'cloudflare'
                                   ? t('Legt {fqdn} als CNAME auf {zone} an, ohne Cloudflare-Proxy.', { fqdn, zone: zoneName })
                                   : t('Legt {fqdn} als CNAME auf {zone} an.', { fqdn, zone: zoneName });
 
@@ -1017,19 +1078,22 @@ export default function ServiceFormModal({
                               />
                               <span className="toggle-slider" />
                             </span>
-                            <span style={{ flex: 1, minWidth: 0 }}>
-                              {settled
-                                ? t('{domain} steht bereits in {zone}', { domain: match.domain, zone: zoneName })
-                                : foreign
-                                  ? t('{domain}: dort steht ein {type}-Eintrag', {
-                                      domain: match.domain,
-                                      type: match.existing?.type ?? '',
-                                    })
-                                  : unreadable
-                                    ? t('{domain}: Zone {zone} nicht lesbar', { domain: match.domain, zone: zoneName })
-                                    : impossible
-                                      ? t('{domain}: hier nicht möglich', { domain: match.domain })
-                                      : t('{domain} als CNAME in Zone {zone} setzen', { domain: match.domain, zone: zoneName })}
+                            <span className="hapm-dns-text">
+                              <span>
+                                {settled
+                                  ? t('{domain} steht bereits in {zone}', { domain: match.domain, zone: zoneName })
+                                  : foreign
+                                    ? t('{domain}: dort steht ein {type}-Eintrag', {
+                                        domain: match.domain,
+                                        type: match.existing?.type ?? '',
+                                      })
+                                    : unreadable
+                                      ? t('{domain}: Zone {zone} nicht lesbar', { domain: match.domain, zone: zoneName })
+                                      : impossible
+                                        ? t('{domain}: hier nicht möglich', { domain: match.domain })
+                                        : t('{domain} als CNAME in Zone {zone} setzen', { domain: match.domain, zone: zoneName })}
+                              </span>
+                              {resolution && <span className="form-hint">{resolution}</span>}
                             </span>
                           </label>
                         );
@@ -1178,8 +1242,8 @@ export default function ServiceFormModal({
                 <>
                 <div className="form-list">
                   <div className="form-list-head">
-                    <span style={{ flex: '0 0 30%' }}>{t('Name')}</span>
                     <span style={{ flex: 1 }}>{t('Adresse')}</span>
+                    <span className="hapm-target-pick" />
                     {/* Die Spalte gibt es nur bei der Lastverteilung: ein
                         einzelnes Ziel bekommt ohnehin alles, und ein Feld ohne
                         Frage füllt irgendwann jemand aus. */}
@@ -1188,20 +1252,6 @@ export default function ServiceFormModal({
                   </div>
                   {backends.map((backend, index) => (
                     <div className="form-list-row" key={index}>
-                      <input
-                        className="form-input"
-                        style={{ flex: '0 0 30%', minWidth: 0 }}
-                        value={backend.name}
-                        onChange={(e) =>
-                          setBackends(
-                            backends.map((b, i) =>
-                              i === index ? { ...b, name: e.target.value } : b
-                            )
-                          )
-                        }
-                        placeholder={`server${index + 1}`}
-                        autoComplete="off"
-                      />
                       <input
                         className="form-input"
                         value={backend.target}
@@ -1214,6 +1264,13 @@ export default function ServiceFormModal({
                         }
                         placeholder="10.10.0.20:80"
                         autoComplete="off"
+                      />
+                      <SavedTargetPick
+                        targets={savedTargets}
+                        address={backend.target}
+                        onPick={(target) =>
+                          setBackends(backends.map((b, i) => (i === index ? { ...b, target } : b)))
+                        }
                       />
                       {/* Leer und nicht 1 als Vorgabe: eine hingeschriebene 1
                           stünde danach in dreißig Zeilen, in denen sie vorher
@@ -1719,20 +1776,6 @@ export default function ServiceFormModal({
                             <div className="form-list-row" key={serverIndex}>
                               <input
                                 className="form-input"
-                                style={{ flex: '0 0 30%', minWidth: 0 }}
-                                value={server.name}
-                                onChange={(e) =>
-                                  update({
-                                    servers: route.servers.map((s, i) =>
-                                      i === serverIndex ? { ...s, name: e.target.value } : s
-                                    ),
-                                  })
-                                }
-                                placeholder={`server${serverIndex + 1}`}
-                                autoComplete="off"
-                              />
-                              <input
-                                className="form-input"
                                 value={server.target}
                                 onChange={(e) =>
                                   update({
@@ -1743,6 +1786,15 @@ export default function ServiceFormModal({
                                 }
                                 placeholder="10.10.0.5:6002"
                                 autoComplete="off"
+                              />
+                              <SavedTargetPick
+                                targets={savedTargets}
+                                address={server.target}
+                                onPick={(target) =>
+                                  update({
+                                    servers: route.servers.map((s, i) => (i === serverIndex ? { ...s, target } : s)),
+                                  })
+                                }
                               />
                               {/* Auch hier, obwohl eine Regel meistens ein Ziel
                                   hat: sonst wäre die Gewichtung ein Feld, das

@@ -32,8 +32,12 @@ interface EntityCardProps {
    * delete is running and the card is about to disappear. Not for warnings: a
    * card that merely needs attention says so with a badge, and a tinted card
    * among twenty plain ones reads as broken rather than busy.
+   *
+   * `system`: an entry HAPM set up for itself (the group of its own surface).
+   * It stays tinted for good, because it behaves differently for good: it
+   * cannot be removed.
    */
-  tone?: 'danger';
+  tone?: 'danger' | 'system';
   /**
    * Sprungziel für einen Verweis von einer anderen Seite.
    *
@@ -62,6 +66,7 @@ export default function EntityCard({
       className={[
         'entity-card',
         tone === 'danger' ? 'is-danger' : '',
+        tone === 'system' ? 'is-system' : '',
         highlighted ? 'is-highlighted' : '',
       ]
         .filter(Boolean)

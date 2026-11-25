@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -92,11 +92,14 @@ export default function SetupPage() {
   const [shown, setShown] = useState<Shown | null>(null);
   const [setup, setSetup] = useState<SetupView | null>(null);
   const [csrf, setCsrf] = useState('');
+  /** In welche Richtung der nächste Schritt hereingleitet. */
+  const [motion, setMotion] = useState<'forward' | 'back'>('forward');
 
   /** Den Stand übernehmen und beim nächsten offenen Schritt weitermachen. */
   const advance = useCallback(
     (next: SetupView) => {
       setSetup(next);
+      setMotion('forward');
       if (next.step === 'done') router.replace('/dashboard');
       else setShown(next.step);
     },
@@ -156,14 +159,28 @@ export default function SetupPage() {
   const progress = (
     <div className="hapm-setup-progress">
       <span>{t('Schritt {step} von {total}', { step: index + 1, total: SETUP_STEPS.length })}</span>
-      <div className="hapm-setup-bar">
-        <i style={{ width: `${((index + 1) / SETUP_STEPS.length) * 100}%` }} />
-      </div>
+      <ol className="hapm-setup-bar" aria-hidden="true">
+        {SETUP_STEPS.map((step, position) => (
+          <li
+            key={position === index ? `current-${step}` : step}
+            className={position < index ? 'is-done' : position === index ? 'is-current' : undefined}
+          >
+            <i />
+          </li>
+        ))}
+      </ol>
     </div>
   );
 
   const back = (to: Shown) => (
-    <button className="btn btn-ghost" type="button" onClick={() => setShown(to)}>
+    <button
+      className="btn btn-ghost"
+      type="button"
+      onClick={() => {
+        setMotion('back');
+        setShown(to);
+      }}
+    >
       <ArrowLeft size={15} />
       {t('Zurück')}
     </button>
@@ -183,7 +200,7 @@ export default function SetupPage() {
 
   if (shown === 'account') {
     return (
-      <Frame step={shown} progress={progress} subtitle={t('Legen Sie zuerst das Konto an, mit dem Sie HAPM verwalten.')}>
+      <Frame step={shown} motion={motion} progress={progress} subtitle={t('Legen Sie zuerst das Konto an, mit dem Sie HAPM verwalten.')}>
         <AccountStep
           onCreated={(token) => {
             setCsrf(token);
@@ -201,7 +218,7 @@ export default function SetupPage() {
 
   if (shown === 'exposure') {
     return (
-      <Frame step={shown} progress={progress} subtitle={t('Davon hängt ab, wie HAPM Zertifikate ausstellt.')}>
+      <Frame step={shown} motion={motion} progress={progress} subtitle={t('Davon hängt ab, wie HAPM Zertifikate ausstellt.')}>
         {acmeWarning}
         <ExposureStep setup={setup} csrf={csrf} onSaved={advance} />
         {later}
@@ -213,6 +230,7 @@ export default function SetupPage() {
     return (
       <Frame
         step={shown}
+        motion={motion}
         progress={progress}
         subtitle={
           setup.exposure === 'internal'
@@ -229,7 +247,7 @@ export default function SetupPage() {
 
   if (shown === 'address') {
     return (
-      <Frame step={shown} progress={progress} subtitle={t('Unter dieser Domain ist HAPM danach per HTTPS erreichbar.')}>
+      <Frame step={shown} motion={motion} progress={progress} subtitle={t('Unter dieser Domain ist HAPM danach per HTTPS erreichbar.')}>
         <AddressStep setup={setup} csrf={csrf} onSaved={advance} back={back('dns')} />
         {later}
       </Frame>
@@ -240,6 +258,7 @@ export default function SetupPage() {
     <RunStep
       setup={setup}
       csrf={csrf}
+      motion={motion}
       progress={progress}
       onChanged={setSetup}
       back={back('address')}
@@ -254,19 +273,24 @@ function Frame({
   title,
   subtitle,
   progress,
+  motion = 'forward',
   children,
 }: {
   step: Shown;
   title?: string;
   subtitle: string;
   progress: ReactNode;
+  motion?: 'forward' | 'back';
   children: ReactNode;
 }) {
   const { t } = useT();
   return (
     <AuthCard standalone className="hapm-setup" title={title ?? t(TITLES[step])} subtitle={subtitle}>
       {progress}
-      <div className="auth-form">{children}</div>
+      {/* Der Schlüssel macht aus jedem Schritt ein neues Element, und nur ein neues gleitet herein. */}
+      <div key={step} className={motion === 'back' ? 'auth-form hapm-step-enter is-back' : 'auth-form hapm-step-enter'}>
+        {children}
+      </div>
     </AuthCard>
   );
 }
@@ -314,57 +338,61 @@ function AccountStep({
 
   return (
     <form className="auth-form" onSubmit={handleSubmit}>
-      <div className="auth-field">
-        <label htmlFor="name">{t('Name')}</label>
-        <input
-          id="name"
-          type="text"
-          required
-          maxLength={100}
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder={t('Max Mustermann')}
-          autoComplete="name"
-          autoFocus
-        />
+      <div className="hapm-setup-pair">
+        <div className="auth-field">
+          <label htmlFor="name">{t('Name')}</label>
+          <input
+            id="name"
+            type="text"
+            required
+            maxLength={100}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={t('Max Mustermann')}
+            autoComplete="name"
+            autoFocus
+          />
+        </div>
+        <div className="auth-field">
+          <label htmlFor="email">{t('E-Mail-Adresse')}</label>
+          <input
+            id="email"
+            type="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="admin@example.org"
+            autoComplete="email"
+          />
+        </div>
       </div>
-      <div className="auth-field">
-        <label htmlFor="email">{t('E-Mail-Adresse')}</label>
-        <input
-          id="email"
-          type="email"
-          required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="admin@example.org"
-          autoComplete="email"
-        />
-      </div>
-      <div className="auth-field">
-        <label htmlFor="password">{t('Passwort')}</label>
-        <input
-          id="password"
-          type="password"
-          required
-          minLength={10}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="••••••••••"
-          autoComplete="new-password"
-        />
-      </div>
-      <div className="auth-field">
-        <label htmlFor="confirmPassword">{t('Passwort wiederholen')}</label>
-        <input
-          id="confirmPassword"
-          type="password"
-          required
-          minLength={10}
-          value={confirmPassword}
-          onChange={(e) => setConfirmPassword(e.target.value)}
-          placeholder="••••••••••"
-          autoComplete="new-password"
-        />
+      <div className="hapm-setup-pair">
+        <div className="auth-field">
+          <label htmlFor="password">{t('Passwort')}</label>
+          <input
+            id="password"
+            type="password"
+            required
+            minLength={10}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="••••••••••"
+            autoComplete="new-password"
+          />
+        </div>
+        <div className="auth-field">
+          <label htmlFor="confirmPassword">{t('Passwort wiederholen')}</label>
+          <input
+            id="confirmPassword"
+            type="password"
+            required
+            minLength={10}
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder="••••••••••"
+            autoComplete="new-password"
+          />
+        </div>
       </div>
       <p className="auth-hint">{t('Mindestens 10 Zeichen mit Groß- und Kleinbuchstaben und einer Zahl.')}</p>
       <div className="auth-field">
@@ -464,6 +492,11 @@ function ExposureStep({
               <strong>{t(option.title)}</strong>
               <span>{t(option.text)}</span>
             </span>
+            {choice === option.value && (
+              <span className="hapm-choice-check">
+                <Check size={12} strokeWidth={3} />
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -577,31 +610,38 @@ function DnsStep({
               <strong>{option.label}</strong>
               {option.note && <span>{t(option.note)}</span>}
             </span>
+            {hook === option.hook && (
+              <span className="hapm-choice-check">
+                <Check size={12} strokeWidth={3} />
+              </span>
+            )}
           </button>
         ))}
       </div>
 
       {provider && (
         <>
-          {provider.fields.map((field) => (
-            <div className="auth-field" key={field.name}>
-              <label htmlFor={`dns-${field.name}`}>
-                {t(field.label)}
-                {!field.required && ` ${t('(freiwillig)')}`}
-                {field.hint && field.hint.length > LONG_TEXT && <InfoHint text={t(field.hint)} />}
-              </label>
-              <input
-                id={`dns-${field.name}`}
-                type={field.required ? 'password' : 'text'}
-                value={values[field.name] ?? ''}
-                onChange={(e) => setValues({ ...values, [field.name]: e.target.value })}
-                disabled={saving}
-                autoComplete="off"
-                spellCheck={false}
-              />
-              {field.hint && field.hint.length <= LONG_TEXT && <p className="auth-hint">{t(field.hint)}</p>}
-            </div>
-          ))}
+          <div className="hapm-setup-pair">
+            {provider.fields.map((field) => (
+              <div className="auth-field" key={field.name}>
+                <label htmlFor={`dns-${field.name}`}>
+                  {t(field.label)}
+                  {!field.required && ` ${t('(freiwillig)')}`}
+                  {field.hint && field.hint.length > LONG_TEXT && <InfoHint text={t(field.hint)} />}
+                </label>
+                <input
+                  id={`dns-${field.name}`}
+                  type={field.required ? 'password' : 'text'}
+                  value={values[field.name] ?? ''}
+                  onChange={(e) => setValues({ ...values, [field.name]: e.target.value })}
+                  disabled={saving}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+                {field.hint && field.hint.length <= LONG_TEXT && <p className="auth-hint">{t(field.hint)}</p>}
+              </div>
+            ))}
+          </div>
           <p className="auth-hint">
             {provider.apiTokenField
               ? t('Mit dem Token stellt acme.sh Zertifikate aus. HAPM richtet damit auch die Zone unter „DNS" ein und speichert es dafür verschlüsselt.')
@@ -880,8 +920,34 @@ function AddressStep({
       <div className="hapm-setup-note">
         <div className="hapm-setup-note-head">
           <strong>{recordProvider ? t('Der DNS-Eintrag der Oberfläche') : t('Diesen DNS-Eintrag legen Sie selbst an')}</strong>
+          <div className="hapm-form-actions">
+            {recordProvider && (
+              <button
+                className="btn btn-secondary btn-sm"
+                type="button"
+                disabled={saving || settingRecord || !domain || !recordAddress}
+                onClick={setRecord}
+              >
+                {settingRecord ? (
+                  <Loader2 size={14} className="spin" />
+                ) : (
+                  <ProviderLogo hook={recordProvider.hook} size={16} />
+                )}
+                {t('Bei {provider} anlegen', { provider: recordProvider.label })}
+              </button>
+            )}
+            <button
+              className="btn btn-ghost btn-sm"
+              type="button"
+              disabled={checking || saving || !domain}
+              onClick={runCheck}
+            >
+              {checking ? <Loader2 size={14} className="spin" /> : <Search size={14} />}
+              {t('Eintrag prüfen')}
+            </button>
+          </div>
         </div>
-        <dl className="detail-grid">
+        <dl className="detail-grid hapm-setup-record">
           <dt>{t('Name')}</dt>
           <dd>{shownDomain}</dd>
           <dt>{t('Typ')}</dt>
@@ -948,32 +1014,6 @@ function AddressStep({
             </dd>
           )}
         </dl>
-        <div className="hapm-form-actions">
-          {recordProvider && (
-            <button
-              className="btn btn-secondary btn-sm"
-              type="button"
-              disabled={saving || settingRecord || !domain || !recordAddress}
-              onClick={setRecord}
-            >
-              {settingRecord ? (
-                <Loader2 size={14} className="spin" />
-              ) : (
-                <ProviderLogo hook={recordProvider.hook} size={16} />
-              )}
-              {t('Bei {provider} anlegen', { provider: recordProvider.label })}
-            </button>
-          )}
-          <button
-            className="btn btn-ghost btn-sm"
-            type="button"
-            disabled={checking || saving || !domain}
-            onClick={runCheck}
-          >
-            {checking ? <Loader2 size={14} className="spin" /> : <Search size={14} />}
-            {t('Eintrag prüfen')}
-          </button>
-        </div>
       </div>
 
       {recordNote && <div className="alert alert-success">{recordNote}</div>}
@@ -1007,6 +1047,7 @@ function AddressStep({
 function RunStep({
   setup,
   csrf,
+  motion,
   progress,
   onChanged,
   back,
@@ -1015,6 +1056,7 @@ function RunStep({
 }: {
   setup: SetupView;
   csrf: string;
+  motion: 'forward' | 'back';
   progress: ReactNode;
   onChanged: (next: SetupView) => void;
   back: ReactNode;
@@ -1062,27 +1104,30 @@ function RunStep({
   }
 
   if (outcome === 'succeeded') {
+    // Ohne Fortschrittsbalken und mit eigener Überschrift: das Zeichen steht über ihr.
     return (
-      <Frame
-        step="run"
-        title={t('HAPM ist eingerichtet')}
-        subtitle={t('Unter der neuen Adresse melden Sie sich einmal neu an.')}
-        progress={progress}
-      >
-        <Stages setup={setup} />
-        <a className="auth-submit" href={`https://${domain}`}>
-          <ExternalLink size={15} />
-          {t('HAPM unter {url} öffnen', { url: `https://${domain}` })}
-        </a>
-        {exposure === 'internal' && (
-          <p className="auth-hint">
-            {t('Öffnet sich die Adresse nicht, fehlt der Eintrag für {domain} im DNS-Server Ihres Netzes.', { domain })}
+      <AuthCard standalone className="hapm-setup" title="">
+        <div className="hapm-success">
+          <SuccessMark />
+          <h1 className="auth-title">{t('HAPM ist eingerichtet')}</h1>
+          <p className="auth-subtitle">{t('Unter der neuen Adresse melden Sie sich einmal neu an.')}</p>
+        </div>
+        <div className="auth-form hapm-success-body">
+          <Stages setup={setup} />
+          <a className="auth-submit" href={`https://${domain}`}>
+            <ExternalLink size={15} />
+            {t('HAPM unter {url} öffnen', { url: `https://${domain}` })}
+          </a>
+          {exposure === 'internal' && (
+            <p className="auth-hint">
+              {t('Öffnet sich die Adresse nicht, fehlt der Eintrag für {domain} im DNS-Server Ihres Netzes.', { domain })}
+            </p>
+          )}
+          <p className="auth-footer">
+            <Link href="/dashboard">{t('Weiter mit der bisherigen Adresse')}</Link>
           </p>
-        )}
-        <p className="auth-footer">
-          <Link href="/dashboard">{t('Weiter mit der bisherigen Adresse')}</Link>
-        </p>
-      </Frame>
+        </div>
+      </AuthCard>
     );
   }
 
@@ -1091,6 +1136,7 @@ function RunStep({
   return (
     <Frame
       step="run"
+      motion={motion}
       subtitle={
         outcome === 'running'
           ? t('Das dauert einige Minuten. Die Seite dürfen Sie neu laden.')
@@ -1177,12 +1223,30 @@ function RunStep({
   );
 }
 
+const BURST = 12;
+
+/** Der Haken nach einer gelungenen Einrichtung: Kreis, Haken und ein Kranz von Punkten, gezeichnet in CSS. */
+function SuccessMark() {
+  return (
+    <div className="hapm-success-mark" aria-hidden="true">
+      {Array.from({ length: BURST }, (_, i) => (
+        <i key={i} style={{ '--angle': `${(360 / BURST) * i}deg` } as CSSProperties} />
+      ))}
+      <svg viewBox="0 0 88 88">
+        <circle className="hapm-success-disc" cx="44" cy="44" r="40" />
+        <circle className="hapm-success-ring" cx="44" cy="44" r="40" pathLength={1} />
+        <path className="hapm-success-check" d="M27 45.5 L39 57 L62 32" pathLength={1} />
+      </svg>
+    </div>
+  );
+}
+
 function Stages({ setup }: { setup: SetupView }) {
   const { t } = useT();
   const stages = setup.execution?.stages ?? [];
   return (
     <ul className="hapm-steps">
-      {stages.map((stage) => {
+      {stages.map((stage, index) => {
         const state =
           stage.status === 'ok'
             ? 'is-ok'
@@ -1192,7 +1256,7 @@ function Stages({ setup }: { setup: SetupView }) {
                 ? 'is-running'
                 : 'is-pending';
         return (
-          <li key={stage.key} className={`hapm-step ${state}`}>
+          <li key={stage.key} className={`hapm-step ${state}`} style={{ '--i': index } as CSSProperties}>
             {stage.status === 'ok' ? (
               <Check size={14} strokeWidth={1.5} />
             ) : stage.status === 'error' ? (

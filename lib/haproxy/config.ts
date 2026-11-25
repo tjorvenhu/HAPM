@@ -1023,7 +1023,7 @@ export interface HaproxyService {
 }
 
 export interface BackendServerInput {
-  /** Leer heißt: `server1`, `server2`, … nach Position. */
+  /** Leer heißt: der erste freie Name `serverN`, siehe `serverNames`. */
   name: string;
   target: string;
   /** Der Anteil dieses Ziels. `null` schreibt keine `weight`-Angabe und lässt
@@ -1269,6 +1269,28 @@ function validateService(input: CreateServiceInput, idGiven: boolean): Message |
  *  Pfad-Regel (ohne). Geprüft wird sie nur, wo es sie gibt. `route` ist der
  *  Name der Pfad-Regel, `null` beim Backend. Je Sorte ein eigener Satz und
  *  keine eingesetzte Beschriftung: ein Schlüssel wird nicht zusammengesetzt. */
+/**
+ * Die Namen der server-Zeilen, wie sie geschrieben werden. Ein leerer Name wird
+ * zum ersten freien `serverN`, gezählt ab der eigenen Position.
+ *
+ * Nicht stur nach Position: das Formular zeigt keinen Namen mehr, behält aber
+ * die gelesenen. Aus `server1`, `server2` wird nach dem Entfernen der ersten
+ * Zeile `server2` allein, und eine neu angehängte Zeile hieße nach Position
+ * ebenfalls `server2`. Zwei gleich benannte Server lehnt HAProxy ab. Ohne
+ * gesetzte Namen ist das Ergebnis dasselbe wie nach Position.
+ */
+export function serverNames(servers: readonly { name: string }[]): string[] {
+  const taken = new Set(servers.map((server) => server.name).filter(Boolean));
+  return servers.map((server, position) => {
+    if (server.name) return server.name;
+    let n = position + 1;
+    while (taken.has(`server${n}`)) n++;
+    const name = `server${n}`;
+    taken.add(name);
+    return name;
+  });
+}
+
 function validateServers(
   servers: readonly { name: string; target: string; weight?: number | null }[],
   route: string | null
@@ -2185,8 +2207,9 @@ export function renderBackendBlock(input: CreateServiceInput): string[] {
     lines.push('');
   }
 
+  const names = serverNames(input.servers);
   input.servers.forEach((server, position) => {
-    const name = server.name || `server${position + 1}`;
+    const name = names[position];
     lines.push(
       `    server ${name} ${server.target}${serverParams({
         check: input.healthcheck,
@@ -2227,8 +2250,9 @@ export function renderRouteBackend(input: CreateServiceInput, route: RouteInput)
     ...addonBlock(input),
   ];
 
+  const names = serverNames(route.servers);
   route.servers.forEach((server, position) => {
-    const name = server.name || `server${position + 1}`;
+    const name = names[position];
     // Ohne Cookie-Marke und ohne Gewichtung: beides gehört zum eigenen Backend
     // des Dienstes und nicht zu den Zielen einer Pfad-Regel. Siehe
     // `RouteServerInput`.

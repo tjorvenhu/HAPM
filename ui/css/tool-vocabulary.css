@@ -481,6 +481,16 @@ a:hover { color: var(--accent-hover); }
    gleich weg". Kein Ton für Warnungen: das sagt ein Badge. */
 .entity-card.is-danger { border-color: var(--danger); background: var(--danger-light); }
 
+/* Ein Eintrag, den HAPM für sich selbst angelegt hat (die Gruppe der Oberfläche). */
+.entity-card.is-system {
+  border-color: color-mix(in oklch, var(--accent), transparent 55%);
+  background: linear-gradient(135deg, var(--accent-light), var(--surface) 70%);
+}
+
+.entity-card.is-system:hover { border-color: var(--accent); }
+
+.entity-card.is-system .entity-card-icon { background: var(--accent); color: var(--surface); }
+
 .entity-card:hover { border-color: var(--border-hover); }
 
 /* flex-start, nicht center: bricht der Name auf zwei Zeilen um, bleiben Icon

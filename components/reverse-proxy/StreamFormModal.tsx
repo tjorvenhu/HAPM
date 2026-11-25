@@ -21,6 +21,7 @@ import {
 } from '@/lib/haproxy/streams';
 import { useT } from '@/lib/i18n/react';
 import type { ProxyRow } from './types';
+import SavedTargetPick, { useSavedTargets } from './SavedTargetPick';
 
 /**
  * Anlegen und Bearbeiten einer TCP-Weiterleitung.
@@ -121,6 +122,7 @@ export default function StreamFormModal({
   const serverId = edit?.proxy.$id ?? usable[0]?.$id ?? '';
   const [scope, setScope] = useState<HaproxyScope>(edit?.stream.scope ?? defaultScope);
   const [port, setPort] = useState(edit?.stream.port ? String(edit.stream.port) : '');
+  const savedTargets = useSavedTargets();
   const [servers, setServers] = useState<ServerRow[]>(
     edit && edit.stream.servers.length > 0
       ? edit.stream.servers.map((s) => ({
@@ -458,8 +460,8 @@ export default function StreamFormModal({
 
                   <div className="form-list">
                     <div className="form-list-head">
-                      <span style={{ flex: '0 0 30%' }}>{t('Name')}</span>
                       <span style={{ flex: 1 }}>{t('Adresse')}</span>
+                      <span className="hapm-target-pick" />
                       {/* Erst ab dem zweiten Ziel: bei einem gibt es nichts zu
                           verteilen, und ein Feld ohne Frage füllt irgendwann
                           jemand aus. Dieselbe Regel wie im
@@ -469,20 +471,6 @@ export default function StreamFormModal({
                     </div>
                     {servers.map((server, index) => (
                       <div className="form-list-row" key={index}>
-                        <input
-                          className="form-input"
-                          style={{ flex: '0 0 30%', minWidth: 0 }}
-                          value={server.name}
-                          onChange={(e) =>
-                            setServers(
-                              servers.map((s, i) =>
-                                i === index ? { ...s, name: e.target.value } : s
-                              )
-                            )
-                          }
-                          placeholder={`server${index + 1}`}
-                          autoComplete="off"
-                        />
                         <input
                           className="form-input"
                           value={server.target}
@@ -495,6 +483,13 @@ export default function StreamFormModal({
                           }
                           placeholder="10.10.0.50:5432"
                           autoComplete="off"
+                        />
+                        <SavedTargetPick
+                          targets={savedTargets}
+                          address={server.target}
+                          onPick={(target) =>
+                            setServers(servers.map((s, i) => (i === index ? { ...s, target } : s)))
+                          }
                         />
                         {balancing && (
                           <input
