@@ -130,7 +130,16 @@ function SettingsPage() {
   const [addingFor, setAddingFor] = useState<string | null>(null);
   const [addHook, setAddHook] = useState('');
 
-  const [pendingRun, setPendingRun] = useState<{ id: string; label: string } | null>(null);
+  /**
+   * Der laufende Vorgang samt der Eingabe, die er schreibt.
+   *
+   * Die Eingabe bleibt stehen, bis er durch ist. Vorher wurde sie beim Klick
+   * verworfen, und bis HAProxy neu geladen hatte, stand wieder der alte Stand
+   * im Formular: eine eben eingetragene Admin-IP verschwand und kam erst Sekunden
+   * später zurück. `sent` ist die Eingabe beim Speichern: nur sie wird danach
+   * verworfen, nicht was jemand inzwischen weiter getippt hat.
+   */
+  const [pendingRun, setPendingRun] = useState<{ id: string; label: string; rowId: string; sent: string } | null>(null);
   const [openRunId, setOpenRunId] = useState<string | null>(null);
 
   const load = useCallback(
@@ -173,13 +182,21 @@ function SettingsPage() {
         .then((r) => r.json())
         .catch(() => null);
       if (cancelled || !data?.success || data.data.status === 'running') return;
-      setPendingRun(null);
-
-      // Erst nachladen, dann melden: sonst steht die Erfolgsmeldung da, während
-      // die Seite noch den alten Stand der Maschine zeigt.
+      // Erst nachladen, dann die Eingabe verwerfen und melden: sonst steht für
+      // einen Augenblick der alte Stand der Maschine da. Scheitert der Vorgang,
+      // bleibt die Eingabe, damit man sie korrigieren und erneut speichern kann.
       const ok = data.data.status === 'success';
       await load(true);
       if (cancelled) return;
+      if (ok) {
+        setDraft((current) => {
+          if (JSON.stringify(current[pendingRun.rowId]) !== pendingRun.sent) return current;
+          const rest = { ...current };
+          delete rest[pendingRun.rowId];
+          return rest;
+        });
+      }
+      setPendingRun(null);
       notify({
         variant: ok ? 'success' : 'error',
         title: pendingRun.label,
@@ -398,7 +415,7 @@ function SettingsPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || t('Speichern fehlgeschlagen'));
-      const run = { id: data.data.runId, label: t('Einstellungen speichern') };
+      const run = { id: data.data.runId, label: t('Einstellungen speichern'), rowId: row.$id, sent: JSON.stringify(value) };
       setPendingRun(run);
       notify({
         variant: 'info',
@@ -406,11 +423,6 @@ function SettingsPage() {
         message: t('Prüfen, Backup, einsetzen, neu laden. Der Fortschritt steht unten rechts.'),
         action: { label: t('Schritte ansehen'), onClick: () => setOpenRunId(run.id) },
       });
-      // Die Bearbeitung ist ab hier auf dem Weg zur Maschine; der nächste
-      // Ladevorgang bringt den echten Stand.
-      const rest = { ...draft };
-      delete rest[row.$id];
-      setDraft(rest);
     } catch (err) {
       notify({
         variant: 'error',
@@ -450,9 +462,17 @@ function SettingsPage() {
           {/* Ein Speichern für HTTPS, Admin-IPs und Zugriffsschutz: sie gehen in
               einem Vorgang in die Datei, auch wenn sie auf zwei Reitern stehen. */}
           {dirtyRow && dirtyRow.editable && (
-            <button className="btn btn-primary" onClick={() => save(dirtyRow)} disabled={saving === dirtyRow.$id}>
-              {saving === dirtyRow.$id ? <Loader2 size={16} className="spin" /> : <Save size={16} />}
-              {t('Änderungen speichern')}
+            <button
+              className="btn btn-primary"
+              onClick={() => save(dirtyRow)}
+              disabled={saving === dirtyRow.$id || pendingRun?.rowId === dirtyRow.$id}
+            >
+              {saving === dirtyRow.$id || pendingRun?.rowId === dirtyRow.$id ? (
+                <Loader2 size={16} className="spin" />
+              ) : (
+                <Save size={16} />
+              )}
+              {pendingRun?.rowId === dirtyRow.$id ? t('Wird übernommen') : t('Änderungen speichern')}
             </button>
           )}
         </div>
@@ -460,7 +480,7 @@ function SettingsPage() {
 
       {error && <div className="alert alert-danger sys-block">{error}</div>}
 
-      <AreaTabs areas={AREAS} value={area} onChange={select} dirty={(key) => rows.some((row) => areaDirty(row, key))} />
+      <AreaTabs areas={AREAS} value={area} onChange={select} dirty={(key) => !pendingRun && rows.some((row) => areaDirty(row, key))} />
 
       {area === 'laender' && <GeoipPanel />}
       {area === 'grundkonfiguration' && <BaseConfigPanel />}
