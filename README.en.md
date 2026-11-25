@@ -39,6 +39,7 @@ HAPM sets up HAProxy, Let's Encrypt and the base configuration by itself.
   - [Option 3: Portainer, Dockge and other UIs](#option-3-portainer-dockge-and-other-uis)
 - [First steps](#first-steps)
 - [Configuration](#configuration)
+- [Control with Claude (MCP)](#control-with-claude-mcp)
 - [Architecture](#architecture)
 - [Operations](#operations)
 - [Security](#security)
@@ -115,6 +116,7 @@ has HAProxy check it, reloads and fetches the certificates.
 - Daily backups and restore from the web interface
 - Email alerts on outages, expiring certificates and errors
 - API with tokens for scripts and other services
+- MCP server: control HAPM from Claude and other AI clients
 - Web interface in German and English
 
 </td>
@@ -378,6 +380,34 @@ After a change: `docker compose up -d`.
 Everything else is configured in the web interface, under "General" and
 "Reverse proxy, Settings".
 
+## Control with Claude (MCP)
+
+HAPM ships an MCP server. You can control it from Claude (Claude Code, Claude
+Desktop, claude.ai) and other MCP clients: list, create, change and remove
+targets, TCP forwards and groups, and read certificates, system status,
+statistics and DNS zones.
+
+1. In HAPM, create an API key under **"API & MCP"**. These are the same keys as
+   for the API.
+2. Connect your client, for Claude Code for example:
+
+   ```bash
+   claude mcp add --transport http hapm https://hapm.example.org/api/mcp \
+     --header "Authorization: Bearer hapm_…"
+   ```
+
+Ready-made configurations for other clients are on the same page in HAPM, ready
+to copy. Details in [`docs/mcp.md`](docs/mcp.md) (German).
+
+> [!WARNING]
+> Every tool runs with all permissions of the key and can delete targets. Only
+> give a key to clients you trust with that.
+
+> [!NOTE]
+> Claude Desktop and claude.ai connect from Anthropic's cloud, so HAPM must be
+> reachable over HTTPS from the internet. Claude Code connects from your own
+> machine and works on a private network too.
+
 ## Architecture
 
 Three containers, one folder for the data:
@@ -632,6 +662,7 @@ explains for almost every decision why it was made.
 | [`docs/betrieb.md`](docs/betrieb.md) | Containers, volumes, updates, database, initial setup, backups |
 | [`docs/reverse-proxy.md`](docs/reverse-proxy.md) | Targets, groups, certificates, wildcards, access rules, error pages, statistics, import |
 | [`docs/reverse-proxy-api.md`](docs/reverse-proxy-api.md) | The API for scripts and other services |
+| [`docs/mcp.md`](docs/mcp.md) | The MCP server for Claude and other clients |
 | [`docs/dns.md`](docs/dns.md) | DNS at Cloudflare and Hetzner |
 | [`docs/i18n.md`](docs/i18n.md) | Translations of the web interface |
 

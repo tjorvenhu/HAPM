@@ -39,6 +39,7 @@ HAProxy, Let's Encrypt und die Grundkonfiguration richtet HAPM selbst ein.
   - [Weg 3: Portainer, Dockge und andere Oberflächen](#weg-3-portainer-dockge-und-andere-oberflächen)
 - [Erste Schritte](#erste-schritte)
 - [Einstellungen](#einstellungen)
+- [Mit Claude steuern (MCP)](#mit-claude-steuern-mcp)
 - [Aufbau](#aufbau)
 - [Betrieb](#betrieb)
 - [Sicherheit](#sicherheit)
@@ -111,6 +112,7 @@ Konfiguration, prüft sie mit HAProxy, lädt neu und holt die Zertifikate.
 - Tägliche Sicherung und Zurückspielen über die Oberfläche
 - Mails bei Ausfällen, ablaufenden Zertifikaten und Fehlern
 - API mit Token für Skripte und andere Dienste
+- MCP-Server: HAPM aus Claude und anderen KI-Clients steuern
 - Oberfläche auf Deutsch und Englisch
 
 </td>
@@ -380,6 +382,34 @@ mit Erklärungen steht in [`.env.example`](.env.example). Nach einer Änderung:
 Alles andere stellen Sie in der Oberfläche ein, unter „Allgemein“ und
 „Reverse-Proxy, Einstellungen“.
 
+## Mit Claude steuern (MCP)
+
+HAPM bringt einen MCP-Server mit. Damit lässt es sich aus Claude (Claude Code,
+Claude Desktop, claude.ai) und anderen MCP-Clients steuern: Ziele,
+TCP-Weiterleitungen und Gruppen lesen, anlegen, ändern und entfernen, dazu
+Zertifikate, Systemstatus, Statistik und DNS-Zonen lesen.
+
+1. In HAPM unter **„API und MCP“** einen API-Key anlegen. Es sind dieselben Keys
+   wie für die API.
+2. Den Client verbinden, für Claude Code etwa:
+
+   ```bash
+   claude mcp add --transport http hapm https://hapm.example.org/api/mcp \
+     --header "Authorization: Bearer hapm_…"
+   ```
+
+Fertige Konfigurationen für weitere Clients stehen in HAPM auf derselben Seite
+zum Kopieren, Einzelheiten in [`docs/mcp.md`](docs/mcp.md).
+
+> [!WARNING]
+> Jedes Werkzeug läuft mit allen Rechten des Keys und kann Ziele löschen.
+> Geben Sie einen Key nur an Clients, denen Sie das zutrauen.
+
+> [!NOTE]
+> Claude Desktop und claude.ai verbinden sich aus der Cloud von Anthropic. HAPM
+> muss dafür über HTTPS aus dem Internet erreichbar sein. Claude Code verbindet
+> sich vom eigenen Rechner aus und reicht im eigenen Netz.
+
 ## Aufbau
 
 Drei Container, ein Ordner für die Daten:
@@ -638,6 +668,7 @@ jeder Entscheidung, warum sie so getroffen wurde.
 | [`docs/betrieb.md`](docs/betrieb.md) | Container, Volumes, Updates, Datenbank, Ersteinrichtung, Sicherung |
 | [`docs/reverse-proxy.md`](docs/reverse-proxy.md) | Ziele, Gruppen, Zertifikate, Wildcards, Sperren, Fehlerseiten, Statistik, Import |
 | [`docs/reverse-proxy-api.md`](docs/reverse-proxy-api.md) | Die API für Skripte und andere Dienste |
+| [`docs/mcp.md`](docs/mcp.md) | Der MCP-Server für Claude und andere Clients |
 | [`docs/dns.md`](docs/dns.md) | DNS bei Cloudflare und Hetzner |
 | [`docs/i18n.md`](docs/i18n.md) | Übersetzungen der Oberfläche |
 
