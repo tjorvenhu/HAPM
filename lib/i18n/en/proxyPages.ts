@@ -561,4 +561,5 @@ export const proxyPages: Dictionary = {
   'Ungespeicherte Änderungen': 'Unsaved changes',
   'Gesperrte Adressen und Länder, Ratenbegrenzung. Gilt für jeden Dienst.':
     'Blocked addresses and countries, rate limit. Applies to every service.',
+  'Wird übernommen': 'Applying',
 };
