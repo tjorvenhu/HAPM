@@ -1327,17 +1327,7 @@ function AddressStep({
           {saving ? <span className="btn-spinner" aria-hidden="true" /> : <ArrowRight size={15} />}
           {t('Weiter')}
         </button>
-        {!internal && (
-          <button className="btn btn-ghost" type="button" disabled={saving} onClick={() => void send({ skip: true })}>
-            {t('Später')}
-          </button>
-        )}
       </div>
-      {!internal && (
-        <p className="auth-hint">
-          {t('Ohne Adresse bleibt die Oberfläche unverschlüsselt auf Port {port}.', { port: setup.listenPort })}
-        </p>
-      )}
     </form>
   );
 }

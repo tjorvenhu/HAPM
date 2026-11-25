@@ -158,26 +158,20 @@
 
 .hapm-setup.auth-page .auth-submit:hover:not(:disabled)::after { transform: translateX(120%); transition: transform 0.8s ease; }
 
-/* Zurück, Hauptknopf und ein Nebenweg („Später“) in einer Zeile: spart die
- * Höhe einer zweiten Zeile. Zurück und Später sind Pillen in derselben Höhe. */
+/* Zurück und Weiter in einer Zeile: spart die Höhe einer zweiten Zeile.
+ * Zurück ist die leisere Pille, etwas niedriger und nur so breit wie nötig. */
 .hapm-setup-nav { display: flex; align-items: center; gap: 10px; margin-top: clamp(0px, 1vh, 0.5rem); }
 
 .hapm-setup.auth-page .hapm-setup-nav .auth-submit { flex: 1; min-width: 0; margin-top: 0; }
 
-.hapm-setup-nav .btn {
-  flex-shrink: 0; min-height: 3rem; padding: 0 1.25rem; border-radius: var(--radius-full);
+.hapm-setup-nav .hapm-setup-back {
+  flex-shrink: 0; min-height: 2.625rem; padding: 0 1rem; border-radius: var(--radius-full); font-size: 0.875rem;
 }
 
 /* Der Pfeil zeigt, wohin es geht, und ruckt beim Darüberfahren dorthin. */
 .hapm-setup-back svg { transition: transform 0.2s ease; }
 
 .hapm-setup-back:hover:not(:disabled) svg { transform: translateX(-3px); }
-
-@media (max-width: 480px) {
-  .hapm-setup-nav { flex-wrap: wrap; }
-  .hapm-setup.auth-page .hapm-setup-nav .auth-submit { flex-basis: 100%; order: -1; }
-  .hapm-setup-nav .btn { flex: 1; }
-}
 
 /* Die Sprachwahl als kleine Pillen, die gewählte hinterlegt. */
 .hapm-setup.auth-page .auth-language__option {

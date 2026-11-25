@@ -85,8 +85,6 @@ export const setup: Dictionary = {
   "Es muss die öffentliche Adresse dieses Servers sein.": "It must be the public address of this server.",
   "Bei {provider} anlegen": "Create at {provider}",
   "Eintrag prüfen": "Check record",
-  "Ohne Adresse bleibt die Oberfläche unverschlüsselt auf Port {port}.": "Without an address, the web interface stays unencrypted on port {port}.",
-  "Später": "Later",
   "Ihrem DNS-Anbieter": "your DNS provider",
   "HAPM ist eingerichtet": "HAPM is set up",
   "Unter der neuen Adresse melden Sie sich einmal neu an.": "Sign in again once at the new address.",
