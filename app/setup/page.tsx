@@ -184,7 +184,7 @@ export default function SetupPage() {
 
   const back = (to: Shown) => (
     <button
-      className="btn btn-ghost"
+      className="btn btn-secondary hapm-setup-back"
       type="button"
       onClick={() => {
         setMotion('back');
@@ -677,7 +677,7 @@ function DnsStep({
               <div className="auth-field" key={field.name}>
                 <label htmlFor={`dns-${field.name}`}>
                   {t(field.label)}
-                  {!field.required && ` ${t('(freiwillig)')}`}
+                  {!field.required && ` ${t('(optional)')}`}
                   {field.hint && field.hint.length > LONG_TEXT && <InfoHint text={t(field.hint)} />}
                 </label>
                 <input
@@ -706,11 +706,13 @@ function DnsStep({
 
       {error && <div className="auth-error">{error}</div>}
 
-      <button className="auth-submit" type="submit" disabled={saving || !hook}>
-        {saving ? <span className="btn-spinner" aria-hidden="true" /> : <ArrowRight size={15} />}
-        {saving && provider ? t('Wird geprüft…') : hook === MANUAL_DNS ? t('Weiter') : t('Speichern und weiter')}
-      </button>
-      <div className="hapm-setup-actions">{back}</div>
+      <div className="hapm-setup-nav">
+        {back}
+        <button className="auth-submit" type="submit" disabled={saving || !hook}>
+          {saving ? <span className="btn-spinner" aria-hidden="true" /> : <ArrowRight size={15} />}
+          {saving && provider ? t('Wird geprüft…') : hook === MANUAL_DNS ? t('Weiter') : t('Speichern und weiter')}
+        </button>
+      </div>
     </form>
   );
 }
@@ -893,7 +895,7 @@ function CertificatesStep({
           <div className="hapm-setup-pair">
             <div className="auth-field">
               <label htmlFor="eab-kid">
-                {t('EAB Key-ID')} {t('(freiwillig)')}
+                {t('EAB Key-ID')} {t('(optional)')}
                 <InfoHint
                   text={t(
                     'External Account Binding: nur nötig, wenn die CA es verlangt. Sie zeigt Key-ID und HMAC-Schlüssel beim Anlegen des Zugangs an.'
@@ -912,7 +914,7 @@ function CertificatesStep({
             </div>
             <div className="auth-field">
               <label htmlFor="eab-hmac">
-                {t('EAB HMAC-Schlüssel')} {t('(freiwillig)')}
+                {t('EAB HMAC-Schlüssel')} {t('(optional)')}
                 <InfoHint text={t('Geht an acme.sh und wird in HAPM nicht gespeichert.')} />
               </label>
               <input
@@ -963,11 +965,13 @@ function CertificatesStep({
 
       {error && <div className="auth-error">{error}</div>}
 
-      <button className="auth-submit" type="submit" disabled={saving || !choice || !pathOpen}>
-        {saving ? <span className="btn-spinner" aria-hidden="true" /> : <ArrowRight size={15} />}
-        {saving && custom ? t('Konto wird angemeldet…') : t('Weiter')}
-      </button>
-      <div className="hapm-setup-actions">{back}</div>
+      <div className="hapm-setup-nav">
+        {back}
+        <button className="auth-submit" type="submit" disabled={saving || !choice || !pathOpen}>
+          {saving ? <span className="btn-spinner" aria-hidden="true" /> : <ArrowRight size={15} />}
+          {saving && custom ? t('Konto wird angemeldet…') : t('Weiter')}
+        </button>
+      </div>
     </form>
   );
 }
@@ -1044,7 +1048,6 @@ function AddressStep({
   // Bei „intern" vorbelegt an: weitere Ziele unter der Basis brauchen dann kein neues Zertifikat.
   const [wildcard, setWildcard] = useState(setup.domain ? setup.wildcard : internal && dnsReady);
   /** Nur was getippt wurde. Sonst folgt die Basis der Domain. */
-  const [baseDraft, setBaseDraft] = useState<string | null>(setup.wildcardBase);
   const [check, setCheck] = useState<AddressCheck | null>(null);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState('');
@@ -1058,8 +1061,11 @@ function AddressStep({
 
   const domain = normalizeSetupDomain(domainDraft);
   const suggestedBase = wildcardBaseOf(domain);
-  const base = normalizeSetupDomain(baseDraft ?? suggestedBase ?? '');
-  const wildcardOn = dnsReady && wildcard;
+  // Die Basis ist immer die Domain eine Ebene darüber: `*.example.org` für
+  // `hapm.example.org`. Sie war einmal ein Feld, das fast nie jemand änderte,
+  // und jede andere Basis deckte die Oberfläche nicht ab (`validateWildcardBase`).
+  const base = suggestedBase ?? '';
+  const wildcardOn = dnsReady && wildcard && base !== '';
   const addresses = setup.serverAddresses;
   const recordAddress = (addressDraft ?? addresses[0] ?? '').trim();
   const dnsProvider = setup.dnsHook ? findDnsProvider(setup.dnsHook) : null;
@@ -1183,11 +1189,11 @@ function AddressStep({
         </div>
       )}
 
-      {dnsReady && (
+      {dnsReady && base && (
         <label className="hapm-switch-row">
           <span className="hapm-switch-text">
             <span>
-              {t('Wildcard-Zertifikat für *.{base} ausstellen', { base: base || 'example.org' })}
+              {t('Wildcard-Zertifikat für *.{base} ausstellen', { base })}
               <InfoHint
                 text={t(
                   'Weitere Ziele unter dieser Basis finden das Zertifikat dann vor und brauchen kein eigenes. Ausgestellt wird es über Ihren DNS-Anbieter.'
@@ -1205,22 +1211,6 @@ function AddressStep({
             <span className="toggle-slider" />
           </span>
         </label>
-      )}
-
-      {wildcardOn && (
-        <div className="auth-field">
-          <label htmlFor="setup-base">{t('Basis der Wildcard')}</label>
-          <input
-            id="setup-base"
-            type="text"
-            value={baseDraft ?? suggestedBase ?? ''}
-            onChange={(e) => setBaseDraft(e.target.value)}
-            placeholder="example.org"
-            disabled={saving}
-            autoComplete="off"
-            spellCheck={false}
-          />
-        </div>
       )}
 
       <div className="hapm-setup-note">
@@ -1331,23 +1321,23 @@ function AddressStep({
       {verdict && <div className={`alert ${verdict.tone}`}>{verdict.text}</div>}
       {error && <div className="auth-error">{error}</div>}
 
-      <button className="auth-submit" type="submit" disabled={saving}>
-        {saving ? <span className="btn-spinner" aria-hidden="true" /> : <ArrowRight size={15} />}
-        {t('Weiter')}
-      </button>
-      {!internal && (
-        <p className="auth-hint">
-          {t('Ohne Adresse bleibt die Oberfläche unverschlüsselt auf Port {port}.', { port: setup.listenPort })}
-        </p>
-      )}
-      <div className="hapm-setup-actions">
+      <div className="hapm-setup-nav">
         {back}
+        <button className="auth-submit" type="submit" disabled={saving}>
+          {saving ? <span className="btn-spinner" aria-hidden="true" /> : <ArrowRight size={15} />}
+          {t('Weiter')}
+        </button>
         {!internal && (
           <button className="btn btn-ghost" type="button" disabled={saving} onClick={() => void send({ skip: true })}>
             {t('Später')}
           </button>
         )}
       </div>
+      {!internal && (
+        <p className="auth-hint">
+          {t('Ohne Adresse bleibt die Oberfläche unverschlüsselt auf Port {port}.', { port: setup.listenPort })}
+        </p>
+      )}
     </form>
   );
 }
@@ -1528,17 +1518,19 @@ function RunStep({
 
       {outcome !== 'running' && (
         <>
-          <button className="auth-submit" type="button" disabled={starting || (outcome === 'idle' && uploadMissing)} onClick={start}>
-            {starting ? (
-              <span className="btn-spinner" aria-hidden="true" />
-            ) : outcome === 'failed' ? (
-              <RefreshCw size={15} />
-            ) : (
-              <Play size={15} />
-            )}
-            {outcome === 'failed' ? t('Erneut versuchen') : t('Jetzt einrichten')}
-          </button>
-          <div className="hapm-setup-actions">{back}</div>
+          <div className="hapm-setup-nav">
+            {back}
+            <button className="auth-submit" type="button" disabled={starting || (outcome === 'idle' && uploadMissing)} onClick={start}>
+              {starting ? (
+                <span className="btn-spinner" aria-hidden="true" />
+              ) : outcome === 'failed' ? (
+                <RefreshCw size={15} />
+              ) : (
+                <Play size={15} />
+              )}
+              {outcome === 'failed' ? t('Erneut versuchen') : t('Jetzt einrichten')}
+            </button>
+          </div>
         </>
       )}
       {later}

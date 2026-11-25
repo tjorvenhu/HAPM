@@ -197,7 +197,7 @@ export default function CertificateSourceCard({
                 <div className="form-row">
                   <div className="form-group">
                     <label className="form-label" htmlFor="acme-eab-kid">
-                      {t('EAB Key-ID')} {t('(freiwillig)')}
+                      {t('EAB Key-ID')} {t('(optional)')}
                       <InfoHint
                         text={t(
                           'External Account Binding: nur nötig, wenn die CA es verlangt. Sie zeigt Key-ID und HMAC-Schlüssel beim Anlegen des Zugangs an.'
@@ -217,7 +217,7 @@ export default function CertificateSourceCard({
                   </div>
                   <div className="form-group">
                     <label className="form-label" htmlFor="acme-eab-hmac">
-                      {t('EAB HMAC-Schlüssel')} {t('(freiwillig)')}
+                      {t('EAB HMAC-Schlüssel')} {t('(optional)')}
                       <InfoHint text={t('Geht an acme.sh und wird in HAPM nicht gespeichert.')} />
                     </label>
                     <input

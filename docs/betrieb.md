@@ -231,7 +231,11 @@ bleiben.
    `resumeStep` zählt die Antwort nur, solange sie einen Weg zum Zertifikat
    hat: wer danach auf „intern" umstellt, landet wieder hier.
 5. **Adresse der Oberfläche:** die Domain für HAPM, auf Wunsch mit einem
-   Wildcard-Zertifikat für die Basis darüber. Die Seite zeigt den DNS-Eintrag
+   Wildcard-Zertifikat für die Basis darüber. Die Basis ist kein Feld, sondern
+   immer die Domain eine Ebene über der Oberfläche (`wildcardBaseOf`: aus
+   `hapm.example.org` wird `*.example.org`). Eine andere Basis deckte die
+   Oberfläche nicht ab, und das Feld änderte fast nie jemand. Liegt die Domain
+   direkt unter der Top-Level-Domain, fehlt der Schalter. Die Seite zeigt den DNS-Eintrag
    auf diesen Server und legt ihn auf Knopfdruck beim Anbieter an
    (`PUT /api/setup/dns-record`). Bei einer internen Installation sagt sie,
    dass der Eintrag in den DNS-Server des eigenen Netzes gehört. Sie fragt das

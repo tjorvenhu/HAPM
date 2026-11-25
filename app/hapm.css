@@ -248,9 +248,6 @@
 
 .hapm-setup .hapm-choices-three .hapm-choice { padding: 14px 32px 14px 14px; }
 
-/* Knöpfe unter einem Schritt: der Hauptknopf oben, die Nebenwege darunter in einer Zeile. */
-.hapm-setup-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
-
 /* Der DNS-Eintrag, den der Benutzer selbst anlegt, und die Zusammenfassung vor
  * dem Ausführen: dieselbe Fläche wie die Auswahlkarten, innen Bezeichnung und
  * Wert aus `.detail-grid`. */
