@@ -6,7 +6,7 @@
  *
  * ── Vorbild und Abweichungen ──
  *
- * Wie im Zwei-Faktor-Plugin von Better-Auth (`vanturis-packages`): zehn Codes,
+ * Wie im Zwei-Faktor-Plugin von Better-Auth: zehn Codes,
  * je zehn Zeichen, angezeigt als `xxxxx-xxxxx`. Zwei Abweichungen:
  *
  * - **Nur Kleinbuchstaben und Ziffern, ohne 0, o, 1, l und i.** Die Codes
