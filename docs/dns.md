@@ -31,6 +31,25 @@ Die Zugänge liegen als Dokumente in Postgres (`dns_zones`), der Schlüssel für
 entsteht beim ersten Start von selbst. Für eine Hetzner-Zone gilt alles, was für eine
 Cloudflare-Zone gilt.
 
+## Ohne Anbieter: der eigene DNS-Server
+
+Nicht jede Installation hat einen Anbieter mit API. Ein Netz mit Pi-hole,
+AdGuard Home, dem Router oder einem eigenen BIND trägt seine Einträge von Hand
+ein. Dafür steht im Assistenten neben Hetzner und Cloudflare die Karte „Eigener
+DNS-Server" (`SetupState.dns: 'manual'`). Gewählt heißt: HAPM legt bei keinem
+Anbieter etwas an, es gibt keine Zone unter „DNS", und überall, wo sonst ein
+Eintrag entstünde, steht, was einzutragen ist (der Schritt „Adresse der
+Oberfläche" nennt Name, Typ und Wert, „Wo" sagt „In Ihrem DNS-Server").
+
+Was es nicht gibt, und warum: DNS-01 von Hand (acme.sh `--dns` ohne Hook, der
+TXT-Eintrag wird abgetippt). Damit ließe sich ein Zertifikat einmal ausstellen,
+aber nie erneuern, ohne dass alle 60 Tage jemand einen TXT-Eintrag setzt. Ohne
+Anbieter mit API kommen Zertifikate deshalb über HTTP-01 (öffentlich, oder intern
+mit einem eigenen ACME-Server, der HAPM über Port 80 erreicht) oder werden
+hochgeladen, siehe [`reverse-proxy.md`](reverse-proxy.md), „Hochgeladene
+Zertifikate" und „Ein eigener ACME-Server". Eine Wildcard geht dann nur
+hochgeladen.
+
 ## Ein Anbieter ist eine Schnittstelle, kein zweiter Bereich
 
 `lib/dns/provider.ts` beschreibt, was HAPM von einem Anbieter braucht: die Zonen eines

@@ -203,7 +203,8 @@ export default function SetupPage() {
     </p>
   );
 
-  const acmeWarning = setup?.acmeReady === false && (
+  // Bei „nur hochladen" stellt acme.sh ohnehin nichts aus.
+  const acmeWarning = setup?.acmeReady === false && setup.certificateSource !== 'upload' && (
     <div className="alert alert-warning">
       {t('acme.sh ist nicht eingerichtet. Solange das so ist, lassen sich keine Zertifikate ausstellen. Der Grund steht in der Übersicht.')}
     </div>
@@ -763,7 +764,10 @@ function CertificatesStep({
   const [directory, setDirectory] = useState(setup.acmeDirectory ?? '');
   const [eabKeyId, setEabKeyId] = useState('');
   const [eabHmacKey, setEabHmacKey] = useState('');
-  const [httpReachable, setHttpReachable] = useState(setup.acmeHttpReachable);
+  // Intern ohne DNS-Anbieter ist HTTP der einzige Weg zum eigenen Server: dann vorbelegt an.
+  const [httpReachable, setHttpReachable] = useState(
+    setup.acmeDirectory ? setup.acmeHttpReachable : internal && !dnsReady
+  );
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -782,7 +786,7 @@ function CertificatesStep({
       text: internal
         ? dnsReady
           ? t('Über DNS bei {provider}. Erneuert sich von selbst.', { provider: providerLabel })
-          : t('Erreicht eine interne Installation nur über einen DNS-Anbieter mit API.')
+          : t('Erreicht diesen Server nur über DNS mit API.')
         : dnsReady
           ? t('Über Port 80, Wildcards über DNS bei {provider}.', { provider: providerLabel })
           : t('Über Port 80. Eine Wildcard geht ohne DNS-Anbieter mit API nicht.'),
@@ -792,13 +796,13 @@ function CertificatesStep({
     {
       value: 'custom',
       title: t('Eigener ACME-Server'),
-      text: t('Eine CA mit ACME, etwa step-ca im eigenen Netz. Auf Wunsch mit External Account Binding.'),
+      text: t('Eine CA mit ACME im eigenen Netz, etwa step-ca.'),
       icon: <Waypoints size={18} strokeWidth={1.5} />,
     },
     {
       value: 'upload',
       title: t('Zertifikate hochladen'),
-      text: t('HAPM beantragt nichts. Sie laden Zertifikat und Schlüssel hoch und ersetzen sie vor dem Ablauf.'),
+      text: t('HAPM beantragt nichts, Sie laden Zertifikat und Schlüssel hoch.'),
       icon: <Upload size={18} strokeWidth={1.5} />,
     },
   ];

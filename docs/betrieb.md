@@ -194,7 +194,7 @@ an und in der Gruppe das erste Ziel. Eine Gruppe ist ein Marker-Paar in
 
 ### Der Assistent: `/setup`, `lib/setup/`
 
-Fünf Schritte in einer Seite. Nach dem ersten besteht das Konto, alles danach
+Sechs Schritte in einer Seite. Nach dem ersten besteht das Konto, alles danach
 sind angemeldete Aufrufe unter `/api/setup/*` und darf scheitern oder liegen
 bleiben.
 
@@ -205,21 +205,50 @@ bleiben.
    sofort in den Einstellungen (`exposure`). An ihr hängt, ob Zertifikate über
    HTTP-01 oder immer über DNS-01 ausgestellt werden, siehe
    [`reverse-proxy.md`](reverse-proxy.md), „Interne Installation".
-3. **DNS-Anbieter** (Hetzner, Cloudflare). Intern Pflicht, öffentlich nur für
-   Wildcards nötig und überspringbar. Der Token wird dem Anbieter einmal
-   vorgezeigt (`lib/setup/token-check.ts`) und geht dann über denselben Weg wie
-   unter Reverse-Proxy, Einstellungen nach `account.conf`. Lehnt der Anbieter
-   ihn ab, wird nichts abgelegt.
-4. **Adresse der Oberfläche:** die Domain für HAPM, auf Wunsch mit einem
+3. **DNS-Anbieter** (Hetzner, Cloudflare oder „Eigener DNS-Server"). Der Token
+   eines Anbieters wird ihm einmal vorgezeigt (`lib/setup/token-check.ts`) und
+   geht dann über denselben Weg wie unter Reverse-Proxy, Einstellungen nach
+   `account.conf`. Lehnt der Anbieter ihn ab, wird nichts abgelegt.
+   **„Eigener DNS-Server"** (`dns: 'manual'`) heißt: HAPM richtet bei keinem
+   Anbieter etwas ein und nennt stattdessen die Einträge (Name, Typ, Wert), die
+   von Hand gesetzt werden. Die Karte ersetzt „Überspringen", das dasselbe hieß,
+   ohne es zu sagen, und intern nicht erlaubt war. Jetzt ist es intern wie
+   öffentlich eine Antwort; was intern dann für Zertifikate fehlt, fragt der
+   nächste Schritt. Zeilen mit `dns: 'skipped'` aus der Zeit davor gelten
+   öffentlich weiter, `PUT /api/setup/dns` nimmt `skip` weiter an.
+4. **Zertifikate** (`PUT /api/setup/certificates`): Let's Encrypt, ein eigener
+   ACME-Server oder hochladen. Gespeichert wird in den Einstellungen und sofort
+   (`certificateSource`, `acmeDirectory`, `acmeHttpReachable`, derselbe Weg wie
+   unter „Allgemein", `lib/certificate-settings.ts`); in `setup_state` steht nur,
+   dass die Frage beantwortet ist (`certificates: 'set'`). Angeboten wird, was
+   mit den Antworten davor geht (`certificatePathOpen`): Let's Encrypt erreicht
+   eine interne Installation nur über einen DNS-Anbieter mit API, die Karte ist
+   dann gesperrt und sagt warum. Ein eigener Server braucht intern ohne
+   DNS-Anbieter den Schalter „erreicht HAPM über HTTP (Port 80)"; er ist in dem
+   Fall vorbelegt, und ohne ihn lehnt die Route die Wahl ab. Ein eigener Server
+   wird erst übernommen, wenn acme.sh ein Konto bei ihm hat (siehe
+   [`reverse-proxy.md`](reverse-proxy.md), „Ein eigener ACME-Server").
+   `resumeStep` zählt die Antwort nur, solange sie einen Weg zum Zertifikat
+   hat: wer danach auf „intern" umstellt, landet wieder hier.
+5. **Adresse der Oberfläche:** die Domain für HAPM, auf Wunsch mit einem
    Wildcard-Zertifikat für die Basis darüber. Die Seite zeigt den DNS-Eintrag
    auf diesen Server und legt ihn auf Knopfdruck beim Anbieter an
    (`PUT /api/setup/dns-record`). Bei einer internen Installation sagt sie,
    dass der Eintrag in den DNS-Server des eigenen Netzes gehört. Sie fragt das
    DNS, worauf die Domain zeigt, und sagt das Ergebnis. Aufgehalten wird damit
    niemand.
-5. **Ausführen** (`lib/setup/run.ts`): Gruppe `HAPM`, Zertifikat, Ziel `hapm`
+   Die Wildcard gibt es nur über ACME mit einem DNS-Anbieter
+   (`wildcardPossible`); hochgeladen wird, was das Zertifikat abdeckt.
+6. **Ausführen** (`lib/setup/run.ts`): Gruppe `HAPM`, Zertifikat, Ziel `hapm`
    auf `127.0.0.1:<PORT>`, `publicUrl`. Jeder Schritt ist ein gewöhnlicher Lauf
    mit derselben Vorabprüfung wie in der Oberfläche und steht in der Historie.
+   **Bei „nur hochladen" stellt der Schritt das Zertifikat nicht aus**, er kann
+   es nicht. Er zeigt stattdessen, ob eins die Domain abdeckt
+   (`SetupView.presentCertificate`, nur dann gelesen, weil es ein
+   `acme.sh --list` kostet), und bietet das Hochladen an, mit demselben Dialog
+   wie die Zertifikatsseite. „Jetzt einrichten" ist gesperrt, bis eins da ist,
+   und der Schritt „Zertifikat ausstellen" scheitert mit derselben Auskunft,
+   falls jemand die Route direkt ruft.
 
 **Das Token liegt für die Dauer der Einrichtung beim Assistenten**
 (`SetupState.dnsAccess`, verschlüsselt wie die Tokens der Zonen). Der Grund ist

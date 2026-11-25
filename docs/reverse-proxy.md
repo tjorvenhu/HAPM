@@ -832,9 +832,15 @@ dort **jedes** Zertifikat über DNS-01, nicht nur die Wildcard.
 
 - **Die Regel steht an einer Stelle** (`lib/haproxy/challenge.ts`,
   `planChallenge`): DNS-01, wenn eine Wildcard dabei ist **oder** die
-  Installation intern ist, sonst HTTP-01. Sie ist rein, und
-  `tests/haproxy/challenge.test.ts` rechnet jede Kombination aus Art, Wildcard
-  und Zahl der Hooks nach.
+  Installation intern ist und kein eigener ACME-Server HAPM über Port 80
+  erreicht, sonst HTTP-01; bei „nur hochladen" nie ein Antrag. Sie ist rein, und
+  `tests/haproxy/challenge.test.ts` rechnet jede Kombination aus Art, Wildcard,
+  HTTP-Schalter, Herkunft und Zahl der Hooks nach.
+- **Was die Regel braucht, ist ein Wert** (`ChallengeChoice`: Art, Hook,
+  Herkunft der Zertifikate, ACME-Server, HTTP-Schalter). Die Routen bauen ihn mit
+  `challengeFor(settings, dnsHook)` aus den Einstellungen; der HTTP-Schalter
+  zählt dort nur mit eigenem Server (`challengeChoice`), damit ein Schalter, der
+  von früher noch an steht, Let's Encrypt nicht für erreichbar erklärt.
 - **`provision.ts` liest die Einstellungen nicht.** Die Art kommt als Parameter
   des Vorgangs herein (`ChallengeChoice`: `exposure` und der gewählte Hook),
   aufgelöst in den Routen, weitergereicht vom Runner. Mitten in einem Vorgang,
@@ -850,7 +856,16 @@ dort **jedes** Zertifikat über DNS-01, nicht nur die Wildcard.
   `/api/internal/haproxy/services` wie für die Oberfläche.
 - **Ohne Hook sagt die Vorabprüfung, was fehlt**: bei einer internen
   Installation, dass sie intern ist und unter Reverse-Proxy, Einstellungen die
-  DNS-Zugangsdaten fehlen. Eine Meldung über Wildcards wäre dort falsch.
+  DNS-Zugangsdaten fehlen, und welche Wege ohne sie bleiben (eigener
+  ACME-Server über Port 80, hochgeladenes Zertifikat). Eine Meldung über
+  Wildcards wäre dort falsch.
+- **Erst wenn kein Antrag ginge, wird nachgesehen, ob schon eins daliegt**
+  (`assertIssuable`). Eine Wildcard von früher oder ein hochgeladenes
+  Zertifikat ist dann der Unterschied zwischen „geht" und „geht nicht". Vorher
+  nachzusehen kostete in jeder Vorabprüfung ein `acme.sh --list`, und
+  `issueAndDeploy` sieht vor dem Antrag ohnehin nach. Der Dialog weiß es aus
+  `presentCertificates` (die Domains jeder gültigen PEM-Datei, ohne
+  `acme.sh --list`, `readPemCoverage`) und verlangt dann keinen Hook.
 - **Das Formular zeigt die Auswahl nur, wenn es etwas zu wählen gibt.** Ohne
   Wildcard steht in einer internen Installation ein Satz („das Zertifikat wird
   über DNS ausgestellt") und die Auswahl erst ab zwei Hooks. Sonst ginge sie bei
@@ -897,13 +912,144 @@ beantragen.
 - Eine eigene Route dafür gibt es nicht. Aufgerufen wird es aus der Einrichtung
   (`lib/setup/run.ts`).
 
+### Hochgeladene Zertifikate: `lib/haproxy/cert-upload.ts`
+
+Nicht jede Installation kann über ACME ausstellen: eine interne ohne
+DNS-Anbieter mit API erreicht Let's Encrypt weder über HTTP noch über DNS, und
+manche Netze haben eine eigene CA ohne ACME. Dann bringt der Betreiber das
+Zertifikat mit, auf der Zertifikatsseite (`POST /api/haproxy/certificates`) oder
+im letzten Schritt des Assistenten.
+
+- **Die Platte ist die Wahrheit, auch hier.** Ein hochgeladenes Zertifikat ist
+  eine PEM-Datei in `/etc/haproxy/certs`, die acme.sh nicht führt
+  (`uploadedCertificates`: alles außer dem Platzhalter und den Dateien, die
+  `pemFileName` für ein ausgestelltes Zertifikat von acme.sh ergibt). Keine
+  Collection, aus demselben Grund wie bei `haproxy.cfg`. Die Folge: eine Datei,
+  die jemand von Hand dorthin gelegt hat, zählt als hochgeladen. Sie verhält sich
+  genauso (niemand erneuert sie, ersetzt und entfernt wird sie auf der Seite),
+  und eine eigene Markierung wäre eine zweite Quelle.
+- **Gelesen wird je Datei nur das erste Zertifikat** (`certListingCommand`,
+  `awk` hört nach dem ersten Block auf). Der Schlüssel verlässt die Datei beim
+  Auflisten nie.
+- **Geprüft wird vor dem Schreiben, mit node:crypto** (`inspectUpload`):
+  lesbar, nicht verschlüsselt (HAProxy fragt nach keinem Passwort), Schlüssel
+  passt (`checkPrivateKey`), das Zertifikat davor hat das der Domain ausgestellt
+  (`checkIssued`), gültig ab jetzt und nicht abgelaufen, Namen aus den SANs
+  (der CN nur ohne SANs). Erst nach dem Neuladen zu merken, dass der Schlüssel
+  nicht passt, hieße ein `haproxy -c`, das an der ganzen Konfiguration
+  scheitert statt an diesem Zertifikat. Geschrieben wird eine normalisierte
+  Datei: Zertifikat, Kette, Schlüssel als PKCS#8. Das Zertifikat zum Schlüssel
+  kommt nach vorn, HAProxy liest das erste als das der Domain. Der Schlüssel darf
+  auch im Feld des Zertifikats stehen (eine fertige PEM-Datei für HAProxy).
+- **Der Name folgt `pemFileName`**: die Hauptdomain (der CN, wenn er unter den
+  SANs ist, sonst der erste SAN), der Stern wird zum Unterstrich.
+- **Synchron und ohne Lauf** (`uploadCertificate`, `removeUploadedCertificate`).
+  Es wird nichts beantragt, der Vorgang dauert Sekunden. Der eigentliche Grund
+  ist der Schlüssel: ein Lauf trägt seine Angaben in `haproxy_runs`, bis er
+  startet; der Schlüssel stünde in der Datenbank. So geht er aus der Anfrage
+  über stdin in die Datei (`withStdin`, `umask 077`, danach `chmod 600`) und
+  nirgends sonst hin. Im Protokoll stehen Datei, Domains, Ablauf und
+  Aussteller.
+- **Dieselben Riegel wie an `haproxy.cfg`**: der Lock, die bisherige Datei als
+  Rückweg, `haproxy -c` vor dem Neuladen, und scheitert eins davon, kommt der
+  alte Stand zurück. **Die Zwischendateien liegen in `/etc/haproxy`, nicht in
+  `/etc/haproxy/certs`**: HAProxy lädt das Verzeichnis als Ganzes, jede Datei
+  darin wäre beim nächsten Neuladen ein Zertifikat. Scheitert auch der
+  Rückweg, bleiben die Sicherungen (`hapm-upload*.hapm-previous`) liegen.
+- **Ersetzen nur ausdrücklich** (`replace`: der Dateiname der Zeile). Eine
+  vorhandene Datei gleichen Namens wird sonst nicht überschrieben. Was die
+  bisherige Datei für ein Ziel abgedeckt hat, muss das neue abdecken oder ein
+  anderes Zertifikat (`strandedServices`), sonst stünde das Ziel nach dem
+  Neuladen mit dem Platzhalter da. Abgelehnt wird auch ein Upload unter dem
+  Namen eines Zertifikats von acme.sh: die nächste Erneuerung schriebe darüber.
+- **Entfernen nur, wenn kein Ziel es braucht**, und „brauchen" heißt: eine
+  Domain eines Ziels deckte danach kein anderes Zertifikat ab. Strenger als
+  `certificateUsers`, weil es hier um einen Klick auf der Seite geht und nicht
+  um das Ende eines Dienstes.
+- **Ein Ziel nimmt sein hochgeladenes Zertifikat nicht mit.** `deleteService`
+  und der Wechsel der Hauptdomain in `updateService` lassen eine hochgeladene
+  Datei stehen und sagen es im Lauf. Vorher wurde eine PEM-Datei ohne Eintrag bei
+  acme.sh beim Löschen gelöscht: bei einem hochgeladenen Zertifikat wäre das ein
+  Verlust, den niemand von selbst wiederherstellt.
+- **`findCertificateFor` sieht nur gültige** (`uploadedCoverage`). Ein
+  abgelaufenes hochgeladenes Zertifikat deckt nichts ab, sonst beantragte HAPM
+  für die Domain nie wieder eins. Beantragt acme.sh dann eins mit derselben
+  Hauptdomain, schreibt der Deploy-Hook über die hochgeladene Datei; der Lauf
+  sagt das.
+- **Erinnerung vor dem Ablauf**: das Ereignis `certificate_expiring` meldet ein
+  hochgeladenes Zertifikat schon 30 Tage vorher (`UPLOAD_WARN_DAYS`, ACME: 14),
+  weil ein neues erst bei der CA beantragt werden muss. Übersicht und Seite
+  zeigen es ebenso.
+
+**„Nur hochladen" als Art der Installation** (`certificateSource: 'upload'`,
+unter „Allgemein" oder im Assistenten): HAPM beantragt dann nie selbst.
+`planChallenge` sagt für jede Domain „erst hochladen", und weil
+`assertIssuable` vorher nachsieht, geht ein Ziel genau dann, wenn ein
+vorhandenes Zertifikat es abdeckt. Der Dialog sagt das vor dem Speichern, mit
+dem Weg zur Zertifikatsseite. Was acme.sh schon führt, erneuert es weiter: die
+Erneuerung fragt diese Einstellung nicht.
+
+### Ein eigener ACME-Server: `lib/acme-server.ts`, `lib/certificate-settings.ts`
+
+Für die ganze Installation, nicht je Ziel: eine Directory-URL (etwa step-ca im
+eigenen Netz), wahlweise mit External Account Binding, und der Schalter „Dieser
+ACME-Server erreicht HAPM über HTTP (Port 80)". Eingestellt unter „Allgemein"
+oder im Assistenten (`PUT /api/settings/certificates`, `/api/setup/certificates`).
+
+- **Der Server geht als Wert in jeden Antrag** (`ChallengeChoice.acmeServer`,
+  `acme.sh --issue --server`). `acmeServer()` in `lib/acme.ts` ist nur noch die
+  Vorgabe (`HAPM_ACME_SERVER`, sonst Let's Encrypt); die Einstellung steht davor
+  (`effectiveAcmeServer`). `provision.ts` liest die Einstellungen weiter nicht.
+- **Die Adresse ist eng geprüft** (`validateAcmeDirectory`): nur `https://`,
+  nur `[A-Za-z0-9._~:/-]`. Nicht wegen der Kommandozeile (das macht
+  `buildCommand` sicher), sondern weil acme.sh sie als `Le_API='…'` in den
+  Erneuerungseintrag jedes Zertifikats schreibt und bei jeder Erneuerung mit
+  `eval` liest. Ein Apostroph bräche nicht heute, sondern beim ersten
+  Erneuerungslauf.
+- **Gespeichert wird erst, wenn acme.sh ein Konto bei ihm hat**
+  (`registerAcmeAccount`). Eine falsche Adresse, ein Zertifikat des Servers, dem
+  acme.sh nicht vertraut, oder ein abgelehnter EAB-Schlüssel fallen beim
+  Speichern auf und nicht beim ersten Ziel in einem Lauf. Das ist der
+  Rückabgleich dieser Einstellung.
+- **EAB: HAPM ist Durchreiche und nicht Tresor**, wie bei den
+  DNS-Zugangsdaten. Gebraucht werden Key-ID und HMAC-Schlüssel genau einmal, bei
+  der Anmeldung; acme.sh legt sie danach selbst in der `ca.conf` dieses Servers
+  ab. In der Datenbank und im Protokoll steht keins von beiden, zurück an den
+  Browser geht nichts. **Der Schlüssel steht in keiner Kommandozeile**:
+  `registerAccountScript` liest die Werte von stdin, setzt sie als Argumente
+  und liest acme.sh mit `.` ein, statt es aufzurufen (acme.sh endet mit
+  `main "$@"`). Ein Aufruf `acme.sh --eab-hmac-key …` stünde in `ps`.
+  `tests/acme-server.test.ts` lässt eine echte Shell das mit einem falschen
+  acme.sh nachrechnen. Nicht zu verhindern ist, was acme.sh selbst tut: es
+  rechnet die Signatur mit `openssl dgst -mac HMAC -macopt hexkey:…` und gibt den
+  Schlüssel dafür für einen Augenblick als Argument an openssl. Der Container
+  gehört HAPM allein; wer dort `ps` lesen kann, ist ohnehin root.
+- **Der HTTP-Schalter** gilt nur mit eigenem Server und nur intern: öffentlich
+  ist HTTP-01 ohnehin der Weg. Typisch ist eine CA im selben Netz, die HAPM über
+  Port 80 erreicht wie Let's Encrypt einen öffentlichen Server. Wildcards gehen
+  auch dann nur über DNS-01 (RFC 8555).
+- **Ein Wechsel ändert nur künftige Anträge.** acme.sh merkt sich den Server je
+  Zertifikat (`Le_API` im Erneuerungseintrag) und erneuert dort, auch wenn die
+  Einstellung längst auf einen anderen zeigt. Wer alle Zertifikate beim neuen
+  Server will, muss sie neu ausstellen lassen; einen Knopf dafür gibt es nicht.
+  Sonst laufen die alten beim bisherigen Server weiter, solange er erreichbar
+  ist. Ist der alte Server weg, scheitert deren Erneuerung, und
+  das Ereignis `certificate_renewal_failed` meldet es. Das steht auch auf der
+  Seite „Allgemein" neben dem Schalter.
+- **Vertrauen in die eigene CA** ist Sache des Abbilds: acme.sh spricht die
+  Directory-URL über HTTPS an, mit den Zertifikaten, denen der HAPM-Container
+  vertraut. Eine CA, deren Wurzel dort fehlt, scheitert bei der Anmeldung mit
+  der Meldung von curl.
+
 ### Die Zertifikatsseite: `/reverse-proxy/zertifikate`
 
-Was acme.sh führt, mit den abgedeckten Domains, dem
-Erneuerungstermin und den Diensten, die es benutzen. **Nur lesend.** Ein
-Zertifikat entsteht und vergeht mit einem Dienst; es hier einzeln zu löschen
-hieße, dem Reverse-Proxy das PEM unter einer laufenden Domain wegzuziehen — und
-das fiele beim nächsten Start von HAProxy auf, nicht heute.
+Was acme.sh führt und was hochgeladen ist, mit den abgedeckten Domains, dem
+Erneuerungstermin oder Ablauf und den Diensten, die es benutzen. **Was acme.sh
+führt, ist nur lesend.** Ein solches Zertifikat entsteht und vergeht mit einem
+Dienst; es hier einzeln zu löschen hieße, dem Reverse-Proxy das PEM unter einer
+laufenden Domain wegzuziehen, und das fiele beim nächsten Start von HAProxy auf,
+nicht heute. **Hochgeladene entstehen dagegen nur hier**, also werden sie hier
+hochgeladen, ersetzt und entfernt (siehe „Hochgeladene Zertifikate").
 
 Die Spalte, für die es die Seite gibt, ist „Benutzt von": leer heißt, das
 Zertifikat ist entweder von Hand ausgestellt oder von einem gelöschten Dienst

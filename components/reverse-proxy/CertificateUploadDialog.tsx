@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState, type FormEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { FileUp, Upload, X } from 'lucide-react';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import { useT } from '@/lib/i18n/react';
@@ -71,7 +72,9 @@ export default function CertificateUploadDialog({ replace, expected, onUpload, o
     }
   }
 
-  return (
+  // An `document.body`: im Assistenten steht der Dialog in einer Karte mit
+  // `transform`, und darin wäre `position: fixed` an die Karte gebunden statt an das Fenster.
+  return createPortal(
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && !saving && onClose()}>
       <form className="modal" onSubmit={submit}>
         <div className="modal-header">
@@ -179,6 +182,7 @@ export default function CertificateUploadDialog({ replace, expected, onUpload, o
           </button>
         </div>
       </form>
-    </div>
+    </div>,
+    document.body
   );
 }
