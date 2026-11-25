@@ -160,8 +160,12 @@ function call(opts: {
     const req = request(
       { host: '127.0.0.1', port: PORT, path: opts.path ?? '/', method: opts.method ?? (body ? 'POST' : 'GET'), headers },
       (res) => {
+        // Als UTF-8-Strom lesen: ein Block für sich dekodiert zerschnitte ein
+        // Zeichen aus zwei Bytes (ü), das an der Grenze zweier Blöcke liegt, und
+        // der Vergleich Byte für Byte schlüge je nach Stückelung fehl.
+        res.setEncoding('utf8');
         let data = '';
-        res.on('data', (chunk) => (data += chunk));
+        res.on('data', (chunk: string) => (data += chunk));
         res.on('end', () =>
           resolve({
             status: res.statusCode ?? 0,

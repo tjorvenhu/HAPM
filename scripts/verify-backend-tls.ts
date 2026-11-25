@@ -121,8 +121,10 @@ interface Reply {
 function call(host: string, path = '/'): Promise<Reply> {
   return new Promise((resolve, reject) => {
     const req = request({ host: '127.0.0.1', port: PORT, path, headers: { Host: host } }, (res) => {
+      // Als UTF-8-Strom lesen, siehe verify-proxy-pages.ts.
+      res.setEncoding('utf8');
       let data = '';
-      res.on('data', (chunk) => (data += chunk));
+      res.on('data', (chunk: string) => (data += chunk));
       res.on('end', () => resolve({ status: res.statusCode ?? 0, body: data }));
     });
     req.on('error', reject);
