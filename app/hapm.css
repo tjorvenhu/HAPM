@@ -500,3 +500,9 @@
 
 /* Ein Reiter mit Änderungen, die noch nicht gespeichert sind. */
 .hapm-tab-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--warning); }
+
+/* Im Abschluss des Umzugs: ein Schritt, der noch läuft oder scheiterte (das alte Ziel). */
+.hapm-done-check.is-running { background: var(--surface-muted); color: var(--accent); }
+
+.hapm-done-check.is-failed { background: var(--danger); }
+

@@ -566,8 +566,6 @@ export const system: Dictionary = {
   "Neue Zertifikate prüft Let's Encrypt über Port 80. Der DNS-Anbieter wird nur für Wildcards gebraucht.":
     "Let's Encrypt validates new certificates over port 80. The DNS provider is only needed for wildcards.",
   'Adresse von HAPM entfernen?': 'Remove the HAPM address?',
-  'Passkeys sind an die Domain gebunden. Mit den bisher hinterlegten ist danach keine Anmeldung mehr möglich. Links in schon verschickten Mails zeigen weiter auf die alte Adresse. Das Ziel, über das die bisherige Adresse läuft, lässt sich danach wieder entfernen: geschützt ist immer das Ziel der aktuellen Adresse.':
-    'Passkeys are bound to the domain. The passkeys added so far can no longer be used to sign in. Links in emails already sent still point to the old address. The target that serves the old address can be removed afterward: only the target of the current address is protected.',
   'Adresse ändern': 'Change address',
   'Adresse entfernen': 'Remove address',
   'HAPM gilt als erreichbar unter {url}.': 'HAPM is now considered reachable at {url}.',
@@ -581,7 +579,6 @@ export const system: Dictionary = {
   'Umstellen': 'Switch',
   'Die Art der Installation ist umgestellt. Sie gilt für neue Zertifikate.': 'The installation type is changed. It applies to new certificates.',
   'Sie steht in den Links der Mails, und an ihre Domain werden Passkeys gebunden.': 'It is used in the links in emails, and passkeys are bound to its domain.',
-  'Eine spätere Änderung der Domain entwertet alle hinterlegten Passkeys.': 'Changing the domain later invalidates all added passkeys.',
   'Art der Installation': 'Installation type',
   'Sie bestimmt, wie neue Zertifikate ausgestellt werden.': 'It determines how new certificates are issued.',
   'Bestehende Zertifikate behalten ihre Methode, auch bei der Erneuerung.': 'Existing certificates keep their method, including on renewal.',
@@ -757,8 +754,6 @@ export const system: Dictionary = {
     'HAPM has moved',
   'HAPM kann den Eintrag bei {provider} anlegen':
     'HAPM can create the record at {provider}',
-  'HAPM legt dann weder Zertifikat noch Ziel an und lässt das alte Ziel stehen. Das passt, wenn HAPM hinter einem anderen Reverse-Proxy steht. Passkeys der bisherigen Adresse gelten danach nicht mehr.':
-    'HAPM then creates neither certificate nor target and keeps the old target. That fits when HAPM runs behind another reverse proxy. Passkeys of the previous address no longer work afterwards.',
   'HAPM legt in der Zone {zone} den Eintrag {domain} → {address} an.':
     'HAPM creates the record {domain} → {address} in the zone {zone}.',
   'HAPM stellt das Zertifikat aus und legt das Ziel an.':
@@ -775,8 +770,6 @@ export const system: Dictionary = {
     'Only enter the address?',
   'Nur eintragen':
     'Only enter',
-  'Passkeys sind an die Domain gebunden. Mit den bisher hinterlegten ist danach keine Anmeldung mehr möglich.':
-    'Passkeys are bound to the domain. The ones stored so far can no longer be used to sign in afterwards.',
   'Umzug abgeschlossen':
     'Move completed',
   'Umzug starten':
@@ -808,4 +801,20 @@ export const system: Dictionary = {
   '{domain} liegt in keiner Zone, die unter DNS eingerichtet ist.':
     '{domain} is not in any zone set up under DNS.',
   'Adresse von HAPM einrichten': 'Set up the HAPM address',
+  'Alle hinterlegten Passkeys werden gelöscht, sie sind an die Domain gebunden. Links in schon verschickten Mails zeigen weiter auf die alte Adresse. Das Ziel, über das die bisherige Adresse läuft, lässt sich danach wieder entfernen: geschützt ist immer das Ziel der aktuellen Adresse.':
+    'All stored passkeys are deleted, they are bound to the domain. Links in mails already sent keep pointing to the old address. The target serving the previous address can be removed afterwards: protected is always the target of the current address.',
+  'Eine Änderung der Domain löscht alle hinterlegten Passkeys.':
+    'Changing the domain deletes all stored passkeys.',
+  'HAPM legt dann weder Zertifikat noch Ziel an und lässt das alte Ziel stehen. Das passt, wenn HAPM hinter einem anderen Reverse-Proxy steht. Alle hinterlegten Passkeys werden gelöscht.':
+    'HAPM then creates neither certificate nor target and keeps the old target. That fits when HAPM runs behind another reverse proxy. All stored passkeys are deleted.',
+  'Alle hinterlegten Passkeys werden dabei gelöscht. Sie sind an die bisherige Domain gebunden und melden unter der neuen niemanden an.':
+    'All stored passkeys are deleted in the process. They are bound to the previous domain and sign nobody in under the new one.',
+  'Diese Adresse antwortet gerade nicht, etwa weil HAProxy neu lädt. Der Umzug läuft auf dem Server weiter, und unter der neuen Adresse ist HAPM schon erreichbar.':
+    'This address is not responding right now, for example because HAProxy is reloading. The move continues on the server, and HAPM is already reachable at the new address.',
+  'Diese Adresse antwortet gerade nicht, etwa weil HAProxy neu lädt. Der Umzug läuft auf dem Server weiter, die Anzeige holt auf, sobald sie wieder antwortet.':
+    'This address is not responding right now, for example because HAProxy is reloading. The move continues on the server, and the display catches up as soon as it responds again.',
+  'Neue Adresse öffnen':
+    'Open new address',
+  'Die Passkeys der bisherigen Adresse sind gelöscht. Neue legen Sie unter Konto an.':
+    'The passkeys of the previous address are deleted. Create new ones under Account.',
 };

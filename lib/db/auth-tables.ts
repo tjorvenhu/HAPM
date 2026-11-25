@@ -126,3 +126,15 @@ export async function countPasskeysByUser(db: Sql = sql()): Promise<Map<string, 
   `;
   return new Map(rows.map((row) => [row.user_id, row.count]));
 }
+
+/**
+ * Alle Passkeys löschen. Ein Passkey ist an die Domain gebunden, unter der er
+ * entstand; nach einem Wechsel der Adresse von HAPM meldet er niemanden mehr an
+ * und stünde nur noch als Eintrag ohne Wirkung unter „Konto". Gerufen von
+ * `updateSettings`, sobald sich der Host der Adresse ändert.
+ */
+export async function deleteAllPasskeys(db: Sql = sql()): Promise<number> {
+  const result = await db`delete from auth_passkeys`;
+  return result.count;
+}
+

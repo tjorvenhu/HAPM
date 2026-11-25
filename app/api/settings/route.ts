@@ -2,7 +2,7 @@ import { requireCsrf, requireSession } from '@/lib/session';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
 import { msg } from '@/lib/i18n';
 import { logAudit, getClientIP } from '@/lib/audit';
-import { getSettings, readSmtpInput, settingsView as view, updateSettings, type SettingsInput } from '@/lib/settings';
+import { getSettings, passkeysDroppedBy, readSmtpInput, settingsView as view, updateSettings, type SettingsInput } from '@/lib/settings';
 import { ensureAcme } from '@/lib/acme';
 import {
   NOTIFICATION_EVENT_TYPES,
@@ -122,6 +122,8 @@ export async function PATCH(request: Request) {
     const before = await getSettings();
     const after = await updateSettings(input);
     const changes = describeChanges(before, after, Object.keys(input) as (keyof SettingsInput)[]);
+    // `updateSettings` hat sie gelöscht: an die alte Domain gebunden, melden sie niemanden mehr an.
+    if (passkeysDroppedBy(before, after)) changes.push('alle Passkeys gelöscht');
 
     // acme.sh führt die Adresse selbst, im Konto bei der Zertifizierungsstelle. Dort muss sie ankommen.
     let acme: { ok: boolean; detail: string } | null = null;

@@ -34,7 +34,7 @@ import { logAudit } from '../audit';
 import { createDocument, getDocument, updateDocument } from '../db';
 import { COLLECTIONS, type AddressMoveStage, type AddressMoveStageKey, type AddressMoveState, type CertificateSource, type Exposure, type HaproxyRun } from '../types';
 import { localServer } from '../helpers';
-import { challengeFor, getSettings, updateSettings } from '../settings';
+import { challengeFor, getSettings, passkeysDroppedBy, updateSettings } from '../settings';
 import { checkDomainAddress, serverAddresses, type AddressCheck } from '../setup/address';
 import { SETUP_SCOPE, SETUP_SERVICE_ID, hapmServiceInput, listenPort, normalizeSetupDomain, validateSetupDomain } from '../setup/rules';
 import { needsDnsChallenge, type ChallengeChoice } from '../haproxy/challenge';
@@ -345,16 +345,19 @@ const STAGES: Record<AddressMoveStageKey, (context: StageContext) => Promise<str
   },
 
   async publicUrl(context) {
+    const before = await getSettings();
     const settings = await updateSettings({ publicUrl: `https://${context.domain}` });
+    // Gelöscht hat sie `updateSettings`: an die alte Domain gebunden, melden sie niemanden mehr an.
+    const dropped = passkeysDroppedBy(before, settings);
     await logAudit({
       userId: context.actor.userId,
       userEmail: context.actor.email,
       action: 'settings_updated',
       resource: 'settings',
-      details: `Adresse von HAPM: ${context.previousUrl ?? ''} → ${settings.publicUrl ?? ''}`,
+      details: `Adresse von HAPM: ${context.previousUrl ?? ''} → ${settings.publicUrl ?? ''}${dropped ? ', alle Passkeys gelöscht' : ''}`,
       ip: context.actor.ip ?? undefined,
     });
-    return `${settings.publicUrl}`;
+    return dropped ? `${settings.publicUrl}, alle Passkeys gelöscht.` : `${settings.publicUrl}`;
   },
 
   async cleanup(context) {

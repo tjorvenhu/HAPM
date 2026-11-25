@@ -39,6 +39,17 @@ const STEP_INDEX: Record<Step, number> = { address: 0, check: 1, move: 2 };
 
 const PROVIDER_LABELS: Record<string, string> = { cloudflare: 'Cloudflare', hetzner: 'Hetzner' };
 
+/** Eine Abfrage, die länger hängt, gilt als gescheitert. */
+const POLL_TIMEOUT_MS = 6000;
+/** So viele Fehlschläge in Folge, dann sagt das Fenster, dass die Verbindung hakt. */
+const STALL_AFTER = 3;
+/** Nach so vielen gibt es den Weg zur neuen Adresse auch ohne bekannten Stand: etwa eine Minute. */
+const GIVE_WAY_AFTER = 8;
+
+function stageDone(view: AddressMoveView, key: AddressMoveStage['key']): boolean {
+  return (view.move?.stages ?? []).some((stage) => stage.key === key && stage.status === 'ok');
+}
+
 /** Die Striche um die Kachel des Abschlusses, wie in der Einrichtung. */
 const RAYS = [
   { angle: -60, delay: 0 },
@@ -121,7 +132,7 @@ export default function AddressMoveWizard({
     const ok = await confirm({
       title: t('Nur die Adresse eintragen?'),
       message: t(
-        'HAPM legt dann weder Zertifikat noch Ziel an und lässt das alte Ziel stehen. Das passt, wenn HAPM hinter einem anderen Reverse-Proxy steht. Passkeys der bisherigen Adresse gelten danach nicht mehr.'
+        'HAPM legt dann weder Zertifikat noch Ziel an und lässt das alte Ziel stehen. Das passt, wenn HAPM hinter einem anderen Reverse-Proxy steht. Alle hinterlegten Passkeys werden gelöscht.'
       ),
       confirmLabel: t('Nur eintragen'),
     });
@@ -217,27 +228,57 @@ export default function AddressMoveWizard({
     viewRef.current = view;
   }, [view]);
 
+  /*
+   * Das Pollen läuft über die alte Adresse, und die geht durch jedes Neuladen
+   * von HAProxy (Zertifikat, neues Ziel). Eine Anfrage, die dabei hängen
+   * bleibt, darf die Anzeige nicht anhalten: jede bekommt ein Zeitlimit, und
+   * eine neue geht erst los, wenn die alte fertig ist. Mehrere Fehlschläge in
+   * Folge heißen „Verbindung hakt“, nicht „Umzug gescheitert“: der Umzug läuft
+   * auf dem Server weiter.
+   */
+  const failures = useRef(0);
+  const inFlight = useRef(false);
+  const [stalled, setStalled] = useState(false);
+  const [longStall, setLongStall] = useState(false);
+
   useEffect(() => {
     if (step !== 'move' || outcome !== 'running' || lostContact) return;
-    const timer = setInterval(async () => {
+    const tick = async () => {
+      if (inFlight.current) return;
+      inFlight.current = true;
+      const controller = new AbortController();
+      const limit = setTimeout(() => controller.abort(), POLL_TIMEOUT_MS);
       try {
-        const res = await apiFetch('/api/settings/address', { cache: 'no-store' });
+        const res = await apiFetch('/api/settings/address', { cache: 'no-store', signal: controller.signal });
         const body = await res.json();
         if (!body.success) throw new Error(body.error);
+        failures.current = 0;
+        setStalled(false);
+        setLongStall(false);
         setView(body.data as AddressMoveView);
       } catch {
-        // Erst nach dem Umstellen der Adresse ist das der erwartete Abschluss:
-        // das alte Ziel ist weg, und mit ihm diese Seite.
-        const stages = viewRef.current.move?.stages ?? [];
-        if (stages.some((stage) => stage.key === 'publicUrl' && stage.status === 'ok')) setLostContact(true);
+        failures.current += 1;
+        // Nach dem Umstellen der Adresse ist das der erwartete Abschluss: das
+        // alte Ziel ist weg, und mit ihm diese Seite.
+        if (stageDone(viewRef.current, 'publicUrl')) setLostContact(true);
+        else if (failures.current >= STALL_AFTER) {
+          setStalled(true);
+          if (failures.current >= GIVE_WAY_AFTER) setLongStall(true);
+        }
+      } finally {
+        clearTimeout(limit);
+        inFlight.current = false;
       }
-    }, 2000);
+    };
+    const timer = setInterval(() => void tick(), 2000);
     return () => clearInterval(timer);
   }, [apiFetch, step, outcome, lostContact]);
 
   const moved = view.move?.domain ?? domain;
   const newUrl = `https://${moved}`;
-  const done = step === 'move' && (outcome === 'succeeded' || lostContact);
+  // Fertig für den Benutzer, sobald die neue Adresse gilt: das Entfernen des
+  // alten Ziels läuft im Abschluss weiter und zeigt dort seinen Stand.
+  const done = step === 'move' && (outcome === 'succeeded' || lostContact || stageDone(view, 'publicUrl'));
 
   /* ── Darstellung ── */
 
@@ -256,7 +297,12 @@ export default function AddressMoveWizard({
         </div>
 
         {done ? (
-          <Done url={newUrl} stages={view.move?.stages ?? []} lostContact={lostContact} />
+          <Done
+            url={newUrl}
+            stages={view.move?.stages ?? []}
+            lostContact={lostContact}
+            passkeysGone={Boolean(view.move?.previousUrl)}
+          />
         ) : (
           <>
             <div className="modal-body">
@@ -289,7 +335,7 @@ export default function AddressMoveWizard({
                   />
                   {currentUrl && (
                     <div className="alert alert-warning">
-                      <span>{t('Passkeys sind an die Domain gebunden. Mit den bisher hinterlegten ist danach keine Anmeldung mehr möglich.')}</span>
+                      <span>{t('Alle hinterlegten Passkeys werden dabei gelöscht. Sie sind an die bisherige Domain gebunden und melden unter der neuen niemanden an.')}</span>
                     </div>
                   )}
                   <button type="button" className="btn btn-ghost btn-sm hapm-move-aside" onClick={saveOnly} disabled={busy || !domain}>
@@ -384,6 +430,15 @@ export default function AddressMoveWizard({
                     </p>
                   </div>
                   <MoveStages stages={view.move?.stages ?? []} />
+                  {stalled && (
+                    <div className="alert alert-info">
+                      <span>
+                        {stageDone(view, 'service')
+                          ? t('Diese Adresse antwortet gerade nicht, etwa weil HAProxy neu lädt. Der Umzug läuft auf dem Server weiter, und unter der neuen Adresse ist HAPM schon erreichbar.')
+                          : t('Diese Adresse antwortet gerade nicht, etwa weil HAProxy neu lädt. Der Umzug läuft auf dem Server weiter, die Anzeige holt auf, sobald sie wieder antwortet.')}
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -415,9 +470,17 @@ export default function AddressMoveWizard({
                 </>
               )}
               {step === 'move' && outcome === 'running' && (
-                <button type="button" className="btn btn-secondary" onClick={onClose}>
-                  {t('Im Hintergrund weiterlaufen lassen')}
-                </button>
+                <>
+                  <button type="button" className="btn btn-secondary" onClick={onClose}>
+                    {t('Im Hintergrund weiterlaufen lassen')}
+                  </button>
+                  {stalled && (stageDone(view, 'service') || longStall) && (
+                    <a className="btn btn-primary" href={newUrl}>
+                      <ExternalLink size={16} />
+                      {t('Neue Adresse öffnen')}
+                    </a>
+                  )}
+                </>
               )}
               {step === 'move' && outcome === 'failed' && (
                 <>
@@ -549,10 +612,13 @@ function Done({
   url,
   stages,
   lostContact,
+  passkeysGone,
 }: {
   url: string;
   stages: AddressMoveStage[];
   lostContact: boolean;
+  /** Es gab eine Adresse davor: ihre Passkeys hat das Umstellen gelöscht. */
+  passkeysGone: boolean;
 }) {
   const { t } = useT();
   return (
@@ -573,14 +639,27 @@ function Done({
       </div>
 
       <ul className="hapm-done-steps">
-        {stages.map((stage, index) => (
-          <li key={stage.key} style={{ '--i': index } as CSSProperties}>
-            <span className="hapm-done-check">
-              <Check size={13} strokeWidth={3} />
-            </span>
-            {t(MOVE_STAGE_LABELS[stage.key])}
-          </li>
-        ))}
+        {stages.map((stage, index) => {
+          // Antwortet die alte Adresse nicht mehr, ist ihr Ziel weg: genau das tut der letzte Schritt.
+          const ok = stage.status === 'ok' || (lostContact && stage.status === 'running');
+          return (
+            <li key={stage.key} style={{ '--i': index } as CSSProperties}>
+              <span className={`hapm-done-check${ok ? '' : stage.status === 'error' ? ' is-failed' : ' is-running'}`}>
+                {ok ? (
+                  <Check size={13} strokeWidth={3} />
+                ) : stage.status === 'error' ? (
+                  <X size={13} strokeWidth={3} />
+                ) : (
+                  <Loader2 size={13} strokeWidth={3} className="spin" />
+                )}
+              </span>
+              <span className="hapm-step-text">
+                <span>{t(MOVE_STAGE_LABELS[stage.key])}</span>
+                {stage.status === 'error' && stage.detail && <span className="hapm-step-detail">{t(stage.detail)}</span>}
+              </span>
+            </li>
+          );
+        })}
       </ul>
 
       <div className="hapm-done-actions">
@@ -589,6 +668,11 @@ function Done({
           <span>{t('HAPM unter {url} öffnen', { url })}</span>
           <ArrowRight size={16} className="hapm-done-arrow" />
         </a>
+        {passkeysGone && (
+          <p className="form-hint hapm-move-done-hint">
+            {t('Die Passkeys der bisherigen Adresse sind gelöscht. Neue legen Sie unter Konto an.')}
+          </p>
+        )}
         {lostContact && (
           <p className="form-hint hapm-move-done-hint">
             {t('Die bisherige Adresse antwortet nicht mehr, ihr Ziel ist entfernt. Ob der letzte Schritt ganz durchgelaufen ist, steht unter der neuen Adresse in Allgemein.')}

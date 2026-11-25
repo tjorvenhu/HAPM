@@ -93,7 +93,7 @@ export default function GeneralSettingsPage() {
     const confirmed = await confirm({
       title: t('Adresse von HAPM entfernen?'),
       message: t(
-        'Passkeys sind an die Domain gebunden. Mit den bisher hinterlegten ist danach keine Anmeldung mehr möglich. Links in schon verschickten Mails zeigen weiter auf die alte Adresse. Das Ziel, über das die bisherige Adresse läuft, lässt sich danach wieder entfernen: geschützt ist immer das Ziel der aktuellen Adresse.'
+        'Alle hinterlegten Passkeys werden gelöscht, sie sind an die Domain gebunden. Links in schon verschickten Mails zeigen weiter auf die alte Adresse. Das Ziel, über das die bisherige Adresse läuft, lässt sich danach wieder entfernen: geschützt ist immer das Ziel der aktuellen Adresse.'
       ),
       confirmLabel: t('Adresse entfernen'),
       variant: 'danger',
@@ -258,7 +258,7 @@ export default function GeneralSettingsPage() {
 
           <div className="alert alert-warning">
             <AlertTriangle size={16} strokeWidth={1.5} />
-            <span>{t('Eine spätere Änderung der Domain entwertet alle hinterlegten Passkeys.')}</span>
+            <span>{t('Eine Änderung der Domain löscht alle hinterlegten Passkeys.')}</span>
           </div>
         </div>
       </div>

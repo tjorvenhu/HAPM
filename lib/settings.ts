@@ -1,4 +1,5 @@
 import { getSingleton, updateDocument } from './db';
+import { deleteAllPasskeys } from './db/auth-tables';
 import { ApiError } from './api';
 import { encrypt } from './crypto';
 import { validateEmail, validateHostname } from './validation';
@@ -389,9 +390,29 @@ export function challengeFor(
   return challengeChoice(settings, dnsHook, process.env.HAPM_ACME_SERVER);
 }
 
+/**
+ * Ob ein Wechsel der Adresse die Passkeys entwertet: sobald sich der Host
+ * ändert oder die Adresse wegfällt. Ein Passkey hängt an der Domain, nicht an
+ * Schema oder Port.
+ */
+export function passkeysDroppedBy(
+  before: Pick<Settings, 'publicUrl'>,
+  after: Pick<Settings, 'publicUrl'>
+): boolean {
+  const was = publicHost(before);
+  return was !== null && was !== publicHost(after);
+}
+
 export async function updateSettings(input: SettingsInput): Promise<Settings> {
   const current = await getSettings();
   const patch = settingsPatch(input, current, encrypt);
   await updateDocument<Settings>(COLLECTIONS.SETTINGS, SETTINGS_ID, patch);
-  return getSettings();
+  const next = await getSettings();
+  // Hier und nicht in den Routen: jeder Weg, der die Adresse ändert (Allgemein,
+  // Umzugsassistent, Einrichtung), nimmt die Passkeys mit.
+  if (passkeysDroppedBy(current, next)) {
+    const removed = await deleteAllPasskeys();
+    if (removed > 0) console.log(`[einstellungen] Adresse geändert, ${removed} Passkey(s) gelöscht.`);
+  }
+  return next;
 }

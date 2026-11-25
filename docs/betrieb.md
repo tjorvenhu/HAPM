@@ -364,6 +364,22 @@ entfernt; lief die alte Adresse über eine Wildcard, bleibt es stehen. Sein
 Zertifikat geht mit, wenn es niemand sonst braucht (wie beim Löschen eines
 Ziels).
 
+**Das Fenster fragt den Stand über die alte Adresse ab, und die geht durch
+jedes Neuladen von HAProxy** (Zertifikat, neues Ziel). Einmal blieb danach
+jede Abfrage ohne Antwort hängen, und die Anzeige stand auf „Zertifikat",
+während der Umzug auf dem Server durchlief. Deshalb hat jede Abfrage ein
+Zeitlimit (6 s), eine neue geht erst los, wenn die alte fertig ist, und drei
+Fehlschläge in Folge heißen „diese Adresse antwortet gerade nicht", nicht
+„gescheitert". Ist das neue Ziel schon da, oder hakt es länger als etwa eine
+Minute, bietet das Fenster „Neue Adresse öffnen" an. Der Abschluss erscheint,
+sobald die neue Adresse gilt; das Entfernen des alten Ziels zeigt er mit
+seinem Stand.
+
+**Passkeys:** Ändert sich der Host der Adresse oder fällt sie weg, löscht
+`updateSettings` alle Passkeys (`deleteAllPasskeys`). Sie hängen an der
+Domain und melden unter der neuen niemanden an. Das gilt für jeden Weg: den
+Assistenten, „Nur eintragen", „Adresse entfernen" und die Einrichtung.
+
 **Wer den Assistenten unter der alten Adresse offen hat, verliert sie mit dem
 letzten Schritt.** Bricht das Pollen ab, nachdem die neue Adresse gilt, zeigt
 das Fenster den Abschluss mit dem Hinweis, dass die alte nicht mehr antwortet.
