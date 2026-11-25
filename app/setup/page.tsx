@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState, type CSSProperties, type FormEvent, t
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { createPortal } from 'react-dom';
 import {
   ArrowLeft,
   ArrowRight,
@@ -12,7 +11,6 @@ import {
   Circle,
   Globe,
   Home,
-  KeyRound,
   Loader2,
   Play,
   RefreshCw,
@@ -25,7 +23,6 @@ import {
   X,
 } from 'lucide-react';
 import { AuthCard } from '@/ui/auth/AuthCard';
-import TwoFactorSetup from '@/ui/auth/TwoFactorSetup';
 import { SetupStepper } from './SetupStepper';
 import { SetupSuccess } from './SetupSuccess';
 import { InfoHint } from '@/ui/primitives/InfoHint';
@@ -119,8 +116,6 @@ export default function SetupPage() {
   const [csrf, setCsrf] = useState('');
   /** In welche Richtung der nächste Schritt hereingleitet. */
   const [motion, setMotion] = useState<'forward' | 'back'>('forward');
-  /** Gesetzt, sobald das Konto steht: dann folgt noch das Angebot des zweiten Faktors. */
-  const [afterAccount, setAfterAccount] = useState<SetupView | null>(null);
 
   /** Den Stand übernehmen und beim nächsten offenen Schritt weitermachen. */
   const advance = useCallback(
@@ -187,24 +182,30 @@ export default function SetupPage() {
     <SetupStepper labels={SETUP_STEPS.map((step) => t(STEP_LABELS[step]))} current={index} />
   );
 
-  const back = (to: Shown) => (
-    <button
-      className="btn btn-secondary hapm-setup-back"
-      type="button"
-      onClick={() => {
-        setMotion('back');
-        setShown(to);
-      }}
-    >
-      <ArrowLeft size={15} />
-      {t('Zurück')}
-    </button>
+  // „Später“ führt zur Übersicht, die Einrichtung bleibt offen und die
+  // Übersicht erinnert daran. Er steht als Knopf neben „Zurück“, unter dem
+  // Hauptknopf; ein Textlink darunter kostete eine Zeile mehr.
+  const later = (
+    <Link className="btn btn-secondary hapm-setup-later" href="/dashboard">
+      {t('Später')}
+    </Link>
   );
 
-  const later = (
-    <p className="auth-footer">
-      <Link href="/dashboard">{t('Später fertig machen')}</Link>
-    </p>
+  const back = (to: Shown) => (
+    <>
+      <button
+        className="btn btn-secondary hapm-setup-back"
+        type="button"
+        onClick={() => {
+          setMotion('back');
+          setShown(to);
+        }}
+      >
+        <ArrowLeft size={15} />
+        {t('Zurück')}
+      </button>
+      {later}
+    </>
   );
 
   // Bei „nur hochladen" stellt acme.sh ohnehin nichts aus.
@@ -214,23 +215,6 @@ export default function SetupPage() {
     </div>
   );
 
-  // Nach dem Konto, noch in Schritt 1: der zweite Faktor, auf Wunsch. Kein
-  // eigener Schritt, weil er freiwillig ist und später unter „Konto“ geht. Ein
-  // Neuladen landet deshalb beim nächsten Schritt und nicht wieder hier.
-  if (shown === 'account' && afterAccount) {
-    return (
-      <Frame
-        step={shown}
-        title={t('Konto absichern')}
-        motion={motion}
-        progress={progress}
-        subtitle={t('Das Konto ist angelegt. Schützen Sie es mit einem zweiten Faktor.')}
-      >
-        <SecurityStep csrf={csrf} onDone={() => advance(afterAccount)} />
-      </Frame>
-    );
-  }
-
   if (shown === 'account') {
     return (
       <Frame step={shown} motion={motion} progress={progress} subtitle={t('Legen Sie zuerst das Konto an, mit dem Sie HAPM verwalten.')}>
@@ -238,12 +222,7 @@ export default function SetupPage() {
           onCreated={(token) => {
             setCsrf(token);
             call<{ setup?: SetupView }>(token, '/api/setup')
-              .then((data) => {
-                if (!data.setup) return router.replace('/login');
-                setSetup(data.setup);
-                setMotion('forward');
-                setAfterAccount(data.setup);
-              })
+              .then((data) => (data.setup ? advance(data.setup) : router.replace('/login')))
               .catch(() => router.replace('/login'));
           }}
           onNoSession={() => router.replace('/login')}
@@ -258,8 +237,7 @@ export default function SetupPage() {
     return (
       <Frame step={shown} motion={motion} progress={progress} subtitle={t('Davon hängt ab, wie HAPM Zertifikate ausstellt.')}>
         {acmeWarning}
-        <ExposureStep setup={setup} csrf={csrf} onSaved={advance} />
-        {later}
+        <ExposureStep setup={setup} csrf={csrf} onSaved={advance} later={later} />
       </Frame>
     );
   }
@@ -274,7 +252,6 @@ export default function SetupPage() {
       >
         {acmeWarning}
         <DnsStep setup={setup} csrf={csrf} onSaved={advance} back={back('exposure')} />
-        {later}
       </Frame>
     );
   }
@@ -283,7 +260,6 @@ export default function SetupPage() {
     return (
       <Frame step={shown} motion={motion} progress={progress} subtitle={t('Woher HAPM die Zertifikate für Ihre Domains bekommt.')}>
         <CertificatesStep setup={setup} csrf={csrf} onSaved={advance} back={back('dns')} />
-        {later}
       </Frame>
     );
   }
@@ -292,7 +268,6 @@ export default function SetupPage() {
     return (
       <Frame step={shown} motion={motion} progress={progress} subtitle={t('Unter dieser Domain ist HAPM danach per HTTPS erreichbar.')}>
         <AddressStep setup={setup} csrf={csrf} onSaved={advance} back={back('certificates')} />
-        {later}
       </Frame>
     );
   }
@@ -466,72 +441,6 @@ function AccountStep({
   );
 }
 
-/* ── Schritt 1, zweiter Teil: Konto absichern ── */
-
-function SecurityStep({ csrf, onDone }: { csrf: string; onDone: () => void }) {
-  const { t } = useT();
-  const [open, setOpen] = useState(false);
-  const [enabled, setEnabled] = useState(false);
-
-  return (
-    <>
-      <div className={enabled ? 'hapm-security-card is-done' : 'hapm-security-card'}>
-        <span className="hapm-security-icon">{enabled ? <Check size={20} strokeWidth={2.5} /> : <ShieldCheck size={20} />}</span>
-        <span className="hapm-security-text">
-          <strong>{enabled ? t('Der zweite Faktor ist eingerichtet') : t('Zweiter Faktor')}</strong>
-          <span>
-            {enabled
-              ? t('Bei jeder Anmeldung fragt HAPM nach dem Passwort einen Code aus Ihrer App.')
-              : t('Ein Code aus einer Authenticator-App zusätzlich zum Passwort.')}
-          </span>
-        </span>
-        {!enabled && (
-          <button className="btn btn-secondary" type="button" onClick={() => setOpen(true)}>
-            {t('Jetzt einrichten')}
-          </button>
-        )}
-      </div>
-
-      <div className="form-note">
-        <KeyRound size={14} />
-        <span>
-          {t('Passkeys richten Sie nach der Einrichtung unter Konto ein. Dafür braucht HAPM seine Adresse und ein SMTP-Konto.')}
-        </span>
-      </div>
-
-      <div className="hapm-setup-nav">
-        <button className="auth-submit" type="button" onClick={onDone}>
-          <ArrowRight size={15} />
-          {enabled ? t('Weiter') : t('Ohne zweiten Faktor weiter')}
-        </button>
-      </div>
-
-      {/* Per Portal an `body`: die Karte hat `backdrop-filter`, und darin bezöge
-          sich eine fest positionierte Fläche auf die Karte statt aufs Fenster. */}
-      {open && createPortal(
-        <TwoFactorSetup
-          className="shell-page"
-          start={async () => {
-            const data = await call<{ qrCodeDataUrl: string; manualCode: string }>(csrf, '/api/account/2fa/setup', {
-              method: 'POST',
-            });
-            return { qrCodeDataUrl: data.qrCodeDataUrl, manualCode: data.manualCode };
-          }}
-          verify={async (code) => {
-            await call(csrf, '/api/account/2fa/verify', { method: 'POST', body: JSON.stringify({ code }) });
-          }}
-          onComplete={() => {
-            setOpen(false);
-            setEnabled(true);
-          }}
-          onCancel={() => setOpen(false)}
-        />,
-        document.body
-      )}
-    </>
-  );
-}
-
 /* ── Schritt 2: Erreichbarkeit ── */
 
 const EXPOSURE_CHOICES: { value: Exposure; title: string; text: string; icon: ReactNode }[] = [
@@ -555,10 +464,12 @@ function ExposureStep({
   setup,
   csrf,
   onSaved,
+  later,
 }: {
   setup: SetupView;
   csrf: string;
   onSaved: (next: SetupView) => void;
+  later: ReactNode;
 }) {
   const { t } = useT();
   const [choice, setChoice] = useState<Exposure | null>(setup.exposure);
@@ -610,10 +521,13 @@ function ExposureStep({
         ))}
       </div>
       {error && <div className="auth-error">{error}</div>}
-      <button className="auth-submit" type="button" disabled={saving || !choice} onClick={save}>
-        {saving ? <span className="btn-spinner" aria-hidden="true" /> : <ArrowRight size={15} />}
-        {t('Weiter')}
-      </button>
+      <div className="hapm-setup-nav">
+        {later}
+        <button className="auth-submit" type="button" disabled={saving || !choice} onClick={save}>
+          {saving ? <span className="btn-spinner" aria-hidden="true" /> : <ArrowRight size={15} />}
+          {t('Weiter')}
+        </button>
+      </div>
     </>
   );
 }
@@ -1616,7 +1530,8 @@ function RunStep({
           </div>
         </>
       )}
-      {later}
+      {/* Während des Laufs gibt es nichts zu wählen, aber gehen darf man. */}
+      {outcome === 'running' && <div className="hapm-setup-nav">{later}</div>}
       {uploading && (
         <CertificateUploadDialog
           replace={null}

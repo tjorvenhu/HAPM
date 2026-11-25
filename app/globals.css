@@ -455,3 +455,11 @@ button.sys-back:hover { color: var(--accent-hover); }
 .mcp-snippet > .code-block {
   flex: 1; min-width: 0; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere;
 }
+
+/* ── Fenster „Konto absichern“ (components/SecurityPrompt.tsx) ──
+ * Zwei Auswahlkarten untereinander, darunter links der Hinweis, rechts der Knopf. */
+.security-prompt { max-width: 520px; }
+
+.security-prompt-lead { margin: 0; font-size: 0.9375rem; line-height: 1.55; color: var(--text-secondary); }
+
+.security-prompt-footer { justify-content: space-between; align-items: center; }

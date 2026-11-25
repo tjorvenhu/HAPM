@@ -93,6 +93,15 @@ export default function AccountPage() {
       setAccount(accountData.data);
       setPasskeyState(passkeyData.data);
       setError('');
+      // Aus dem Fenster „Konto absichern“ (`?passkey=neu`): den Dialog gleich
+      // öffnen, einmal. Danach weg aus der Adresse, sonst ginge er bei jedem
+      // Neuladen und jedem Takt des Pollings wieder auf.
+      if (passkeyData.data?.available && new URLSearchParams(window.location.search).get('passkey') === 'neu') {
+        window.history.replaceState(null, '', window.location.pathname);
+        setPasskeyName(t(suggestPasskeyName(navigator.userAgent)));
+        setPasskeyError('');
+        setPasskeyDialog({ mode: 'add' });
+      }
     } catch {
       setError(t('Das Konto konnte nicht geladen werden.'));
     } finally {

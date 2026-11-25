@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, type FormEvent } from "react"
+import { useEffect, useState, useRef, type FormEvent } from "react"
 import { useT } from "@/lib/i18n/react"
 import { ShieldCheck, Copy, Check, Loader2, ArrowLeft, ArrowRight, X } from "lucide-react"
 
@@ -47,6 +47,19 @@ export default function TwoFactorSetup({ start, verify, onComplete, onCancel, re
   const [recoveryCopied, setRecoveryCopied] = useState(false)
   const codeInputRef = useRef<HTMLInputElement>(null)
 
+  // Abbrechen geht bis zur Bestätigung des Codes. Danach ist der zweite Faktor
+  // aktiv, und „Abbrechen“ wäre eine Behauptung, die nicht stimmt.
+  const cancellable = !!onCancel && (step === "intro" || step === "loading" || step === "scan" || step === "verify")
+
+  useEffect(() => {
+    if (!cancellable) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel?.()
+    }
+    document.addEventListener("keydown", onKey)
+    return () => document.removeEventListener("keydown", onKey)
+  }, [cancellable, onCancel])
+
   async function startSetup() {
     setStep("loading")
     setError("")
@@ -92,6 +105,11 @@ export default function TwoFactorSetup({ start, verify, onComplete, onCancel, re
     <div className={className ? `two-factor-overlay ${className}` : "two-factor-overlay"}>
       <div className="two-factor-dialog">
         <div className="two-factor-header">
+          {cancellable && (
+            <button type="button" className="two-factor-close" onClick={onCancel} aria-label={t("Abbrechen")}>
+              <X size={18} />
+            </button>
+          )}
           <ShieldCheck size={32} />
           <h2>{t("Zwei-Faktor-Authentifizierung einrichten")}</h2>
         </div>
@@ -161,21 +179,28 @@ export default function TwoFactorSetup({ start, verify, onComplete, onCancel, re
               <code style={{ fontSize: "0.75rem", wordBreak: "break-all", flex: 1 }}>{manualCode}</code>
               <button
                 type="button"
-                className="two-factor-btn two-factor-btn--ghost"
+                className={copied ? "two-factor-copy is-copied" : "two-factor-copy"}
                 onClick={copyManualCode}
-                data-tooltip={t("Code kopieren")}
+                aria-label={t("Code kopieren")}
               >
-                {copied ? <Check size={14} /> : <Copy size={14} />}
+                {copied ? <Check key="done" size={14} /> : <Copy key="copy" size={14} />}
+                <span>{copied ? t("Kopiert") : t("Kopieren")}</span>
               </button>
             </div>
 
-            <button
-              className="two-factor-btn two-factor-btn--primary"
-              style={{ alignSelf: "center", marginTop: 4 }}
-              onClick={() => { setStep("verify"); setTimeout(() => codeInputRef.current?.focus(), 100) }}
-            >
-              {t("Weiter")} <ArrowRight size={15} />
-            </button>
+            <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 4 }}>
+              {onCancel && (
+                <button type="button" className="two-factor-btn two-factor-btn--ghost" onClick={onCancel}>
+                  <X size={15} /> {t("Abbrechen")}
+                </button>
+              )}
+              <button
+                className="two-factor-btn two-factor-btn--primary"
+                onClick={() => { setStep("verify"); setTimeout(() => codeInputRef.current?.focus(), 100) }}
+              >
+                {t("Weiter")} <ArrowRight size={15} />
+              </button>
+            </div>
           </div>
         )}
 
@@ -241,7 +266,7 @@ export default function TwoFactorSetup({ start, verify, onComplete, onCancel, re
             <div style={{ display: "flex", gap: 10 }}>
               <button
                 type="button"
-                className="two-factor-btn two-factor-btn--secondary"
+                className={recoveryCopied ? "two-factor-btn two-factor-btn--secondary is-copied" : "two-factor-btn two-factor-btn--secondary"}
                 style={{ flex: 1 }}
                 onClick={() => {
                   navigator.clipboard.writeText(recoveryCodes.join("\n"))
@@ -249,7 +274,7 @@ export default function TwoFactorSetup({ start, verify, onComplete, onCancel, re
                   setTimeout(() => setRecoveryCopied(false), 2000)
                 }}
               >
-                {recoveryCopied ? <Check size={14} /> : <Copy size={14} />}
+                {recoveryCopied ? <Check key="done" size={14} /> : <Copy key="copy" size={14} />}
                 {recoveryCopied ? t("Kopiert") : t("Kopieren")}
               </button>
               <button

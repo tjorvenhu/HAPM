@@ -40,6 +40,8 @@ export interface UserState extends DbDoc {
   lastLoginAt: string | null;
   /** Die Sprache der Oberfläche. Fehlt sie, gilt der Browser (`lib/i18n/locale.ts`). */
   locale?: 'de' | 'en' | null;
+  /** Wann das Fenster „Konto absichern“ weggeklickt wurde. Danach kommt es nicht wieder. */
+  securityPromptDismissedAt?: string | null;
 }
 
 /* ── Die Maschine ──

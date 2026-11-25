@@ -343,7 +343,7 @@ After the start, `http://<server-ip>:7080` opens the wizard. It has six steps:
 
 | Step | What happens |
 |---|---|
-| **1. Account** | You create the first account to manage HAPM and can set up the second factor right away. Passkeys follow after setup under "Account" |
+| **1. Account** | You create the first account to manage HAPM |
 | **2. Reachability** | Reachable from the internet or only on your private network? This decides how certificates are issued |
 | **3. DNS** | Cloudflare or Hetzner with an API token, then HAPM creates DNS records itself. Or **your own DNS server**: HAPM tells you every record to set yourself |
 | **4. Certificates** | **Let's Encrypt** (default), **your own ACME server** with a directory URL, for example step-ca on your network, or **upload**: HAPM requests nothing, you upload certificate and key |
@@ -353,6 +353,8 @@ After the start, `http://<server-ip>:7080` opens the wizard. It has six steps:
 <p align="center">
   <img src="docs/images/setup-done.en.jpg" alt="The last step of the wizard: HAPM is set up" width="70%">
 </p>
+
+When you then open HAPM at its own address for the first time, a dialog offers to set up a passkey or a second factor. Only there, because your password manager then saves the sign-in for the right address.
 
 If a step fails, the account stays. You can change your input and try again,
 or continue later: the overview reminds you.

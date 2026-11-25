@@ -107,4 +107,13 @@ export const account: Dictionary = {
   'Passkeys funktionieren nur unter der eingerichteten Adresse von HAPM und über eine sichere Verbindung.':
     'Passkeys only work at the configured HAPM address and over a secure connection.',
   'Der Passkey konnte nicht angelegt werden.': 'The passkey could not be created.',
+  'Der zweite Faktor ist eingerichtet.': 'The second factor is set up.',
+  'Dafür braucht HAPM ein SMTP-Konto. Es wird unter Benachrichtigungen eingerichtet.':
+    'HAPM needs an SMTP account for this. Set it up under Notifications.',
+  'HAPM läuft jetzt unter seiner Adresse. Hier kann Ihr Passwortmanager die Anmeldung speichern. Sichern Sie das Konto zusätzlich ab:':
+    'HAPM now runs at its own address. Your password manager can save the sign-in here. Secure your account as well:',
+  'Anmelden mit Fingerabdruck, Gesicht oder Gerätesperre.': 'Sign in with fingerprint, face or device lock.',
+  'Zweiten Faktor einrichten': 'Set up a second factor',
+  'Beides geht jederzeit unter Konto.': 'Both are available any time under Account.',
+  'Nicht jetzt': 'Not now',
 };

@@ -259,6 +259,28 @@ export async function getUserLocale(userId: string): Promise<Locale | null> {
   }
 }
 
+/** Ob das Fenster „Konto absichern“ für dieses Konto schon weggeklickt wurde. */
+export async function securityPromptDismissed(userId: string): Promise<boolean> {
+  try {
+    const state = await getDocument<UserState>(COLLECTIONS.USER_STATE, userId);
+    return !!state.securityPromptDismissedAt;
+  } catch (err) {
+    if (err instanceof NotFoundError) return false;
+    throw err;
+  }
+}
+
+/** Das Fenster „Konto absichern“ nicht mehr zeigen. Wirft, wie die Sprache: sonst käme es wieder. */
+export async function dismissSecurityPrompt(userId: string): Promise<void> {
+  const securityPromptDismissedAt = new Date().toISOString();
+  try {
+    await updateDocument<UserState>(COLLECTIONS.USER_STATE, userId, { securityPromptDismissedAt });
+  } catch (err) {
+    if (!(err instanceof NotFoundError)) throw err;
+    await createDocument<UserState>(COLLECTIONS.USER_STATE, { lastLoginAt: null, securityPromptDismissedAt }, userId);
+  }
+}
+
 /** Die Sprache am Konto speichern. Anders als die letzte Anmeldung muss das klappen: es wirft. */
 export async function setUserLocale(userId: string, locale: Locale): Promise<void> {
   try {

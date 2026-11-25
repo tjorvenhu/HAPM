@@ -70,8 +70,17 @@
 .app-shell__main {
   flex: 1;
   min-width: 0;
-  padding: 2.5rem 2rem 6rem;
+  /* Unten so viel wie an den Seiten. Mit 6rem und dem Rand des letzten Blocks
+     stand unter jeder Seite gut eine Bildschirmhand voll Leere. */
+  padding: 2.5rem 2rem 2rem;
   outline: none;
+}
+
+/* Der letzte Block einer Seite trägt keinen Rand nach unten: den Abstand zum
+   Rand der Fläche gibt `.app-shell__main`. */
+.app-shell__content > :last-child,
+.app-shell__content > :last-child > .sys-block:last-child {
+  margin-bottom: 0;
 }
 
 .app-shell__content {

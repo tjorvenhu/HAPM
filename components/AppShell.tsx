@@ -7,6 +7,7 @@ import GlobalSearch, { openGlobalSearch } from './shell/GlobalSearch';
 import ActivityIndicator from './ActivityIndicator';
 import { useT } from '@/lib/i18n/react';
 import type { SessionData } from '@/lib/types';
+import SecurityPrompt from './SecurityPrompt';
 
 /** Sitzung und `apiFetch` (mit CSRF-Token). Für jeden Aufruf an /api. */
 export function useApp() {
@@ -50,6 +51,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
           <SessionLocale />
           <ActivityIndicator />
           <GlobalSearch />
+          <SecurityPrompt />
         </>
       }
     >

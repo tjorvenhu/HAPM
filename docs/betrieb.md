@@ -201,12 +201,14 @@ bleiben.
 1. **Konto** und die Adresse für Let's Encrypt (`POST /api/setup`, ohne Sitzung
    und nur, solange es kein Konto gibt). Die E-Mail-Adresse des Kontos wird
    Empfänger der Benachrichtigungen, bis jemand die Empfänger ändert.
-   Danach, noch in Schritt 1, das Angebot des zweiten Faktors (`SecurityStep`,
-   über `/api/account/2fa/*` wie unter „Konto“). Freiwillig und kein eigener
-   Schritt: ein Neuladen geht beim nächsten Schritt weiter. Die Fläche hängt per
-   Portal an `body`, weil die Karte `backdrop-filter` trägt und eine fest
-   positionierte Fläche darin an der Karte statt am Fenster hinge. Passkeys
-   gehen hier noch nicht (sie brauchen Adresse und SMTP-Konto), die Seite sagt das.
+   Den zweiten Faktor bietet nicht der Assistent an, sondern ein Fenster beim
+   ersten Aufruf unter der Adresse von HAPM (`components/SecurityPrompt.tsx`,
+   `/api/account/security`): in der Einrichtung läuft die Oberfläche noch unter
+   IP und Port, ein Passwortmanager speicherte die Anmeldung für diese Adresse,
+   und ein Passkey hängt an der Domain. Das Fenster erscheint ohne zweiten
+   Faktor und ohne Passkey, bis jemand es wegklickt (`securityPromptDismissedAt`
+   in `user_state`). „Passkey anlegen“ führt nach `/konto?passkey=neu`, wo der
+   Dialog gleich aufgeht.
 2. **Erreichbarkeit:** nur im eigenen Netz oder aus dem Internet. Die Wahl steht
    sofort in den Einstellungen (`exposure`). An ihr hängt, ob Zertifikate über
    HTTP-01 oder immer über DNS-01 ausgestellt werden, siehe

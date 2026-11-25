@@ -343,7 +343,7 @@ sechs Schritte:
 
 | Schritt | Was passiert |
 |---|---|
-| **1. Konto** | Sie legen das erste Konto an, mit dem Sie HAPM verwalten, und richten auf Wunsch gleich den zweiten Faktor ein. Passkeys kommen nach der Einrichtung unter „Konto“ dazu |
+| **1. Konto** | Sie legen das erste Konto an, mit dem Sie HAPM verwalten |
 | **2. Erreichbarkeit** | Aus dem Internet erreichbar oder nur im eigenen Netz? Davon hängt ab, wie Zertifikate entstehen |
 | **3. DNS** | Cloudflare oder Hetzner mit einem API-Token, dann legt HAPM DNS-Einträge selbst an. Oder **eigener DNS-Server**: HAPM nennt Ihnen jeden Eintrag, den Sie selbst setzen |
 | **4. Zertifikate** | **Let's Encrypt** (Vorgabe), ein **eigener ACME-Server** mit Directory-URL, etwa step-ca im eigenen Netz, oder **hochladen**: HAPM beantragt nichts, Sie laden Zertifikat und Schlüssel hoch |
@@ -353,6 +353,8 @@ sechs Schritte:
 <p align="center">
   <img src="docs/images/einrichtung-fertig.jpg" alt="Der letzte Schritt des Assistenten: HAPM ist eingerichtet" width="70%">
 </p>
+
+Wenn Sie HAPM danach zum ersten Mal unter seiner Adresse öffnen, bietet ein Fenster an, einen Passkey oder den zweiten Faktor einzurichten. Erst dort, weil Ihr Passwortmanager die Anmeldung dann für die richtige Adresse speichert.
 
 Scheitert ein Schritt, bleibt das Konto bestehen. Sie können die Eingaben
 ändern und es erneut versuchen, oder später weitermachen: die Übersicht erinnert
