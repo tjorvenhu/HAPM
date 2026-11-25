@@ -16,6 +16,7 @@ import Select from '@/components/Select';
 import { SkeletonTitle, SkeletonCards } from '@/components/Skeleton';
 import { EntityGrid } from '@/components/EntityCard';
 import ServiceCard, { PendingCard } from '@/components/reverse-proxy/ServiceCard';
+import { useSavedTargets } from '@/components/reverse-proxy/SavedTargetPick';
 import ServiceFormModal from '@/components/reverse-proxy/ServiceFormModal';
 import StreamCard from '@/components/reverse-proxy/StreamCard';
 import StreamFormModal from '@/components/reverse-proxy/StreamFormModal';
@@ -105,6 +106,8 @@ export default function ReverseProxyScopePage({
 
 function ScopeView({ slug }: { slug: string }) {
   const { apiFetch } = useApp();
+  // Einmal für alle Karten der Seite, nicht je Karte.
+  const savedTargets = useSavedTargets();
   const { notify } = useToast();
   const confirm = useConfirm();
   const router = useRouter();
@@ -844,6 +847,7 @@ function ScopeView({ slug }: { slug: string }) {
                     key={`${proxy.$id}:${service.id}`}
                     proxy={proxy}
                     service={service}
+                    savedTargets={savedTargets}
                     busy={lockingId === `${proxy.$id}:${service.id}`}
                     health={proxy.health[service.id] ?? 'unknown'}
                     pendingPhase={
@@ -889,6 +893,7 @@ function ScopeView({ slug }: { slug: string }) {
               <StreamCard
                 key={`${proxy.$id}:${stream.id}`}
                 stream={stream}
+                savedTargets={savedTargets}
                 health={proxy.health[stream.id] ?? 'unknown'}
                 pendingPhase={
                   pendingRun && !pendingRun.isNew && pendingRun.serviceId === stream.id

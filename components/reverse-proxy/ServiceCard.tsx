@@ -3,7 +3,7 @@
 import { useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import {
-  Globe, Activity, GitBranch, Box, Server, Lock, LockOpen, Pencil, Trash2, Loader2, ArrowRight,
+  Globe, Activity, GitBranch, Server, Lock, LockOpen, Pencil, Trash2, Loader2, ArrowRight,
   EyeOff, ChevronDown, ChevronRight, CornerUpRight, Scale, Cookie, BarChart3, KeyRound, ShieldCheck,
   SlidersHorizontal,
 } from 'lucide-react';
@@ -17,6 +17,7 @@ import {
 import { msgid } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
 import type { ProxyRow } from './types';
+import { findSavedTarget, type SavedTarget } from '@/lib/haproxy/saved-targets';
 
 /**
  * Ein Reverse-Proxy-Ziel als Karte.
@@ -43,6 +44,8 @@ import type { ProxyRow } from './types';
 interface Props {
   proxy: ProxyRow;
   service: HaproxyService;
+  /** Die hinterlegten Backend-Server: steht eine Adresse darunter, nennt die Karte ihren Namen. */
+  savedTargets?: SavedTarget[];
   /** Während die Sperre umgelegt wird. */
   busy: boolean;
   /** Der Eintrag wird gerade geschrieben: Zertifikat, Prüfung, Reload. Bis das
@@ -164,6 +167,7 @@ const HEALTH_TAG: Record<ServiceHealth, { className: string; tooltip: string }> 
 export default function ServiceCard({
   proxy,
   service,
+  savedTargets = [],
   busy,
   pendingPhase,
   pendingKind = 'write',
@@ -371,8 +375,9 @@ export default function ServiceCard({
           className="rp-card-heading"
           data-tooltip={t('{domains} · Dienst-ID {id}', { domains: service.domains.join(', ') || service.id, id: service.id })}
         >
+          {/* Nur die Domain. Die Dienst-ID stand darunter und sagte beim
+              Überfliegen nichts, sie steht im Tooltip. */}
           <span className="rp-card-title">{service.domains[0] ?? service.id}</span>
-          <span className="rp-card-subtitle">{service.id}</span>
         </div>
       </div>
 
@@ -457,22 +462,25 @@ export default function ServiceCard({
         {service.servers.length === 0 ? (
           <div className="rp-empty-line">{t('kein Backend-Server eingetragen')}</div>
         ) : (
-          service.servers.map((server) => (
-            <div
-              className="rp-row"
-              key={server.name}
-              data-tooltip={`${server.name} → ${server.target}`}
-            >
-              <span className="rp-row-icon">
-                <Box size={14} />
-              </span>
-              <span className="rp-row-name">{server.name}</span>
-              <span className="rp-chip">
-                <Server size={13} />
-                {server.target}
-              </span>
-            </div>
-          ))
+          service.servers.map((server) => {
+            // Der Name der server-Zeile (`server1`) sagt nichts, er entsteht
+            // beim Schreiben. Was zählt, ist die Adresse, und wenn sie als
+            // Backend-Server hinterlegt ist, dessen Name.
+            const saved = findSavedTarget(server.target, savedTargets);
+            return (
+              <div
+                className="rp-row"
+                key={server.name}
+                data-tooltip={saved ? `${saved.name} · ${server.target}` : server.target}
+              >
+                <span className="rp-row-icon">
+                  <Server size={14} />
+                </span>
+                <span className="rp-row-name rp-row-address">{server.target}</span>
+                {saved && <span className="rp-chip">{saved.name}</span>}
+              </div>
+            );
+          })
         )}
       </div>
       )}

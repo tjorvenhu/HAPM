@@ -47,7 +47,7 @@ import {
 import { needsDnsChallenge } from '@/lib/haproxy/challenge';
 import { certCovers } from '@/lib/haproxy/certs';
 import { refuseSurfaceUpdate } from '@/lib/haproxy/protected';
-import type { DomainMatch } from '@/lib/dns/zones';
+import { normalizeDomain, type DomainMatch } from '@/lib/dns/zones';
 import { msgid } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
 import type { ProxyRow } from './types';
@@ -630,7 +630,9 @@ export default function ServiceFormModal({
    * eine Abfrage über zwölf Zonen. */
   const domainsKey = input.domains.join(',');
   const [dnsMatches, setDnsMatches] = useState<DomainMatch[]>([]);
-  const [dnsChecking, setDnsChecking] = useState(false);
+  /** Zu welchen Domains die Antwort in `dnsMatches` gehört. Weicht er von
+   *  `domainsKey` ab, läuft die Abfrage noch oder wartet auf das Entprellen. */
+  const [dnsMatchesKey, setDnsMatchesKey] = useState('');
   /**
    * Für welche Domains ein Eintrag gesetzt werden soll.
    *
@@ -655,20 +657,25 @@ export default function ServiceFormModal({
     const timer = setTimeout(() => {
       if (list.length === 0) {
         setDnsMatches([]);
+        setDnsMatchesKey('');
         return;
       }
-      setDnsChecking(true);
       apiFetch(`/api/dns/match?domains=${encodeURIComponent(list.join(','))}`)
         .then((res) => res.json())
         .then((data) => {
-          if (live && data.success) setDnsMatches(data.data as DomainMatch[]);
+          if (live) {
+            setDnsMatches(data.success ? (data.data as DomainMatch[]) : []);
+            setDnsMatchesKey(list.join(','));
+          }
         })
-        // Ohne Antwort bleibt der Abschnitt weg. Das Formular muss auch dann
-        // bedienbar sein, wenn Cloudflare gerade nicht erreichbar ist — der
-        // Reverse-Proxy hat damit nichts zu tun.
-        .catch(() => {})
-        .finally(() => {
-          if (live) setDnsChecking(false);
+        // Ohne Antwort bleibt der Abschnitt weg, auch der Spinner. Das Formular
+        // muss auch dann bedienbar sein, wenn Cloudflare gerade nicht
+        // erreichbar ist — der Reverse-Proxy hat damit nichts zu tun.
+        .catch(() => {
+          if (live) {
+            setDnsMatches([]);
+            setDnsMatchesKey(list.join(','));
+          }
         });
     }, 500);
     return () => {
@@ -681,6 +688,17 @@ export default function ServiceFormModal({
   const dnsRows = dnsMatches.filter((match) => match.zone !== null);
   /** Was der Abschnitt zeigt: dazu jede Domain, deren Auflösung etwas sagt. */
   const dnsShown = dnsMatches.filter((match) => match.zone !== null || match.resolution !== null);
+  /**
+   * Solange die Antwort nicht zu den eingetippten Domains passt, steht für jede
+   * eine Zeile mit Spinner: sonst wäre der Abschnitt leer oder zeigte den Stand
+   * der vorigen Eingabe, und es sähe aus, als gäbe es nichts zu prüfen.
+   * Wildcards fehlen hier wie in der Antwort: sie haben keine eigene Adresse.
+   */
+  const dnsQueryKey = domainsKey.split(',').filter(Boolean).join(',');
+  const dnsPending =
+    dnsQueryKey !== '' && dnsMatchesKey !== dnsQueryKey
+      ? input.domains.map(normalizeDomain).filter((domain) => domain && !isWildcardDomain(domain))
+      : [];
 
   /**
    * Worauf die Domain gerade zeigt, in einem Satz. Löst sie nicht auf und kann
@@ -1027,7 +1045,7 @@ export default function ServiceFormModal({
                     sie in einer Zone, die hier eingerichtet ist, der Schalter
                     für den Eintrag. Eine Wildcard ohne Zone fehlt: sie hat
                     keine eigene Adresse, und es gäbe nichts zu entscheiden. */}
-                {dnsShown.length > 0 && (
+                {(dnsShown.length > 0 || dnsPending.length > 0) && (
                   <div className="form-group">
                     {/* Flex und nicht einfach nebeneinander: das Icon säße
                         sonst auf der Textgrundlinie und hinge unter der
@@ -1045,10 +1063,20 @@ export default function ServiceFormModal({
                           )}
                         />
                       )}
-                      {dnsChecking && <Loader2 size={13} className="spin" />}
                     </label>
                     <div className="form-list">
-                      {dnsShown.map((match) => {
+                      {dnsPending.map((domain) => (
+                        <div className="form-list-row" key={domain}>
+                          <span className="hapm-dns-state is-checking">
+                            <Loader2 size={16} className="spin" />
+                          </span>
+                          <span className="hapm-dns-text">
+                            <span>{domain}</span>
+                            <span className="form-hint">{t('DNS wird abgefragt…')}</span>
+                          </span>
+                        </div>
+                      ))}
+                      {dnsPending.length === 0 && dnsShown.map((match) => {
                         const resolution = resolutionText(match);
                         if (!match.zone) {
                           const verdict = match.resolution?.verdict ?? 'unknown';

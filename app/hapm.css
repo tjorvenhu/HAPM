@@ -306,35 +306,55 @@
 
 .hapm-dns-state.is-unresolved { color: var(--text-tertiary); }
 
+.hapm-dns-state.is-checking { color: var(--accent); }
+
 .hapm-dns-state.is-elsewhere,
 .hapm-dns-state.is-unknown { color: var(--warning); }
 
 /* ── Gespeicherte Ziele (Reverse-Proxy, Einstellungen) ──
  * Eine Zeile je Ziel: Name, Adresse, Knöpfe. Bearbeitet wird in der Zeile selbst. */
-.hapm-target-list { display: flex; flex-direction: column; gap: 6px; }
+.hapm-target-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: 10px; }
 
+/* Eine schmale Kachel je Server, mehrere nebeneinander: Name und Adresse sind
+ * kurz, eine Zeile über die ganze Breite ließ fast alles leer. */
 .hapm-target-row {
-  display: grid; grid-template-columns: minmax(8rem, 1fr) minmax(8rem, 1.4fr) auto; align-items: center; gap: 12px;
-  padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+  display: flex; align-items: center; gap: 10px; min-width: 0;
+  padding: 10px 8px 10px 10px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface);
+  transition: border-color var(--transition), box-shadow var(--transition);
 }
 
-.hapm-target-name {
-  display: inline-flex; align-items: center; gap: 8px; min-width: 0;
-  font-size: 0.875rem; font-weight: 500; overflow-wrap: anywhere;
-}
+.hapm-target-row:hover { border-color: var(--border-hover); box-shadow: var(--shadow-sm); }
 
-.hapm-target-name svg { flex-shrink: 0; color: var(--accent); }
+/* Bearbeiten, Anlegen, Leer und Fehler gehen über die ganze Breite. */
+.hapm-target-row.is-editing,
+.hapm-target-list > .form-list-empty,
+.hapm-target-list > .alert { grid-column: 1 / -1; }
 
 .hapm-target-row.is-editing { display: block; }
 
-/* Der Knopf im Kopf eines Abschnitts rückt ans rechte Ende. */
-.hapm-section-action { margin-left: auto; align-self: center; }
+.hapm-target-icon {
+  display: grid; place-items: center; flex-shrink: 0; width: 34px; height: 34px; border-radius: 10px;
+  background: var(--accent-light); color: var(--accent);
+}
+
+.hapm-target-text { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
+
+.hapm-target-name {
+  font-size: 0.875rem; font-weight: 600; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
 .hapm-target-list .form-list-empty { display: inline-flex; align-items: center; gap: 6px; }
 
-.hapm-target-address { font-size: 0.8125rem; color: var(--text-secondary); overflow-wrap: anywhere; }
+.hapm-target-address {
+  font-size: 0.75rem; color: var(--text-secondary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
-.hapm-target-actions { display: flex; gap: 4px; }
+.hapm-target-actions { display: flex; gap: 2px; flex-shrink: 0; }
+
+/* Der Knopf im Kopf eines Abschnitts rückt ans rechte Ende. */
+.hapm-section-action { margin-left: auto; align-self: center; }
 
 .hapm-target-form { display: grid; grid-template-columns: 1fr 1.4fr 7rem auto; align-items: center; gap: 8px; }
 

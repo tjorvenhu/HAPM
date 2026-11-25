@@ -260,6 +260,7 @@ export const proxyForms: Dictionary = {
     'Does not resolve yet. The switch creates the record when you save.',
   'Löst noch nicht auf. Der DNS-Eintrag fehlt.': 'Does not resolve yet. The DNS record is missing.',
   'Die DNS-Abfrage ist gescheitert.': 'The DNS lookup failed.',
+  'DNS wird abgefragt…': 'Looking up DNS…',
   'Backend-Server legen Sie auf der Seite Ziele an.': 'Add backend servers on the Targets page.',
   '{host}, Port frei': '{host}, any port',
   'Der Server {name} ist hinterlegt.': 'The server {name} has been added.',

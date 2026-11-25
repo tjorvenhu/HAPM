@@ -217,11 +217,13 @@ export default function SavedTargetsPanel() {
               </div>
             ) : (
               <div className="hapm-target-row" key={target.$id}>
-                <span className="hapm-target-name">
-                  <Server size={15} />
-                  {target.name}
+                <span className="hapm-target-icon">
+                  <Server size={16} />
                 </span>
-                <code className="hapm-target-address">{savedTargetAddress(target)}</code>
+                <span className="hapm-target-text">
+                  <span className="hapm-target-name">{target.name}</span>
+                  <code className="hapm-target-address">{savedTargetAddress(target)}</code>
+                </span>
                 <span className="hapm-target-actions">
                   <button
                     className="btn btn-ghost btn-icon"

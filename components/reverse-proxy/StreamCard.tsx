@@ -1,12 +1,13 @@
 'use client';
 
 import {
-  Cable, Activity, Box, Server, Pencil, Trash2, Loader2, EyeOff, Scale, ShieldAlert, ShieldOff,
+  Cable, Activity, Server, Pencil, Trash2, Loader2, EyeOff, Scale, ShieldAlert, ShieldOff,
 } from 'lucide-react';
 import type { ServiceHealth } from '@/lib/haproxy/config';
 import { STREAM_BALANCE_LABELS, type HaproxyStream } from '@/lib/haproxy/streams';
 import { msgid } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
+import { findSavedTarget, type SavedTarget } from '@/lib/haproxy/saved-targets';
 
 /**
  * Eine TCP-Weiterleitung als Karte.
@@ -28,6 +29,8 @@ import { useT } from '@/lib/i18n/react';
 
 interface Props {
   stream: HaproxyStream;
+  /** Die hinterlegten Backend-Server, siehe `ServiceCard`. */
+  savedTargets?: SavedTarget[];
   /** Der Eintrag wird gerade geschrieben. Bis das durch ist, steht auf der
    *  Karte noch der ALTE Stand — deshalb sagt sie das auch. */
   pendingPhase?: string | null;
@@ -57,6 +60,7 @@ const MAX_TAGS = 2;
 
 export default function StreamCard({
   stream,
+  savedTargets = [],
   pendingPhase,
   pendingKind = 'write',
   health,
@@ -147,13 +151,11 @@ export default function StreamCard({
             { id: stream.id, port: stream.port ?? t('unbekannt') }
           )}
         >
-          {/* Der Port steht oben und die Kennung darunter, wie bei einem Dienst
-              die Domain über der Dienst-ID: oben steht, worüber man den Eintrag
-              erreicht, darunter, wie er heißt. */}
+          {/* Nur der Port, wie bei einem Dienst nur die Domain: die Kennung
+              (`tcp_5432`) wiederholte ihn bloß und steht im Tooltip. */}
           <span className="rp-card-title">
             {stream.port === null ? t('Port unbekannt') : t('Port {port}', { port: stream.port })}
           </span>
-          <span className="rp-card-subtitle">{stream.id}</span>
         </div>
       </div>
 
@@ -202,18 +204,24 @@ export default function StreamCard({
         {stream.servers.length === 0 ? (
           <div className="rp-empty-line">{t('kein Ziel eingetragen')}</div>
         ) : (
-          stream.servers.map((server) => (
-            <div className="rp-row" key={server.name} data-tooltip={`${server.name} → ${server.target}`}>
-              <span className="rp-row-icon">
-                <Box size={14} />
-              </span>
-              <span className="rp-row-name">{server.name}</span>
-              <span className="rp-chip">
-                <Server size={13} />
-                {server.target}
-              </span>
-            </div>
-          ))
+          stream.servers.map((server) => {
+            // Wie bei einem Dienst: die Adresse statt `server1`, dazu der Name,
+            // wenn sie als Backend-Server hinterlegt ist.
+            const saved = findSavedTarget(server.target, savedTargets);
+            return (
+              <div
+                className="rp-row"
+                key={server.name}
+                data-tooltip={saved ? `${saved.name} · ${server.target}` : server.target}
+              >
+                <span className="rp-row-icon">
+                  <Server size={14} />
+                </span>
+                <span className="rp-row-name rp-row-address">{server.target}</span>
+                {saved && <span className="rp-chip">{saved.name}</span>}
+              </div>
+            );
+          })
         )}
       </div>
 
