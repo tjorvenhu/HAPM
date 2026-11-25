@@ -218,7 +218,6 @@ export const mail: Dictionary = {
   'Die Testmail ließ sich nicht verschicken.': 'The test email could not be sent.',
   'Der Mailserver hat die Testmail an {to} angenommen.': 'The mail server accepted the test email to {to}.',
   'Testmail nicht verschickt': 'Test email not sent',
-  'Die Meldung des Mailservers steht beim Formular.': 'The response of the mail server is shown next to the form.',
   'Die Empfänger ließen sich nicht speichern.': 'The recipients could not be saved.',
   '{address} bekommt die Benachrichtigungen.': '{address} now receives the notifications.',
   '„{label}“ ist eingeschaltet.': '“{label}” is turned on.',

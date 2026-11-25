@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { useConfirm } from '@/components/ConfirmDialog';
+import { useToast } from '@/components/Toast';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import { SetupStepper } from '@/app/setup/SetupStepper';
 import { useT } from '@/lib/i18n/react';
@@ -73,6 +74,7 @@ export default function AddressMoveWizard({
 }) {
   const { apiFetch } = useApp();
   const confirm = useConfirm();
+  const { notify } = useToast();
   const { t } = useT();
 
   const runningAtStart = moveOutcome(initial.move) === 'running';
@@ -89,7 +91,6 @@ export default function AddressMoveWizard({
   const [checking, setChecking] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [recordAddress, setRecordAddress] = useState<string | null>(null);
-  const [recordNote, setRecordNote] = useState('');
   /** Das Pollen bekam keine Antwort mehr, nachdem die neue Adresse galt. */
   const [lostContact, setLostContact] = useState(false);
 
@@ -118,7 +119,6 @@ export default function AddressMoveWizard({
     setError('');
     setCheck(null);
     setConfirmed(false);
-    setRecordNote('');
     setStep('check');
     void runCheck();
   }
@@ -186,14 +186,16 @@ export default function AddressMoveWizard({
         method: 'PUT',
         body: JSON.stringify({ domain: check.domain, address }),
       });
-      setRecordNote(
-        t('Der Eintrag {type} {domain} → {address} steht in der Zone {zone}. Bis ihn jeder sieht, kann es einen Moment dauern.', {
+      notify({
+        variant: 'success',
+        title: t('DNS-Eintrag angelegt'),
+        message: t('Der Eintrag {type} {domain} → {address} steht in der Zone {zone}. Bis ihn jeder sieht, kann es einen Moment dauern.', {
           type: data.type,
           domain: check.domain,
           address,
           zone: data.zone,
-        })
-      );
+        }),
+      });
       await runCheck();
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Der Eintrag ließ sich nicht anlegen.'));
@@ -391,7 +393,6 @@ export default function AddressMoveWizard({
                           </div>
                         </div>
                       )}
-                      {recordNote && <div className="alert alert-success"><span>{recordNote}</span></div>}
                     </CheckResult>
                   )}
 

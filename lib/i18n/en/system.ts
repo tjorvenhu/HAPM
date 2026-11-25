@@ -820,4 +820,8 @@ export const system: Dictionary = {
     'Open new address',
   'Die Passkeys der bisherigen Adresse sind gelöscht. Neue legen Sie unter Konto an.':
     'The passkeys of the previous address are deleted. Create new ones under Account.',
+  'Testmail verschickt':
+    'Test mail sent',
+  'DNS-Eintrag angelegt':
+    'DNS record created',
 };

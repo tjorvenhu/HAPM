@@ -85,7 +85,6 @@ function Notifications() {
 
   const [testTo, setTestTo] = useState('');
   const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<TestMailResult | null>(null);
 
   const [recipient, setRecipient] = useState('');
   const [recipientError, setRecipientError] = useState('');
@@ -159,7 +158,6 @@ function Notifications() {
         mailFrom: draft.mailFrom.trim() || null,
       });
       setDraft(null);
-      setTestResult(null);
       notify({
         variant: 'success',
         message:
@@ -194,7 +192,6 @@ function Notifications() {
   async function sendTest(event: FormEvent) {
     event.preventDefault();
     setTesting(true);
-    setTestResult(null);
     try {
       const res = await apiFetch('/api/mail/test', {
         method: 'POST',
@@ -206,15 +203,22 @@ function Notifications() {
         notify({ variant: 'error', message: body.error || t('Die Testmail ließ sich nicht verschicken.') });
         return;
       }
+      // Das Ergebnis nur als Meldung unten rechts, nicht als Kasten im Formular:
+      // Meldungen nach einer Handlung sind Toasts (CLAUDE.md).
       const result = body.data as TestMailResult;
-      setTestResult(result);
       if (result.sent) {
-        notify({ variant: 'success', message: t('Der Mailserver hat die Testmail an {to} angenommen.', { to: result.to }) });
+        notify({
+          variant: 'success',
+          title: t('Testmail verschickt'),
+          message: t('Der Mailserver hat die Testmail an {to} angenommen. Ob sie im Postfach ankommt, zeigt nur das Postfach.', {
+            to: result.to,
+          }),
+        });
       } else {
         notify({
           variant: 'error',
           title: t('Testmail nicht verschickt'),
-          message: t('Die Meldung des Mailservers steht beim Formular.'),
+          message: result.error ?? t('Die Testmail wurde nicht verschickt.'),
         });
       }
     } catch {
@@ -555,16 +559,6 @@ function Notifications() {
                 </button>
               </div>
             </div>
-            {testResult &&
-              (testResult.sent ? (
-                <div className="alert alert-success">
-                  {t('Der Mailserver hat die Testmail an {to} angenommen. Ob sie im Postfach ankommt, zeigt nur das Postfach.', {
-                    to: testResult.to,
-                  })}
-                </div>
-              ) : (
-                <div className="alert alert-danger">{testResult.error ?? t('Die Testmail wurde nicht verschickt.')}</div>
-              ))}
           </form>
           </div>
         </div>
