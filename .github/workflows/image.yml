@@ -54,8 +54,8 @@ jobs:
       - run: pnpm test
 
   # Was nur ein echtes HAProxy zeigen kann: Fehler- und Sperrseiten, Ziele mit
-  # HTTPS. Die Runner haben Docker, lokal fehlt es oft. Blockiert den Bau des
-  # Abbilds (noch) nicht: erst sehen, ob die Skripte hier stabil laufen.
+  # HTTPS, auf mehreren Fassungen. Die Runner haben Docker, lokal fehlt es oft.
+  # Ein Abbild entsteht erst, wenn auch das besteht.
   haproxy:
     runs-on: ubuntu-latest
     steps:
@@ -74,7 +74,7 @@ jobs:
   # Jeder Bau legt sein Abbild nur unter seiner Prüfsumme ab, `merge` fasst
   # beide danach unter den Namen zusammen.
   image:
-    needs: test
+    needs: [test, haproxy]
     strategy:
       fail-fast: false
       matrix:
