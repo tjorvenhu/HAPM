@@ -84,11 +84,9 @@ interface Props {
  */
 export function PendingCard({
   title,
-  subtitle,
   phase,
 }: {
   title: string;
-  subtitle: string;
   phase: string | null;
 }) {
   const { t } = useT();
@@ -100,7 +98,6 @@ export function PendingCard({
         </span>
         <div className="rp-card-heading">
           <span className="rp-card-title">{title}</span>
-          <span className="rp-card-subtitle">{subtitle}</span>
         </div>
       </div>
       <div className="rp-tags">

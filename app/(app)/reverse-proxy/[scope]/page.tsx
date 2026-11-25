@@ -796,7 +796,6 @@ function ScopeView({ slug }: { slug: string }) {
           <EntityGrid size="compact">
             <PendingCard
               title={pendingRun.title}
-              subtitle={pendingRun.serviceId}
               phase={pendingRun.phase}
             />
           </EntityGrid>

@@ -73,11 +73,6 @@
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-.rp-card-subtitle {
-  font-size: 0.875rem; color: var(--text-tertiary);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-
 /* Die Adresse eines Ziels in der Backend-Zeile: dieselbe Schrift wie in der Datei. */
 .rp-row-address { font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace; font-size: 0.8125rem; }
 
