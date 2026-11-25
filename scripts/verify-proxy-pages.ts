@@ -32,6 +32,10 @@
  * `haproxy -c` die Passwortabfrage noch an, und HAProxy beantwortet sie mit 500
  * (`lib/haproxy/page-design.ts`). Hier zeigt sich, ob die Grenze trägt.
  *
+ * Dazu eigenes HTML und CSS (`custom-page.ts`), so lang, dass die größte
+ * Fehlerseite genau an der Grenze liegt: jede muss mit ihrem Status und Byte
+ * für Byte ankommen, und die Passwortabfrage bleibt die von HAPM.
+ *
  * Wer `passwordLockRules`, `renderErrorFile` oder das Design der Seiten
  * ändert, lässt dieses Skript laufen.
  */
@@ -60,7 +64,7 @@ import {
   PAGE_MAX_BYTES,
   type PageDesign,
 } from '../lib/haproxy/page-design';
-import { designPageLabel, designPageSizes, logoByteBudget } from '../lib/haproxy/design-pages';
+import { designPageLabel, designPageSizes, designSizeError, logoByteBudget } from '../lib/haproxy/design-pages';
 
 const VERSIONS = process.argv.slice(2).length > 0 ? process.argv.slice(2) : ['2.4', '2.8', '3.0'];
 const PORT = 18480;
@@ -452,6 +456,75 @@ async function verifyEnglish(version: string): Promise<void> {
   }
 }
 
+/** Eigenes HTML, aufgefüllt bis die größte Fehlerseite genau `PAGE_MAX_BYTES` hat. */
+function customDesign(): PageDesign {
+  const raw = (filler: string) => ({
+    mode: 'custom',
+    custom: {
+      html: `<main><p class="c">{{status}}</p><h1>{{title}}</h1><p>{{text}}</p><!--${filler}--></main>`,
+      css: 'body{font-family:system-ui,sans-serif}.c{color:#1a5c4c}',
+    },
+  });
+  const probe = parsePageDesign(raw(''));
+  if (!probe.ok) throw new Error(probe.error);
+  const largest = designPageSizes(probe.design).find((size) => size.page.kind === 'error')!.bytes;
+  const parsed = parsePageDesign(raw('x'.repeat(PAGE_MAX_BYTES - largest)));
+  if (!parsed.ok) throw new Error(parsed.error);
+  const tooLarge = designSizeError(parsed.design);
+  if (tooLarge) throw new Error(tooLarge);
+  return parsed.design;
+}
+
+async function verifyCustom(version: string): Promise<void> {
+  const design = customDesign();
+  const largest = designPageSizes(design).find((size) => size.page.kind === 'error')!;
+  console.log(`\nHAProxy ${version}, eigenes HTML und CSS (${largest.bytes} von ${PAGE_MAX_BYTES} Bytes)`);
+
+  const { dir, mounts } = stage(createPasswordLock(PASSWORD), createPasswordLock('zweites'), design);
+  const name = `hapm-lock-verify-html-${version.replace(/\W/g, '-')}`;
+  try {
+    docker(['rm', '-f', name]);
+  } catch {
+    // Es gab keinen.
+  }
+
+  try {
+    const checked = spawnSync(
+      'docker',
+      ['run', '--rm', ...mounts, `haproxy:${version}`, 'haproxy', '-c', '-f', '/usr/local/etc/haproxy/haproxy.cfg'],
+      { encoding: 'utf8' }
+    );
+    const output = `${checked.stdout}${checked.stderr}`.trim();
+    check('haproxy -c nimmt die Konfiguration an', checked.status === 0, output.slice(-400));
+    if (checked.status !== 0) return;
+    check('und warnt nicht vor der Größe einer Seite', !/payload|buffer space/i.test(output), output.slice(-400));
+
+    docker(['run', '-d', '--name', name, '-p', `127.0.0.1:${PORT}:8080`, ...mounts, `haproxy:${version}`]);
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+
+    for (const [host, status] of [['aus.test', 503], ['unbekannt.test', 404], ['gesperrt.test', 403]] as const) {
+      const file = renderErrorFile(status, design);
+      const page = await call({ host });
+      check(
+        `die ${status}-Seite kommt aus der eigenen Vorlage, Byte für Byte`,
+        page.status === status && page.body === file.slice(file.indexOf('\r\n\r\n') + 4) && page.body.includes(`<p class="c">${status}</p>`),
+        `Status ${page.status}, ${Buffer.byteLength(page.body)} Bytes`
+      );
+    }
+
+    const ask = await call({ host: 'ganz.test' });
+    const askPage = lockPages(defaultPageDesign()).find((entry) => entry.file === 'lock.html')!.html;
+    check('die Passwortabfrage bleibt die von HAPM', ask.status === 401 && ask.body === askPage, `Status ${ask.status}`);
+  } finally {
+    try {
+      docker(['rm', '-f', name]);
+    } catch {
+      // Schon weg.
+    }
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 async function main(): Promise<void> {
   try {
     docker(['version', '--format', '{{.Server.Version}}']);
@@ -464,6 +537,7 @@ async function main(): Promise<void> {
     await verifyLargest(version, 'lock');
     await verifyLargest(version, 'error');
     await verifyEnglish(version);
+    await verifyCustom(version);
   }
   console.log(failures === 0 ? '\nAlles in Ordnung.' : `\n${failures} Prüfung(en) fehlgeschlagen.`);
   process.exit(failures === 0 ? 0 : 1);

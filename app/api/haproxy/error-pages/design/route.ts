@@ -7,8 +7,8 @@ import { loadPageDesign, savePageDesign } from '@/lib/haproxy/page-design-store'
 import {
   defaultPageDesign,
   isDefaultDesign,
-  logoTooLargeMessage,
   parsePageDesign,
+  requestTooLargeMessage,
   LOGO_TYPES,
   type PageDesign,
 } from '@/lib/haproxy/page-design';
@@ -36,15 +36,21 @@ import type { Server } from '@/lib/types';
  *
  * Geprüft wird vorher und vollständig, auch die Größe jeder fertigen Seite:
  * eine zu große Passwortabfrage nimmt `haproxy -c` an und beantwortet HAProxy
- * danach mit 500 (`lib/haproxy/page-design.ts`).
+ * danach mit 500 (`lib/haproxy/page-design.ts`). Für eigenes HTML und CSS
+ * dieselben zwei Funktionen wie im Formular (`parsePageDesign`,
+ * `designSizeError`), also dieselben Meldungen.
  *
  * Die Gründe kommen aus der Prüfung schon in der Sprache der Anfrage: sie setzt
  * übersetzte Teile (Feld, Seite, Zahl) in einen Satz, den `msg()` nicht trüge.
  * `handleError` findet zu einem fertigen Satz keinen Eintrag und lässt ihn stehen.
  */
 
-/** Ein Design mit dem größten Logo, das noch passt, bleibt weit darunter. */
-const MAX_BODY_BYTES = 64 * 1024;
+/**
+ * Ein Design mit dem größten Logo, das noch passt, und HTML und CSS bis zur
+ * Grenze einer Seite bleibt darunter, auch wenn JSON jedes Anführungszeichen
+ * verdoppelt.
+ */
+const MAX_BODY_BYTES = 128 * 1024;
 
 interface DesignResult {
   design: PageDesign;
@@ -74,6 +80,14 @@ async function deliver(server: Server, design: PageDesign, locale: Locale): Prom
 
 function describe(design: PageDesign): string {
   if (isDefaultDesign(design)) return 'Design von HAPM';
+  const language = design.locale === 'en' ? 'Vorgabetexte englisch' : '';
+  if (design.mode === 'standard') return ['Seite von HAPM', language].filter(Boolean).join(', ');
+  if (design.mode === 'custom') {
+    const size = (text: string) => new TextEncoder().encode(text).length;
+    return [`eigenes HTML (${size(design.custom.html)} Bytes) und CSS (${size(design.custom.css)} Bytes)`, language]
+      .filter(Boolean)
+      .join(', ');
+  }
   const colors = Object.entries(design.colors)
     .filter(([, value]) => value)
     .map(([name, value]) => `${name} ${value}`);
@@ -90,7 +104,7 @@ function describe(design: PageDesign): string {
     design.brand ? `Schriftzug „${design.brand}“` : '',
     design.footer ? 'Fußzeile' : '',
     texts ? `${texts} eigene Texte` : '',
-    design.locale === 'en' ? 'Vorgabetexte englisch' : '',
+    language,
   ]
     .filter(Boolean)
     .join(', ');
@@ -132,7 +146,7 @@ export async function PUT(request: Request) {
     const locale = await getLocale();
 
     if (Number(request.headers.get('content-length') ?? 0) > MAX_BODY_BYTES) {
-      throw new ApiError(logoTooLargeMessage(locale), 413);
+      throw new ApiError(requestTooLargeMessage(locale), 413);
     }
     const body = await jsonBody<{ serverId?: string; design?: unknown }>(request);
 

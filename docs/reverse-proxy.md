@@ -1158,7 +1158,8 @@ kommt. Das Skript baut dieselbe Konfiguration wie der Betrieb, startet HAProxy
 2.4, 2.8 und 3.0 damit und schickt, was ein Browser-Formular schickt. Es prüft
 auch die Fehlerseiten (nächster Abschnitt) und liefert ein Design genau an der
 Größengrenze aus, einmal mit der Passwortabfrage, einmal mit der 503 als
-größter Seite: beide müssen vollständig und mit ihrem Status ankommen.
+größter Seite, dazu eigenes HTML genau an der Grenze: alle müssen vollständig
+und mit ihrem Status ankommen.
 **Wer `passwordLockRules`, `renderErrorFile` oder das Design der Seiten
 ändert, lässt es laufen.**
 
@@ -1176,12 +1177,71 @@ steht auf EINER Seite, `/reverse-proxy/fehlerseiten`: links das Design, rechts
 die Vorschau, darunter welche Fehlerdateien die Konfiguration nennt und ein
 Knopf, der sie auf den Stand des gespeicherten Designs bringt
 (`lib/haproxy/error-pages.ts`, `ErrorPagesPanel`). Der Aufbau kommt aus
-`ui/static/page.ts` (`renderErrorPage`): eine Seite mit schwebender Kopfleiste,
-ohne Karte. Die Passwortabfrage aus demselben Modul ist dagegen die
-Anmeldekarte.
+`ui/static/page.ts` (`renderErrorPage`): eine schlichte Kopfleiste mit Logo und
+„Zurück“, mittig eine Marke mit dem Code, Überschrift, Satz und Knopf, ohne
+Karte. Die Passwortabfrage aus demselben Modul ist dagegen die Anmeldekarte.
+
+**Drei Arten** (`PageDesign.mode`, oben auf der Seite als Karten):
+
+- **Standard** (`standard`, Vorgabe): die Seite von HAPM. Wählbar ist nur die
+  Sprache der Vorgabetexte.
+- **Selbst gestalten** (`designed`): dieselbe Seite mit eigenen Farben, Logo,
+  Name, Fußzeile und Texten, siehe „Das Design“.
+- **Eigenes HTML und CSS** (`custom`, `lib/haproxy/custom-page.ts`): eine
+  Vorlage für alle Fehlerseiten, siehe unten.
+
+Die Felder der anderen Arten bleiben beim Wechsel gespeichert, was gilt, sagt
+nur `mode` (`builtInDesign`). Eine Zeile ohne `mode` (von vor der Wahl) ist
+`designed`, wenn sie eigene Farben, Logo, Name, Fußzeile oder Texte trägt, sonst
+`standard`: beides schreibt dieselben Seiten wie vorher.
+
+**Die Seite von HAPM** steht in der Schrift des Systems (`system-ui`,
+`-apple-system`, `Segoe UI`, Roboto, Helvetica, Arial). Eine Webschrift kann sie
+nicht laden, und für eine eingebettete fehlt der Platz; die frühere Serif fiel
+deshalb fast überall auf Times zurück. **Hell und dunkel** folgt
+`prefers-color-scheme`, aber nur ohne eigene Farben: wer Hintergrund, Text oder
+Akzent setzt, hat eine Fassung gewählt. In der dunklen Fassung (und auf einem
+eigenen dunklen Hintergrund) färbt CSS den Schriftzug des Logos hell. Die
+Vorschau zeigt beide Fassungen über `color-scheme` am `iframe`, unabhängig vom
+Rechner, an dem jemand HAPM bedient. Mit dieser Fassung haben sich die
+Prüfsummen der Fehlerseiten geändert (die der Passwortabfrage nicht): eine
+bestehende Installation sieht ihre Fehlerdateien nach dem Update als „Andere
+Seite“, und der Knopf schreibt sie neu.
+
+**Eigenes HTML und CSS** (`custom-page.ts`):
+
+- Das HTML ist der **Inhalt von `<body>`**, das CSS der Inhalt eines `<style>`.
+  Den Rahmen setzt HAPM: Doctype, `<html lang>`, Zeichensatz, Viewport,
+  `noindex`, Titel im Tab. Ein Doctype, `<html>`, `<head>` oder `<body>` im
+  HTML wird abgelehnt statt verschachtelt.
+- **Platzhalter im HTML:** `{{status}}`, `{{title}}`, `{{text}}` (Leerzeichen
+  in den Klammern erlaubt), maskiert eingesetzt, mit den Texten von HAPM je
+  Status in der Sprache der Vorgabetexte (für die 404 die des Proxys). Die
+  eigenen Texte aus „Selbst gestalten“ gelten hier nicht. Ein unbekannter
+  Platzhalter wird abgelehnt. Im CSS wird nichts ersetzt.
+- `</style>` im CSS wird abgelehnt: der Stil endete dort, der Rest stünde als
+  Text auf der Seite.
+- Gespeichert wird mit LF, ohne Steuerzeichen außer Tab, ohne Leerraum an den
+  Enden: ein CR im Rumpf gäbe je nach Weg auf die Platte eine andere Prüfsumme.
+- **Die Größe:** dieselbe Grenze wie beim Design, 15.000 Bytes je fertiger
+  Datei samt Kopfzeilen (`PAGE_MAX_BYTES`), gemessen mit dem längsten Titel und
+  Text, die die Platzhalter einsetzen (`designSizeError`). Ein einzelnes Feld
+  über dieser Zahl lehnt schon `parsePageDesign` ab. Formular und Route rufen
+  dieselben Funktionen, die Meldung ist dieselbe. Die Route liest höchstens
+  128 KB Rumpf.
+- Geprüft wird der Inhalt nur, wenn `custom` gewählt ist: eine halbe Vorlage
+  hält das Speichern bei einer anderen Art nicht auf.
+- Nicht geprüft und nicht verändert wird, was das HTML tut. Ein Skript bleibt
+  stehen (wer HAPM bedient, bestimmt ohnehin, was der Proxy ausliefert), ein
+  Bild oder eine Schrift von einer anderen Adresse lädt der Browser des
+  Besuchers nach. Die Vorschau zeigt die Seite im `sandbox` ohne Skript.
+- **Die Passwortabfrage bleibt die von HAPM.** Sie braucht ein Formular, das
+  die Regel in `haproxy.cfg` versteht, und eine Vorlage dafür wäre ein zweiter
+  Ort, an dem das Feld `LOCK_FIELD` stimmen muss.
 
 **Das Design** (`lib/haproxy/page-design.ts`, gespeichert in der Collection
-`page_design`, eine Zeile) gilt für Fehlerseiten und Passwortabfrage zugleich:
+`page_design`, eine Zeile, samt Art und eigenem HTML) gilt bei „Selbst
+gestalten“ für Fehlerseiten und Passwortabfrage zugleich:
 
 - Einstellbar: drei Farben (Akzent, Hintergrund, Text; alles Weitere wie Fläche
   der Karte, Rahmen, gedämpfter Text, Schrift auf dem Knopf wird daraus
@@ -1190,10 +1250,10 @@ Anmeldekarte.
   bei der Passwortabfrage auch der Knopf. Eine helle und eine dunkle Fassung
   kennen die Seiten nicht: ein dunkles Design ist ein dunkler Hintergrund.
 - **Vorgabe heißt: nichts gesetzt, und daraus entsteht Byte für Byte die Seite
-  von vorher.** Eine bestehende Installation erkennt ihre Dateien nach dem
-  Update deshalb weiter als „Aktuell". `tests/haproxy/page-design.test.ts` hält
-  die Prüfsummen fest. Ein Text, der genau der Vorgabe entspricht, ist die
-  Vorgabe.
+  von „Standard“.** `tests/haproxy/page-design.test.ts` hält die Prüfsummen
+  fest: ändern sie sich, ist das eine Entscheidung, denn jede Installation sieht
+  ihre Dateien danach als „Andere Seite“. Ein Text, der genau der Vorgabe
+  entspricht, ist die Vorgabe.
 - **Die Datei bleibt die Wahrheit.** Was HAProxy ausliefert, wird bei jedem
   Blick an der Datei abgelesen, nicht an der Zeile. Die Zeile sagt nur, was
   entstehen SOLL: aus einer fertigen Seite ließe sich nicht zurücklesen, welche

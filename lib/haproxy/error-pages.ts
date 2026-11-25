@@ -30,13 +30,15 @@
  *
  * ── Das Design ──
  *
- * Farben, Logo und Texte lassen sich unter „Reverse-Proxy → Fehlerseiten"
- * einstellen (`page-design.ts`). Hier ändert das nur, WAS in einer Datei steht:
- * `renderErrorFile` nimmt das Design, das gerade gilt. Welche Dateien es gibt,
- * wie geschrieben und wie zurückgestellt wird, bleibt davon unberührt.
+ * Unter „Reverse-Proxy → Fehlerseiten" gibt es drei Arten (`page-design.ts`):
+ * die Seite von HAPM, dieselbe mit eigenen Farben, Logo und Texten, oder
+ * eigenes HTML und CSS (`custom-page.ts`). Hier ändert das nur, WAS in einer
+ * Datei steht: `renderErrorFile` nimmt das Design, das gerade gilt. Welche
+ * Dateien es gibt, wie geschrieben und wie zurückgestellt wird, bleibt davon
+ * unberührt.
  *
- * Rein: außer dem Baustein `ui/static/page.ts`, `page-design.ts`, `lib/i18n`
- * und `lib/shell.ts` kein Import. `scripts/verify-proxy-pages.ts` lässt ein
+ * Rein: außer dem Baustein `ui/static/page.ts`, `page-design.ts`,
+ * `custom-page.ts`, `lib/i18n` und `lib/shell.ts` kein Import. `scripts/verify-proxy-pages.ts` lässt ein
  * echtes HAProxy eine so erzeugte Datei ausliefern.
  */
 
@@ -44,7 +46,8 @@ import { ERROR_PAGE_STATUSES, ERROR_PAGE_TEXTS, renderErrorPage } from '@/ui/sta
 import { DEFAULT_LOCALE, msgid, translate, type Locale } from '@/lib/i18n';
 import { buildCommand, withStdin } from '../shell';
 import { clean, HAPROXY_CFG } from './config';
-import { activeDesign, designTheme, PAGE_MAX_BYTES, type PageDesign } from './page-design';
+import { activeDesign, builtInDesign, designTheme, PAGE_MAX_BYTES, type PageDesign } from './page-design';
+import { renderCustomPage } from './custom-page';
 
 /** Eine `errorfile`-Zeile der Konfiguration. */
 export interface ErrorFileRef {
@@ -184,11 +187,20 @@ export function renderErrorFile(status: number, design: PageDesign = activeDesig
     'Connection: close\r\n' +
     'Content-Type: text/html; charset=utf-8\r\n' +
     '\r\n' +
-    renderErrorPage(
-      status,
-      { ...proxyTexts(status, design.locale), ...(design.errors[status] ?? {}), locale: design.locale },
-      designTheme(design)
-    )
+    errorPageDocument(status, design)
+  );
+}
+
+function errorPageDocument(status: number, design: PageDesign): string {
+  if (design.mode === 'custom') {
+    const { title, text } = defaultErrorPageText(status, design.locale);
+    return renderCustomPage(design.custom, { status: String(status), title, text }, design.locale);
+  }
+  const built = builtInDesign(design);
+  return renderErrorPage(
+    status,
+    { ...proxyTexts(status, built.locale), ...(built.errors[status] ?? {}), locale: built.locale },
+    designTheme(built)
   );
 }
 

@@ -117,9 +117,11 @@ describe('PUT /api/haproxy/error-pages/design', () => {
   });
 
   it('speichert ein gültiges Design, liefert es aus und schreibt ins Audit', async () => {
-    const res = await PUT(put({ ...defaultPageDesign(), colors: { accent: '#AA0000' } }));
+    const res = await PUT(put({ ...defaultPageDesign(), mode: 'designed', colors: { accent: '#AA0000' } }));
     expect(res.status).toBe(200);
-    expect(calls.saved).toEqual([{ ...defaultPageDesign(), colors: { accent: '#aa0000', background: null, text: null } }]);
+    expect(calls.saved).toEqual([
+      { ...defaultPageDesign(), mode: 'designed', colors: { accent: '#aa0000', background: null, text: null } },
+    ]);
     expect(calls.applied).toBe(1);
     expect(calls.audits).toHaveLength(1);
   });
@@ -154,6 +156,29 @@ describe('PUT /api/haproxy/error-pages/design', () => {
     expect(error).toMatch(/darf die Logo-Datei höchstens [\d.]+ Bytes groß sein/);
     expect(calls.saved).toEqual([]);
     expect(calls.applied).toBe(0);
+  });
+
+  it('speichert eigenes HTML und CSS', async () => {
+    const custom = { html: '<h1>{{title}}</h1>', css: 'h1{color:red}' };
+    const res = await PUT(put({ ...defaultPageDesign(), mode: 'custom', custom }));
+    expect(res.status).toBe(200);
+    expect(calls.saved).toEqual([{ ...defaultPageDesign(), mode: 'custom', custom }]);
+    expect(calls.applied).toBe(1);
+  });
+
+  it('lehnt eigenes HTML ab, mit dem eine Seite zu groß würde, mit derselben Meldung wie das Formular', async () => {
+    const res = await PUT(put({ ...defaultPageDesign(), mode: 'custom', custom: { html: 'x'.repeat(14_900), css: '' } }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/^Mit diesem HTML und CSS hätte .+ Kürzen Sie HTML oder CSS\.$/);
+    expect(calls.saved).toEqual([]);
+    expect(calls.applied).toBe(0);
+  });
+
+  it('lehnt einen unbekannten Platzhalter ab, ohne zu speichern', async () => {
+    const res = await PUT(put({ ...defaultPageDesign(), mode: 'custom', custom: { html: '{{code}}', css: '' } }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toContain('{{code}}');
+    expect(calls.saved).toEqual([]);
   });
 
   it('liest einen übergroßen Rumpf gar nicht erst', async () => {

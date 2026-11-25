@@ -507,4 +507,48 @@ export const proxyServer: Dictionary = {
   // app/api/geoip/**
   "Der Schalter für das selbsttätige Erneuern kennt nur an und aus.": "The automatic refresh switch only knows on and off.",
   "Der Abruf ist gescheitert.": "The download failed.",
+  // Fehlerseiten: Art der Seiten, eigenes HTML und CSS (app/(app)/reverse-proxy/fehlerseiten, lib/haproxy/page-design.ts, design-pages.ts)
+  'Standard': 'Standard',
+  'Die Fehlerseite von HAPM, hell oder dunkel nach dem Gerät des Besuchers.':
+    "HAPM's error page, light or dark depending on the visitor's device.",
+  'Selbst gestalten': 'Custom design',
+  'Die Seite von HAPM mit eigenen Farben, Logo und Texten.': "HAPM's page with your own colors, logo and texts.",
+  'Eigenes HTML und CSS': 'Own HTML and CSS',
+  'Eine eigene Vorlage für alle Fehlerseiten.': 'Your own template for all error pages.',
+  'Vorlage einsetzen?': 'Insert template?',
+  'HTML und CSS werden durch die Vorlage von HAPM ersetzt. Gespeichert ist damit noch nichts.':
+    'HTML and CSS are replaced by the template from HAPM. Nothing is saved yet.',
+  'Einsetzen': 'Insert',
+  'Art, Farben, Logo, Schriftzug, Fußzeile, Sprache, alle Texte und das eigene HTML und CSS gehen auf die Vorgabe zurück. Danach schreibt HAPM die Seiten neu und lädt HAProxy neu.':
+    'Type, colors, logo, name, footer, language, all texts and your own HTML and CSS return to the defaults. HAPM then rewrites the pages and reloads HAProxy.',
+  'Art der Seiten': 'Page type',
+  'Gilt für alle Fehlerseiten.': 'Applies to all error pages.',
+  'HTML und CSS': 'HTML and CSS',
+  'Das HTML ist der Inhalt von <body>, das CSS steht in einem <style>. Doctype, Zeichensatz, Titel und noindex setzt HAPM. Die Platzhalter werden im HTML ersetzt, mit den Texten von HAPM in der Sprache der Vorgabetexte. Bilder und Schriften von anderen Adressen lädt der Browser des Besuchers nach, HAPM bettet nichts ein.':
+    "The HTML is the content of <body>, the CSS goes into a <style>. HAPM sets the doctype, character set, title and noindex. The placeholders are replaced in the HTML with HAPM's texts in the language of the default texts. The visitor's browser loads images and fonts from other addresses itself, HAPM embeds nothing.",
+  'Eine Vorlage für jeden Status.': 'One template for every status.',
+  'Vorlage einsetzen': 'Insert template',
+  'Platzhalter:': 'Placeholders:',
+  'Die Passwortabfrage behält das Design von HAPM.': 'The password prompt keeps the design from HAPM.',
+  'Mit diesem HTML und CSS hätte „{page}“ {bytes} Bytes, HAProxy lädt höchstens {max}. Kürzen Sie HTML oder CSS.':
+    'With this HTML and CSS, "{page}" would have {bytes} bytes, HAProxy loads at most {max}. Shorten the HTML or CSS.',
+  '{name} hat {bytes} Bytes. Eine ganze Seite darf höchstens {max} Bytes haben.':
+    '{name} has {bytes} bytes. A whole page may have at most {max} bytes.',
+  'Das eigene HTML und CSS ist ungültig.': 'The custom HTML and CSS are invalid.',
+  'Das HTML': 'The HTML',
+  'Das CSS': 'The CSS',
+  'Das HTML ist nur der Inhalt von <body>. Doctype, <html>, <head> und <body> setzt HAPM selbst.':
+    'The HTML is only the content of <body>. HAPM sets the doctype, <html>, <head> and <body> itself.',
+  'Den Platzhalter {found} gibt es nicht. Erlaubt sind {allowed}.':
+    'The placeholder {found} does not exist. Allowed are {allowed}.',
+  'Das CSS darf kein </style> enthalten. Dort endete der Stil, und der Rest stünde als Text auf der Seite.':
+    'The CSS must not contain </style>. The style would end there, and the rest would appear as text on the page.',
+  'Das HTML ist leer. Geben Sie den Inhalt der Seite ein oder wählen Sie eine andere Art.':
+    'The HTML is empty. Enter the content of the page or choose another type.',
+  'Die Eingabe ist zu groß. Jede Seite darf samt Logo oder eigenem HTML höchstens {max} Bytes haben.':
+    'The input is too large. Each page, including the logo or your own HTML, may have at most {max} bytes.',
+  'Die Art der Fehlerseiten ist unbekannt.': 'The type of error pages is unknown.',
+  'Farbschema des Besuchers': "Visitor's color scheme",
+  'Hell': 'Light',
+  'Dunkel': 'Dark',
 };

@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
-  ArrowLeft, FileWarning, ImageIcon, Loader2, Palette, RefreshCw, RotateCcw, Save, Type, Upload, Undo2,
+  ArrowLeft, Code, FileWarning, ImageIcon, LayoutTemplate, Loader2, Palette, RefreshCw, RotateCcw, Save, Type,
+  Upload, Undo2,
 } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
@@ -33,7 +34,15 @@ import {
   type ErrorTextOverride,
   type LockTexts,
   type PageDesign,
+  type PageMode,
 } from '@/lib/haproxy/page-design';
+import {
+  cleanCustomSource,
+  closesStyle,
+  CUSTOM_PAGE_PLACEHOLDERS,
+  CUSTOM_PAGE_STARTER,
+  type CustomPage,
+} from '@/lib/haproxy/custom-page';
 import {
   DESIGN_PAGES,
   designPageLabel,
@@ -62,6 +71,10 @@ import type { ProvisionStep } from '@/lib/haproxy/provision';
  * Zwei Sprachen, die nichts miteinander zu tun haben: die der Oberfläche
  * (`useT()`) für alles hier, und die der Seiten (`design.locale`) für deren
  * Vorgabetexte, auch in den Feldern und in der Vorschau.
+ *
+ * Oben steht die Art (`design.mode`): die Seite von HAPM, „Selbst gestalten“
+ * oder eigenes HTML und CSS. Gezeigt werden nur die Felder der gewählten Art,
+ * die der anderen bleiben im Entwurf und werden mit gespeichert.
  */
 
 interface DesignResult {
@@ -88,6 +101,30 @@ const COLOR_FIELDS: { key: keyof DesignColors; label: string; hint: string }[] =
   },
 ];
 
+const MODES: { mode: PageMode; label: string; hint: string }[] = [
+  {
+    mode: 'standard',
+    label: msgid('Standard'),
+    hint: msgid('Die Fehlerseite von HAPM, hell oder dunkel nach dem Gerät des Besuchers.'),
+  },
+  {
+    mode: 'designed',
+    label: msgid('Selbst gestalten'),
+    hint: msgid('Die Seite von HAPM mit eigenen Farben, Logo und Texten.'),
+  },
+  {
+    mode: 'custom',
+    label: msgid('Eigenes HTML und CSS'),
+    hint: msgid('Eine eigene Vorlage für alle Fehlerseiten.'),
+  },
+];
+
+function ModeIcon({ mode }: { mode: PageMode }) {
+  if (mode === 'designed') return <Palette size={18} />;
+  if (mode === 'custom') return <Code size={18} />;
+  return <LayoutTemplate size={18} />;
+}
+
 function logoBytes(data: string): number {
   return base64ToBytes(data)?.length ?? 0;
 }
@@ -97,6 +134,7 @@ function logoBytes(data: string): number {
  * Vorgabe. Ein halb getippter Farbwert soll die Vorschau nicht leeren.
  */
 function previewable(draft: PageDesign): PageDesign {
+  if (draft.mode === 'custom') return previewableCustom(draft);
   const color = (value: string | null) => (value !== null && isHexColor(value) ? value : null);
   const text = (value: string | null | undefined) => (value && value.trim() ? value : null);
   const parsed = parsePageDesign({
@@ -115,6 +153,23 @@ function previewable(draft: PageDesign): PageDesign {
     lock: { title: text(draft.lock.title), subtitle: text(draft.lock.subtitle), submit: text(draft.lock.submit) },
   });
   return parsed.ok ? parsed.design : defaultPageDesign();
+}
+
+/**
+ * Eigenes HTML, solange es noch nicht gültig ist: die Vorschau zeigt, was
+ * dasteht. Ein unbekannter Platzhalter bleibt als Text stehen, ein CSS mit
+ * `</style>` fällt weg, bis es repariert ist. Die Meldung dazu steht über der Seite.
+ */
+function previewableCustom(draft: PageDesign): PageDesign {
+  const parsed = parsePageDesign(draft);
+  if (parsed.ok) return parsed.design;
+  const css = cleanCustomSource(draft.custom.css);
+  return {
+    ...defaultPageDesign(),
+    mode: 'custom',
+    locale: draft.locale,
+    custom: { html: cleanCustomSource(draft.custom.html), css: closesStyle(css) ? '' : css },
+  };
 }
 
 const same = (a: PageDesign | null, b: PageDesign | null) => JSON.stringify(a) === JSON.stringify(b);
@@ -269,6 +324,30 @@ export default function ErrorPagesDesignPage() {
     edit({ errors });
   }
 
+  function chooseMode(mode: PageMode) {
+    if (!current || current.mode === mode) return;
+    // Beim ersten Wechsel auf eigenes HTML steht eine Vorlage in den Feldern,
+    // die schon jeden Platzhalter benutzt.
+    const empty = !current.custom.html.trim() && !current.custom.css.trim();
+    edit(mode === 'custom' && empty ? { mode, custom: CUSTOM_PAGE_STARTER } : { mode });
+  }
+
+  function setCustom(field: keyof CustomPage, value: string) {
+    if (!current) return;
+    edit({ custom: { ...current.custom, [field]: value } });
+  }
+
+  async function insertStarter() {
+    if (!current) return;
+    const ok = await confirm({
+      title: t('Vorlage einsetzen?'),
+      message: t('HTML und CSS werden durch die Vorlage von HAPM ersetzt. Gespeichert ist damit noch nichts.'),
+      confirmLabel: t('Einsetzen'),
+      variant: 'warning',
+    });
+    if (ok) edit({ custom: CUSTOM_PAGE_STARTER });
+  }
+
   function setLockText(field: keyof LockTexts, value: string | null) {
     if (!current) return;
     edit({ lock: { ...current.lock, [field]: value } });
@@ -395,7 +474,7 @@ export default function ErrorPagesDesignPage() {
     const ok = await confirm({
       title: t('Zurück auf das Design von HAPM?'),
       message: t(
-        'Farben, Logo, Schriftzug, Fußzeile, Sprache und alle Texte gehen auf die Vorgabe zurück. Danach schreibt HAPM die Seiten neu und lädt HAProxy neu.'
+        'Art, Farben, Logo, Schriftzug, Fußzeile, Sprache, alle Texte und das eigene HTML und CSS gehen auf die Vorgabe zurück. Danach schreibt HAPM die Seiten neu und lädt HAProxy neu.'
       ),
       confirmLabel: t('Zurücksetzen'),
       variant: 'warning',
@@ -483,7 +562,8 @@ export default function ErrorPagesDesignPage() {
       </div>
 
       {loadError && <div className="alert alert-danger sys-block">{loadError}</div>}
-      {problem && <div className="alert alert-danger sys-block">{problem}</div>}
+      {/* Bei eigenem HTML steht die Meldung unter den Feldern, an denen sie hängt. */}
+      {problem && current?.mode !== 'custom' && <div className="alert alert-danger sys-block">{problem}</div>}
 
       {!current ? (
         <SkeletonRows />
@@ -493,125 +573,33 @@ export default function ErrorPagesDesignPage() {
             <section className="form-section">
               <div className="form-section-head">
                 <span className="form-section-icon">
-                  <Palette size={17} />
+                  <LayoutTemplate size={17} />
                 </span>
                 <div>
-                  <div className="form-section-title">{t('Farben')}</div>
-                  <div className="form-section-sub">{t('Leer heißt: die Farbe von HAPM.')}</div>
-                </div>
-              </div>
-              {COLOR_FIELDS.map((field) => (
-                <ColorField
-                  key={field.key}
-                  label={t(field.label)}
-                  hint={t(field.hint)}
-                  value={current.colors[field.key]}
-                  fallback={STATIC_THEME_DEFAULTS[field.key]}
-                  onChange={(value) => setColor(field.key, value)}
-                />
-              ))}
-            </section>
-
-            <section className="form-section">
-              <div className="form-section-head">
-                <span className="form-section-icon">
-                  <ImageIcon size={17} />
-                </span>
-                <div>
-                  <div className="form-section-title">
-                    {t('Logo und Name')}
-                    <InfoHint text={t('Das Logo steckt als Data-URI in jeder Seite: HAProxy liefert eine Fehlerseite als eine Datei aus und lädt nichts nach. Erlaubt sind SVG, PNG, JPEG und WebP, geprüft am Inhalt der Datei. Ein SVG wird als Bild eingebunden und führt kein Skript aus. HAPM verkleinert keine Bilder.')} />
-                  </div>
-                  <div className="form-section-sub">{t('Oben auf jeder Seite.')}</div>
+                  <div className="form-section-title">{t('Art der Seiten')}</div>
+                  <div className="form-section-sub">{t('Gilt für alle Fehlerseiten.')}</div>
                 </div>
               </div>
 
-              <div className="choice-group" role="group" aria-label={t('Logo')}>
-                {(
-                  [
-                    ['hapm', msgid('Logo von HAPM')],
-                    ['custom', msgid('Eigenes')],
-                    ['none', msgid('Keines')],
-                  ] as const
-                ).map(([kind, label]) => (
+              <div className="kind-grid hapm-mode" role="radiogroup" aria-label={t('Art der Seiten')}>
+                {MODES.map((entry) => (
                   <button
-                    key={kind}
+                    key={entry.mode}
                     type="button"
-                    className={`choice-btn${current.logo.kind === kind ? ' active' : ''}`}
-                    aria-pressed={current.logo.kind === kind}
-                    onClick={() => chooseLogo(kind)}
+                    role="radio"
+                    aria-checked={current.mode === entry.mode}
+                    className={`kind-card${current.mode === entry.mode ? ' active' : ''}`}
+                    onClick={() => chooseMode(entry.mode)}
                   >
-                    {t(label)}
+                    <span className="kind-card-icon">
+                      <ModeIcon mode={entry.mode} />
+                    </span>
+                    <span className="kind-card-text">
+                      <span className="kind-card-title">{t(entry.label)}</span>
+                      <span className="kind-card-sub">{t(entry.hint)}</span>
+                    </span>
                   </button>
                 ))}
-              </div>
-
-              <input
-                ref={fileInput}
-                type="file"
-                accept=".svg,.png,.jpg,.jpeg,.webp,image/svg+xml,image/png,image/jpeg,image/webp"
-                style={{ display: 'none' }}
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  event.target.value = '';
-                  if (file) void pickLogo(file);
-                }}
-              />
-
-              {current.logo.kind === 'custom' && (
-                <div className="hapm-design-field">
-                  <span className="form-hint">
-                    {t('{type}, {bytes} Bytes', {
-                      type: LOGO_TYPES[current.logo.mime],
-                      bytes: number(logoBytes(current.logo.data)),
-                    })}
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => fileInput.current?.click()}
-                  >
-                    <Upload size={14} />
-                    {t('Andere Datei')}
-                  </button>
-                </div>
-              )}
-              <span className="form-hint">
-                {t('Mit den jetzigen Texten passt eine Logo-Datei bis {bytes} Bytes.', {
-                  bytes: number(logoByteBudget(preview)),
-                })}
-              </span>
-
-              <div className="form-group">
-                <div className="form-label-row">
-                  <label className="form-label" htmlFor="design-brand">
-                    {t('Name neben dem Logo')}
-                  </label>
-                  <InfoHint text={t('Optional, etwa der Name der Firma. Steht neben dem Logo oder allein, wenn kein Logo gewählt ist.')} />
-                </div>
-                <input
-                  id="design-brand"
-                  className="form-input"
-                  value={current.brand}
-                  maxLength={DESIGN_TEXT_LIMITS.brand}
-                  placeholder={t('Kein Name')}
-                  onChange={(event) => edit({ brand: event.target.value })}
-                />
-              </div>
-            </section>
-
-            <section className="form-section">
-              <div className="form-section-head">
-                <span className="form-section-icon">
-                  <Type size={17} />
-                </span>
-                <div>
-                  <div className="form-section-title">
-                    {t('Texte')}
-                    <InfoHint text={t('Je Fall eine Überschrift und ein Text. Die Passwortabfrage hat drei Fassungen (Abfrage, falsches Passwort, zu viele Versuche), die sich Überschrift, Text und Knopf teilen. Die Hinweise darin und der Knopf der Fehlerseiten folgen der Sprache der Vorgabetexte.')} />
-                  </div>
-                  <div className="form-section-sub">{t('Ein Fall nach dem anderen, wie in der Vorschau.')}</div>
-                </div>
               </div>
 
               <div className="form-group">
@@ -628,61 +616,259 @@ export default function ErrorPagesDesignPage() {
                   options={LOCALES.map((entry) => ({ value: entry, label: LOCALE_NAMES[entry] }))}
                 />
               </div>
+            </section>
 
-              <Select
-                value={page.id}
-                onChange={setPageId}
-                options={DESIGN_PAGES.map((entry) => ({
-                  value: entry.id,
-                  label: designPageLabel(entry, t),
-                  hint: hasCustomText(entry) ? t('Eigener Text') : t(entry.hint),
-                }))}
-              />
+            {current.mode === 'custom' && (
+              <section className="form-section">
+                <div className="form-section-head">
+                  <span className="form-section-icon">
+                    <Code size={17} />
+                  </span>
+                  <div>
+                    <div className="form-section-title">
+                      {t('HTML und CSS')}
+                      <InfoHint text={t('Das HTML ist der Inhalt von <body>, das CSS steht in einem <style>. Doctype, Zeichensatz, Titel und noindex setzt HAPM. Die Platzhalter werden im HTML ersetzt, mit den Texten von HAPM in der Sprache der Vorgabetexte. Bilder und Schriften von anderen Adressen lädt der Browser des Besuchers nach, HAPM bettet nichts ein.')} />
+                    </div>
+                    <div className="form-section-sub">{t('Eine Vorlage für jeden Status.')}</div>
+                  </div>
+                </div>
 
-              {page.kind === 'error' && errorDefaults ? (
-                <>
-                  <OverrideField
-                    label={t('Überschrift')}
-                    value={current.errors[page.status]?.title}
-                    fallback={errorDefaults.title}
-                    max={DESIGN_TEXT_LIMITS.title}
-                    onChange={(value) => setErrorText(page.status, 'title', value)}
+                <div className="form-group">
+                  <div className="form-label-row">
+                    <label className="form-label" htmlFor="design-custom-html">
+                      HTML
+                    </label>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={insertStarter}>
+                      <RotateCcw size={14} />
+                      {t('Vorlage einsetzen')}
+                    </button>
+                  </div>
+                  <textarea
+                    id="design-custom-html"
+                    className="form-textarea mono"
+                    rows={12}
+                    spellCheck={false}
+                    autoCapitalize="off"
+                    autoCorrect="off"
+                    value={current.custom.html}
+                    onChange={(event) => setCustom('html', event.target.value)}
                   />
-                  <OverrideField
-                    label={t('Text')}
-                    value={current.errors[page.status]?.text}
-                    fallback={errorDefaults.text}
-                    max={DESIGN_TEXT_LIMITS.text}
-                    multiline
-                    onChange={(value) => setErrorText(page.status, 'text', value)}
+                  <span className="form-hint hapm-placeholders">
+                    {t('Platzhalter:')}
+                    {CUSTOM_PAGE_PLACEHOLDERS.map((name) => (
+                      <code key={name}>{`{{${name}}}`}</code>
+                    ))}
+                  </span>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label" htmlFor="design-custom-css">
+                    CSS
+                  </label>
+                  <textarea
+                    id="design-custom-css"
+                    className="form-textarea mono"
+                    rows={12}
+                    spellCheck={false}
+                    autoCapitalize="off"
+                    autoCorrect="off"
+                    value={current.custom.css}
+                    onChange={(event) => setCustom('css', event.target.value)}
                   />
-                </>
-              ) : (
-                <>
-                  <OverrideField
-                    label={t('Überschrift')}
-                    value={current.lock.title}
-                    fallback={lockDefaults.title}
-                    max={DESIGN_TEXT_LIMITS.title}
-                    onChange={(value) => setLockText('title', value)}
+                </div>
+
+                {problem && (
+                  <div className="alert alert-danger" role="alert">
+                    {problem}
+                  </div>
+                )}
+
+                <span className="form-hint">
+                  {t('Die Passwortabfrage behält das Design von HAPM.')}
+                </span>
+              </section>
+            )}
+
+            {current.mode === 'designed' && (
+              <>
+                <section className="form-section">
+                  <div className="form-section-head">
+                    <span className="form-section-icon">
+                      <Palette size={17} />
+                    </span>
+                    <div>
+                      <div className="form-section-title">{t('Farben')}</div>
+                      <div className="form-section-sub">{t('Leer heißt: die Farbe von HAPM.')}</div>
+                    </div>
+                  </div>
+                  {COLOR_FIELDS.map((field) => (
+                    <ColorField
+                      key={field.key}
+                      label={t(field.label)}
+                      hint={t(field.hint)}
+                      value={current.colors[field.key]}
+                      fallback={STATIC_THEME_DEFAULTS[field.key]}
+                      onChange={(value) => setColor(field.key, value)}
+                    />
+                  ))}
+                </section>
+
+                <section className="form-section">
+                  <div className="form-section-head">
+                    <span className="form-section-icon">
+                      <ImageIcon size={17} />
+                    </span>
+                    <div>
+                      <div className="form-section-title">
+                        {t('Logo und Name')}
+                        <InfoHint text={t('Das Logo steckt als Data-URI in jeder Seite: HAProxy liefert eine Fehlerseite als eine Datei aus und lädt nichts nach. Erlaubt sind SVG, PNG, JPEG und WebP, geprüft am Inhalt der Datei. Ein SVG wird als Bild eingebunden und führt kein Skript aus. HAPM verkleinert keine Bilder.')} />
+                      </div>
+                      <div className="form-section-sub">{t('Oben auf jeder Seite.')}</div>
+                    </div>
+                  </div>
+
+                  <div className="choice-group" role="group" aria-label={t('Logo')}>
+                    {(
+                      [
+                        ['hapm', msgid('Logo von HAPM')],
+                        ['custom', msgid('Eigenes')],
+                        ['none', msgid('Keines')],
+                      ] as const
+                    ).map(([kind, label]) => (
+                      <button
+                        key={kind}
+                        type="button"
+                        className={`choice-btn${current.logo.kind === kind ? ' active' : ''}`}
+                        aria-pressed={current.logo.kind === kind}
+                        onClick={() => chooseLogo(kind)}
+                      >
+                        {t(label)}
+                      </button>
+                    ))}
+                  </div>
+
+                  <input
+                    ref={fileInput}
+                    type="file"
+                    accept=".svg,.png,.jpg,.jpeg,.webp,image/svg+xml,image/png,image/jpeg,image/webp"
+                    style={{ display: 'none' }}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      event.target.value = '';
+                      if (file) void pickLogo(file);
+                    }}
                   />
-                  <OverrideField
-                    label={t('Text')}
-                    value={current.lock.subtitle}
-                    fallback={lockDefaults.subtitle}
-                    max={DESIGN_TEXT_LIMITS.text}
-                    multiline
-                    onChange={(value) => setLockText('subtitle', value)}
+
+                  {current.logo.kind === 'custom' && (
+                    <div className="hapm-design-field">
+                      <span className="form-hint">
+                        {t('{type}, {bytes} Bytes', {
+                          type: LOGO_TYPES[current.logo.mime],
+                          bytes: number(logoBytes(current.logo.data)),
+                        })}
+                      </span>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => fileInput.current?.click()}
+                      >
+                        <Upload size={14} />
+                        {t('Andere Datei')}
+                      </button>
+                    </div>
+                  )}
+                  <span className="form-hint">
+                    {t('Mit den jetzigen Texten passt eine Logo-Datei bis {bytes} Bytes.', {
+                      bytes: number(logoByteBudget(preview)),
+                    })}
+                  </span>
+
+                  <div className="form-group">
+                    <div className="form-label-row">
+                      <label className="form-label" htmlFor="design-brand">
+                        {t('Name neben dem Logo')}
+                      </label>
+                      <InfoHint text={t('Optional, etwa der Name der Firma. Steht neben dem Logo oder allein, wenn kein Logo gewählt ist.')} />
+                    </div>
+                    <input
+                      id="design-brand"
+                      className="form-input"
+                      value={current.brand}
+                      maxLength={DESIGN_TEXT_LIMITS.brand}
+                      placeholder={t('Kein Name')}
+                      onChange={(event) => edit({ brand: event.target.value })}
+                    />
+                  </div>
+                </section>
+
+                <section className="form-section">
+                  <div className="form-section-head">
+                    <span className="form-section-icon">
+                      <Type size={17} />
+                    </span>
+                    <div>
+                      <div className="form-section-title">
+                        {t('Texte')}
+                        <InfoHint text={t('Je Fall eine Überschrift und ein Text. Die Passwortabfrage hat drei Fassungen (Abfrage, falsches Passwort, zu viele Versuche), die sich Überschrift, Text und Knopf teilen. Die Hinweise darin und der Knopf der Fehlerseiten folgen der Sprache der Vorgabetexte.')} />
+                      </div>
+                      <div className="form-section-sub">{t('Ein Fall nach dem anderen, wie in der Vorschau.')}</div>
+                    </div>
+                  </div>
+
+                  <Select
+                    value={page.id}
+                    onChange={setPageId}
+                    options={DESIGN_PAGES.map((entry) => ({
+                      value: entry.id,
+                      label: designPageLabel(entry, t),
+                      hint: hasCustomText(entry) ? t('Eigener Text') : t(entry.hint),
+                    }))}
                   />
-                  <OverrideField
-                    label={t('Knopf')}
-                    value={current.lock.submit}
-                    fallback={lockDefaults.submit}
-                    max={DESIGN_TEXT_LIMITS.submit}
-                    onChange={(value) => setLockText('submit', value)}
-                  />
-                </>
-              )}
+
+                  {page.kind === 'error' && errorDefaults ? (
+                    <>
+                      <OverrideField
+                        label={t('Überschrift')}
+                        value={current.errors[page.status]?.title}
+                        fallback={errorDefaults.title}
+                        max={DESIGN_TEXT_LIMITS.title}
+                        onChange={(value) => setErrorText(page.status, 'title', value)}
+                      />
+                      <OverrideField
+                        label={t('Text')}
+                        value={current.errors[page.status]?.text}
+                        fallback={errorDefaults.text}
+                        max={DESIGN_TEXT_LIMITS.text}
+                        multiline
+                        onChange={(value) => setErrorText(page.status, 'text', value)}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <OverrideField
+                        label={t('Überschrift')}
+                        value={current.lock.title}
+                        fallback={lockDefaults.title}
+                        max={DESIGN_TEXT_LIMITS.title}
+                        onChange={(value) => setLockText('title', value)}
+                      />
+                      <OverrideField
+                        label={t('Text')}
+                        value={current.lock.subtitle}
+                        fallback={lockDefaults.subtitle}
+                        max={DESIGN_TEXT_LIMITS.text}
+                        multiline
+                        onChange={(value) => setLockText('subtitle', value)}
+                      />
+                      <OverrideField
+                        label={t('Knopf')}
+                        value={current.lock.submit}
+                        fallback={lockDefaults.submit}
+                        max={DESIGN_TEXT_LIMITS.submit}
+                        onChange={(value) => setLockText('submit', value)}
+                      />
+              </>
+            )}
 
               <div className="form-group">
                 <div className="form-label-row">
@@ -701,6 +887,8 @@ export default function ErrorPagesDesignPage() {
                 />
               </div>
             </section>
+            </>
+            )}
           </div>
 
           <DesignPreview design={preview} pageId={page.id} onPageChange={setPageId} />

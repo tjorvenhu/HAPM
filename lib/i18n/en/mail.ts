@@ -124,8 +124,6 @@ export const mail: Dictionary = {
   'Speichern fehlgeschlagen.': 'Saving failed.',
   'Design gespeichert': 'Design saved',
   'Zurück auf das Design von HAPM?': 'Back to the design from HAPM?',
-  'Farben, Logo, Schriftzug, Fußzeile, Sprache und alle Texte gehen auf die Vorgabe zurück. Danach schreibt HAPM die Seiten neu und lädt HAProxy neu.':
-    'Colors, logo, name, footer, language, and all texts go back to the defaults. HAPM then rewrites the pages and reloads HAProxy.',
   'Zurücksetzen fehlgeschlagen.': 'Reset failed.',
   'Zurücksetzen fehlgeschlagen': 'Reset failed',
   'Design von HAPM': 'Design from HAPM',
