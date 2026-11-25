@@ -1256,7 +1256,9 @@ function AddressStep({
           <dt>{t('Typ')}</dt>
           <dd>{recordAddress.includes(':') ? 'AAAA' : 'A'}</dd>
           <dt>{t('Wert')}</dt>
-          <dd>
+          {/* Feld und „i“ in einer Zeile: das Feld stand als Block da, und das
+              „i“ rutschte darunter. */}
+          <dd className="hapm-record-value">
             {recordProvider ? (
               <div className="auth-field">
                 <input
