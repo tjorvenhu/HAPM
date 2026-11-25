@@ -304,7 +304,7 @@ export const proxyPages: Dictionary = {
     'How another service or an AI assistant creates, changes and removes domains and targets in HAProxy. The guides are in {api} and {mcp}.',
   'API-Key anlegen': 'Create API key',
   'Zugang': 'Access',
-  'Die Basis-URL ist die Adresse, unter der HAPM erreichbar ist. Der Parameter {param} ist überall freiwillig: ohne ihn gilt dieser Server.':
+  'Die Basis-URL ist die Adresse, unter der HAPM erreichbar ist. Der Parameter {param} ist überall optional: ohne ihn gilt dieser Server.':
     'The base URL is the address where HAPM is reachable. The parameter {param} is optional everywhere: without it, this server applies.',
   'Basis-URL': 'Base URL',
   'Jeder Endpunkt der Tabelle unten hängt daran. Kein CSRF-Token: der schützt einen Browser mit Cookie, und hier gibt es weder das eine noch das andere.':

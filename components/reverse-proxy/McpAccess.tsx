@@ -90,7 +90,7 @@ export default function McpAccess({ publicUrl, loading }: { publicUrl: string | 
   const copyLabel = t('Kopieren');
 
   return (
-    <div className="card sys-block">
+    <div className="card sys-block api-card">
       <div className="form-section-head">
         <span className="form-section-icon">
           <Bot size={17} />
@@ -103,7 +103,7 @@ export default function McpAccess({ publicUrl, loading }: { publicUrl: string | 
         </div>
       </div>
 
-      <div className="alert alert-warning sys-block">
+      <div className="alert alert-warning">
         {t(
           'Jedes Werkzeug läuft mit allen Rechten des Keys: Ziele anlegen, ändern und entfernen. Am besten einen eigenen Key für MCP anlegen.'
         )}
@@ -166,7 +166,7 @@ export default function McpAccess({ publicUrl, loading }: { publicUrl: string | 
 
           {client === 'connector' && (
             <>
-              <p className="form-hint sys-block">
+              <p className="form-hint">
                 {t(
                   'In Claude unter Connectors einen eigenen Connector (Custom connector) hinzufügen: als Adresse die oben, unter Request headers die Kopfzeile unten, ohne OAuth.'
                 )}

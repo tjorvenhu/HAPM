@@ -438,6 +438,11 @@ button.sys-back:hover { color: var(--accent-hover); }
 /* „Vorlage einsetzen" steht in der Zeile des Labels, rechts. */
 .hapm-design .form-label-row > .btn { margin-left: auto; margin-block: -0.25rem; }
 
+/* ── API und MCP: die Karten „Zugang“ und „MCP“ ──
+ * Eine Spalte mit festem Abstand: Kopf, Warnung, Felder und Befehl stünden
+ * sonst ohne Luft aneinander, weil `.form-group` selbst keinen Rand hat. */
+.api-card { display: flex; flex-direction: column; gap: 1.25rem; }
+
 /* ── API und MCP: ein Schnipsel zum Kopieren ──
  * `.code-block` mit dem Knopf daneben, oben bündig. Lange Zeilen brechen um,
  * damit der ganze Befehl zu lesen ist; kopiert wird er über den Knopf, und

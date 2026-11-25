@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, type CSSProperties, type FormEvent, t
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { createPortal } from 'react-dom';
 import {
   ArrowLeft,
   ArrowRight,
@@ -11,6 +12,7 @@ import {
   Circle,
   Globe,
   Home,
+  KeyRound,
   Loader2,
   Play,
   RefreshCw,
@@ -23,6 +25,7 @@ import {
   X,
 } from 'lucide-react';
 import { AuthCard } from '@/ui/auth/AuthCard';
+import TwoFactorSetup from '@/ui/auth/TwoFactorSetup';
 import { SetupStepper } from './SetupStepper';
 import { SetupSuccess } from './SetupSuccess';
 import { InfoHint } from '@/ui/primitives/InfoHint';
@@ -116,6 +119,8 @@ export default function SetupPage() {
   const [csrf, setCsrf] = useState('');
   /** In welche Richtung der nächste Schritt hereingleitet. */
   const [motion, setMotion] = useState<'forward' | 'back'>('forward');
+  /** Gesetzt, sobald das Konto steht: dann folgt noch das Angebot des zweiten Faktors. */
+  const [afterAccount, setAfterAccount] = useState<SetupView | null>(null);
 
   /** Den Stand übernehmen und beim nächsten offenen Schritt weitermachen. */
   const advance = useCallback(
@@ -209,6 +214,23 @@ export default function SetupPage() {
     </div>
   );
 
+  // Nach dem Konto, noch in Schritt 1: der zweite Faktor, auf Wunsch. Kein
+  // eigener Schritt, weil er freiwillig ist und später unter „Konto“ geht. Ein
+  // Neuladen landet deshalb beim nächsten Schritt und nicht wieder hier.
+  if (shown === 'account' && afterAccount) {
+    return (
+      <Frame
+        step={shown}
+        title={t('Konto absichern')}
+        motion={motion}
+        progress={progress}
+        subtitle={t('Das Konto ist angelegt. Schützen Sie es mit einem zweiten Faktor.')}
+      >
+        <SecurityStep csrf={csrf} onDone={() => advance(afterAccount)} />
+      </Frame>
+    );
+  }
+
   if (shown === 'account') {
     return (
       <Frame step={shown} motion={motion} progress={progress} subtitle={t('Legen Sie zuerst das Konto an, mit dem Sie HAPM verwalten.')}>
@@ -216,7 +238,12 @@ export default function SetupPage() {
           onCreated={(token) => {
             setCsrf(token);
             call<{ setup?: SetupView }>(token, '/api/setup')
-              .then((data) => (data.setup ? advance(data.setup) : router.replace('/login')))
+              .then((data) => {
+                if (!data.setup) return router.replace('/login');
+                setSetup(data.setup);
+                setMotion('forward');
+                setAfterAccount(data.setup);
+              })
               .catch(() => router.replace('/login'));
           }}
           onNoSession={() => router.replace('/login')}
@@ -436,6 +463,72 @@ function AccountStep({
         {loading ? t('Konto wird angelegt…') : t('Konto anlegen')}
       </button>
     </form>
+  );
+}
+
+/* ── Schritt 1, zweiter Teil: Konto absichern ── */
+
+function SecurityStep({ csrf, onDone }: { csrf: string; onDone: () => void }) {
+  const { t } = useT();
+  const [open, setOpen] = useState(false);
+  const [enabled, setEnabled] = useState(false);
+
+  return (
+    <>
+      <div className={enabled ? 'hapm-security-card is-done' : 'hapm-security-card'}>
+        <span className="hapm-security-icon">{enabled ? <Check size={20} strokeWidth={2.5} /> : <ShieldCheck size={20} />}</span>
+        <span className="hapm-security-text">
+          <strong>{enabled ? t('Der zweite Faktor ist eingerichtet') : t('Zweiter Faktor')}</strong>
+          <span>
+            {enabled
+              ? t('Bei jeder Anmeldung fragt HAPM nach dem Passwort einen Code aus Ihrer App.')
+              : t('Ein Code aus einer Authenticator-App zusätzlich zum Passwort.')}
+          </span>
+        </span>
+        {!enabled && (
+          <button className="btn btn-secondary" type="button" onClick={() => setOpen(true)}>
+            {t('Jetzt einrichten')}
+          </button>
+        )}
+      </div>
+
+      <div className="form-note">
+        <KeyRound size={14} />
+        <span>
+          {t('Passkeys richten Sie nach der Einrichtung unter Konto ein. Dafür braucht HAPM seine Adresse und ein SMTP-Konto.')}
+        </span>
+      </div>
+
+      <div className="hapm-setup-nav">
+        <button className="auth-submit" type="button" onClick={onDone}>
+          <ArrowRight size={15} />
+          {enabled ? t('Weiter') : t('Ohne zweiten Faktor weiter')}
+        </button>
+      </div>
+
+      {/* Per Portal an `body`: die Karte hat `backdrop-filter`, und darin bezöge
+          sich eine fest positionierte Fläche auf die Karte statt aufs Fenster. */}
+      {open && createPortal(
+        <TwoFactorSetup
+          className="shell-page"
+          start={async () => {
+            const data = await call<{ qrCodeDataUrl: string; manualCode: string }>(csrf, '/api/account/2fa/setup', {
+              method: 'POST',
+            });
+            return { qrCodeDataUrl: data.qrCodeDataUrl, manualCode: data.manualCode };
+          }}
+          verify={async (code) => {
+            await call(csrf, '/api/account/2fa/verify', { method: 'POST', body: JSON.stringify({ code }) });
+          }}
+          onComplete={() => {
+            setOpen(false);
+            setEnabled(true);
+          }}
+          onCancel={() => setOpen(false)}
+        />,
+        document.body
+      )}
+    </>
   );
 }
 

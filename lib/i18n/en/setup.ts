@@ -161,4 +161,11 @@ export const setup: Dictionary = {
   "HAPM stellt in dieser Installation keine Zertifikate aus. Laden Sie das für {domain} hoch.": "HAPM does not issue certificates in this installation. Upload the one for {domain}.",
   "Zertifikat hochladen": "Upload certificate",
   "Für {domains} ist kein Zertifikat hochgeladen. HAPM stellt in dieser Installation keins selbst aus.": "No certificate is uploaded for {domains}. HAPM does not issue any itself in this installation.",
+  "Konto absichern": "Secure your account",
+  "Das Konto ist angelegt. Schützen Sie es mit einem zweiten Faktor.": "Your account is created. Protect it with a second factor.",
+  "Der zweite Faktor ist eingerichtet": "The second factor is set up",
+  "Bei jeder Anmeldung fragt HAPM nach dem Passwort einen Code aus Ihrer App.": "At every sign-in, HAPM asks for a code from your app after the password.",
+  "Ein Code aus einer Authenticator-App zusätzlich zum Passwort.": "A code from an authenticator app in addition to the password.",
+  "Passkeys richten Sie nach der Einrichtung unter Konto ein. Dafür braucht HAPM seine Adresse und ein SMTP-Konto.": "You can add passkeys under Account once setup is done. HAPM needs its address and an SMTP account for that.",
+  "Ohne zweiten Faktor weiter": "Continue without a second factor",
 };

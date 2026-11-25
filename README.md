@@ -10,7 +10,7 @@
 Domains, Zertifikate und Weiterleitungen im Browser anlegen.<br>
 HAProxy, Let's Encrypt und die Grundkonfiguration richtet HAPM selbst ein.
 
-[![Build](https://github.com/tjorvenhu/HAPM/actions/workflows/image.yml/badge.svg)](https://github.com/tjorvenhu/HAPM/actions/workflows/image.yml)
+[![Build](https://github.com/tjorvenhu/HAPM/actions/workflows/image.yml/badge.svg?branch=main)](https://github.com/tjorvenhu/HAPM/actions/workflows/image.yml)
 [![Lizenz: AGPL-3.0](https://img.shields.io/badge/Lizenz-AGPL--3.0-blue.svg)](LICENSE)
 [![Abbild](https://img.shields.io/badge/ghcr.io-tjorvenhu%2Fhapm-2a7d5f?logo=docker&logoColor=white)](https://github.com/tjorvenhu/HAPM/pkgs/container/hapm)
 ![Plattformen](https://img.shields.io/badge/Plattform-linux%2Famd64%20%7C%20linux%2Farm64-555)
@@ -343,7 +343,7 @@ sechs Schritte:
 
 | Schritt | Was passiert |
 |---|---|
-| **1. Konto** | Sie legen das erste Konto an, mit dem Sie HAPM verwalten |
+| **1. Konto** | Sie legen das erste Konto an, mit dem Sie HAPM verwalten, und richten auf Wunsch gleich den zweiten Faktor ein. Passkeys kommen nach der Einrichtung unter „Konto“ dazu |
 | **2. Erreichbarkeit** | Aus dem Internet erreichbar oder nur im eigenen Netz? Davon hängt ab, wie Zertifikate entstehen |
 | **3. DNS** | Cloudflare oder Hetzner mit einem API-Token, dann legt HAPM DNS-Einträge selbst an. Oder **eigener DNS-Server**: HAPM nennt Ihnen jeden Eintrag, den Sie selbst setzen |
 | **4. Zertifikate** | **Let's Encrypt** (Vorgabe), ein **eigener ACME-Server** mit Directory-URL, etwa step-ca im eigenen Netz, oder **hochladen**: HAPM beantragt nichts, Sie laden Zertifikat und Schlüssel hoch |

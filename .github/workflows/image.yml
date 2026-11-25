@@ -14,11 +14,13 @@ permissions:
   contents: read
   packages: write
 
-# Ein neuerer Push löst den laufenden Bau ab. Sonst könnte ein älterer, der
-# länger braucht, `latest` zuletzt setzen.
+# Ein neuerer Push wartet, bis der laufende Bau fertig ist, und bricht ihn
+# nicht ab. Die Reihenfolge bleibt damit erhalten (der neueste setzt `latest`
+# zuletzt), und es entsteht kein abgebrochener Lauf: den zeigt das Abzeichen
+# in der README als „failing“.
 concurrency:
   group: abbild-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   test:

@@ -275,7 +275,7 @@ export default function ReverseProxyApiPage() {
 
       {error && <div className="alert alert-danger sys-block">{error}</div>}
 
-      <div className="card sys-block">
+      <div className="card sys-block api-card">
         <div className="form-section-head">
           <span className="form-section-icon">
             <Link2 size={17} />
@@ -284,7 +284,7 @@ export default function ReverseProxyApiPage() {
             <div className="form-section-title">{t('Zugang')}</div>
             <div className="form-section-sub">
               {rich(
-                'Die Basis-URL ist die Adresse, unter der HAPM erreichbar ist. Der Parameter {param} ist überall freiwillig: ohne ihn gilt dieser Server.',
+                'Die Basis-URL ist die Adresse, unter der HAPM erreichbar ist. Der Parameter {param} ist überall optional: ohne ihn gilt dieser Server.',
                 { param: <code>serverId</code> }
               )}
             </div>

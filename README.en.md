@@ -10,7 +10,7 @@
 Create domains, certificates and redirects in your browser.<br>
 HAPM sets up HAProxy, Let's Encrypt and the base configuration by itself.
 
-[![Build](https://github.com/tjorvenhu/HAPM/actions/workflows/image.yml/badge.svg)](https://github.com/tjorvenhu/HAPM/actions/workflows/image.yml)
+[![Build](https://github.com/tjorvenhu/HAPM/actions/workflows/image.yml/badge.svg?branch=main)](https://github.com/tjorvenhu/HAPM/actions/workflows/image.yml)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![Image](https://img.shields.io/badge/ghcr.io-tjorvenhu%2Fhapm-2a7d5f?logo=docker&logoColor=white)](https://github.com/tjorvenhu/HAPM/pkgs/container/hapm)
 ![Platforms](https://img.shields.io/badge/platform-linux%2Famd64%20%7C%20linux%2Farm64-555)
@@ -343,7 +343,7 @@ After the start, `http://<server-ip>:7080` opens the wizard. It has six steps:
 
 | Step | What happens |
 |---|---|
-| **1. Account** | You create the first account to manage HAPM |
+| **1. Account** | You create the first account to manage HAPM and can set up the second factor right away. Passkeys follow after setup under "Account" |
 | **2. Reachability** | Reachable from the internet or only on your private network? This decides how certificates are issued |
 | **3. DNS** | Cloudflare or Hetzner with an API token, then HAPM creates DNS records itself. Or **your own DNS server**: HAPM tells you every record to set yourself |
 | **4. Certificates** | **Let's Encrypt** (default), **your own ACME server** with a directory URL, for example step-ca on your network, or **upload**: HAPM requests nothing, you upload certificate and key |

@@ -201,6 +201,12 @@ bleiben.
 1. **Konto** und die Adresse für Let's Encrypt (`POST /api/setup`, ohne Sitzung
    und nur, solange es kein Konto gibt). Die E-Mail-Adresse des Kontos wird
    Empfänger der Benachrichtigungen, bis jemand die Empfänger ändert.
+   Danach, noch in Schritt 1, das Angebot des zweiten Faktors (`SecurityStep`,
+   über `/api/account/2fa/*` wie unter „Konto“). Freiwillig und kein eigener
+   Schritt: ein Neuladen geht beim nächsten Schritt weiter. Die Fläche hängt per
+   Portal an `body`, weil die Karte `backdrop-filter` trägt und eine fest
+   positionierte Fläche darin an der Karte statt am Fenster hinge. Passkeys
+   gehen hier noch nicht (sie brauchen Adresse und SMTP-Konto), die Seite sagt das.
 2. **Erreichbarkeit:** nur im eigenen Netz oder aus dem Internet. Die Wahl steht
    sofort in den Einstellungen (`exposure`). An ihr hängt, ob Zertifikate über
    HTTP-01 oder immer über DNS-01 ausgestellt werden, siehe

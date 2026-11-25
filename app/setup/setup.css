@@ -188,6 +188,44 @@
 
 .hapm-setup.auth-page .hapm-step-enter.is-back { animation-name: hapm-setup-in-back; }
 
+/* ── Konto absichern ──
+ * Eine Karte für den zweiten Faktor: Zeichen, Satz, Knopf. Ist er eingerichtet,
+ * wird sie grün und der Knopf verschwindet. */
+.hapm-security-card {
+  display: flex; align-items: center; gap: 14px; padding: 18px;
+  border: 1px solid var(--border); border-radius: 18px; background: var(--surface);
+  transition: border-color 0.3s ease, background-color 0.3s ease;
+}
+
+.hapm-security-card.is-done {
+  border-color: color-mix(in srgb, var(--success) 35%, var(--border));
+  background: linear-gradient(150deg, color-mix(in srgb, var(--success) 9%, var(--surface)), var(--surface) 75%);
+}
+
+.hapm-security-icon {
+  display: grid; place-items: center; flex-shrink: 0; width: 44px; height: 44px; border-radius: 14px;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--success) 10%, var(--surface)), color-mix(in srgb, var(--success) 20%, var(--surface)));
+  color: var(--accent);
+}
+
+.hapm-security-card.is-done .hapm-security-icon {
+  background: color-mix(in srgb, var(--success), var(--accent) 25%); color: var(--surface);
+  animation: hapm-done-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.hapm-security-text { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+
+.hapm-security-text strong { font-weight: 600; }
+
+.hapm-security-text span { font-size: 0.875rem; line-height: 1.45; color: var(--text-secondary); }
+
+.hapm-security-card .btn { flex-shrink: 0; min-height: 2.625rem; padding: 0 1.125rem; border-radius: var(--radius-full); }
+
+@media (max-width: 480px) {
+  .hapm-security-card { flex-wrap: wrap; }
+  .hapm-security-card .btn { width: 100%; }
+}
+
 /* ── Fertig ── */
 
 .hapm-done-head { display: flex; flex-direction: column; align-items: center; }
@@ -315,6 +353,7 @@
   .hapm-done-mark i,
   .hapm-done-steps li,
   .hapm-done-check,
+  .hapm-security-card.is-done .hapm-security-icon,
   .hapm-done-actions,
   .hapm-setup.is-done .auth-title,
   .hapm-setup.is-done .auth-subtitle { animation: none; }
