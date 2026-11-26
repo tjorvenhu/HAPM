@@ -295,7 +295,7 @@ export type SetupStatus = 'open' | 'done' | 'skipped';
  * Was der Benutzer im Assistenten gewählt hat und wie weit das Ausführen kam.
  * Ein Token steht hier nie: er geht durch nach `account.conf`.
  */
-export type SetupStageKey = 'dns' | 'scope' | 'certificate' | 'service' | 'crowdsec' | 'publicUrl';
+export type SetupStageKey = 'dns' | 'scope' | 'certificate' | 'access' | 'service' | 'crowdsec' | 'publicUrl';
 export type SetupStageStatus = 'pending' | 'running' | 'ok' | 'error';
 
 export interface SetupStage {
@@ -369,6 +369,12 @@ export interface SetupState extends DbDoc {
    * fehlend: nicht gefragt (intern, ohne CrowdSec im Stack, ältere Zeile).
    */
   crowdsec?: boolean | null;
+  /**
+   * Von welchen Adressen und Netzen die Oberfläche unter ihrer Domain
+   * aufrufbar sein soll. Leer oder fehlend: von überall. Das Ausführen trägt
+   * sie in die Admin-IPs ein und sperrt das Ziel der Oberfläche darauf.
+   */
+  surfaceIps?: string[];
   execution: SetupExecution | null;
   /**
    * Das Token des gewählten DNS-Anbieters, verschlüsselt, und nur solange die

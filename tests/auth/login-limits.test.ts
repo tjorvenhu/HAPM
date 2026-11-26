@@ -29,7 +29,8 @@ beforeAll(async () => {
   limits = await import('@/lib/rate-limit');
   totp = await import('@/lib/totp');
   twoFactor = await import('@/lib/two-factor');
-});
+  // Der Import zieht den Anmeldedienst mit: unter der Last der ganzen Suite dauert er länger als zehn Sekunden.
+}, 60_000);
 
 afterAll(() => {
   fs.rmSync(dataDir, { recursive: true, force: true });

@@ -321,6 +321,28 @@ bleiben.
    niemand.
    Die Wildcard gibt es nur über ACME mit einem DNS-Anbieter
    (`wildcardPossible`); hochgeladen wird, was das Zertifikat abdeckt.
+   **Der Wert des Eintrags ist bei einer Installation aus dem Internet die
+   öffentliche Adresse** (`recordAddresses`, `orderRecordAddresses`): ein
+   Server bei einem Cloud-Anbieter oder hinter einem Router trägt an seiner
+   Schnittstelle oft nur eine private, und die erreicht von außen niemand.
+   Vorgeschlagen wird in dieser Reihenfolge: die Adresse aus der Adresszeile
+   des Browsers, wenn es eine öffentliche IP ist (unter ihr hat der Aufrufer
+   den Server gerade erreicht), eine öffentliche IPv4-Adresse einer
+   Schnittstelle, sonst die Adresse, unter der ein Dienst außen den Server
+   sieht (`lib/setup/public-address.ts`, siehe „Ausgehende Verbindungen"),
+   dann eine öffentliche IPv6-Adresse, zuletzt die private. IPv4 geht vor: ein
+   Eintrag nur für IPv6 ließe jeden ohne IPv6 draußen. Dasselbe gilt beim Ändern der Adresse.
+   **Aus dem Internet lässt sich die Oberfläche auf Adressen und Netze
+   beschränken** (`surfaceIps` in `setup_state`): der Schalter „Oberfläche nur
+   von bestimmten Adressen aufrufbar", vorbelegt mit der Adresse des Aufrufers.
+   Die Route lehnt eine Liste ab, in der die eigene Adresse fehlt. Das
+   Ausführen trägt die Adressen in die Admin-IPs ein (Schritt `access`, dazu,
+   nicht stattdessen) und legt das Ziel der Oberfläche gesperrt an
+   (`lockedDomains`). Es ist dieselbe Sperre wie im Dialog eines Ziels und
+   steht danach unter Reverse-Proxy, Einstellungen, Zugriff. Sie gilt für die
+   Domain, nicht für den Port der Oberfläche: der bleibt offen, bis
+   `HAPM_BIND=127.0.0.1` gesetzt ist, und ist damit auch der Weg zurück, wenn
+   sich jemand ausgesperrt hat.
 7. **Ausführen** (`lib/setup/run.ts`): Gruppe `HAPM`, Zertifikat, Ziel `hapm`
    auf `127.0.0.1:<PORT>`, `publicUrl`. Jeder Schritt ist ein gewöhnlicher Lauf
    mit derselben Vorabprüfung wie in der Oberfläche und steht in der Historie.
@@ -935,6 +957,17 @@ Weiterleitungen von Docker Hub und GHCR sind nachgemessen.
 | NTP-Server des Netzes | 123 UDP | Host | Uhrzeit. Zertifikate, zweiter Faktor und Ablaufzeiten von Sperren hängen daran | ja |
 | Paketquellen der Distribution, `download.docker.com` | 443 (oder 80) | `install.sh` | Docker installieren, falls es fehlt | nur bei der Installation |
 | `raw.githubusercontent.com` | 443 | `install.sh`, `curl` von Hand | `install.sh` und `docker-compose.yml` holen | nur bei der Installation |
+
+### Öffentliche Adresse des Servers (Container `hapm`)
+
+| Ziel | Port | Wofür | Nötig |
+|---|---|---|---|
+| `api.ipify.org`, sonst `ipv4.icanhazip.com` | 443 | Vorschlag für den DNS-Eintrag der Oberfläche: unter welcher Adresse der Server von außen gesehen wird | nein |
+
+Gefragt wird nur bei einer Installation aus dem Internet, deren Schnittstellen
+keine öffentliche IPv4-Adresse tragen, und nur im Assistenten und beim Ändern der
+Adresse. Mitgeschickt wird nichts außer der Anfrage. Ohne Freigabe fehlt der
+Vorschlag, und die Adresse wird von Hand eingetragen.
 
 ### Abbilder
 

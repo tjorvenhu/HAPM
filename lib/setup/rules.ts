@@ -12,7 +12,7 @@
  * `tests/setup/rules.test.ts` sie nachrechnen kann.
  */
 
-import { isValidDomain, isWildcardDomain, type CreateServiceInput } from '../haproxy/config';
+import { isValidDomain, isValidSourceAddress, isWildcardDomain, type CreateServiceInput } from '../haproxy/config';
 import { certCovers } from '../haproxy/certs';
 import { needsDnsChallenge } from '../haproxy/challenge';
 import { msg, msgid, type Message } from '../i18n/translate';
@@ -44,7 +44,7 @@ export type SetupChoices = Pick<
   | 'wildcardBase'
   | 'crowdsec'
   | 'execution'
->;
+> & { surfaceIps: string[] };
 
 export const EMPTY_SETUP: SetupChoices = {
   exposure: null,
@@ -57,6 +57,7 @@ export const EMPTY_SETUP: SetupChoices = {
   wildcard: false,
   wildcardBase: null,
   crowdsec: null,
+  surfaceIps: [],
   execution: null,
 };
 
@@ -262,8 +263,11 @@ export function certificateDomains(state: Pick<SetupChoices, 'domain' | 'wildcar
   return [state.domain];
 }
 
-/** Das Ziel, unter dem die Oberfläche hinter dem eigenen HAProxy steht. */
-export function hapmServiceInput(domain: string, listenPort: number): CreateServiceInput {
+/**
+ * Das Ziel, unter dem die Oberfläche hinter dem eigenen HAProxy steht.
+ * `adminOnly`: nur von den Admin-IPs aufrufbar (`lockedDomains`, ohne Passwort).
+ */
+export function hapmServiceInput(domain: string, listenPort: number, adminOnly = false): CreateServiceInput {
   return {
     scope: SETUP_SCOPE,
     id: SETUP_SERVICE_ID,
@@ -273,7 +277,7 @@ export function hapmServiceInput(domain: string, listenPort: number): CreateServ
     routes: [],
     balance: null,
     sticky: false,
-    lockedDomains: [],
+    lockedDomains: adminOnly ? [domain] : [],
     passwordLock: null,
     responseHeaders: [],
     requestHeaders: [],
@@ -326,6 +330,82 @@ export function pickServerAddresses(
 }
 
 /**
+ * Ob eine Adresse aus dem Internet erreichbar sein kann: keine private (RFC
+ * 1918, fc00::/7), keine des eigenen Rechners, keine link-lokale und keine aus
+ * dem Bereich der Anbieter für geteilte Adressen (100.64.0.0/10).
+ */
+export function isPublicAddress(address: string): boolean {
+  const text = address.trim().toLowerCase();
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(text);
+  if (v4) {
+    const parts = v4.slice(1).map(Number);
+    if (parts.some((part) => part > 255)) return false;
+    const [a, b] = parts;
+    if (a === 0 || a === 10 || a === 127 || a >= 224) return false;
+    if (a === 100 && b >= 64 && b <= 127) return false;
+    if (a === 169 && b === 254) return false;
+    if (a === 172 && b >= 16 && b <= 31) return false;
+    if (a === 192 && b === 168) return false;
+    return true;
+  }
+  if (!text.includes(':') || !/^[0-9a-f:.]+$/.test(text)) return false;
+  if (text === '::' || text === '::1') return false;
+  if (text.startsWith('::ffff:')) return isPublicAddress(text.slice(7));
+  return !/^f[cd]/.test(text) && !/^fe[89ab]/.test(text);
+}
+
+/**
+ * Die Adressen, die der Assistent für den DNS-Eintrag vorschlägt, die beste
+ * zuerst. Ein Server im Internet steht oft hinter einer Adressumsetzung und
+ * trägt nur eine private Adresse an der Schnittstelle: dort gehört die
+ * öffentliche in den Eintrag, die private erreicht von außen niemand.
+ *
+ * `outside` ist die Adresse, unter der der Server von außen gesehen wird
+ * (`lookupPublicAddress`), `null`, wenn nicht gefragt oder nicht zu erfahren.
+ * Intern bleibt die Reihenfolge der Schnittstellen.
+ *
+ * IPv4 vor IPv6, auch wenn nur die IPv6-Adresse an der Schnittstelle steht
+ * (privates IPv4 hinter einer Adressumsetzung, dazu ein öffentliches IPv6 ist
+ * der übliche Fall): ein Eintrag nur für IPv6 ließe jeden ohne IPv6 draußen.
+ */
+export function orderRecordAddresses(own: string[], exposure: Exposure | null, outside: string | null): string[] {
+  if (exposure !== 'public') return own;
+  const open = own.filter(isPublicAddress);
+  const seen = new Set<string>();
+  return [
+    ...open.filter((entry) => !entry.includes(':')),
+    ...(outside ? [outside] : []),
+    ...open.filter((entry) => entry.includes(':')),
+    ...own.filter((entry) => !isPublicAddress(entry)),
+  ].filter((entry) => !seen.has(entry) && seen.add(entry));
+}
+
+/** Ob die Schnittstellen schon eine öffentliche IPv4-Adresse tragen. Sonst lohnt die Frage nach außen. */
+export function hasPublicIpv4(own: string[]): boolean {
+  return own.some((entry) => !entry.includes(':') && isPublicAddress(entry));
+}
+
+/** Die Liste aus dem Formular: ohne Leerzeilen, ohne Doppelte. */
+export function normalizeSurfaceIps(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map((entry) => String(entry).trim()).filter(Boolean))];
+}
+
+/**
+ * Die Adressen, von denen die Oberfläche aufrufbar sein soll. Leer heißt: von
+ * überall. Jede muss eine Adresse oder ein Netz sein, wie bei den Admin-IPs.
+ */
+export function validateSurfaceIps(list: string[]): Message | null {
+  if (list.length > 50) return msg('Mehr als 50 Adressen sind hier nicht möglich.');
+  for (const address of list) {
+    if (!isValidSourceAddress(address)) {
+      return msg('Keine gültige Adresse: {address}. Erwartet wird eine IP oder ein Netz wie 10.0.0.0/8.', { address });
+    }
+  }
+  return null;
+}
+
+/**
  * Was die DNS-Abfrage über die Domain sagt.
  *
  * `unknown` heißt: die Abfrage selbst ist gescheitert. Das ist nicht „löst
@@ -348,6 +428,7 @@ export const STAGE_LABELS: Record<SetupStageKey, string> = {
   dns: msgid('DNS-Zugangsdaten prüfen'),
   scope: msgid('Gruppe {scope} anlegen'),
   certificate: msgid('Zertifikat ausstellen'),
+  access: msgid('Erlaubte Adressen für die Oberfläche eintragen'),
   service: msgid('Ziel für die Oberfläche anlegen'),
   crowdsec: msgid('CrowdSec für alle Ziele einschalten'),
   publicUrl: msgid('Adresse von HAPM eintragen'),
@@ -359,7 +440,8 @@ export const STAGE_LABELS: Record<SetupStageKey, string> = {
  * eigener ACME-Server HAPM über Port 80 erreicht.
  */
 export function executionPlan(
-  state: Pick<SetupChoices, 'exposure' | 'domain' | 'wildcard' | 'wildcardBase'> & Partial<Pick<SetupChoices, 'crowdsec'>>,
+  state: Pick<SetupChoices, 'exposure' | 'domain' | 'wildcard' | 'wildcardBase'> &
+    Partial<Pick<SetupChoices, 'crowdsec' | 'surfaceIps'>>,
   certificates: CertificateFacts = DEFAULT_CERTIFICATE_FACTS
 ): SetupStageKey[] {
   const exposure: Exposure = state.exposure ?? 'public';
@@ -369,14 +451,23 @@ export function executionPlan(
   // CrowdSec nach dem Ziel der Oberfläche: dann prüft es von Anfang an auch sie,
   // und ein Fehler hier lässt die Oberfläche trotzdem erreichbar zurück.
   const crowdsec = exposure === 'public' && state.crowdsec === true;
+  // Die Adressen vor dem Ziel: es wird gleich gesperrt angelegt, und eine
+  // Sperre ohne Admin-IPs lehnt die Prüfung ab.
+  const access = surfaceRestricted(state);
   return [
     ...(overDns ? (['dns'] as const) : []),
     'scope',
     'certificate',
+    ...(access ? (['access'] as const) : []),
     'service',
     ...(crowdsec ? (['crowdsec'] as const) : []),
     'publicUrl',
   ];
+}
+
+/** Ob die Oberfläche nur von bestimmten Adressen aufrufbar sein soll. Nur öffentlich gefragt. */
+export function surfaceRestricted(state: Pick<SetupChoices, 'exposure'> & Partial<Pick<SetupChoices, 'surfaceIps'>>): boolean {
+  return state.exposure === 'public' && (state.surfaceIps?.length ?? 0) > 0;
 }
 
 export function newExecution(stages: SetupStageKey[], startedAt: string): SetupExecution {

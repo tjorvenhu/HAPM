@@ -17,6 +17,7 @@ export async function getSetupState(): Promise<SetupChoices> {
     wildcard: row.wildcard === true,
     wildcardBase: row.wildcardBase ?? null,
     crowdsec: row.crowdsec ?? null,
+    surfaceIps: Array.isArray(row.surfaceIps) ? row.surfaceIps : [],
     execution: row.execution ?? null,
   };
 }

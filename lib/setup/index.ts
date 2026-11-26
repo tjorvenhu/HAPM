@@ -5,10 +5,13 @@ import { findCertificateFor } from '../haproxy/certs';
 import { uploadedCoverage } from '../haproxy/cert-upload';
 import { getSettings, publicOrigin } from '../settings';
 import type { CertificateSource, Exposure, SetupExecution, SetupStatus, SmtpSecurity } from '../types';
-import { serverAddresses } from './address';
+import { headers } from 'next/headers';
+import { getClientIP } from '../audit';
+import { recordAddresses } from './address';
 import {
   certificateDomains,
   certificateFactsOf,
+  isPublicAddress,
   listenPort,
   resumeStep,
   settleExecution,
@@ -39,6 +42,8 @@ export interface SetupView extends Omit<SetupChoices, 'execution'> {
   publicUrl: string | null;
   listenPort: number;
   serverAddresses: string[];
+  /** Die Adresse des Aufrufers, als Vorschlag für die erlaubten Adressen. `null`: unbekannt. */
+  clientIp: string | null;
   /** Ob der Stack CrowdSec mitbringt: dann schlägt der Assistent es vor. */
   crowdsecInStack: boolean;
   /**
@@ -70,6 +75,21 @@ export interface SetupView extends Omit<SetupChoices, 'execution'> {
     smtpPassSet: boolean;
     mailFrom: string | null;
   };
+}
+
+/**
+ * Die Adresse des Aufrufers aus den Kopfzeilen der laufenden Anfrage, wenn es
+ * eine öffentliche ist. Wer über einen Tunnel oder aus dem Netz des Servers
+ * kommt (127.0.0.1, 10.x), erreicht die Domain später von einer anderen
+ * Adresse: die hier wäre als Vorschlag falsch. Außerhalb einer Anfrage `null`.
+ */
+async function callerAddress(): Promise<string | null> {
+  try {
+    const ip = getClientIP(new Request('http://hapm.invalid/', { headers: await headers() }));
+    return isPublicAddress(ip) ? ip : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function readSetupView(): Promise<SetupView> {
@@ -110,7 +130,8 @@ export async function readSetupView(): Promise<SetupView> {
     execution: settleExecution(execution, setupExecutionAlive()),
     publicUrl: publicOrigin(settings),
     listenPort: listenPort(process.env.PORT),
-    serverAddresses: serverAddresses(),
+    serverAddresses: await recordAddresses(state.exposure ?? settings.exposure),
+    clientIp: await callerAddress(),
     crowdsecInStack: crowdsecInstalled(),
     dnsApi: Boolean(access && access.hook === state.dnsHook && dnsProviderForHook(access.hook)),
     dnsZone: zone?.name ?? null,

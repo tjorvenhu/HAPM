@@ -35,7 +35,9 @@ import {
   HaproxyConfigError,
   findScope,
   parseScopes,
+  readGlobalSettingsPatch,
   validateCreateInput,
+  validateGlobalSettings,
 } from '../haproxy/config';
 import {
   precheckCertificate,
@@ -60,6 +62,7 @@ import {
   listenPort,
   newExecution,
   resumeStep,
+  surfaceRestricted,
   type SetupChoices,
 } from './rules';
 import { getSetupState, setDnsAccess, updateSetupState } from './store';
@@ -184,9 +187,39 @@ const STAGES: Record<SetupStageKey, (context: StageContext) => Promise<string>> 
     return `Ausgestellt für ${domains.join(', ')}.`;
   },
 
+  /**
+   * Die erlaubten Adressen in die Admin-IPs. Dazu, nicht stattdessen: was dort
+   * schon steht (ein Import, eine frühere Einrichtung), gehört jemandem.
+   */
+  async access(context) {
+    const server = localServer();
+    const wanted = context.state.surfaceIps;
+    const { settings } = await readGlobalSettings(server);
+    const missing = wanted.filter((address) => !settings.adminIps.includes(address));
+    if (missing.length === 0) return msgid('Stehen schon in den Admin-IPs.');
+
+    const patch = { addAdminIps: missing };
+    const input = readGlobalSettingsPatch(patch, settings);
+    if ('error' in input) throw new ApiError(input.error);
+    const invalid = validateGlobalSettings(input);
+    if (invalid) throw new ApiError(invalid);
+    await prechecked(() => precheckSettings(server, input));
+    const run = await startHaproxyRun({
+      server,
+      action: 'settings',
+      serviceId: 'globale-einstellungen',
+      // Der Lauf rechnet den Patch unter der Sperre gegen den Stand der Datei.
+      settings: { ...input, patch },
+      actor: context.actor,
+    });
+    await finished(run, context);
+    return `Eingetragen: ${missing.join(', ')}.`;
+  },
+
   async service(context) {
     const server = localServer();
-    const input = hapmServiceInput(context.state.domain!, listenPort(process.env.PORT));
+    const adminOnly = surfaceRestricted(context.state);
+    const input = hapmServiceInput(context.state.domain!, listenPort(process.env.PORT), adminOnly);
     const invalid = validateCreateInput(input);
     if (invalid) throw new ApiError(invalid);
 
@@ -199,7 +232,9 @@ const STAGES: Record<SetupStageKey, (context: StageContext) => Promise<string>> 
         current.domains.length === 1 &&
         current.domains[0].toLowerCase() === input.domains[0] &&
         current.servers.length === 1 &&
-        current.servers[0].target === target;
+        current.servers[0].target === target &&
+        // Auch die Sperre: wer die Einrichtung mit anderen Adressen wiederholt, will sie so.
+        (current.lockedDomains.length > 0 && current.passwordLock === null) === adminOnly;
       if (same) return `Das Ziel besteht schon: ${input.domains[0]} → ${target}.`;
 
       // Eine geänderte Domain nach einem früheren Durchlauf: derselbe Eintrag, neu geschrieben.

@@ -19,7 +19,8 @@ beforeAll(async () => {
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hapm-2fa-'));
   process.env.HAPM_DATA_DIR = dataDir;
   twoFactor = await import('@/lib/two-factor');
-});
+  // Der Import zieht den Anmeldedienst mit: unter der Last der ganzen Suite dauert er länger als zehn Sekunden.
+}, 60_000);
 
 afterAll(() => {
   fs.rmSync(dataDir, { recursive: true, force: true });

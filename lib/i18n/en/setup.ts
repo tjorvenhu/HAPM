@@ -171,4 +171,26 @@ export const setup: Dictionary = {
   "Bitte geben Sie den Absender ein.": "Please enter the sender.",
   'Im eigenen Netz erreicht Let\'s Encrypt den Server nicht, Zertifikate kommen deshalb über Ihren DNS-Anbieter. Im Internet prüft Let\'s Encrypt jede Domain über Port 80.': 'On your own network, Let\'s Encrypt cannot reach the server, so certificates come through your DNS provider. On the internet, Let\'s Encrypt checks every domain over port 80.',
   'HAPM speichert den Token verschlüsselt.': 'HAPM stores the token encrypted.',
+  'Ihre eigene Adresse {ip} steht nicht in der Liste. Die Oberfläche wäre danach für Sie nicht mehr aufrufbar.':
+    'Your own address {ip} is not in the list. You could no longer open the interface afterwards.',
+  'Bitte tragen Sie mindestens eine Adresse ein, oder schalten Sie die Beschränkung aus.':
+    'Please enter at least one address, or switch the restriction off.',
+  'Oberfläche nur von bestimmten Adressen aufrufbar':
+    'Interface only reachable from certain addresses',
+  'Unter ihrer Domain antwortet die Oberfläche dann nur diesen Adressen und Netzen, alle anderen bekommen 403. Das gilt auch für API und MCP. Die Liste steht danach unter Reverse-Proxy, Einstellungen, Zugriff und lässt sich dort ändern.':
+    'Under its domain the interface then only answers these addresses and networks, everyone else gets 403. This also applies to API and MCP. Afterwards the list is under Reverse proxy, Settings, Access and can be changed there.',
+  'Noch keine Adresse eingetragen.':
+    'No address entered yet.',
+  'Eigene Adresse eintragen ({ip})':
+    'Add own address ({ip})',
+  'Das gilt für den Aufruf über die Domain. Über Port {port} bleibt die Oberfläche erreichbar, bis er geschlossen ist.':
+    'This applies to access through the domain. The interface stays reachable on port {port} until it is closed.',
+  'Mehr als 50 Adressen sind hier nicht möglich.':
+    'More than 50 addresses are not possible here.',
+  'Erlaubte Adressen für die Oberfläche eintragen':
+    'Enter the allowed addresses for the interface',
+  'Stehen schon in den Admin-IPs.':
+    'Already among the admin IPs.',
+  'Aufrufbar von': 'Reachable from',
+  'Alle anderen Adressen bekommen unter der Domain 403.': 'All other addresses get 403 under the domain.',
 };

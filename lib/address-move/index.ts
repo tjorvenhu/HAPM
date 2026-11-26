@@ -35,7 +35,7 @@ import { createDocument, getDocument, updateDocument } from '../db';
 import { COLLECTIONS, type AddressMoveStage, type AddressMoveStageKey, type AddressMoveState, type CertificateSource, type Exposure, type HaproxyRun } from '../types';
 import { localServer } from '../helpers';
 import { challengeFor, getSettings, passkeysDroppedBy, updateSettings } from '../settings';
-import { checkDomainAddress, serverAddresses, type AddressCheck } from '../setup/address';
+import { checkDomainAddress, recordAddresses, type AddressCheck } from '../setup/address';
 import { SETUP_SCOPE, SETUP_SERVICE_ID, hapmServiceInput, listenPort, normalizeSetupDomain, validateSetupDomain } from '../setup/rules';
 import { needsDnsChallenge, type ChallengeChoice } from '../haproxy/challenge';
 import { findCertificateFor } from '../haproxy/certs';
@@ -132,7 +132,7 @@ export async function readAddressMoveView(): Promise<AddressMoveView> {
     exposure: settings.exposure,
     certificateSource: settings.certificateSource,
     listenPort: listenPort(process.env.PORT),
-    serverAddresses: serverAddresses(),
+    serverAddresses: await recordAddresses(settings.exposure),
     move: move ? settle(move) : null,
   };
 }
@@ -183,7 +183,7 @@ export async function checkAddressMove(input: string): Promise<AddressMoveCheck>
   const server = localServer();
 
   const [check, zone, probe, inventory] = await Promise.all([
-    checkDomainAddress(domain),
+    checkDomainAddress(domain, settings.exposure),
     zoneForDomain(domain),
     probeProxy(server),
     readCertificateInventory(server).catch(() => null),

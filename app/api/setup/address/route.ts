@@ -8,11 +8,15 @@ import { readSetupView } from '@/lib/setup';
 import { checkDomainAddress } from '@/lib/setup/address';
 import {
   certificateFactsOf,
+  isPublicAddress,
   normalizeSetupDomain,
+  normalizeSurfaceIps,
   validateSetupDomain,
+  validateSurfaceIps,
   validateWildcardBase,
   wildcardPossible,
 } from '@/lib/setup/rules';
+import { addressInNetwork } from '@/lib/geoip/networks';
 import { getDnsAccess, getSetupState, setDnsAccess, updateSetupState } from '@/lib/setup/store';
 import { connectZone } from '@/lib/dns/connect';
 import { dnsProviderForHook } from '@/lib/dns/zones';
@@ -31,7 +35,7 @@ export async function GET(request: Request) {
     const domain = normalizeSetupDomain(new URL(request.url).searchParams.get('domain') ?? '');
     const invalid = validateSetupDomain(domain);
     if (invalid) throw new ApiError(invalid);
-    return ok(await checkDomainAddress(domain));
+    return ok(await checkDomainAddress(domain, (await getSetupState()).exposure));
   } catch (err) {
     return handleError(err);
   }
@@ -46,6 +50,7 @@ export async function PUT(request: Request) {
       domain?: unknown;
       wildcard?: unknown;
       wildcardBase?: unknown;
+      surfaceIps?: unknown;
       skip?: unknown;
     }>(request);
 
@@ -56,7 +61,14 @@ export async function PUT(request: Request) {
       if (state.exposure === 'internal') {
         throw new ApiError(msg('Eine interne Installation braucht die Adresse der Oberfläche.'));
       }
-      await updateSetupState({ address: 'skipped', domain: null, wildcard: false, wildcardBase: null, execution: null });
+      await updateSetupState({
+        address: 'skipped',
+        domain: null,
+        wildcard: false,
+        wildcardBase: null,
+        surfaceIps: [],
+        execution: null,
+      });
       // Ohne Adresse gibt es nichts auszuführen: die Einrichtung ist damit zu Ende.
       await updateSettings({ setupStatus: 'done' });
       await setDnsAccess(null);
@@ -88,8 +100,26 @@ export async function PUT(request: Request) {
       if (badBase) throw new ApiError(badBase);
     }
 
+    // Von welchen Adressen die Oberfläche aufrufbar sein soll. Nur aus dem
+    // Internet gefragt: intern steht der Server ohnehin nur im eigenen Netz.
+    const surfaceIps = state.exposure === 'public' ? normalizeSurfaceIps(body.surfaceIps) : [];
+    const badIps = validateSurfaceIps(surfaceIps);
+    if (badIps) throw new ApiError(badIps);
+    // Wer die eigene Adresse nicht einträgt, sperrt sich mit dem letzten Schritt
+    // aus. Nur bei einer öffentlichen Adresse: über einen Tunnel oder aus dem
+    // Netz des Servers kommt der Aufrufer später von einer anderen.
+    const client = getClientIP(request);
+    if (surfaceIps.length > 0 && isPublicAddress(client) && !surfaceIps.some((network) => addressInNetwork(client, network))) {
+      throw new ApiError(
+        msg('Ihre eigene Adresse {ip} steht nicht in der Liste. Die Oberfläche wäre danach für Sie nicht mehr aufrufbar.', {
+          ip: client,
+        }),
+        409
+      );
+    }
+
     // Ein früheres Ausführen gehört zu den früheren Eingaben.
-    await updateSetupState({ address: 'set', domain, wildcard, wildcardBase, execution: null });
+    await updateSetupState({ address: 'set', domain, wildcard, wildcardBase, surfaceIps, execution: null });
 
     // Mit der Domain steht die Zone fest: sie erscheint ab jetzt unter „DNS".
     // Gelingt das nicht (das Token sieht die Zone nicht), hält es den Schritt
@@ -116,11 +146,13 @@ export async function PUT(request: Request) {
       userEmail: session.email,
       action: 'setup_updated',
       resource: 'settings',
-      details: `Adresse der Oberfläche: ${domain}${wildcardBase ? `, Wildcard *.${wildcardBase}` : ''}`,
+      details:
+        `Adresse der Oberfläche: ${domain}${wildcardBase ? `, Wildcard *.${wildcardBase}` : ''}` +
+        (surfaceIps.length > 0 ? `, aufrufbar von ${surfaceIps.join(', ')}` : ''),
       ip: getClientIP(request),
     });
 
-    return ok({ setup: await readSetupView(), check: await checkDomainAddress(domain) });
+    return ok({ setup: await readSetupView(), check: await checkDomainAddress(domain, state.exposure) });
   } catch (err) {
     return handleError(err);
   }

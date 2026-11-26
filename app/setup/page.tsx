@@ -14,6 +14,7 @@ import {
   Loader2,
   Play,
   RefreshCw,
+  Plus,
   Search,
   Send,
   Server,
@@ -30,6 +31,7 @@ import { SetupSuccess } from './SetupSuccess';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import BrandLogo from '@/components/BrandLogo';
 import Select from '@/components/Select';
+import IpAllowList from '@/components/IpAllowList';
 import { LONG_TEXT } from '@/ui/primitives/hint-text';
 import { usePolling } from '@/components/usePolling';
 import CertificateUploadDialog, { type UploadBody } from '@/components/reverse-proxy/CertificateUploadDialog';
@@ -49,9 +51,12 @@ import {
   certificateFactsOf,
   certificatePathOpen,
   executionOutcome,
+  isPublicAddress,
   normalizeSetupDomain,
+  normalizeSurfaceIps,
   stepReached,
   validateSetupDomain,
+  validateSurfaceIps,
   validateWildcardBase,
   wildcardBaseOf,
   wildcardPossible,
@@ -1335,6 +1340,18 @@ function verdictText(
   }
 }
 
+/**
+ * Die Vorschläge für den Wert des DNS-Eintrags, der beste zuerst. Öffentlich
+ * steht die Adresse aus der Adresszeile des Browsers vorn, wenn es eine
+ * öffentliche IP ist: unter ihr hat der Aufrufer den Server gerade erreicht.
+ */
+function suggestedAddresses(fromServer: string[], internal: boolean): string[] {
+  if (internal || typeof window === 'undefined') return fromServer;
+  const host = window.location.hostname.replace(/^\[|\]$/g, '');
+  if (!isPublicAddress(host)) return fromServer;
+  return [host, ...fromServer.filter((entry) => entry !== host)];
+}
+
 function AddressStep({
   setup,
   csrf,
@@ -1363,6 +1380,13 @@ function AddressStep({
   /** Nur was getippt wurde. Sonst gilt die erste Adresse des Servers. */
   const [addressDraft, setAddressDraft] = useState<string | null>(null);
   const [settingRecord, setSettingRecord] = useState(false);
+  // Von welchen Adressen die Oberfläche aufrufbar sein soll. Nur aus dem
+  // Internet gefragt. Vorbelegt mit der eigenen Adresse: wer sie vergisst,
+  // sperrt sich mit dem letzten Schritt aus.
+  const [restricted, setRestricted] = useState(setup.surfaceIps.length > 0);
+  const [surfaceIps, setSurfaceIps] = useState<string[]>(
+    setup.surfaceIps.length > 0 ? setup.surfaceIps : setup.clientIp ? [setup.clientIp] : []
+  );
   const [recordNote, setRecordNote] = useState('');
   /** Gesetzt, wenn die Zone beim Anbieter liegt, die Domain aber woanders verwaltet wird. */
   const [recordUnused, setRecordUnused] = useState('');
@@ -1374,8 +1398,13 @@ function AddressStep({
   // und jede andere Basis deckte die Oberfläche nicht ab (`validateWildcardBase`).
   const base = suggestedBase ?? '';
   const wildcardOn = dnsReady && wildcard && base !== '';
-  const addresses = setup.serverAddresses;
+  // Wer die Einrichtung unter einer öffentlichen Adresse aufruft, hat die
+  // Adresse schon in der Hand, unter der der Server von außen erreichbar ist.
+  // Sie geht vor dem, was der Server über sich selbst weiß: hinter einer
+  // Adressumsetzung trägt er nur seine interne.
+  const addresses = suggestedAddresses(setup.serverAddresses, internal);
   const recordAddress = (addressDraft ?? addresses[0] ?? '').trim();
+  const allowedIps = restricted ? normalizeSurfaceIps(surfaceIps) : [];
   const dnsProvider = setup.dnsHook ? findDnsProvider(setup.dnsHook) : null;
   /** Der Anbieter, bei dem die Einrichtung den Eintrag selbst setzen kann. */
   const recordProvider = setup.dnsApi ? dnsProvider : null;
@@ -1459,12 +1488,19 @@ function AddressStep({
 
   function save(e: FormEvent) {
     e.preventDefault();
-    const invalid = validateSetupDomain(domain) ?? (wildcardOn ? validateWildcardBase(domain, base) : null);
+    const invalid =
+      validateSetupDomain(domain) ??
+      (wildcardOn ? validateWildcardBase(domain, base) : null) ??
+      validateSurfaceIps(allowedIps);
     if (invalid) {
       setError(t(invalid));
       return;
     }
-    void send({ domain, wildcard: wildcardOn, wildcardBase: wildcardOn ? base : null });
+    if (restricted && allowedIps.length === 0) {
+      setError(t('Bitte tragen Sie mindestens eine Adresse ein, oder schalten Sie die Beschränkung aus.'));
+      return;
+    }
+    void send({ domain, wildcard: wildcardOn, wildcardBase: wildcardOn ? base : null, surfaceIps: allowedIps });
   }
 
   const verdict =
@@ -1625,6 +1661,59 @@ function AddressStep({
           )}
         </dl>
       </div>
+
+      {!internal && (
+        <label className="hapm-switch-row">
+          <span className="hapm-switch-text">
+            <span>
+              {t('Oberfläche nur von bestimmten Adressen aufrufbar')}
+              <InfoHint
+                text={t(
+                  'Unter ihrer Domain antwortet die Oberfläche dann nur diesen Adressen und Netzen, alle anderen bekommen 403. Das gilt auch für API und MCP. Die Liste steht danach unter Reverse-Proxy, Einstellungen, Zugriff und lässt sich dort ändern.'
+                )}
+              />
+            </span>
+          </span>
+          <span className="toggle-switch">
+            <input
+              type="checkbox"
+              checked={restricted}
+              disabled={saving}
+              onChange={(e) => setRestricted(e.target.checked)}
+            />
+            <span className="toggle-slider" />
+          </span>
+        </label>
+      )}
+      {!internal && restricted && (
+        <div className="hapm-setup-note">
+          <IpAllowList
+            value={surfaceIps}
+            onChange={setSurfaceIps}
+            disabled={saving}
+            heading={false}
+            emptyHint={t('Noch keine Adresse eingetragen.')}
+          />
+          {setup.clientIp && !allowedIps.includes(setup.clientIp) && (
+            <div className="hapm-form-actions">
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                disabled={saving}
+                onClick={() => setSurfaceIps([...normalizeSurfaceIps(surfaceIps), setup.clientIp!])}
+              >
+                <Plus size={14} />
+                {t('Eigene Adresse eintragen ({ip})', { ip: setup.clientIp })}
+              </button>
+            </div>
+          )}
+          <div className="alert alert-info">
+            {t('Das gilt für den Aufruf über die Domain. Über Port {port} bleibt die Oberfläche erreichbar, bis er geschlossen ist.', {
+              port: setup.listenPort,
+            })}
+          </div>
+        </div>
+      )}
 
       {recordNote && <div className="alert alert-success">{recordNote}</div>}
       {recordUnused && <div className="alert alert-warning">{recordUnused}</div>}
@@ -1787,6 +1876,15 @@ function RunStep({
                   {t('leitet an {target}, die Oberfläche von HAPM', { target: `127.0.0.1:${setup.listenPort}` })}
                 </div>
               </dd>
+              {setup.exposure === 'public' && setup.surfaceIps.length > 0 && (
+                <>
+                  <dt>{t('Aufrufbar von')}</dt>
+                  <dd>
+                    {setup.surfaceIps.join(', ')}
+                    <div className="detail-sub">{t('Alle anderen Adressen bekommen unter der Domain 403.')}</div>
+                  </dd>
+                </>
+              )}
             </dl>
           </div>
           {verdict && verdict.tone !== 'alert-success' && (

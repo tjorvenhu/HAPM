@@ -35,6 +35,8 @@ export async function PUT(request: Request) {
       exposure,
       // Nur aus dem Internet und nur, wenn der Stack CrowdSec mitbringt.
       crowdsec: exposure === 'public' && crowdsecInstalled() ? body.crowdsec !== false : null,
+      // Die erlaubten Adressen gibt es nur aus dem Internet.
+      ...(exposure === 'internal' ? { surfaceIps: [] } : {}),
       // „Übersprungen" gibt es bei einer internen Installation nicht: der Schritt kommt dann wieder.
       ...(exposure === 'internal' && state.dns === 'skipped' ? { dns: 'pending' as const } : {}),
       ...(exposure === 'internal' && state.address === 'skipped' ? { address: 'pending' as const } : {}),

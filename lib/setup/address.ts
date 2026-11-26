@@ -1,10 +1,23 @@
 import os from 'node:os';
 import { Resolver } from 'node:dns/promises';
-import { judgeAddresses, pickServerAddresses, type AddressVerdict } from './rules';
+import type { Exposure } from '../types';
+import { lookupPublicAddress } from './public-address';
+import { hasPublicIpv4, judgeAddresses, orderRecordAddresses, pickServerAddresses, type AddressVerdict } from './rules';
 
 /** Die Adressen dieses Servers. Beide Container laufen im Netz des Hosts, es sind also seine. */
 export function serverAddresses(): string[] {
   return pickServerAddresses(os.networkInterfaces());
+}
+
+/**
+ * Die Adressen für den DNS-Eintrag der Oberfläche, die beste zuerst
+ * (`orderRecordAddresses`). Nach außen gefragt wird nur bei einer Installation
+ * aus dem Internet, deren Schnittstellen keine öffentliche IPv4-Adresse tragen.
+ */
+export async function recordAddresses(exposure: Exposure | null): Promise<string[]> {
+  const own = serverAddresses();
+  const outside = exposure === 'public' && !hasPublicIpv4(own) ? await lookupPublicAddress() : null;
+  return orderRecordAddresses(own, exposure, outside);
 }
 
 /** Antworten, die „es gibt keinen Eintrag" heißen und nicht „die Abfrage ging nicht". */
@@ -41,8 +54,8 @@ export interface AddressCheck {
   serverAddresses: string[];
 }
 
-export async function checkDomainAddress(domain: string): Promise<AddressCheck> {
-  const own = serverAddresses();
+export async function checkDomainAddress(domain: string, exposure: Exposure | null = null): Promise<AddressCheck> {
+  const own = await recordAddresses(exposure);
   const resolved = await resolveDomain(domain);
   return { domain, resolved, verdict: judgeAddresses(resolved, own), serverAddresses: own };
 }
