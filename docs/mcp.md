@@ -238,7 +238,7 @@ Gilt für API und MCP gleich; die Funktionen lehnen es ab, nicht die Werkzeuge.
 | Fehlgeschlagene Läufe als gesehen markieren | Ein Zustand der Anzeige in der Oberfläche, kein Zustand des Proxys. |
 | Live-Kennzahlen (Sekundenwerte) | Noch nicht: daran wird parallel gearbeitet. `get_traffic_stats` liefert die gespeicherte Zeitreihe. |
 | Einrichtungsassistent | Läuft einmal, vor dem ersten Key. |
-| Abgleich zwischen Knoten: Rolle, Kopplungsschlüssel, Folgeknoten eintragen und entfernen | Der Kopplungsschlüssel ist ein Geheimnis, mit dem sich die Konfiguration samt Zertifikaten eines Knotens ersetzen lässt. Und wer die Rolle umstellt, entscheidet, welcher Knoten den anderen überschreibt. Lesen und „Jetzt abgleichen" gehen (`get_sync`, `start_sync`). Siehe [`hochverfuegbarkeit.md`](hochverfuegbarkeit.md). |
+| Abgleich zwischen Knoten: Rolle, Kopplungsschlüssel, Folgeknoten eintragen und entfernen | Der Kopplungsschlüssel ist ein Geheimnis, mit dem sich die Konfiguration samt Zertifikaten und die Konten eines Knotens ersetzen lassen. Und wer die Rolle umstellt, entscheidet, welcher Knoten den anderen überschreibt. Lesen und „Jetzt abgleichen" gehen (`get_sync`, `start_sync`). Siehe [`hochverfuegbarkeit.md`](hochverfuegbarkeit.md). |
 
 ### Anmeldung (`app/api/mcp/route.ts`)
 

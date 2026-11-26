@@ -6,6 +6,7 @@ import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
 import { msg } from '@/lib/i18n';
 import { normaliseAllowedIps, serialiseAllowedIps } from '@/lib/ip-allow';
 import type { ServiceToken } from '@/lib/types';
+import { assertDataWritable } from '@/lib/sync/role';
 
 /**
  * Ein Token zurückziehen.
@@ -20,6 +21,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   try {
     await requireCsrf(request);
     const session = await requireSession();
+    await assertDataWritable('tokens');
     const { id } = await params;
 
     const token = await getDocument<ServiceToken>(COLLECTIONS.SERVICE_TOKENS, id);
@@ -65,6 +67,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   try {
     await requireCsrf(request);
     const session = await requireSession();
+    await assertDataWritable('tokens');
     const { id } = await params;
 
     const token = await getDocument<ServiceToken>(COLLECTIONS.SERVICE_TOKENS, id);

@@ -11,7 +11,7 @@ export const sync: Readonly<Record<string, string>> = {
   // Seite: Kopf und Reiter
   Abgleich: 'Sync',
   Rolle: 'Role',
-  'Konfiguration und Zertifikate auf weitere Knoten übertragen.': 'Transfer configuration and certificates to further nodes.',
+  'Konfiguration, Zertifikate, Konten und Einstellungen für weitere Knoten.': 'Configuration, certificates, accounts and settings for further nodes.',
   'Für Hochverfügbarkeit laufen zwei oder mehr vollständige Installationen. Der Hauptknoten überträgt nach jeder Änderung, was HAProxy zum Ausliefern braucht. Welcher Knoten die gemeinsame Adresse hält, regelt keepalived oder ein Load Balancer davor.':
     'For high availability, two or more complete installations run side by side. After every change the primary node transfers what HAProxy needs to serve traffic. Which node holds the shared address is decided by keepalived or a load balancer in front.',
   'Jetzt abgleichen': 'Sync now',
@@ -32,6 +32,26 @@ export const sync: Readonly<Record<string, string>> = {
     'This node is a replica. Targets, certificates, error pages and proxy settings come from the primary node and are changed there.',
   'Dieser Knoten ist ein Folgeknoten. Freigaben kommen vom Hauptknoten und werden dort geändert.':
     'This node is a replica. The allowlist comes from the primary node and is changed there.',
+  'Dieser Knoten ist ein Folgeknoten. Konten, Passwörter, Passkeys und zweite Faktoren kommen vom Hauptknoten und werden dort geändert.':
+    'This node is a replica. Accounts, passwords, passkeys and second factors come from the primary node and are changed there.',
+  'Dieser Knoten ist ein Folgeknoten. Diese Einstellungen kommen vom Hauptknoten und werden dort geändert.':
+    'This node is a replica. These settings come from the primary node and are changed there.',
+  'Dieser Knoten ist ein Folgeknoten. DNS-Zonen kommen vom Hauptknoten und werden dort geändert.':
+    'This node is a replica. DNS zones come from the primary node and are changed there.',
+  'Dieser Knoten ist ein Folgeknoten. API-Keys kommen vom Hauptknoten und werden dort geändert.':
+    'This node is a replica. API keys come from the primary node and are changed there.',
+  'Dieser Knoten ist ein Folgeknoten. Sperren von Hand und Regeln von CrowdSec kommen vom Hauptknoten und werden dort geändert.':
+    'This node is a replica. Manual bans and CrowdSec rules come from the primary node and are changed there.',
+  'Sperren von Hand, Freigaben und Regeln kommen vom Hauptknoten. Was CrowdSec hier selbst sperrt, lässt sich hier aufheben.':
+    'Manual bans, the allowlist and rules come from the primary node. What CrowdSec bans by itself here can be lifted here.',
+  'API-Keys kommen vom Hauptknoten und werden dort angelegt und zurückgezogen.': 'API keys come from the primary node and are created and revoked there.',
+  'DNS-Zonen und ihre Zugänge kommen vom Hauptknoten und werden dort geändert.': 'DNS zones and their credentials come from the primary node and are changed there.',
+  'Konten kommen vom Hauptknoten und werden dort angelegt und entfernt.': 'Accounts come from the primary node and are created and removed there.',
+  'Passwort, zweiter Faktor und Passkeys kommen vom Hauptknoten und werden dort geändert.':
+    'Password, second factor and passkeys come from the primary node and are changed there.',
+  'Diese Einstellungen kommen vom Hauptknoten und werden dort geändert.': 'These settings come from the primary node and are changed there.',
+  'SMTP-Konto, Empfänger und Ereignisse kommen vom Hauptknoten und werden dort geändert.':
+    'SMTP account, recipients and events come from the primary node and are changed there.',
 
   // Abgelehnter Abgleich
   'Der Knoten {name} wollte am {when} hierher abgleichen und wurde abgelehnt: dieser Knoten ist an einen anderen Hauptknoten gebunden. Ein neuer Kopplungsschlüssel löst die Bindung.':
@@ -63,7 +83,6 @@ export const sync: Readonly<Record<string, string>> = {
   'Der Folgeknoten ist entfernt.': 'The replica has been removed.',
   'HAPM: hier {here}, dort {there}.': 'HAPM: {here} here, {there} there.',
   'HAProxy: hier {here}, dort {there}.': 'HAProxy: {here} here, {there} there.',
-  'Art der Installation: hier „{here}“, dort „{there}“.': 'Type of installation: “{here}” here, “{there}” there.',
   'CrowdSec ist dort nicht eingeschaltet. Die Ziele laufen dort ohne WAF.':
     'CrowdSec is not switched on there. The targets run without a WAF there.',
   '{count} Verweis oder Sonderdatei wird nicht übertragen.': '{count} symlink or special file is not transferred.',
@@ -78,6 +97,9 @@ export const sync: Readonly<Record<string, string>> = {
   Dateien: 'Files',
   'Unverändert seit dem Abgleich': 'Unchanged since the sync',
   'Hier geändert seit dem Abgleich': 'Changed here since the sync',
+  'Konten und Einstellungen': 'Accounts and settings',
+  'Auf diesem Knoten wurden Konten, Einstellungen, DNS-Zonen oder API-Keys geändert. Der Hauptknoten bemerkt das bei seiner nächsten Prüfung und überträgt seinen Stand erneut.':
+    'Accounts, settings, DNS zones or API keys were changed on this node. The primary node notices this at its next check and transfers its state again.',
   'Auf diesem Knoten wurden Dateien des Proxys geändert. Der Hauptknoten bemerkt das bei seiner nächsten Prüfung und überträgt seinen Stand erneut.':
     'Proxy files were changed on this node. The primary node notices this at its next check and transfers its state again.',
   'CrowdSec ist auf diesem Knoten nicht eingeschaltet und wurde aus der Konfiguration genommen. Die Ziele laufen hier ohne WAF.':
@@ -111,12 +133,18 @@ export const sync: Readonly<Record<string, string>> = {
   'Konto, Zertifikate und Erneuerungseinträge. Erneuert wird nur auf dem Hauptknoten.':
     'Account, certificates and renewal entries. Renewal happens only on the primary node.',
   'Nicht übertragen': 'Not transferred',
-  'Die Datenbank: Konten, Einstellungen, DNS-Zonen, API-Keys, Statistik und Protokoll. Dazu Sperren und Regeln von CrowdSec.':
-    'The database: accounts, settings, DNS zones, API keys, statistics and audit log. Also bans and rules of CrowdSec.',
+  'Benutzer, Passwörter, zweite Faktoren und Passkeys. Sitzungen nicht: nach dem ersten Abgleich melden Sie sich auf dem Folgeknoten neu an.':
+    'Users, passwords, second factors and passkeys. Not sessions: after the first sync you sign in again on the replica.',
+  '„Allgemein“ und „Benachrichtigungen“ samt SMTP-Konto, dazu DNS-Zonen und API-Keys. Selbsttätige Updates stellt jeder Knoten für sich ein.':
+    '“General” and “Notifications” including the SMTP account, plus DNS zones and API keys. Automatic updates are set on each node separately.',
+  'Sperren von Hand, Freigaben, der Schalter der OWASP-Regeln und zugeschaltete Sammlungen. Was CrowdSec selbst sperrt, sperrt jeder Knoten für sich.':
+    'Manual bans, the allowlist, the OWASP rules switch and enabled collections. What CrowdSec bans by itself, each node bans separately.',
+  'Statistik, Logs, Protokoll und Historie. Dazu Sicherung, Updates, Darstellung und hinterlegte Backend-Server.':
+    'Statistics, logs, audit log and history. Also backup, updates, appearance and saved backend servers.',
   'Zum Folgeknoten machen?': 'Make this node a replica?',
   'Zum Folgeknoten machen': 'Make replica',
-  'Der erste Abgleich ersetzt Konfiguration und Zertifikate dieses Knotens durch die des Hauptknotens. Ziele, Zertifikate und Einstellungen des Proxys lassen sich hier danach nicht mehr ändern, und Zertifikate werden hier nicht mehr erneuert. Legen Sie vorher eine Sicherung an.':
-    'The first sync replaces the configuration and certificates of this node with those of the primary node. Targets, certificates and proxy settings can no longer be changed here afterwards, and certificates are no longer renewed here. Create a backup first.',
+  'Der erste Abgleich ersetzt Konfiguration, Zertifikate, Konten, Einstellungen, DNS-Zonen und API-Keys dieses Knotens durch die des Hauptknotens. Sie melden sich danach hier mit einem Konto des Hauptknotens an. Ändern lässt sich das alles nur noch dort, und Zertifikate werden hier nicht mehr erneuert. Legen Sie vorher eine Sicherung an.':
+    'The first sync replaces the configuration, certificates, accounts, settings, DNS zones and API keys of this node with those of the primary node. Afterwards you sign in here with an account of the primary node. All of this can only be changed there from then on, and certificates are no longer renewed here. Create a backup first.',
   'Zum Hauptknoten machen?': 'Make this node the primary node?',
   'Zum Hauptknoten machen': 'Make primary node',
   'Ab dann wird hier geändert und erneuert, und es kommt kein Stand mehr an. Läuft der bisherige Hauptknoten noch oder kommt er zurück, muss er zuerst Folgeknoten werden: zwei Hauptknoten gleichen nicht ab.':
@@ -133,8 +161,8 @@ export const sync: Readonly<Record<string, string>> = {
   'Die Rolle ließ sich nicht umstellen.': 'The role could not be switched.',
 
   // Folgeknoten hinzufügen
-  'Der erste Abgleich ersetzt Konfiguration und Zertifikate des Folgeknotens durch die von hier.':
-    'The first sync replaces the configuration and certificates of the replica with those from here.',
+  'Der erste Abgleich ersetzt Konfiguration, Zertifikate, Konten und Einstellungen des Folgeknotens durch die von hier.':
+    'The first sync replaces the configuration, certificates, accounts and settings of the replica with those from here.',
   'Adresse des Folgeknotens': 'Address of the replica',
   'Die Adresse seiner Oberfläche, mit Port. Auch ohne HTTPS: jede Übertragung ist mit dem Kopplungsschlüssel verschlüsselt.':
     'The address of its web interface, with port. Works without HTTPS too: every transfer is encrypted with the pairing key.',
@@ -157,6 +185,19 @@ export const sync: Readonly<Record<string, string>> = {
   'Folgeknoten erreicht': 'Replica reached',
   'Stand übertragen': 'State transferred',
   'Abgebrochenen Abgleich zurückgenommen': 'Interrupted sync rolled back',
+  'Einstellungen übernommen': 'Settings applied',
+  'Einstellungen übernehmen': 'Apply settings',
+  'Konten übernommen': 'Accounts applied',
+  'Konten übernehmen': 'Apply accounts',
+  'DNS-Zonen übernommen': 'DNS zones applied',
+  'DNS-Zonen übernehmen': 'Apply DNS zones',
+  'API-Keys übernommen': 'API keys applied',
+  'API-Keys übernehmen': 'Apply API keys',
+  'CrowdSec übernommen': 'CrowdSec applied',
+  'CrowdSec übernehmen': 'Apply CrowdSec',
+  'CrowdSec ausgelassen': 'CrowdSec skipped',
+  'CrowdSec ist auf diesem Knoten nicht eingeschaltet. Sperren, Freigaben und Regeln wurden nicht übernommen.':
+    'CrowdSec is not switched on on this node. Bans, the allowlist and rules were not applied.',
   'Abgebrochenen Abgleich zurücknehmen': 'Roll back interrupted sync',
   'Paket lesen': 'Read bundle',
   'Paket geprüft': 'Bundle verified',

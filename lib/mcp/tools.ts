@@ -81,6 +81,7 @@ import { EXPOSURES, CERTIFICATE_SOURCES } from '../settings';
 import {
   addAllowlist,
   addDecision,
+  assertRulesWritable,
   changeRules,
   clearCrowdsec,
   crowdsecOverview,
@@ -987,7 +988,10 @@ export const TOOLS: ToolDefinition[] = [
       upgrade: z.boolean().optional(),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-    run: (args, ctx) => changeRules(args, auditActor(ctx.actor)),
+    run: async (args, ctx) => {
+      await assertRulesWritable(args);
+      return changeRules(args, auditActor(ctx.actor));
+    },
   }),
 
   /* ── Sicherung ── */

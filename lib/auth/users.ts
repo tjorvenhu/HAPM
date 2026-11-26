@@ -21,6 +21,13 @@
  * Faktor (`two_factor`), die letzte Anmeldung und die Sprache (`user_state`) sind Zeilen von
  * HAPM, gekoppelt über die Kennung des Kontos. Wer ein Konto löscht, nimmt sie
  * hier mit.
+ *
+ * ── Auf einem Folgeknoten ──
+ *
+ * Konten kommen dort mit dem Abgleich vom Hauptknoten (`lib/sync/data.ts`).
+ * Anlegen, Entfernen und ein neues Passwort lehnt diese Datei dort ab: der
+ * nächste Abgleich nähme es zurück. Sprache und letzte Anmeldung
+ * (`user_state`) führt jeder Knoten selbst.
  */
 
 import { createDocument, deleteDocument, getDocument, listAll, updateDocument, NotFoundError } from '../db';
@@ -28,6 +35,7 @@ import { countPasskeysByUser } from '../db/auth-tables';
 import { ApiError } from '../api';
 import { isLocale, msg, type Locale } from '../i18n';
 import { remove2FA } from '../two-factor';
+import { assertDataWritable } from '../sync/role';
 import { validateEmail, validatePassword } from '../validation';
 import { COLLECTIONS, type TwoFactorConfig, type UserState } from '../types';
 import { auth } from './config';
@@ -153,6 +161,7 @@ export async function createUser(input: {
   password: string;
   id?: string;
 }): Promise<PublicUser> {
+  await assertDataWritable('accounts');
   const email = normaliseEmail(input.email);
   const name = input.name.trim();
   if (!validateEmail(email)) throw new ApiError(msg('Die E-Mail-Adresse ist ungültig.'));
@@ -215,6 +224,7 @@ export async function verifyPassword(userId: string, password: string): Promise<
  * ohne Zeile scheitert schon die Prüfung des aktuellen.
  */
 export async function changePassword(userId: string, current: string, next: string): Promise<void> {
+  await assertDataWritable('accounts');
   if (!(await verifyPassword(userId, current))) throw new ApiError(msg('Das aktuelle Passwort stimmt nicht.'));
   const passwordError = validatePassword(next);
   if (passwordError) throw new ApiError(passwordError);
@@ -298,6 +308,7 @@ export async function setUserLocale(userId: string, locale: Locale): Promise<voi
  * die Passkeys hängen am Fremdschlüssel: wer gelöscht wird, ist sofort draußen.
  */
 export async function deleteUser(userId: string, actingUserId: string): Promise<void> {
+  await assertDataWritable('accounts');
   if (userId === actingUserId) throw new ApiError(msg('Das eigene Konto lässt sich nicht entfernen.'));
   if ((await countUsers()) <= 1) throw new ApiError(msg('Das letzte Konto lässt sich nicht entfernen.'));
 

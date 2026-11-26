@@ -33,10 +33,13 @@ Next.js (App Router) mit TypeScript strict, pnpm. Drei Container: HAPM, HAProxy
 
 - **Hochverfügbarkeit ist ein Abgleich, keine Serverliste** (`lib/sync/`,
   abschaltbar, Vorgabe aus): zwei vollständige Installationen, der Hauptknoten
-  überträgt `/etc/haproxy` und den Stand von acme.sh an die Folgeknoten. Ein
-  Folgeknoten ändert daran nichts, gesperrt in `withProxyLock` und
-  `startHaproxyRun`. Was nur dieser Knoten an sich tut, nimmt
-  `withProxyLockLocal`.
+  überträgt `/etc/haproxy` und den Stand von acme.sh an die Folgeknoten, dazu
+  als Datenteil Konten, Einstellungen, DNS-Zonen, API-Keys und was in CrowdSec
+  eingestellt ist (`lib/sync/data.ts`). Ein Folgeknoten ändert daran nichts,
+  gesperrt in `withProxyLock` und `startHaproxyRun`, für den Datenteil mit
+  `assertDataWritable`. Was nur dieser Knoten an sich tut, nimmt
+  `withProxyLockLocal`. Statistik, Protokoll, Sicherung und Updates bleiben
+  je Knoten.
 - **Eine Maschine, und zwar diese.** Es gibt keine Serverliste und kein SSH.
   `lib/ssh.ts` führt Kommandos lokal im eigenen Container aus und heißt nur so,
   weil `lib/haproxy/` die Funktion unter diesem Namen aufruft (`sshExec`).

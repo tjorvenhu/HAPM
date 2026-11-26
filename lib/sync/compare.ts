@@ -40,22 +40,35 @@ export function warningsFor(report: NodeReport, meta: BundleMeta): SyncWarning[]
   if (report.haproxyVersion && sender.haproxyVersion && report.haproxyVersion !== sender.haproxyVersion) {
     warnings.push({ code: 'haproxy_version', here: sender.haproxyVersion, there: report.haproxyVersion });
   }
-  if (report.exposure !== sender.exposure) warnings.push({ code: 'exposure', here: sender.exposure, there: report.exposure });
   if (sender.usesCrowdsec && !report.crowdsec) warnings.push({ code: 'crowdsec_off' });
   if (meta.skipped.length > 0) warnings.push({ code: 'skipped', count: meta.skipped.length });
   return warnings;
 }
 
+/** Die Fingerabdrücke eines Pakets: Dateien, Daten, CrowdSec. */
+export type StateMarks = Pick<BundleMeta, 'fingerprint' | 'dataFingerprint' | 'crowdsecFingerprint'>;
+
 /**
- * Ob der Folgeknoten den Stand trägt. Drei Dinge müssen stimmen: der
- * Fingerabdruck, die Anpassung (sonst hat sich dort etwas geändert, das eine
- * andere Datei ergäbe) und dass die Dateien dort noch liegen wie übernommen.
+ * Ob der Folgeknoten zuletzt genau diesen Stand übernommen hat: Dateien, Daten
+ * und CrowdSec, mit der Anpassung, die er auch jetzt wählen würde (sonst hat
+ * sich dort etwas geändert, das eine andere Datei ergäbe). Ein Teil, den das
+ * Paket nicht trägt (`null`), zählt nicht: dann bleibt dort, was ist.
  */
-export function carriesState(report: NodeReport, fingerprint: string): boolean {
+export function tookState(report: NodeReport, state: StateMarks): boolean {
+  const applied = report.applied;
   return (
-    report.applied !== null &&
-    report.applied.fingerprint === fingerprint &&
-    report.applied.variant === report.variant &&
-    report.intact !== false
+    applied !== null &&
+    applied.fingerprint === state.fingerprint &&
+    applied.variant === report.variant &&
+    (state.dataFingerprint === null || applied.data === state.dataFingerprint) &&
+    (state.crowdsecFingerprint === null || applied.crowdsec === state.crowdsecFingerprint)
   );
+}
+
+/**
+ * Ob der Folgeknoten den Stand trägt: er hat ihn übernommen (`tookState`), und
+ * Dateien wie Daten liegen dort noch so wie danach.
+ */
+export function carriesState(report: NodeReport, state: StateMarks): boolean {
+  return tookState(report, state) && report.intact !== false && (state.dataFingerprint === null || report.dataIntact !== false);
 }

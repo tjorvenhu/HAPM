@@ -4,6 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { gzipSync } from 'node:zlib';
+import { crowdsecFingerprint, dataFingerprint, type SyncData } from '@/lib/sync/data';
+import { sampleSyncData } from '../helpers/sync-data';
 import {
   BundleError,
   collect,
@@ -179,19 +181,59 @@ describe('Packen und Auspacken', () => {
   });
 });
 
+describe('der Datenteil', () => {
+  const withData = (data: SyncData | null) => pack({ seq: 1_800_000_000_000, sender: SENDER }, collect({ haproxy, acme }), data);
+
+  it('geht mit und trägt zwei eigene Fingerabdrücke', () => {
+    const data = sampleSyncData();
+    const { bundle, meta } = withData(data);
+    expect(meta.dataFingerprint).toBe(dataFingerprint(data));
+    expect(meta.crowdsecFingerprint).toBe(crowdsecFingerprint(data.crowdsec!));
+    const unpacked = unpack(bundle);
+    expect(unpacked.data).toEqual(data);
+    expect(unpacked.meta).toMatchObject({ dataFingerprint: meta.dataFingerprint, crowdsecFingerprint: meta.crowdsecFingerprint });
+    // Die Dateien haben ihren eigenen: ein neues Passwort ist kein Grund, HAProxy neu zu laden.
+    expect(meta.fingerprint).toBe(packed().meta.fingerprint);
+  });
+
+  it('fehlt, wenn nur Dateien gepackt werden, und CrowdSec, wenn es nicht zu lesen war', () => {
+    expect(unpack(packed().bundle)).toMatchObject({ data: null, meta: { dataFingerprint: null, crowdsecFingerprint: null } });
+    const data = { ...sampleSyncData(), crowdsec: null };
+    const unpacked = unpack(withData(data).bundle);
+    expect(unpacked.meta.dataFingerprint).toBe(dataFingerprint(data));
+    expect(unpacked.meta.crowdsecFingerprint).toBeNull();
+  });
+
+  it('wird geprüft wie die Dateien: falsche Form und falscher Fingerabdruck lehnen das ganze Paket ab', () => {
+    const data = sampleSyncData();
+    const prints = { dataFingerprint: dataFingerprint(data), crowdsecFingerprint: crowdsecFingerprint(data.crowdsec!) };
+    expect(unpack(forge([CFG.entry], [CFG.content], { ...prints, data })).data).toEqual(data);
+    expect(() => unpack(forge([CFG.entry], [CFG.content], { ...prints, dataFingerprint: '0'.repeat(64), data }))).toThrow(/Fingerabdruck des Datenteils/);
+    expect(() => unpack(forge([CFG.entry], [CFG.content], { ...prints, crowdsecFingerprint: null, data }))).toThrow(/Fingerabdruck des Datenteils/);
+    // Ein Kopf, der Fingerabdrücke nennt, aber keine Daten trägt.
+    expect(() => unpack(forge([CFG.entry], [CFG.content], prints))).toThrow(/Fingerabdruck des Datenteils/);
+    const empty = { ...data, accounts: { ...data.accounts, users: [] } };
+    expect(() => unpack(forge([CFG.entry], [CFG.content], { ...prints, data: empty }))).toThrow(/kein Konto/);
+    expect(() => unpack(forge([CFG.entry], [CFG.content], { data: 'kaputt' }))).toThrow(BundleError);
+  });
+});
+
 /** Ein Paket von Hand, an HAPMs eigenem Packen vorbei. */
 function forge(entries: Partial<BundleEntry>[], contents: Buffer[], metaPatch: Record<string, unknown> = {}): Buffer {
   const full = entries as BundleEntry[];
   const meta = {
-    protocol: 1,
+    protocol: 2,
     seq: 1_800_000_000_000,
     fingerprint: fingerprintOf(full.filter((entry) => typeof entry.path === 'string' && entry.root && entry.type)),
+    dataFingerprint: null,
+    crowdsecFingerprint: null,
     sender: SENDER,
     roots: ['haproxy', 'acme'],
     skipped: [],
     ...metaPatch,
   };
-  const head = Buffer.from(JSON.stringify({ v: 1, meta, entries }), 'utf8');
+  const { data, ...metaOnly } = meta as typeof meta & { data?: unknown };
+  const head = Buffer.from(JSON.stringify({ v: 2, meta: metaOnly, data: data ?? null, entries }), 'utf8');
   const length = Buffer.alloc(4);
   length.writeUInt32BE(head.length);
   return gzipSync(Buffer.concat([length, head, ...contents]));
@@ -295,7 +337,8 @@ describe('ein Paket, dem nicht zu trauen ist', () => {
   });
 
   it('lehnt eine andere Fassung, eine fehlende Nummer und einen fehlenden Absender ab', () => {
-    expect(() => unpack(forge([CFG.entry], [CFG.content], { protocol: 2 }))).toThrow(/Fassung/);
+    expect(() => unpack(forge([CFG.entry], [CFG.content], { protocol: 1 }))).toThrow(/Fassung/);
+    expect(() => unpack(forge([CFG.entry], [CFG.content], { protocol: 3 }))).toThrow(/Fassung/);
     expect(() => unpack(forge([CFG.entry], [CFG.content], { seq: 0 }))).toThrow(/laufende Nummer/);
     expect(() => unpack(forge([CFG.entry], [CFG.content], { sender: { name: 'x' } }))).toThrow(/Absender/);
   });

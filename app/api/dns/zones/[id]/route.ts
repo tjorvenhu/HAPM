@@ -7,6 +7,7 @@ import { replaceZoneToken } from '@/lib/dns/connect';
 import { accessFromInput, dnsProviderLabel } from '@/lib/dns/provider-info';
 import { getZoneRow } from '@/lib/dns/store';
 import { providerOf } from '@/lib/dns/zones';
+import { assertDataWritable } from '@/lib/sync/role';
 
 interface Params {
   params: Promise<{ id: string }>;
@@ -72,6 +73,7 @@ export async function DELETE(request: Request, { params }: Params) {
     await requireCsrf(request);
     const session = await requireSession();
     const { id } = await params;
+    await assertDataWritable('dns');
     const zone = await getZoneRow(id);
 
     await deleteDocument(COLLECTIONS.DNS_ZONES, id);

@@ -5,6 +5,7 @@ import { rateLimit } from '@/lib/rate-limit';
 import { validatePassword } from '@/lib/validation';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
 import { msg } from '@/lib/i18n';
+import { assertDataWritable } from '@/lib/sync/role';
 
 const INVALID = msg('Der Link ist ungültig oder abgelaufen. Bitte fordern Sie einen neuen an.');
 
@@ -29,6 +30,7 @@ export async function POST(request: Request) {
       const rl = rateLimit(`reset-password:${ip}`, 5, 15 * 60 * 1000);
       if (!rl.success) throw new ApiError(msg('Zu viele Versuche. Bitte warten Sie 15 Minuten.'), 429);
     }
+    await assertDataWritable('accounts');
 
     const { token, newPassword } = await jsonBody<{ token?: unknown; newPassword?: unknown }>(request);
     if (typeof token !== 'string' || typeof newPassword !== 'string' || !token || !newPassword) {

@@ -203,6 +203,9 @@ describe('judge', () => {
     expect(status({ ...base, role: 'replica' })).toBe('warn');
     expect(status({ ...base, role: 'replica', appliedAt: '2026-11-26T11:00:00.000Z', intact: true })).toBe('ok');
     expect(status({ ...base, role: 'replica', appliedAt: '2026-11-26T11:00:00.000Z', intact: false })).toBe('warn');
+    // Dasselbe für Konten und Einstellungen in der Datenbank.
+    expect(status({ ...base, role: 'replica', appliedAt: '2026-11-26T11:00:00.000Z', intact: true, dataIntact: false })).toBe('warn');
+    expect(status({ ...base, role: 'replica', appliedAt: '2026-11-26T11:00:00.000Z', intact: true, dataIntact: true })).toBe('ok');
   });
 
   it('übersetzt die Meldungen', () => {

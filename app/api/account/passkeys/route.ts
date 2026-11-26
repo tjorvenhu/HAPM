@@ -13,6 +13,7 @@ import { notifyPasskeyChange } from '@/lib/auth/mail';
 import { logAudit, getClientIP } from '@/lib/audit';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
 import { msg } from '@/lib/i18n';
+import { assertDataWritable } from '@/lib/sync/role';
 
 /**
  * Die Passkeys des eigenen Kontos: auflisten und hinterlegen.
@@ -57,6 +58,7 @@ export async function POST(request: Request) {
   try {
     await requireCsrf(request);
     const session = await requireVerifiedSession();
+    await assertDataWritable('accounts');
     const passkeys = await requirePasskeys();
 
     const { response: attestation, name } = await jsonBody<{ response?: unknown; name?: unknown }>(request);

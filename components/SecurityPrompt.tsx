@@ -32,7 +32,9 @@ interface SecurityState {
 }
 
 export default function SecurityPrompt() {
-  const { apiFetch } = useApp();
+  const { apiFetch, session } = useApp();
+  // Auf einem Folgeknoten lässt sich beides nicht einrichten: Konten kommen vom Hauptknoten.
+  const replica = session.features?.replica === true;
   const { notify } = useToast();
   const { t } = useT();
   const router = useRouter();
@@ -48,7 +50,8 @@ export default function SecurityPrompt() {
       const next = data.data as SecurityState;
       setState(next);
       setOpen(
-        !next.dismissed &&
+        !replica &&
+          !next.dismissed &&
           !next.totpEnabled &&
           next.passkeyCount === 0 &&
           next.origin !== null &&
@@ -57,7 +60,7 @@ export default function SecurityPrompt() {
     } catch {
       // Ohne Antwort kein Fenster: es ist ein Angebot und keine Bedingung.
     }
-  }, [apiFetch]);
+  }, [apiFetch, replica]);
 
   useMountedLoad(load);
 

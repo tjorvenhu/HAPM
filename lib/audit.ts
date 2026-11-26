@@ -1,6 +1,7 @@
 import { createDocument } from './db';
 import { COLLECTIONS } from './types';
 import { auditWritten } from './audit-log/kick';
+import { auditedChange } from './sync/kick';
 
 export type AuditAction =
   | 'login'
@@ -138,6 +139,8 @@ export async function logAudit(params: AuditParams): Promise<void> {
     });
     // Die Weiterleitung an ein SIEM, falls eine eingerichtet ist. Wartet auf nichts.
     auditWritten();
+    // Der Abgleich zwischen Knoten, falls die Handlung etwas ändert, das er überträgt.
+    auditedChange(params.action);
   } catch {
     console.error(`[audit] Eintrag nicht geschrieben: ${params.action} von ${params.userEmail}`);
   }
@@ -167,7 +170,8 @@ function isLoopback(address: string): boolean {
  * 127.0.0.1, und der letzte Eintrag in `X-Forwarded-For` ist der, den HAProxy
  * selbst gesehen hat (`option forwardfor` hängt ihn hinten an).
  *
- * `X-Real-IP` wird nicht gelesen: niemand auf dem Weg setzt es, also käme es
+ * `X-Real-IP` wird nicht gelesen: die Grundkonfiguration setzt es zwar für die
+ * Ziele, eine ältere `haproxy.cfg` aber nicht, und direkt über den Port käme es
  * immer vom Aufrufer.
  *
  * Ohne den Vorlader (`pnpm dev`) fehlt die Gegenstelle. Dann bleibt nur die

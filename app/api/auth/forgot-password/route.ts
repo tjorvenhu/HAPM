@@ -6,6 +6,7 @@ import { rateLimit } from '@/lib/rate-limit';
 import { validateEmail } from '@/lib/validation';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
 import { msg } from '@/lib/i18n';
+import { assertDataWritable } from '@/lib/sync/role';
 
 /**
  * Passwort vergessen: durchgereicht an `requestPasswordReset`.
@@ -35,6 +36,8 @@ export async function POST(request: Request) {
       const rl = rateLimit(`forgot-password:${ip}`, 3, WINDOW_MS);
       if (!rl.success) throw new ApiError(TOO_MANY, 429);
     }
+    // Ein Passwort, das hier neu gesetzt würde, nähme der nächste Abgleich zurück.
+    await assertDataWritable('accounts');
 
     const { email } = await jsonBody<{ email?: unknown }>(request);
     if (typeof email !== 'string' || !validateEmail(email.trim())) {

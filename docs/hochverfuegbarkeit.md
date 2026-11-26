@@ -7,8 +7,11 @@ HAPM bleibt „eine Maschine, und zwar diese". Hochverfügbarkeit heißt deshalb
 nicht, dass ein HAPM mehrere Server verwaltet, sondern: zwei (oder mehr)
 vollständige Installationen, von denen eine der **Hauptknoten** ist und die
 anderen **Folgeknoten**. Am Hauptknoten wird geändert. Er überträgt nach jeder
-Änderung, was HAProxy zum Ausliefern braucht, an die Folgeknoten. Fällt er aus,
-liefert ein Folgeknoten mit demselben Stand weiter aus.
+Änderung an die Folgeknoten, was HAProxy zum Ausliefern braucht, und dazu, was
+man zum Bedienen braucht: Konten, Einstellungen, DNS-Zonen, API-Keys und was in
+CrowdSec eingestellt ist. Fällt er aus, liefert ein Folgeknoten mit demselben
+Stand weiter aus, und nach einer Beförderung arbeitet man dort mit denselben
+Konten und Zugängen weiter.
 
 Ohne Einrichtung ändert sich nichts: die Vorgabe ist „einzeln", und ein
 einzelner Knoten spricht mit keinem anderen.
@@ -20,7 +23,9 @@ siehe „Die gemeinsame Adresse".
 ## Einrichten
 
 1. Beide Server normal installieren. Auf dem zweiten reicht das Konto, Ziele
-   braucht er nicht: der erste Abgleich ersetzt seine Konfiguration.
+   braucht er nicht: der erste Abgleich ersetzt seine Konfiguration. **Er
+   ersetzt auch seine Konten.** Wer am zweiten Knoten angemeldet ist, wird
+   dabei abgemeldet und meldet sich mit einem Konto des Hauptknotens neu an.
 2. **Zweiter Knoten:** „Abgleich", Reiter „Rolle", „Folgeknoten" wählen. Danach
    im Reiter „Zustand" einen Kopplungsschlüssel erzeugen. Er wird einmal gezeigt.
 3. **Erster Knoten:** „Abgleich", Reiter „Rolle", „Hauptknoten" wählen. Im
@@ -59,23 +64,52 @@ Der Folgeknoten ist danach ein **Abbild**: was der Hauptknoten nicht mehr hat
 (ein entferntes Zertifikat), gibt es dort auch nicht mehr. Was auf der
 Ausschlussliste steht, bleibt beim Folgeknoten liegen, wie es ist.
 
-**Die Datenbank wird nicht übertragen**, und `secrets.json` auch nicht. Jeder
-Knoten hat seinen eigenen `encryptionKey`: was verschlüsselt in der Datenbank
-liegt, wäre auf dem anderen nicht lesbar. Was das je Punkt heißt:
+### Der Datenteil: `lib/sync/data.ts`
+
+Im selben Paket geht mit, was nicht in einer Datei steht und trotzdem auf
+beiden Knoten gleich sein soll. Auch hier gilt das Abbild: ein Konto, das der
+Hauptknoten nicht nennt, gibt es auf dem Folgeknoten danach nicht mehr.
+
+| Was | Was mitgeht | Was je Knoten bleibt |
+|---|---|---|
+| Konten | Benutzer, Passwort-Hash, zweiter Faktor (TOTP), Passkeys | Sitzungen, offene Links zum Zurücksetzen, letzte Anmeldung, Sprache, der Zähler eines Passkeys |
+| Einstellungen | „Allgemein" und „Benachrichtigungen": Adresse von HAPM, Art der Installation, Herkunft der Zertifikate, ACME-Server, Wartezeit bei DNS-01, SMTP-Konto samt Passwort, Absender, Empfänger, Ereignisse, Sprache der Mails (`SYNCED_SETTINGS`) | Selbsttätige Updates und ihre Uhrzeit (zwei Knoten sollen nicht in derselben Minute neu starten), Stand der Einrichtung |
+| DNS-Zonen | Anbieter, Zone und der Zugang | Zustand und letzter Fehler beim Anbieter |
+| API-Keys | Name, Hash, Freigabeliste der Adressen, ob zurückgezogen. Derselbe Key gilt damit auf beiden Knoten | Wann und von wo er zuletzt benutzt wurde |
+| CrowdSec | Sperren von Hand, Freigaben, der Schalter der OWASP-Regeln, zugeschaltete Sammlungen | Was CrowdSec selbst sperrt, Ereignisse, Gemeinschaftsliste, Stand des Hubs, ob CrowdSec eingeschaltet ist |
+
+**Geheimnisse gehen im Klartext in das Paket.** Was verschlüsselt in der
+Datenbank liegt (TOTP-Geheimnis, Zugang einer Zone, SMTP-Passwort), ist mit dem
+`encryptionKey` des Knotens verschlüsselt, und der ist auf jedem Knoten ein
+anderer. Der Hauptknoten entschlüsselt vor dem Packen, der Folgeknoten
+verschlüsselt mit seinem eigenen Schlüssel neu. Auf der Leitung schützt der
+Umschlag, wie die privaten Schlüssel der Zertifikate im selben Paket.
+`secrets.json` wird nie übertragen. Ein Geheimnis, das sich auf dem
+Hauptknoten nicht lesen lässt, ist danach auch auf dem Folgeknoten unlesbar,
+statt dort stillschweigend zu fehlen (ein zweiter Faktor fiele sonst weg).
+
+**Wiederherstellungscodes gelten nur auf dem Knoten, auf dem sie entstanden.**
+Ihre Hashes kommen mit, hängen aber am `encryptionKey` (`lib/recovery-codes.ts`).
+Der Code aus der App gilt auf beiden. Nach einer Beförderung unter „Konto"
+neue Codes erzeugen.
+
+**Sitzungen bleiben je Knoten**, und sie überstehen einen Abgleich: ein Konto
+mit derselben Kennung bleibt dieselbe Zeile. Zwei Ausnahmen: ein Konto, das der
+Hauptknoten nicht mehr nennt, ist sofort draußen, und nach einem geänderten
+Passwort enden die Sitzungen dieses Kontos auch auf dem Folgeknoten
+(`lib/db/account-rows.ts`).
+
+**Nicht im Datenteil** und deshalb je Knoten:
 
 | In der Datenbank | Auf dem Folgeknoten |
 |---|---|
-| Gespeicherte Ziele (Eingabehilfe) | Nicht da. Sie stehen in keiner Zeile von `haproxy.cfg`, und die Dialoge, die sie anbieten, sind dort gesperrt. |
+| Hinterlegte Backend-Server (Eingabehilfe) | Nicht da. Sie stehen in keiner Zeile von `haproxy.cfg`, und die Dialoge, die sie anbieten, sind dort gesperrt. |
 | Design der Fehlerseiten, Darstellung | Die fertigen Seiten kommen mit (`errors/`, `hapm-lock/`), das Design nicht. Die Seite „Fehlerseiten" vergleicht dort mit dem eigenen gespeicherten Design und zeigt deshalb womöglich Abweichungen. Ändern lässt sich dort nichts. |
-| DNS-Zonen (Tokens) | Nicht da. Für Zertifikate über DNS-01 braucht es sie nicht: die Zugangsdaten von acme.sh stehen in `account.conf`, und die kommt mit. Soll HAPM nach einer Beförderung wieder Einträge setzen, werden die Zonen dort neu angebunden. |
-| Art der Installation, Herkunft der Zertifikate, ACME-Server | Je Knoten eingestellt. Die Art der Installation wird verglichen und als Hinweis gezeigt. Vor einer Beförderung auf denselben Stand bringen. |
-| Konten, API-Keys, SMTP, Benachrichtigungen, Sicherung | Je Knoten. |
-| Statistik, Protokoll, Historie | Je Knoten: jeder zählt, was er selbst ausliefert und tut. |
+| Sicherung, Updates, Weiterleitung des Protokolls | Je Knoten eingestellt. |
+| Statistik, Logs, Protokoll, Historie | Je Knoten: jeder zählt, was er selbst ausliefert und tut. |
 
-Wer einen Folgeknoten als vollständige Kopie braucht (Konten, Einstellungen),
-spielt dort vor der Kopplung eine Sicherung des Hauptknotens ein und stellt
-**danach als Erstes die Rolle um**. Eine zurückgespielte Sicherung bringt die
-Rolle „Hauptknoten" samt eingetragener Folgeknoten mit.
+Eine zurückgespielte Sicherung des Hauptknotens bringt die Rolle „Hauptknoten"
+samt eingetragener Folgeknoten mit: danach **als Erstes die Rolle umstellen**.
 
 ## Kopplung und Transport: `lib/sync/envelope.ts`
 
@@ -85,6 +119,10 @@ der Leitung:
 
 - **Der Kopplungsschlüssel** (`hapmsync_…`, 256 Bit) entsteht auf dem
   Folgeknoten, wird dort einmal gezeigt und auf dem Hauptknoten eingetragen.
+  Wer ihn hat, ersetzt auf dem Folgeknoten nicht nur Konfiguration und
+  Zertifikate, sondern auch die Konten: er ist so viel wert wie ein Konto dort.
+  Was der Abgleich an Konten, Einstellungen, Zonen und API-Keys ändert, steht
+  deshalb im Protokoll des Folgeknotens (`sync_applied`).
   Beide halten ihn verschlüsselt (`lib/crypto.ts`). Ein Hash wie bei den
   API-Keys reicht nicht: mit dem Schlüssel wird entschlüsselt.
 - **Jede Anfrage und jede Antwort ist verschlüsselt und gegen Veränderung
@@ -117,6 +155,13 @@ hier gar keiner gesetzt ist.
 Zwei Arten von Anfragen: `status` (die Auskunft, `NodeReport`) und `apply`
 (ein Paket).
 
+**Der Datenteil wird geprüft wie die Dateien** (`parseSyncData`): jede Zeile
+auf ihre Form, kein Zugang und kein Passkey ohne sein Konto, nichts doppelt,
+und was die Typen nicht nennen, fällt weg. Ein Datenteil ohne Konto oder ohne
+ein Konto mit Passwort lehnt das ganze Paket ab: der Folgeknoten ließe sich
+danach nicht mehr bedienen. Die Einstellungen gehen beim Einsetzen durch
+dieselbe Prüfung wie eine Eingabe in der Oberfläche (`settingsPatch`).
+
 ## Anwenden auf dem Folgeknoten: `lib/sync/apply.ts`, `apply-core.ts`
 
 1. **Annehmen.** Das Paket wird ausgepackt und jede Angabe geprüft
@@ -136,8 +181,15 @@ Zwei Arten von Anfragen: `status` (die Auskunft, `NodeReport`) und `apply`
    ein zweites Neuladen stellt sicher, dass er gilt. Die Meldung von HAProxy
    steht im Lauf auf beiden Knoten.
 5. Liegt der Stand schon so vor, wird nichts getauscht und nicht neu geladen.
+   Ein neues Passwort oder eine neue Sperre lädt HAProxy also nicht neu.
+6. **Danach die Daten** (`data-apply.ts`): Einstellungen, Konten, DNS-Zonen,
+   API-Keys, CrowdSec, jeder Teil für sich. Scheitert einer, laufen die
+   übrigen trotzdem, und der Lauf gilt als gescheitert. Die Daten werden auch
+   eingesetzt, wenn HAProxy die Dateien abgelehnt hat: ein entferntes Konto
+   soll nicht daran hängen, ob eine `haproxy.cfg` dort lädt. Geschrieben wird
+   nur, was abweicht.
 
-Alles hinter der Sperre der Läufe (`withProxyLockLocal`). Wird HAPM mitten im
+Die Schritte 3 bis 5 hinter der Sperre der Läufe (`withProxyLockLocal`). Wird HAPM mitten im
 Tausch beendet, liegt `.hapm-sync-old` noch da: beim nächsten Start
 (`reconcileSync`) und vor jedem Anwenden kommt dann der alte Stand zurück.
 
@@ -161,8 +213,25 @@ TCP-Weiterleitungen, Gruppen, Einstellungen des Proxys, Zertifikate (ausstellen,
 hochladen, entfernen), Fehlerseiten, Grundkonfiguration, Import,
 DNS-Zugangsdaten von acme.sh, Freigaben von CrowdSec.
 
-Gesperrt ist das an zwei Stellen, die jeder Weg nimmt (Oberfläche, API, MCP,
-Scheduler), nicht in den Routen:
+Ebenso nichts aus dem Datenteil (`assertDataWritable`): Konten anlegen und
+entfernen, Passwort ändern oder zurücksetzen, zweiten Faktor und Passkeys
+einrichten oder entfernen, die abgeglichenen Einstellungen, DNS-Zonen anbinden
+und entfernen, API-Keys anlegen, ändern und zurückziehen, Sperren von Hand und
+die Regeln von CrowdSec. Gesperrt ist das in den Funktionen unter `lib/`
+(`lib/auth/users.ts`, `lib/two-factor.ts`, `updateSettings`, `connectZone`,
+`addDecision`), bei API-Keys, Passkeys und dem Zurücksetzen des Passworts in
+ihren Routen. Die Antwort ist `409` mit dem Grund. Was jeder Knoten für sich
+führt, geht weiter: selbsttätige Updates, Sprache, DNS-Einträge bei einem
+Anbieter, eine Sperre aufheben, die das CrowdSec dieses Knotens selbst
+verhängt hat, den Hub aktualisieren.
+
+**`hapm-admin reset-password` auf einem Folgeknoten** schreibt an HAPM vorbei
+in die Datenbank. Der Hauptknoten bemerkt die Abweichung und überträgt seinen
+Stand erneut, spätestens nach einer Stunde. Ein Passwort setzt man deshalb auf
+dem Hauptknoten zurück. Ist der nicht mehr da: erst befördern.
+
+Für die Dateien ist an zwei Stellen gesperrt, die jeder Weg nimmt (Oberfläche,
+API, MCP, Scheduler), nicht in den Routen:
 
 - `startHaproxyRun`: auf einem Folgeknoten entsteht kein Lauf, die Absage (`409`)
   geht an den Aufrufer.
@@ -187,18 +256,35 @@ Knoten bedienbar. Über den Seiten des Proxys steht ein Hinweis
 - **Nach jedem Vorgang am Proxy.** `withProxyLock` ruft am Ende den Anstoß
   (`onProxyChange`, vom Scheduler gesetzt), gleich ob der Vorgang etwas
   geschrieben hat. Drei Sekunden später und zusammengefasst.
+- **Nach jeder Handlung an den Daten** (`lib/sync/kick.ts`). Für die Daten gibt
+  es keine Sperre, die jeder Weg nimmt, aber jede Handlung schreibt eine Zeile
+  ins Protokoll: `logAudit` stößt an, wenn der Bereich der Handlung zu den
+  abgeglichenen gehört (Konten, Einstellungen, DNS, API-Keys, CrowdSec).
 - **Nach dem täglichen Lauf von acme.sh**: eine Erneuerung über den
   Deploy-Hook geht an keiner Sperre vorbei.
 - **Alle fünf Minuten** (Scheduler).
 - **„Jetzt abgleichen"** (Seite, `POST /api/internal/sync`, `start_sync`).
 
-Die ersten drei fragen jeden Folgeknoten nach seinem Stand und übertragen nur,
-wenn der Fingerabdruck abweicht (SHA-256 über Pfade und Inhalte, ohne Rechte
-und Zeitstempel), wenn er das Paket inzwischen anders anpassen würde (CrowdSec
-wurde dort ein- oder ausgeschaltet) oder wenn dort jemand Dateien geändert
-hat. Der letzte Grund höchstens einmal je Stunde: schreibt dort etwas dauerhaft
-dazwischen, wäre das sonst ein Abgleich alle fünf Minuten. Der Knopf überträgt
-immer.
+Alle außer dem Knopf fragen jeden Folgeknoten nach seinem Stand und übertragen
+nur, wenn ein Fingerabdruck abweicht, wenn er das Paket inzwischen anders
+anpassen würde (CrowdSec wurde dort ein- oder ausgeschaltet) oder wenn dort
+jemand Dateien oder Daten geändert hat. Der letzte Grund höchstens einmal je
+Stunde: schreibt dort etwas dauerhaft dazwischen, wäre das sonst ein Abgleich
+alle fünf Minuten. Der Knopf überträgt immer.
+
+**Drei Fingerabdrücke** (`compare.ts`, `carriesState`):
+
+- **Dateien:** SHA-256 über Pfade und Inhalte, ohne Rechte und Zeitstempel.
+- **Daten:** über alles aus der Datenbank, in fester Reihenfolge und mit den
+  Geheimnissen im Klartext (ein Chiffrat ist bei jedem Schreiben ein anderes).
+  Nicht dabei, was jeder Knoten für sich führt, etwa der Zähler eines Passkeys:
+  eine Anmeldung ist keine Änderung.
+- **CrowdSec:** getrennt, weil es sich nicht immer lesen lässt (nach jeder
+  Änderung an den Regeln startet es neu). Antwortet es gerade nicht, gilt der
+  zuletzt gelesene Stand, und hat es seit dem Start von HAPM nie geantwortet,
+  fehlt der Teil im Paket: der Folgeknoten behält dann, was er hat. Von einer
+  Sperre zählen Adresse und Zeitpunkt, nicht das Ende: das rechnet HAPM aus der
+  Restdauer, die `cscli` nennt, und die schwankt von Aufruf zu Aufruf.
 
 **In der Historie** steht ein Lauf nur, wenn etwas übertragen wurde oder ein
 Folgeknoten neu ausfällt. Derselbe Fehler bei jeder Prüfung ist eine Zeile,
@@ -216,8 +302,9 @@ gebunden, die Adresse führt zu diesem Knoten selbst (die gemeinsame Adresse
 statt der des Folgeknotens), eine andere Fassung des Abgleichs
 (`SYNC_PROTOCOL`).
 
-**Ein Hinweis** ist: eine andere Fassung von HAPM oder HAProxy, eine andere Art
-der Installation, CrowdSec dort nicht eingeschaltet. Ob eine neuere
+**Ein Hinweis** ist: eine andere Fassung von HAPM oder HAProxy, CrowdSec dort
+nicht eingeschaltet. Die Art der Installation ist keiner mehr: sie kommt mit
+dem Abgleich. Ob eine neuere
 `haproxy.cfg` auf einem älteren HAProxy lädt, lässt sich aus zwei
 Versionsnummern nicht sagen. Das entscheidet dort `haproxy -c`, und lehnt es
 ab, bleibt dort der alte Stand und der Abgleich meldet den Grund.
@@ -225,8 +312,21 @@ ab, bleibt dort der alte Stand und der Abgleich meldet den Grund.
 ### CrowdSec
 
 Der Bouncer, den HAProxy je Anfrage fragt, läuft im Stack des jeweiligen
-Knotens, und Sperren, Regeln und der Schalter für OWASP gehören dem CrowdSec
-dieses Knotens. Sie werden nicht abgeglichen.
+Knotens, und jeder Knoten hat sein eigenes CrowdSec. Abgeglichen wird, was
+jemand in HAPM eingestellt hat (`lib/crowdsec/mirror.ts`): die Sperren von
+Hand, die Freigaben, der Schalter der OWASP-Regeln und die zuschaltbaren
+Sammlungen. Was CrowdSec selbst tut, bleibt je Knoten: seine eigenen Sperren,
+die Ereignisse, die Gemeinschaftsliste. Jede neue Sperre dort wäre sonst ein
+Abgleich, und nach einem Ausfall erkennt der andere Knoten einen Angreifer an
+dessen nächsten Anfragen selbst.
+
+- **Sperren von Hand** setzt der Folgeknoten mit der Restdauer des
+  Hauptknotens, hebt auf, was der nicht mehr nennt, und lässt stehen, was
+  schon so gesperrt ist (das Ende darf zehn Minuten abweichen).
+- **Regeln** schaltet er nur, wo sie abweichen: jede Änderung dort startet
+  CrowdSec neu, und solange gehen Anfragen ungeprüft durch.
+- **Ob CrowdSec eingeschaltet ist, bleibt je Knoten.** Ist es auf dem
+  Folgeknoten aus, wird der Teil dort ausgelassen und steht so im Lauf.
 
 - **Ist CrowdSec auf dem Folgeknoten nicht eingeschaltet** (abgewählt oder
   abgeschaltet), die Konfiguration benutzt es aber, nimmt der Folgeknoten die
@@ -239,10 +339,9 @@ dieses Knotens. Sie werden nicht abgeglichen.
   seiner nächsten Prüfung und überträgt erneut.
 - Der Port des Bouncers (`HAPM_SPOA_PORT`) wird auf den des Folgeknotens
   gesetzt.
-- **Freigaben:** `hapm-crowdsec/allow.lst` kommt vom Hauptknoten. HAProxy fragt
-  CrowdSec für diese Adressen gar nicht erst, also auch dort nicht. Die Liste
-  der Freigaben in der Oberfläche des Folgeknotens zeigt sie nicht (sie liest
-  sein eigenes CrowdSec) und lässt sich dort nicht ändern.
+- **Freigaben:** `hapm-crowdsec/allow.lst` kommt mit den Dateien vom
+  Hauptknoten, die Liste in CrowdSec selbst mit dem Datenteil. Die Oberfläche
+  des Folgeknotens zeigt sie damit auch, ändern lässt sie sich dort nicht.
 - **Ausnahmen für Anwendungen** (`# hapm-app:`) gleicht der Folgeknoten nach
   jedem übernommenen Stand selbst ab (`queueAppSync`).
 
@@ -256,8 +355,10 @@ Bleibt er länger weg:
 1. Auf dem Folgeknoten „Abgleich", „Rolle": **Hauptknoten** (oder „Einzeln").
    Ab dann wird dort geändert, und die tägliche Erneuerung läuft dort. Konto
    und Erneuerungseinträge von acme.sh hat er aus dem Abgleich.
-2. Art der Installation und ACME-Server unter „Allgemein" prüfen, DNS-Zonen
-   bei Bedarf neu anbinden.
+2. Konten, Einstellungen, DNS-Zonen und API-Keys sind die des bisherigen
+   Hauptknotens. Je Knoten eingestellt sind Updates und Sicherung: dort
+   nachsehen. Wer einen zweiten Faktor hat, erzeugt unter „Konto" neue
+   Wiederherstellungscodes.
 3. **Bevor der alte Hauptknoten zurückkommt**, muss er Folgeknoten werden:
    dort die Rolle umstellen, einen Kopplungsschlüssel erzeugen und ihn auf dem
    neuen Hauptknoten eintragen. Kommt er vorher zurück, überschreibt er
@@ -323,18 +424,24 @@ vrrp_instance HAPM {
   Cookie steht und die Namen der Ziele auf beiden Knoten dieselben sind. Eine
   Passwortsperre gilt auf beiden: Hash und Cookie-Wert stehen in den
   abgeglichenen Dateien. Die Zähler der Fehlversuche führt jeder Knoten selbst.
-- **Sperren und Regeln von CrowdSec je Knoten**, siehe oben. Eine Adresse, die
-  der eine sperrt, sperrt der andere nicht von selbst.
+- **Was CrowdSec selbst sperrt, sperrt jeder Knoten für sich**, siehe oben.
+  Abgeglichen sind die Sperren von Hand.
 - **Statistik, Logs, Protokoll und Historie je Knoten.**
-- **Die Datenbank wird nicht abgeglichen**, siehe „Was übertragen wird".
+- **Von der Datenbank geht nur der Datenteil mit**, siehe „Was übertragen
+  wird". Sicherung, Updates, Darstellung und das Design der Fehlerseiten
+  stellt jeder Knoten für sich ein.
+- **Angemeldet ist man je Knoten.** Wechselt die gemeinsame Adresse den
+  Knoten, meldet man sich neu an: das Konto ist dasselbe, die Sitzung nicht.
+- **Beide Knoten brauchen dieselbe Fassung des Abgleichs.** Mit dem Datenteil
+  ist sie 2 (`SYNC_PROTOCOL`): bis beide Knoten aktualisiert sind, lehnt der
+  Folgeknoten ab, und der Hauptknoten meldet das als gescheiterten Abgleich.
 - **HTTP-01 nur dort, wo die Adresse gerade liegt.** Let's Encrypt erreicht
   den Knoten, der die gemeinsame Adresse hält. acme.sh antwortet auf dem
   Hauptknoten. Hält der Folgeknoten die Adresse, scheitern Anträge und
   Erneuerungen über HTTP-01, bis sie zurück ist oder er befördert wurde.
   DNS-01 hängt nicht daran.
 - **Die Oberfläche hinter der gemeinsamen Adresse** ist die des Knotens, der
-  sie hält, mit dessen Konten. Den Hauptknoten zum Ändern über seine eigene
-  Adresse ansprechen.
+  sie hält. Den Hauptknoten zum Ändern über seine eigene Adresse ansprechen.
 - **Zwischen zwei Abgleichen** (Sekunden nach einer Änderung, bis zu fünf
   Minuten nach einem Fehler) trägt der Folgeknoten den vorigen Stand.
 - **Ein Abgleich überträgt immer alles**, nicht nur die Änderung. Ein Proxy mit
@@ -349,7 +456,10 @@ vrrp_instance HAPM {
 Key nicht ([`mcp.md`](mcp.md), „Was es bewusst nicht gibt").
 
 Auf einem Folgeknoten lehnt jede schreibende Route und jedes schreibende
-Werkzeug des Reverse-Proxys mit `409` ab.
+Werkzeug des Reverse-Proxys mit `409` ab, ebenso `update_settings` für die
+abgeglichenen Einstellungen, `add_crowdsec_decision`, `update_crowdsec_rules`
+(außer `upgrade`) und das Aufheben einer Sperre von Hand. Ein API-Key des
+Hauptknotens gilt auch auf dem Folgeknoten, zum Lesen.
 
 ## Für den, der es ändert
 
@@ -358,6 +468,12 @@ Werkzeug des Reverse-Proxys mit `409` ab.
 | `lib/sync/types.ts` | Rollen, `NodeReport`, Warnungen. Rein, die Seite importiert es. |
 | `lib/sync/envelope.ts` | Kopplungsschlüssel, Umschlag, Kopfzeile, Einmalwerte. Rein. |
 | `lib/sync/bundle.ts` | Ausschlussliste, Einsammeln, Fingerabdruck, Packen, Auspacken mit Prüfung. Nur `fs`. |
+| `lib/sync/data.ts` | Der Datenteil: seine Form, die Liste der abgeglichenen Einstellungen, beide Fingerabdrücke, die Prüfung dessen, was ankommt, und was ein Folgeknoten an seinem CrowdSec tut. Rein. |
+| `lib/sync/data-collect.ts` | Den Datenteil aus Datenbank und CrowdSec lesen. |
+| `lib/sync/data-apply.ts` | Ihn auf dem Folgeknoten einsetzen, jeder Teil für sich. |
+| `lib/sync/kick.ts` | Der Anstoß nach einer Handlung, über das Protokoll. |
+| `lib/db/account-rows.ts` | Die Konten als Zeilen lesen und in einer Transaktion ersetzen. |
+| `lib/crowdsec/mirror.ts` | CrowdSec lesen und auf dem Folgeknoten herstellen. |
 | `lib/sync/swap.ts` | Bereitlegen, tauschen, zurücktauschen, Abbruch zurücknehmen. Nur `fs`. |
 | `lib/sync/adapt.ts` | `haproxy.cfg` an den Folgeknoten anpassen (CrowdSec). Rein. |
 | `lib/sync/apply-core.ts` | Der Ablauf des Anwendens, Prüfen und Neuladen als Funktionen hereingereicht. |
@@ -365,7 +481,7 @@ Werkzeug des Reverse-Proxys mit `409` ab.
 | `lib/sync/receive.ts` | Der Endpunkt für andere Knoten und seine Prüfungen. |
 | `lib/sync/compare.ts` | Absagen, Hinweise, „trägt den Stand". Rein. |
 | `lib/sync/send.ts` | Packen, senden, abwarten, Runden, Anstoß. |
-| `lib/sync/role.ts` | Die Rolle und die Sperre für Folgeknoten. Klein, `provision.ts` importiert es. |
+| `lib/sync/role.ts` | Die Rolle und die Sperren für Folgeknoten (`assertProxyWritable`, `assertDataWritable`). Klein, `provision.ts` importiert es. |
 | `lib/sync/store.ts` | Collections `sync_settings`, `sync_peers`, `sync_runs`. |
 | `lib/sync/actions.ts` | Was Seite, API und MCP gemeinsam rufen, samt Protokoll. |
 
@@ -378,13 +494,32 @@ Werkzeug des Reverse-Proxys mit `409` ab.
   an, ohne dass er davon weiß.
 - **Was sich am Umschlag, am Paket oder an der Auskunft ändert,** hebt
   `SYNC_PROTOCOL`: zwei Knoten mit verschiedenen Zahlen gleichen nicht ab.
+- **Etwas Neues im Datenteil** braucht vier Stellen: die Form und den
+  Fingerabdruck in `data.ts` (samt `parseSyncData`), das Lesen in
+  `data-collect.ts`, das Einsetzen in `data-apply.ts`, und die Sperre auf dem
+  Folgeknoten (`assertDataWritable`) in der Funktion, die es ändert. Was jeder
+  Knoten für sich führt (ein Zähler, ein „zuletzt benutzt"), gehört nicht in
+  den Fingerabdruck: sonst wäre jede Anmeldung ein Abgleich.
+- **Eine neue Einstellung** in `Settings` wird nur abgeglichen, wenn sie in
+  `SYNCED_SETTINGS` steht.
+- **Eine neue Handlung im Protokoll** stößt den Abgleich an, wenn ihr Bereich
+  in `SYNCED_AREAS` (`kick.ts`) als abgeglichen gilt. Ein neuer Bereich muss
+  dort eingetragen werden, sonst übersetzt `kick.ts` nicht.
 
 ## Prüfen
 
 - `tests/sync/`: Umschlag (`envelope`), Paket samt bösartiger Pfade
   (`bundle`), Tausch und Zurücktauschen (`apply`), Absagen des Folgeknotens
   (`accept`), der Endpunkt über echtes HTTP (`receive`), Vergleich und
-  Anpassung (`compare`), die Sperre auf Folgeknoten (`guard`).
+  Anpassung (`compare`), die Sperre auf Folgeknoten (`guard`), der Datenteil
+  mit Fingerabdrücken, Prüfung und den Plänen für CrowdSec (`data`).
+- `tests/sync/data-apply.test.ts` (braucht `TEST_DATABASE_URL`): einsammeln und
+  einsetzen gegen ein echtes Postgres, samt Anmeldung danach, Sitzungen, neu
+  verschlüsselten Geheimnissen und den Sperren auf einem Folgeknoten.
+- `tests/crowdsec/mirror.test.ts`: welche `cscli`-Aufrufe ein Folgeknoten
+  macht. Die Aufrufe selbst (`allowlists add -e 86400s`, `decisions add
+  --duration 14400s`, die Absage für eine freigegebene Adresse) sind gegen
+  CrowdSec 1.8.2 nachgesehen.
 - `tests/security/sync-api.test.ts`: Sitzung und CSRF der Routen der
   Oberfläche, Reihenfolge der Prüfungen am Endpunkt für Knoten.
 - **`pnpm sync:verify`** (`scripts/verify-sync.ts`, braucht Docker): der Stand
@@ -396,4 +531,5 @@ Werkzeug des Reverse-Proxys mit `409` ab.
   Zeilen an.
 
 Nicht automatisch geprüft ist der ganze Weg zwischen zwei vollständigen Stacks
-(zwei Server mit Docker, HAProxy und Postgres) und das Umschalten der Adresse.
+(zwei Server mit Docker, HAProxy, Postgres und CrowdSec) und das Umschalten der
+Adresse.

@@ -12,6 +12,7 @@ import {
 } from '@/lib/service-auth';
 import { normaliseAllowedIps, parseAllowedIps, serialiseAllowedIps } from '@/lib/ip-allow';
 import type { ServiceToken } from '@/lib/types';
+import { assertDataWritable } from '@/lib/sync/role';
 
 /**
  * Service-Token verwalten. Von einem angemeldeten Menschen, nicht von einem Dienst.
@@ -49,6 +50,7 @@ export async function POST(request: Request) {
   try {
     await requireCsrf(request);
     const session = await requireSession();
+    await assertDataWritable('tokens');
     const { name, description, allowedIps } = await jsonBody<{
       name?: string;
       description?: string;

@@ -138,7 +138,32 @@ async function resetPassword(db, email) {
   console.log('Der zweite Faktor ist abgeschaltet, die Passkeys des Kontos sind entfernt,');
   console.log('alle seine Sitzungen sind beendet.');
   console.log('Bitte nach der Anmeldung unter „Konto" ein eigenes Passwort setzen.');
+  if (await isReplica(db)) {
+    console.log('');
+    console.log('Achtung: dieser Knoten ist ein Folgeknoten, seine Konten kommen vom Hauptknoten.');
+    console.log('Das neue Passwort gilt nur, bis der Hauptknoten seinen Stand erneut überträgt');
+    console.log('(spätestens nach einer Stunde). Läuft der Hauptknoten noch: dort zurücksetzen.');
+    console.log('Ist er ausgefallen: anmelden und unter „Abgleich" die Rolle umstellen.');
+  }
   return 0;
+}
+
+/**
+ * Ob dieser Knoten ein Folgeknoten ist (docs/hochverfuegbarkeit.md). Die Zeile
+ * gibt es erst, wenn HAPM einmal gestartet ist. Ohne sie und bei jedem Fehler:
+ * nein, der Hinweis ist eine Hilfe und keine Bedingung.
+ *
+ * @param {ReturnType<typeof postgres>} db
+ */
+async function isReplica(db) {
+  try {
+    const [{ present }] = await db`select to_regclass('sync_settings') is not null as present`;
+    if (!present) return false;
+    const rows = await db`select data->>'role' as role from sync_settings where id = 'main'`;
+    return rows[0]?.role === 'replica';
+  } catch {
+    return false;
+  }
 }
 
 const [command, argument] = process.argv.slice(2);

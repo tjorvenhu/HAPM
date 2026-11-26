@@ -3,6 +3,8 @@ import { createHash } from 'node:crypto';
 import { generatePairingKey, openRequest, parseHeader, sealResponse, SYNC_HEADER } from '@/lib/sync/envelope';
 import { unpack, type BundleEntry, type Collected } from '@/lib/sync/bundle';
 import { SYNC_PROTOCOL, type ApplyState, type NodeAnswer, type NodeReport } from '@/lib/sync/types';
+import type { SyncData } from '@/lib/sync/data';
+import { sampleSyncData } from '../helpers/sync-data';
 
 /**
  * Der Hauptknoten: wann er überträgt, wann nicht, und was danach in Historie,
@@ -30,6 +32,8 @@ const state = vi.hoisted(() => ({
   audits: [] as { action: string; details: string }[],
   mails: [] as Record<string, unknown>[],
   config: 'global\n',
+  /** Der Datenteil dieses Knotens, wie `collectData` ihn liefert. */
+  data: null as SyncData | null,
 }));
 
 vi.mock('@/lib/sync/store', () => ({
@@ -74,6 +78,7 @@ vi.mock('@/lib/sync/bundle', async (importActual) => {
   };
 });
 
+vi.mock('@/lib/sync/data-collect', () => ({ collectData: async () => structuredClone(state.data) }));
 vi.mock('@/lib/sync/node', () => ({ HAPM_VERSION: '0.6.1', haproxyVersion: async () => '3.2.4', nodeName: () => 'proxy01' }));
 vi.mock('@/lib/haproxy/provision', () => ({ withProxyLockLocal: async (_id: string, fn: () => Promise<unknown>) => fn() }));
 vi.mock('@/lib/settings', () => ({ getSettings: async () => ({ exposure: 'public' }) }));
@@ -102,6 +107,7 @@ const replica = {
   applied: null as NodeReport['applied'],
   variant: 'crowdsec=an;spoa=127.0.0.1:7423',
   intact: true as boolean | null,
+  dataIntact: true as boolean | null,
   hapmVersion: '0.6.1',
   apply: null as ApplyState | null,
   /** Was er mit einem Paket tut. */
@@ -124,6 +130,7 @@ function report(): NodeReport {
     applied: replica.applied,
     variant: replica.variant,
     intact: replica.intact,
+    dataIntact: replica.dataIntact,
     apply: replica.apply,
   };
 }
@@ -165,9 +172,18 @@ async function fakeNode(url: string | URL | Request, init?: RequestInit): Promis
       error: ok ? null : "Konfiguration prüfen: unknown keyword 'quic'",
     };
     if (ok) {
-      replica.applied = { fingerprint: unpacked.meta.fingerprint, seq: unpacked.meta.seq, at: new Date().toISOString(), variant: replica.variant };
+      replica.applied = {
+        fingerprint: unpacked.meta.fingerprint,
+        seq: unpacked.meta.seq,
+        at: new Date().toISOString(),
+        variant: replica.variant,
+        data: unpacked.meta.dataFingerprint,
+        // Ein Paket ohne CrowdSec lässt stehen, was der Folgeknoten zuletzt übernommen hat.
+        crowdsec: unpacked.meta.crowdsecFingerprint ?? replica.applied?.crowdsec ?? null,
+      };
       replica.primary = { nodeId: unpacked.meta.sender.nodeId, name: unpacked.meta.sender.name };
       replica.intact = true;
+      replica.dataIntact = true;
     }
     answer = { ok: true, accepted: true, seq: unpacked.meta.seq };
   }
@@ -201,6 +217,9 @@ beforeEach(() => {
   state.audits = [];
   state.mails = [];
   state.config = 'global\n';
+  state.data = sampleSyncData();
+  // Wann zuletzt nachgezogen wurde, merkt sich `send.ts` über die Tests hinweg.
+  (globalThis as unknown as { __hapmSyncSend?: { repaired: Map<string, number> } }).__hapmSyncSend?.repaired.clear();
   Object.assign(replica, {
     reachable: true,
     key: KEY,
@@ -209,6 +228,7 @@ beforeEach(() => {
     applied: null,
     variant: 'crowdsec=an;spoa=127.0.0.1:7423',
     intact: true,
+    dataIntact: true,
     hapmVersion: '0.6.1',
     apply: null,
     outcome: 'success',
@@ -257,6 +277,48 @@ describe('nach einer Änderung und bei der regelmäßigen Prüfung', () => {
     expect(replica.received.map((entry) => entry.config)).toEqual(['global\n', 'global\n    maxconn 4000\n']);
     expect(replica.received[1].seq).toBeGreaterThan(replica.received[0].seq);
     expect(state.runs).toHaveLength(2);
+  });
+
+  it('überträgt erneut, sobald sich hier ein Konto, eine Einstellung oder ein API-Key geändert hat', async () => {
+    await finish(checkPeers('change'));
+    state.data!.accounts.accounts[0].password = 'salz-a:neuer-hash';
+    await finish(checkPeers('change'));
+    state.data!.settings.exposure = 'internal';
+    await finish(checkPeers('change'));
+    state.data!.serviceTokens[0].revokedAt = '2026-11-26T12:00:00.000Z';
+    await finish(checkPeers('change'));
+    expect(replica.received).toHaveLength(4);
+    // Die Dateien sind dieselben geblieben.
+    expect(new Set(replica.received.map((entry) => entry.fingerprint)).size).toBe(1);
+  });
+
+  it('überträgt erneut, sobald sich hier eine Sperre von CrowdSec geändert hat', async () => {
+    await finish(checkPeers('change'));
+    state.data!.crowdsec!.bans.push({ value: '203.0.113.9', scope: 'ip', reason: 'Gesperrt in HAPM', createdAt: '2026-11-26T11:00:00.000Z', until: '2026-11-27T11:00:00.000Z' });
+    await finish(checkPeers('change'));
+    expect(replica.received).toHaveLength(2);
+  });
+
+  it('überträgt nicht, nur weil CrowdSec hier gerade nicht antwortet oder eine Sperre ihrem Ende näher ist', async () => {
+    await finish(checkPeers('change'));
+    state.data!.crowdsec!.bans[0].until = '2026-12-20T09:59:58.000Z';
+    await finish(checkPeers('schedule'));
+    state.data!.crowdsec = null;
+    await finish(checkPeers('schedule'));
+    expect(replica.received).toHaveLength(1);
+    expect(state.runs).toHaveLength(1);
+    expect(peer().inSync).toBe(true);
+  });
+
+  it('zieht nach, wenn dort jemand an den Daten geändert hat, aber höchstens einmal je Stunde', async () => {
+    await finish(checkPeers('change'));
+    replica.dataIntact = false;
+    await finish(checkPeers('schedule'));
+    expect(replica.received).toHaveLength(2);
+    replica.dataIntact = false;
+    await finish(checkPeers('schedule'));
+    expect(replica.received).toHaveLength(2);
+    expect(peer().inSync).toBe(false);
   });
 
   it('überträgt erneut, wenn der Folgeknoten das Paket inzwischen anders anpassen würde', async () => {

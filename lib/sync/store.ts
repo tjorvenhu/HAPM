@@ -32,6 +32,12 @@ export interface AppliedState {
   /** Fingerabdruck der Dateien hier, unmittelbar nach dem Abgleich. */
   localFingerprint: string;
   crowdsec: CrowdsecOutcome;
+  /** Fingerabdruck des übernommenen Datenteils, wie der Hauptknoten ihn nennt. Fehlt oder `null`: keiner übernommen. */
+  dataFingerprint?: string | null;
+  /** Fingerabdruck der Daten hier, unmittelbar nach dem Abgleich. */
+  localDataFingerprint?: string | null;
+  /** Fingerabdruck des übernommenen Stands von CrowdSec, wie der Hauptknoten ihn nennt. */
+  crowdsecFingerprint?: string | null;
 }
 
 /** Ein Abgleich, den dieser Knoten abgelehnt hat, für den Hinweis auf der Seite. */

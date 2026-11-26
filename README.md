@@ -799,7 +799,9 @@ installieren und das Archiv unter „Sicherung“ hochladen.
 Zwei Server mit je einer vollständigen Installation. Einer ist der
 Hauptknoten, dort wird geändert. Der andere ist Folgeknoten: er bekommt nach
 jeder Änderung `haproxy.cfg`, Zertifikate, Fehlerseiten und den Stand von
-acme.sh und liefert damit aus, wenn der Hauptknoten ausfällt.
+acme.sh und liefert damit aus, wenn der Hauptknoten ausfällt. Dazu kommen
+Konten, Einstellungen, DNS-Zonen, API-Keys und von CrowdSec die Sperren von
+Hand, die Freigaben und die Regeln.
 
 1. Auf dem zweiten Server unter „Abgleich“ die Rolle „Folgeknoten“ wählen und
    einen Kopplungsschlüssel erzeugen.
@@ -808,12 +810,15 @@ acme.sh und liefert damit aus, wenn der Hauptknoten ausfällt.
    eintragen.
 
 Die Übertragung ist mit dem Kopplungsschlüssel verschlüsselt, auch ohne HTTPS.
-Auf dem Folgeknoten lassen sich Ziele und Zertifikate nicht ändern.
+Auf dem Folgeknoten lässt sich nichts davon ändern. Der erste Abgleich ersetzt
+auch seine Konten: danach meldet man sich dort mit einem Konto des
+Hauptknotens an.
 
 > [!IMPORTANT]
 > HAPM gleicht ab, es schaltet nicht um. Welcher Server die gemeinsame Adresse
-> hält, regelt keepalived oder ein Load Balancer davor. Die Datenbank (Konten,
-> Einstellungen, Statistik) und die Sperren von CrowdSec bleiben je Server.
+> hält, regelt keepalived oder ein Load Balancer davor. Statistik, Logs,
+> Protokoll, Sicherung und Updates bleiben je Server, ebenso was CrowdSec
+> selbst sperrt.
 > Einrichtung, ein Beispiel für keepalived und alle Grenzen:
 > [`docs/hochverfuegbarkeit.md`](docs/hochverfuegbarkeit.md).
 

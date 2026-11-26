@@ -16,7 +16,7 @@ import { parseSteps, stepsAsLog } from '../haproxy/runner';
 import type { HaproxyStep } from '../types';
 import { currentApply } from './apply';
 import { generatePairingKey, isPairingKey } from './envelope';
-import { HAPM_VERSION, filesIntact, localNode, nodeName } from './node';
+import { HAPM_VERSION, dataIntact, filesIntact, localNode, nodeName } from './node';
 import { localVariant } from './adapt';
 import { refusalOf } from './compare';
 import { NodeCallError, askNode, requestSyncSoon, startManualSync, syncRunning, type SyncActor } from './send';
@@ -67,6 +67,8 @@ export async function syncOverview() {
       applied: settings.applied ? { at: settings.applied.at, crowdsec: settings.applied.crowdsec } : null,
       /** `false`: hier wurden Dateien geändert, seit der Stand kam. `null`: nicht zu sagen. */
       intact: replica ? filesIntact(settings) : null,
+      /** Dasselbe für Konten, Einstellungen, DNS-Zonen und API-Keys in der Datenbank. */
+      dataIntact: replica ? await dataIntact(settings) : null,
       /** Dieser Knoten würde ein Paket inzwischen anders anpassen als beim letzten Mal. */
       adaptationChanged: replica && settings.applied !== null && settings.applied.variant !== localVariant(localNode()),
       rejected: settings.rejected,

@@ -66,6 +66,7 @@ export async function readSyncHealth(): Promise<SyncHealthInput | null> {
       })),
       appliedAt: overview.replica.applied?.at ?? null,
       intact: overview.replica.intact,
+      dataIntact: overview.replica.dataIntact,
     };
   } catch {
     return null;

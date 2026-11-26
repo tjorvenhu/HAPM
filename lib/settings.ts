@@ -7,6 +7,8 @@ import { DEFAULT_SMTP_PORT, SMTP_SECURITIES, parseSender } from './mail/config';
 import { rememberPublicUrl } from './mail/installation';
 import { isLocale, msg, type Locale } from './i18n';
 import { normalizeAcmeDirectory, validateAcmeDirectory } from './acme-server';
+import { SYNCED_SETTINGS, canonical } from './sync/data';
+import { assertDataWritable } from './sync/role';
 import {
   DEFAULT_DNS_WAIT,
   MAX_DNS_WAIT,
@@ -465,9 +467,27 @@ export function passkeysDroppedBy(
   return was !== null && was !== publicHost(after);
 }
 
+/**
+ * Die Felder einer Änderung, die der Abgleich zwischen Knoten überträgt und
+ * die sich dabei wirklich ändern. Ein Formular schickt alle seine Felder mit:
+ * auf einem Folgeknoten soll es an denen scheitern, die es ändert, nicht an
+ * denen, die es nur wiederholt.
+ */
+export function syncedChanges(patch: Partial<SettingsData>, current: SettingsData): string[] {
+  const synced: readonly string[] = [...SYNCED_SETTINGS, 'smtpPass'];
+  return Object.keys(patch).filter((key) => {
+    if (!synced.includes(key)) return false;
+    const field = key as keyof SettingsData;
+    return canonical(patch[field]) !== canonical(current[field]);
+  });
+}
+
 export async function updateSettings(input: SettingsInput): Promise<Settings> {
   const current = await getSettings();
   const patch = settingsPatch(input, current, encrypt);
+  // Diese Einstellungen kommen auf einem Folgeknoten vom Hauptknoten. Was jeder
+  // Knoten für sich einstellt (selbsttätige Updates), geht weiter.
+  if (syncedChanges(patch, current).length > 0) await assertDataWritable('settings');
   await updateDocument<Settings>(COLLECTIONS.SETTINGS, SETTINGS_ID, patch);
   const next = await getSettings();
   // Hier und nicht in den Routen: jeder Weg, der die Adresse ändert (Allgemein,

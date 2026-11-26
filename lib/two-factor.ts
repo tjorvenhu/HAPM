@@ -51,6 +51,13 @@
  * schreiben laufen für ein Konto nacheinander. Das Erzeugen neuer Codes steht
  * in derselben Schlange, sonst schriebe ein Verbrauchen mit der alten Liste die
  * gerade ungültig gemachten Codes zurück.
+ *
+ * ── Auf einem Folgeknoten ──
+ *
+ * Die Zeilen kommen dort mit dem Abgleich vom Hauptknoten. Einrichten,
+ * Abschalten und neue Codes lehnt diese Datei dort ab (`assertDataWritable`).
+ * Die Wiederherstellungscodes gelten nur auf dem Knoten, auf dem sie
+ * entstanden: ihr HMAC hängt an dessen `encryptionKey`.
  */
 
 import { cookies } from 'next/headers';
@@ -61,6 +68,7 @@ import { secrets } from './secrets';
 import { decryptTOTPSecret, encryptTOTPSecret, matchTOTPStep } from './totp';
 import { findRecoveryCode, generateRecoveryCodes, hashRecoveryCode } from './recovery-codes';
 import { COLLECTIONS, type TwoFactorConfig } from './types';
+import { assertDataWritable } from './sync/role';
 
 const COOKIE_NAME = 'hapm_2fa';
 
@@ -123,6 +131,7 @@ export async function get2FASecret(userId: string): Promise<string | null> {
 
 /** Ein neues Geheimnis ablegen. Es gilt erst nach `enable2FA`. */
 export async function store2FASecret(userId: string, secret: string): Promise<void> {
+  await assertDataWritable('accounts');
   const existing = await get2FAConfig(userId);
   const data = {
     secret: encryptTOTPSecret(secret),
@@ -150,6 +159,7 @@ function freshRecoveryCodes(): { codes: string[]; data: Partial<TwoFactorConfig>
  * danach nicht noch an.
  */
 export async function enable2FA(config: WithMeta<TwoFactorConfig>, usedStep: number | null = null): Promise<string[]> {
+  await assertDataWritable('accounts');
   return exclusive(config.userId, async () => {
     const { codes, data } = freshRecoveryCodes();
     await updateDocument<TwoFactorConfig>(COLLECTIONS.TWO_FACTOR, config.$id, {
@@ -207,6 +217,7 @@ export function recoveryCodesLeft(config: TwoFactorConfig | null): number {
  * danach nicht mehr. `null`, wenn der zweite Faktor nicht eingeschaltet ist.
  */
 export async function replaceRecoveryCodes(userId: string): Promise<string[] | null> {
+  await assertDataWritable('accounts');
   return exclusive(userId, async () => {
     const config = await get2FAConfig(userId);
     if (!config?.enabled) return null;
@@ -249,6 +260,7 @@ async function exclusive<T>(userId: string, task: () => Promise<T>): Promise<T> 
 
 /** Den zweiten Faktor eines Kontos entfernen. Liefert, ob es einen gab. */
 export async function remove2FA(userId: string): Promise<boolean> {
+  await assertDataWritable('accounts');
   const rows = await listDocuments<TwoFactorConfig>(COLLECTIONS.TWO_FACTOR, [
     Query.equal('userId', userId),
     Query.limit(100),

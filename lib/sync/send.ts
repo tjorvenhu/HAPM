@@ -6,14 +6,16 @@
  *
  *  - nach jedem Vorgang, der die Sperre der Läufe hielt (`onProxyChange`,
  *    gesetzt vom Scheduler), drei Sekunden später und zusammengefasst,
+ *  - ebenso nach jeder Handlung an Konten, Einstellungen, DNS-Zonen, API-Keys
+ *    und CrowdSec (`onDataChange`, `kick.ts`),
  *  - nach dem täglichen Lauf von acme.sh,
  *  - alle fünf Minuten (Scheduler),
  *  - auf Knopfdruck („Jetzt abgleichen").
  *
- * Die ersten drei fragen jeden Folgeknoten, welchen Stand er trägt, und
- * übertragen nur, wenn der Fingerabdruck abweicht, er sich inzwischen anders
- * anpassen würde (CrowdSec wurde dort eingeschaltet) oder jemand dort Dateien
- * geändert hat. Der Knopf überträgt immer.
+ * Alle außer dem Knopf fragen jeden Folgeknoten, welchen Stand er trägt, und
+ * übertragen nur, wenn ein Fingerabdruck abweicht (Dateien, Daten, CrowdSec),
+ * er sich inzwischen anders anpassen würde (CrowdSec wurde dort eingeschaltet)
+ * oder jemand dort Dateien oder Daten geändert hat. Der Knopf überträgt immer.
  *
  * ── Was in der Historie steht ──
  *
@@ -37,11 +39,12 @@ import { withProxyLockLocal } from '../haproxy/provision';
 import { notify } from '../notifications';
 import { msg, msgid } from '../i18n/translate';
 import { ROOT_DIRS, collect, pack, type BundleMeta } from './bundle';
+import { collectData } from './data-collect';
 import { ENVELOPE_OVERHEAD, SYNC_HEADER, openResponse, sealRequest, type EnvelopeKind } from './envelope';
 import { HAPM_VERSION, haproxyVersion, nodeName } from './node';
 import { MAX_APPLY_BYTES } from './receive';
 import { RunLog, createSyncRun, getSyncSettings, listPeers, openKey, updatePeer, updateSyncRun, type SyncPeer } from './store';
-import { carriesState, refusalOf, warningsFor } from './compare';
+import { carriesState, refusalOf, tookState, warningsFor } from './compare';
 import type { NodeAnswer, NodeReport, SyncTrigger } from './types';
 
 export interface SyncActor {
@@ -165,7 +168,7 @@ export async function packState(): Promise<Packed> {
   if (!cfg) {
     throw new ApiError(msg('{file} fehlt auf diesem Knoten. Es gibt nichts abzugleichen.', { file: HAPROXY_CFG }), 409);
   }
-  const [sync, settings, version] = await Promise.all([getSyncSettings(), getSettings(), haproxyVersion()]);
+  const [sync, settings, version, data] = await Promise.all([getSyncSettings(), getSettings(), haproxyVersion(), collectData()]);
   const memory = state();
   // Streng steigend, auch wenn zwei Läufe in derselben Millisekunde packen.
   const seq = Math.max(Date.now(), memory.lastSeq + 1);
@@ -182,7 +185,8 @@ export async function packState(): Promise<Packed> {
         usesCrowdsec: usesCrowdsec(cfg.toString('utf8')),
       },
     },
-    collected
+    collected,
+    data
   );
   if (packed.bundle.length + ENVELOPE_OVERHEAD > MAX_APPLY_BYTES) {
     throw new ApiError(
@@ -275,7 +279,7 @@ async function syncPeer(peer: SyncPeer, ctx: RoundContext): Promise<PeerOutcome>
   const warnings = warningsFor(report, meta);
   const seen = { nodeId: report.nodeId, hapmVersion: report.hapmVersion, haproxyVersion: report.haproxyVersion, warnings };
 
-  if (!ctx.force && carriesState(report, meta.fingerprint)) {
+  if (!ctx.force && carriesState(report, meta)) {
     await updatePeer(peer.$id, { ...seen, lastCheckAt: now(), reachable: true, inSync: true, lastError: null }).catch(() => undefined);
     return { peer, result: 'in-sync' };
   }
@@ -286,11 +290,12 @@ async function syncPeer(peer: SyncPeer, ctx: RoundContext): Promise<PeerOutcome>
       await updatePeer(peer.$id, waiting).catch(() => undefined);
       return { peer, result: 'postponed' };
     }
-    // Hier hat sich nichts geändert, dort hat jemand Dateien angefasst. Nicht bei
-    // jeder Prüfung überschreiben: schreibt dort etwas dauerhaft dazwischen, wäre
-    // das ein Abgleich alle fünf Minuten. Eine andere Anpassung (CrowdSec dort
-    // umgestellt) ist dagegen ein Grund, der sich mit dem Abgleich erledigt.
-    if (report.applied?.fingerprint === meta.fingerprint && report.applied.variant === report.variant) {
+    // Hier hat sich nichts geändert, dort hat jemand Dateien oder Daten angefasst.
+    // Nicht bei jeder Prüfung überschreiben: schreibt dort etwas dauerhaft
+    // dazwischen, wäre das ein Abgleich alle fünf Minuten. Eine andere Anpassung
+    // (CrowdSec dort umgestellt) ist dagegen ein Grund, der sich mit dem
+    // Abgleich erledigt.
+    if (tookState(report, meta)) {
       const last = state().repaired.get(peer.$id) ?? 0;
       if (Date.now() - last < REPAIR_PAUSE_MS) {
         await updatePeer(peer.$id, waiting).catch(() => undefined);

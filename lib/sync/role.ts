@@ -58,3 +58,39 @@ export function replicaRefusal(): ApiError {
 export async function assertProxyWritable(): Promise<void> {
   if (await isReplica()) throw replicaRefusal();
 }
+
+/**
+ * Was der Abgleich außer den Dateien überträgt (`data.ts`). Auch das ändert
+ * ein Folgeknoten nicht: der nächste Abgleich nähme es zurück, und bis dahin
+ * gälte auf zwei Knoten Verschiedenes.
+ */
+export type SyncedData = 'accounts' | 'settings' | 'dns' | 'tokens' | 'crowdsec';
+
+export function replicaDataRefusal(what: SyncedData): ApiError {
+  switch (what) {
+    case 'accounts':
+      return new ApiError(
+        msg('Dieser Knoten ist ein Folgeknoten. Konten, Passwörter, Passkeys und zweite Faktoren kommen vom Hauptknoten und werden dort geändert.'),
+        409
+      );
+    case 'settings':
+      return new ApiError(msg('Dieser Knoten ist ein Folgeknoten. Diese Einstellungen kommen vom Hauptknoten und werden dort geändert.'), 409);
+    case 'dns':
+      return new ApiError(msg('Dieser Knoten ist ein Folgeknoten. DNS-Zonen kommen vom Hauptknoten und werden dort geändert.'), 409);
+    case 'tokens':
+      return new ApiError(msg('Dieser Knoten ist ein Folgeknoten. API-Keys kommen vom Hauptknoten und werden dort geändert.'), 409);
+    case 'crowdsec':
+      return new ApiError(
+        msg('Dieser Knoten ist ein Folgeknoten. Sperren von Hand und Regeln von CrowdSec kommen vom Hauptknoten und werden dort geändert.'),
+        409
+      );
+  }
+}
+
+/**
+ * Wirft auf einem Folgeknoten. Gerufen in den Funktionen unter `lib/`, die
+ * Oberfläche, API und MCP gemeinsam nehmen, nicht in den Routen.
+ */
+export async function assertDataWritable(what: SyncedData): Promise<void> {
+  if (await isReplica()) throw replicaDataRefusal(what);
+}

@@ -399,10 +399,12 @@ HAProxy schickt Anfragen von dort gar nicht erst an CrowdSec. Nach jeder
 
 **Auf einem Folgeknoten** ([`hochverfuegbarkeit.md`](hochverfuegbarkeit.md))
 kommt `allow.lst` mit dem Abgleich vom Hauptknoten und wird dort nicht aus der
-eigenen Liste geschrieben. Freigaben lassen sich dort nicht ändern. Sperren,
-Regeln und der Schalter für OWASP bleiben je Knoten. Ist CrowdSec dort nicht
-eingeschaltet, nimmt der Folgeknoten die Zeilen beim Anwenden aus seiner
-`haproxy.cfg`.
+eigenen Liste geschrieben. Freigaben lassen sich dort nicht ändern. Auch die
+Sperren von Hand, die Freigaben in CrowdSec selbst, der Schalter für OWASP und
+die zuschaltbaren Sammlungen kommen vom Hauptknoten (`lib/crowdsec/mirror.ts`)
+und lassen sich dort nicht ändern. Was CrowdSec selbst sperrt, bleibt je
+Knoten und lässt sich dort aufheben. Ist CrowdSec dort nicht eingeschaltet,
+nimmt der Folgeknoten die Zeilen beim Anwenden aus seiner `haproxy.cfg`.
 
 ## Wie HAPM mit CrowdSec spricht: `cscli`
 

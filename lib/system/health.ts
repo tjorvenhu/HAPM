@@ -71,6 +71,8 @@ export interface SyncHealthInput {
   appliedAt: string | null;
   /** Nur Folgeknoten: `false`, wenn hier seit dem letzten Stand Dateien geändert wurden. */
   intact: boolean | null;
+  /** Nur Folgeknoten: dasselbe für Konten, Einstellungen, DNS-Zonen und API-Keys. */
+  dataIntact?: boolean | null;
 }
 
 /** Was `judge` neben der Übersicht liest. `null` heißt je Feld: nicht zu lesen. */
@@ -309,7 +311,9 @@ export function judge(
         ? check('sync', 'warn', t('Dieser Folgeknoten hat noch keinen Stand vom Hauptknoten übernommen.'))
         : sync.intact === false
           ? check('sync', 'warn', t('Auf diesem Folgeknoten wurden Dateien geändert, seit der Stand kam.'))
-          : check('sync', 'ok')
+          : sync.dataIntact === false
+            ? check('sync', 'warn', t('Auf diesem Folgeknoten wurden Konten oder Einstellungen geändert, seit der Stand kam.'))
+            : check('sync', 'ok')
     );
   }
 

@@ -276,6 +276,7 @@ export const system: Dictionary = {
   "Von einem Folgeknoten ist nicht bekannt, ob er den Stand trägt.": "It is unknown whether one of the replicas carries the state.",
   "Dieser Folgeknoten hat noch keinen Stand vom Hauptknoten übernommen.": "This replica has not applied a state from the primary node yet.",
   "Auf diesem Folgeknoten wurden Dateien geändert, seit der Stand kam.": "Files on this replica were changed since the state arrived.",
+  "Auf diesem Folgeknoten wurden Konten oder Einstellungen geändert, seit der Stand kam.": "Accounts or settings on this replica were changed since the state arrived.",
   "Die letzte Sicherung ist gescheitert.": "The last backup failed.",
   "Es gibt noch keine gelungene Sicherung.": "There is no successful backup yet.",
   "Die letzte gelungene Sicherung ist älter als {hours} Stunden.": "The last successful backup is older than {hours} hours.",

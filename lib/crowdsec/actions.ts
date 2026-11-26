@@ -77,7 +77,7 @@ import { localServer } from '../helpers';
 import { startHaproxyRun, waitForRun } from '../haproxy/runner';
 import { APP_RULES, appLogo, hubItemsOf, type AppUse } from './apps';
 import { syncAllowFile } from './allow-file';
-import { isReplica } from '../sync/role';
+import { assertDataWritable, isReplica, replicaDataRefusal } from '../sync/role';
 import { enqueueRuleChange, pendingRuleChanges, ruleRunActive, type RuleJob } from './rule-jobs';
 
 export interface CrowdsecActor {
@@ -245,6 +245,8 @@ function assertNotTooWide(value: string): void {
 }
 
 export async function addDecision(body: unknown, actor: CrowdsecActor) {
+  // Sperren von Hand kommen auf einem Folgeknoten mit dem Abgleich (`mirror.ts`).
+  await assertDataWritable('crowdsec');
   const raw = (body ?? {}) as Record<string, unknown>;
   const address = parseAddress(String(raw.value ?? ''));
   if (!address) throw new ApiError(msg('Bitte eine Adresse oder ein Netz angeben, etwa 203.0.113.7 oder 198.51.100.0/24.'));
@@ -276,17 +278,30 @@ export async function addDecision(body: unknown, actor: CrowdsecActor) {
   return { value: address.value, duration };
 }
 
+/**
+ * Auf einem Folgeknoten bleiben die Sperren von Hand stehen: sie kommen vom
+ * Hauptknoten, und der nächste Abgleich setzte sie wieder. Was das CrowdSec
+ * dieses Knotens selbst verhängt hat, lässt sich auch hier aufheben.
+ */
+async function assertNotSyncedBan(matches: (decision: { id: number; value: string }) => boolean): Promise<void> {
+  if (!(await isReplica())) return;
+  const manual = (await listDecisions()).filter((decision) => isManualBan(decision) && matches(decision));
+  if (manual.length > 0) throw replicaDataRefusal('crowdsec');
+}
+
 export async function removeDecision(body: unknown, actor: CrowdsecActor) {
   const raw = (body ?? {}) as Record<string, unknown>;
   if (raw.id !== undefined) {
     const id = Number(raw.id);
     if (!Number.isInteger(id) || id <= 0) throw new ApiError(msg('Diese Sperre gibt es nicht.'), 404);
+    await assertNotSyncedBan((decision) => decision.id === id);
     const result = await cscliOk(['decisions', 'delete', '--id', String(id)]);
     await audit(actor, 'crowdsec_decision_removed', String(id), `Sperre ${id} aufgehoben. ${result.stderr.trim()}`.trim());
     return { removed: id };
   }
   const address = parseAddress(String(raw.value ?? ''));
   if (!address) throw new ApiError(msg('Bitte eine Adresse oder ein Netz angeben, etwa 203.0.113.7 oder 198.51.100.0/24.'));
+  await assertNotSyncedBan((decision) => decision.value === address.value);
   await cscliOk(['decisions', 'delete', address.scope === 'ip' ? '--ip' : '--range', address.value]);
   await audit(actor, 'crowdsec_decision_removed', address.value, `Alle Sperren für ${address.value} aufgehoben.`);
   return { removed: address.value };
@@ -1168,6 +1183,21 @@ function planRuleChange(body: unknown, actor: CrowdsecActor): RuleJob<RuleChange
  */
 export async function changeRules(body: unknown, actor: CrowdsecActor): Promise<RuleChangeResult> {
   return enqueueRuleChange(planRuleChange(body, actor)).done;
+}
+
+/**
+ * Der Schalter der OWASP-Regeln und die Sammlungen kommen auf einem
+ * Folgeknoten vom Hauptknoten (`mirror.ts`). Den Hub aktualisiert jeder Knoten
+ * selbst.
+ *
+ * Gerufen von den Routen und dem MCP-Werkzeug vor `changeRules` und
+ * `queueRuleChange`, nicht darin: beide reihen ein, ohne vorher zu warten, und
+ * daran hängt, in welcher Reihenfolge zwei Änderungen im selben Augenblick in
+ * die Warteschlange kommen.
+ */
+export async function assertRulesWritable(body: unknown): Promise<void> {
+  if ((body as Record<string, unknown> | null)?.upgrade === true) return;
+  await assertDataWritable('crowdsec');
 }
 
 /**

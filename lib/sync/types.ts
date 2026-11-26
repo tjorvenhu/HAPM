@@ -33,7 +33,7 @@ export const SYNC_ROLE_LABELS: Record<SyncRole, string> = {
  * Paket und Auskunft. Zwei Knoten mit verschiedenen Zahlen gleichen nicht ab,
  * statt einander halb zu verstehen.
  */
-export const SYNC_PROTOCOL = 1;
+export const SYNC_PROTOCOL = 2;
 
 /** Was ein Knoten einem anderen über sich sagt. Nur mit Kopplungsschlüssel zu lesen. */
 export interface NodeReport {
@@ -57,6 +57,10 @@ export interface NodeReport {
     at: string;
     /** Womit der Folgeknoten das Paket an sich angepasst hat, siehe `localVariant`. */
     variant: string;
+    /** Fingerabdruck des übernommenen Datenteils (`lib/sync/data.ts`). `null`: noch keiner übernommen. */
+    data: string | null;
+    /** Fingerabdruck des übernommenen Stands von CrowdSec. `null`: noch keiner übernommen. */
+    crowdsec: string | null;
   } | null;
   /** Womit er ein Paket jetzt anpassen würde. Weicht es von `applied.variant` ab, ist ein neuer Abgleich fällig. */
   variant: string;
@@ -65,6 +69,11 @@ export interface NodeReport {
    * jemand hat auf dem Folgeknoten etwas geändert. `null`: nicht zu sagen.
    */
   intact: boolean | null;
+  /**
+   * Dasselbe für die Daten: ob Konten, Einstellungen, Zonen und API-Keys noch
+   * so in der Datenbank stehen wie nach dem letzten Abgleich.
+   */
+  dataIntact: boolean | null;
   /** Das Anwenden, das gerade läuft oder zuletzt lief. */
   apply: ApplyState | null;
 }
@@ -106,7 +115,6 @@ export type NodeAnswer =
 export type SyncWarning =
   | { code: 'hapm_version'; here: string; there: string }
   | { code: 'haproxy_version'; here: string; there: string }
-  | { code: 'exposure'; here: string; there: string }
   /** `haproxy.cfg` benutzt CrowdSec, auf dem Folgeknoten ist es nicht eingeschaltet. */
   | { code: 'crowdsec_off' }
   /** Verweise und Sonderdateien, die nicht übertragen werden. */

@@ -103,7 +103,7 @@ der Anfrage (`Accept-Language`).
 | `crowdsec` | | CrowdSec oder Bouncer steht, obwohl Ziele ihn benutzen. Fehlt, wenn kein Ziel CrowdSec benutzt |
 | `backup` | | letzte Sicherung gescheitert oder älter als 50 Stunden. Fehlt ohne tägliche Sicherung |
 | `audit_forwarding` | | die Weiterleitung des Protokolls an ein SIEM scheitert. Fehlt, wenn kein Ziel eingeschaltet ist |
-| `sync` | | Hauptknoten: ein Folgeknoten antwortet nicht oder trägt den Stand nicht. Folgeknoten: noch kein Stand übernommen, oder hier wurden Dateien geändert. Fehlt auf einem einzelnen Knoten |
+| `sync` | | Hauptknoten: ein Folgeknoten antwortet nicht oder trägt den Stand nicht. Folgeknoten: noch kein Stand übernommen, oder hier wurden Dateien, Konten oder Einstellungen geändert. Fehlt auf einem einzelnen Knoten |
 
 - **`fail` heißt: der Proxy selbst arbeitet nicht.** Ein Ziel ohne Backend ist
   deshalb nur `warn`: das Backend ist kaputt, nicht der Proxy, und wer daran
@@ -217,7 +217,11 @@ Die Gründe stehen in [`mcp.md`](mcp.md), „Was es bewusst nicht gibt". Kurz:
 - Beim Abgleich zwischen Knoten nur Lesen und Anstoßen: Rolle,
   Kopplungsschlüssel und Folgeknoten ändert nur die Oberfläche.
 - Auf einem Folgeknoten lehnt jede Route, die am Proxy etwas ändert, mit `409`
-  ab (`lib/sync/role.ts`): geändert wird am Hauptknoten.
+  ab (`lib/sync/role.ts`): geändert wird am Hauptknoten. Ebenso, was der
+  Abgleich sonst überträgt: die abgeglichenen Einstellungen (`PATCH /settings`,
+  selbsttätige Updates gehen weiter), Sperren von Hand und die Regeln von
+  CrowdSec (den Hub aktualisieren geht weiter). Die API-Keys des Hauptknotens
+  gelten auch auf dem Folgeknoten.
 
 ## Für den, der die Routen ändert
 

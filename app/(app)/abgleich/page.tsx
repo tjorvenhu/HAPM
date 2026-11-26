@@ -61,11 +61,6 @@ const ROLE_CHOICES: { value: SyncRole; text: string; icon: typeof Server }[] = [
   { value: 'replica', text: msgid('Übernimmt den Stand des Hauptknotens. Hier wird nichts geändert.'), icon: ArrowDownToLine },
 ];
 
-const EXPOSURE_LABELS: Record<string, string> = {
-  internal: msgid('Nur im eigenen Netz'),
-  public: msgid('Aus dem Internet erreichbar'),
-};
-
 type Plural = Translator['plural'];
 
 function warningText(warning: SyncWarning, t: Translator['t'], plural: Plural): string {
@@ -74,11 +69,6 @@ function warningText(warning: SyncWarning, t: Translator['t'], plural: Plural): 
       return t('HAPM: hier {here}, dort {there}.', { here: warning.here, there: warning.there });
     case 'haproxy_version':
       return t('HAProxy: hier {here}, dort {there}.', { here: warning.here, there: warning.there });
-    case 'exposure':
-      return t('Art der Installation: hier „{here}“, dort „{there}“.', {
-        here: t(EXPOSURE_LABELS[warning.here] ?? warning.here),
-        there: t(EXPOSURE_LABELS[warning.there] ?? warning.there),
-      });
     case 'crowdsec_off':
       return t('CrowdSec ist dort nicht eingeschaltet. Die Ziele laufen dort ohne WAF.');
     case 'skipped':
@@ -193,7 +183,7 @@ function Sync() {
         ? {
             title: t('Zum Folgeknoten machen?'),
             message: t(
-              'Der erste Abgleich ersetzt Konfiguration und Zertifikate dieses Knotens durch die des Hauptknotens. Ziele, Zertifikate und Einstellungen des Proxys lassen sich hier danach nicht mehr ändern, und Zertifikate werden hier nicht mehr erneuert. Legen Sie vorher eine Sicherung an.'
+              'Der erste Abgleich ersetzt Konfiguration, Zertifikate, Konten, Einstellungen, DNS-Zonen und API-Keys dieses Knotens durch die des Hauptknotens. Sie melden sich danach hier mit einem Konto des Hauptknotens an. Ändern lässt sich das alles nur noch dort, und Zertifikate werden hier nicht mehr erneuert. Legen Sie vorher eine Sicherung an.'
             ),
             confirmLabel: t('Zum Folgeknoten machen'),
             variant: 'warning',
@@ -357,7 +347,7 @@ function Sync() {
             )}
           />
         </h1>
-        <p className="page-subtitle">{t('Konfiguration und Zertifikate auf weitere Knoten übertragen.')}</p>
+        <p className="page-subtitle">{t('Konfiguration, Zertifikate, Konten und Einstellungen für weitere Knoten.')}</p>
       </div>
       {data?.role === 'primary' && (
         <div className="page-actions">
@@ -599,7 +589,25 @@ function Sync() {
                         ? t('Hier geändert seit dem Abgleich')
                         : t('Unbekannt')}
                   </dd>
+                  <dt>{t('Konten und Einstellungen')}</dt>
+                  <dd>
+                    {replica.dataIntact === true
+                      ? t('Unverändert seit dem Abgleich')
+                      : replica.dataIntact === false
+                        ? t('Hier geändert seit dem Abgleich')
+                        : t('Unbekannt')}
+                  </dd>
                 </dl>
+                {replica.dataIntact === false && (
+                  <div className="alert alert-warning">
+                    <AlertTriangle size={16} strokeWidth={1.5} />
+                    <span>
+                      {t(
+                        'Auf diesem Knoten wurden Konten, Einstellungen, DNS-Zonen oder API-Keys geändert. Der Hauptknoten bemerkt das bei seiner nächsten Prüfung und überträgt seinen Stand erneut.'
+                      )}
+                    </span>
+                  </div>
+                )}
                 {replica.intact === false && (
                   <div className="alert alert-warning">
                     <AlertTriangle size={16} strokeWidth={1.5} />
@@ -733,11 +741,27 @@ function Sync() {
                 </dd>
                 <dt>acme.sh</dt>
                 <dd>{t('Konto, Zertifikate und Erneuerungseinträge. Erneuert wird nur auf dem Hauptknoten.')}</dd>
+                <dt>{t('Konten')}</dt>
+                <dd>
+                  {t(
+                    'Benutzer, Passwörter, zweite Faktoren und Passkeys. Sitzungen nicht: nach dem ersten Abgleich melden Sie sich auf dem Folgeknoten neu an.'
+                  )}
+                </dd>
+                <dt>{t('Einstellungen')}</dt>
+                <dd>
+                  {t(
+                    '„Allgemein“ und „Benachrichtigungen“ samt SMTP-Konto, dazu DNS-Zonen und API-Keys. Selbsttätige Updates stellt jeder Knoten für sich ein.'
+                  )}
+                </dd>
+                <dt>CrowdSec</dt>
+                <dd>
+                  {t(
+                    'Sperren von Hand, Freigaben, der Schalter der OWASP-Regeln und zugeschaltete Sammlungen. Was CrowdSec selbst sperrt, sperrt jeder Knoten für sich.'
+                  )}
+                </dd>
                 <dt>{t('Nicht übertragen')}</dt>
                 <dd className="muted">
-                  {t(
-                    'Die Datenbank: Konten, Einstellungen, DNS-Zonen, API-Keys, Statistik und Protokoll. Dazu Sperren und Regeln von CrowdSec.'
-                  )}
+                  {t('Statistik, Logs, Protokoll und Historie. Dazu Sicherung, Updates, Darstellung und hinterlegte Backend-Server.')}
                 </dd>
               </dl>
             </div>
@@ -850,7 +874,7 @@ function Sync() {
                 <div className="alert alert-warning sys-block">
                   <AlertTriangle size={16} strokeWidth={1.5} />
                   <span>
-                    {t('Der erste Abgleich ersetzt Konfiguration und Zertifikate des Folgeknotens durch die von hier.')}
+                    {t('Der erste Abgleich ersetzt Konfiguration, Zertifikate, Konten und Einstellungen des Folgeknotens durch die von hier.')}
                   </span>
                 </div>
                 <div className="form-group">

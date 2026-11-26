@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { carriesState, refusalOf, warningsFor } from '@/lib/sync/compare';
+import { carriesState, refusalOf, tookState, warningsFor } from '@/lib/sync/compare';
 import { adaptConfig, localVariant } from '@/lib/sync/adapt';
 import type { BundleMeta } from '@/lib/sync/bundle';
 import { SYNC_PROTOCOL, type NodeReport } from '@/lib/sync/types';
@@ -24,6 +24,18 @@ import {
 
 const OWN = '1'.repeat(32);
 const FINGERPRINT = 'f'.repeat(64);
+const DATA = 'd'.repeat(64);
+const CROWDSEC = 'c'.repeat(64);
+type Applied = NonNullable<NodeReport['applied']>;
+const APPLIED: Applied = {
+  fingerprint: FINGERPRINT,
+  seq: 10,
+  at: '2026-11-26T10:00:00.000Z',
+  variant: 'crowdsec=an;spoa=127.0.0.1:7423',
+  data: DATA,
+  crowdsec: CROWDSEC,
+};
+const MARKS = { fingerprint: FINGERPRINT, dataFingerprint: DATA, crowdsecFingerprint: CROWDSEC };
 
 function report(over: Partial<NodeReport> = {}): NodeReport {
   return {
@@ -36,9 +48,10 @@ function report(over: Partial<NodeReport> = {}): NodeReport {
     crowdsec: true,
     exposure: 'public',
     primary: { nodeId: OWN, name: 'proxy01' },
-    applied: { fingerprint: FINGERPRINT, seq: 10, at: '2026-11-26T10:00:00.000Z', variant: 'crowdsec=an;spoa=127.0.0.1:7423' },
+    applied: APPLIED,
     variant: 'crowdsec=an;spoa=127.0.0.1:7423',
     intact: true,
+    dataIntact: true,
     apply: null,
     ...over,
   };
@@ -49,6 +62,8 @@ function meta(over: Partial<BundleMeta['sender']> = {}, skipped: string[] = []):
     protocol: SYNC_PROTOCOL,
     seq: 11,
     fingerprint: FINGERPRINT,
+    dataFingerprint: DATA,
+    crowdsecFingerprint: CROWDSEC,
     sender: { nodeId: OWN, name: 'proxy01', hapmVersion: '0.6.1', haproxyVersion: '3.2.4', exposure: 'public', usesCrowdsec: true, ...over },
     roots: ['haproxy', 'acme'],
     skipped,
@@ -105,7 +120,8 @@ describe('was auffällt, ohne zu hindern', () => {
   });
 
   it('eine andere Art der Installation', () => {
-    expect(warningsFor(report({ exposure: 'internal' }), meta())).toEqual([{ code: 'exposure', here: 'public', there: 'internal' }]);
+    // Kein Hinweis mehr: die Art der Installation kommt mit dem Abgleich.
+    expect(warningsFor(report({ exposure: 'internal' }), meta())).toEqual([]);
   });
 
   it('CrowdSec nur dann, wenn die Datei es benutzt und der Folgeknoten es nicht hat', () => {
@@ -120,26 +136,51 @@ describe('was auffällt, ohne zu hindern', () => {
 
 describe('trägt der Folgeknoten den Stand', () => {
   it('ja, bei gleichem Fingerabdruck, gleicher Anpassung und unberührten Dateien', () => {
-    expect(carriesState(report(), FINGERPRINT)).toBe(true);
+    expect(carriesState(report(), MARKS)).toBe(true);
     // Nicht zu sagen ist nicht „geändert".
-    expect(carriesState(report({ intact: null }), FINGERPRINT)).toBe(true);
+    expect(carriesState(report({ intact: null, dataIntact: null }), MARKS)).toBe(true);
   });
 
   it('nein, wenn er noch nie etwas übernommen hat', () => {
-    expect(carriesState(report({ applied: null }), FINGERPRINT)).toBe(false);
+    expect(carriesState(report({ applied: null }), MARKS)).toBe(false);
   });
 
   it('nein, wenn sich hier etwas geändert hat', () => {
-    expect(carriesState(report(), '0'.repeat(64))).toBe(false);
+    expect(carriesState(report(), { ...MARKS, fingerprint: '0'.repeat(64) })).toBe(false);
   });
 
   it('nein, wenn dort jemand Dateien geändert hat', () => {
-    expect(carriesState(report({ intact: false }), FINGERPRINT)).toBe(false);
+    expect(carriesState(report({ intact: false }), MARKS)).toBe(false);
   });
 
   it('nein, wenn er das Paket inzwischen anders anpassen würde', () => {
     // CrowdSec wurde dort eingeschaltet: dieselbe Datei ergäbe dort jetzt eine andere.
-    expect(carriesState(report({ variant: 'crowdsec=aus;spoa=127.0.0.1:7423' }), FINGERPRINT)).toBe(false);
+    expect(carriesState(report({ variant: 'crowdsec=aus;spoa=127.0.0.1:7423' }), MARKS)).toBe(false);
+  });
+
+  it('nein, wenn sich hier ein Konto, eine Einstellung, eine Zone oder ein API-Key geändert hat', () => {
+    expect(carriesState(report(), { ...MARKS, dataFingerprint: '0'.repeat(64) })).toBe(false);
+    // Ein Folgeknoten, der noch nie Daten übernommen hat (Stand von vor dem Datenteil).
+    expect(carriesState(report({ applied: { ...APPLIED, data: null } }), MARKS)).toBe(false);
+  });
+
+  it('nein, wenn dort jemand an den Daten geändert hat', () => {
+    expect(carriesState(report({ dataIntact: false }), MARKS)).toBe(false);
+    // Übernommen hat er den Stand trotzdem: das ist der Fall, der nur einmal je Stunde nachgezogen wird.
+    expect(tookState(report({ dataIntact: false }), MARKS)).toBe(true);
+    expect(tookState(report({ intact: false }), MARKS)).toBe(true);
+  });
+
+  it('nein, wenn sich hier eine Sperre oder eine Regel von CrowdSec geändert hat', () => {
+    expect(carriesState(report(), { ...MARKS, crowdsecFingerprint: '0'.repeat(64) })).toBe(false);
+    expect(carriesState(report({ applied: { ...APPLIED, crowdsec: null } }), MARKS)).toBe(false);
+  });
+
+  it('ein Teil, den das Paket nicht trägt, zählt nicht', () => {
+    // CrowdSec antwortet hier gerade nicht: der Folgeknoten behält, was er hat.
+    expect(carriesState(report({ applied: { ...APPLIED, crowdsec: 'x'.repeat(64) } }), { ...MARKS, crowdsecFingerprint: null })).toBe(true);
+    // Ein Paket nur mit Dateien.
+    expect(carriesState(report({ applied: { ...APPLIED, data: null }, dataIntact: false }), { ...MARKS, dataFingerprint: null })).toBe(true);
   });
 });
 

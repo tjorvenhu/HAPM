@@ -36,6 +36,7 @@ import { crowdsecInstalled } from '../crowdsec/paths';
 import { msgid } from '../i18n/translate';
 import { localVariant } from './adapt';
 import { applyUnpacked } from './apply-core';
+import { applyData, type DataApplyResult } from './data-apply';
 import { BundleError, ROOT_DIRS, ROOT_NAMES, unpack, type Unpacked } from './bundle';
 import { localNode, nodeReport } from './node';
 import { RunLog, closeOpenSyncRuns, createSyncRun, getSyncSettings, updateSyncRun, updateSyncSettings } from './store';
@@ -179,8 +180,33 @@ async function runApply(unpacked: Unpacked): Promise<void> {
     current.steps.push({ label: msgid('Abbruch'), ok: false, detail: failure });
   }
 
+  /* Die Daten nach den Dateien, und auch dann, wenn HAProxy die Dateien
+   * abgelehnt hat: ein entferntes Konto oder ein zurückgezogener API-Key soll
+   * nicht daran hängen, ob eine `haproxy.cfg` hier lädt. Nicht hinter der
+   * Sperre der Läufe: geschrieben wird in die Datenbank und in CrowdSec, das
+   * seine eigene Warteschlange hat. */
+  let data: DataApplyResult | null = null;
+  if (unpacked.data) {
+    try {
+      data = await applyData(unpacked.data, async (step) => {
+        current.steps.push(step);
+        await log.add(step.label, step.ok, step.detail);
+      });
+      if (!data.ok && !failure) {
+        const failed = data.steps.find((step) => !step.ok);
+        failure = failed ? [failed.label, failed.detail].filter(Boolean).join(': ') : msgid('Der Abgleich nennt keinen Grund.');
+      }
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      failure ??= reason;
+      await log.add(msgid('Abbruch'), false, reason);
+      current.steps.push({ label: msgid('Abbruch'), ok: false, detail: reason });
+    }
+  }
+
   const at = new Date().toISOString();
   if (result?.ok) {
+    const before = (await getSyncSettings().catch(() => null))?.applied ?? null;
     await updateSyncSettings({
       primary: { nodeId: meta.sender.nodeId, name: meta.sender.name },
       applied: {
@@ -190,6 +216,12 @@ async function runApply(unpacked: Unpacked): Promise<void> {
         variant: localVariant(local),
         localFingerprint: result.localFingerprint ?? '',
         crowdsec: result.crowdsec,
+        // Ein Teil, der nicht kam, bleibt, wie er war. Einer, der scheiterte,
+        // gilt als nicht übernommen: der Hauptknoten schickt ihn erneut.
+        dataFingerprint: data ? (data.dbOk ? meta.dataFingerprint : null) : (before?.dataFingerprint ?? null),
+        localDataFingerprint: data ? data.localFingerprint : (before?.localDataFingerprint ?? null),
+        crowdsecFingerprint:
+          data?.crowdsec === true ? meta.crowdsecFingerprint : data?.crowdsec === false ? null : (before?.crowdsecFingerprint ?? null),
       },
       rejected: null,
     });
@@ -206,7 +238,9 @@ async function runApply(unpacked: Unpacked): Promise<void> {
     resource: 'sync',
     details: failure
       ? `Stand von ${meta.sender.name} nicht übernommen: ${failure}`
-      : `Stand von ${meta.sender.name} übernommen${result?.changed ? '' : ' (lag schon so vor)'}`,
+      : `Stand von ${meta.sender.name} übernommen${result?.changed || (data?.changes.length ?? 0) > 0 ? '' : ' (lag schon so vor)'}` +
+        // Was sich an Konten, Einstellungen, Zonen, API-Keys und CrowdSec geändert hat, steht hier nachlesbar.
+        (data && data.changes.length > 0 ? `. ${data.changes.join('; ')}` : ''),
   });
 
   /* Die Ausnahmen von CrowdSec hängen an den Anwendungen der Ziele, und die

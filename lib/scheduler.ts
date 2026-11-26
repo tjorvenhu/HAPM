@@ -48,6 +48,7 @@ import { AUDIT_RETENTION_DEFAULT, getAuditSettings } from './audit-log/settings'
 import { onForwardingFailing, runAuditForwarding, startAuditForwarding } from './audit-log/forward';
 import { onProxyChange } from './haproxy/provision';
 import { checkPeers, requestSyncSoon } from './sync/send';
+import { onDataChange } from './sync/kick';
 import { reconcileSync } from './sync/apply';
 import { isReplica } from './sync/role';
 import { pruneSyncRuns } from './sync/store';
@@ -319,6 +320,8 @@ export async function initializeScheduler(): Promise<void> {
   // Anstoß nach jedem Vorgang am Proxy.
   await reconcileSync().catch((err) => log(`Abgleich der Knoten nicht aufgeräumt: ${err}`));
   onProxyChange(requestSyncSoon);
+  // Ebenso nach jeder Handlung an Konten, Einstellungen, Zonen, API-Keys und CrowdSec.
+  onDataChange(requestSyncSoon);
 
   startLogFollower();
 

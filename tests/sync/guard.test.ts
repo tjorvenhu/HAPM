@@ -44,7 +44,9 @@ vi.mock('@/lib/notifications', () => ({ notify: vi.fn(async () => 'disabled') })
 const { ApiError } = await import('@/lib/api');
 const provision = await import('@/lib/haproxy/provision');
 const { startHaproxyRun } = await import('@/lib/haproxy/runner');
-const { getSyncRole, assertProxyWritable } = await import('@/lib/sync/role');
+const { getSyncRole, assertProxyWritable, assertDataWritable } = await import('@/lib/sync/role');
+const { syncedChanges } = await import('@/lib/settings');
+const { replicaNoticeFor } = await import('@/components/ReplicaNotice');
 const { localServer } = await import('@/lib/helpers');
 
 const actor = { userId: 'u1', email: 'admin@example.org', ip: null };
@@ -169,6 +171,50 @@ describe('was ein Folgeknoten still auslässt', () => {
     await expect(provision.refreshGeoBlockFiles(localServer())).resolves.toBe('none');
     await expect(provision.refreshCrowdsecAllowFile(localServer(), '203.0.113.7\n')).resolves.toBe('unchanged');
     expect(state.commands).toEqual([]);
+  });
+});
+
+describe('der Datenteil: Konten, Einstellungen, DNS-Zonen, API-Keys, CrowdSec', () => {
+  const AREAS = ['accounts', 'settings', 'dns', 'tokens', 'crowdsec'] as const;
+
+  it.each(['single', 'primary'] as const)('%s darf ändern', async (role) => {
+    state.role = role;
+    for (const area of AREAS) await expect(assertDataWritable(area)).resolves.toBeUndefined();
+  });
+
+  it('ein Folgeknoten nicht, mit einer Meldung je Bereich', async () => {
+    state.role = 'replica';
+    const texts = new Set<string>();
+    for (const area of AREAS) {
+      const error = await assertDataWritable(area).catch((err: unknown) => err);
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as InstanceType<typeof ApiError>).status).toBe(409);
+      expect((error as Error).message).toContain('Hauptknoten');
+      texts.add((error as Error).message);
+    }
+    expect(texts.size).toBe(AREAS.length);
+  });
+
+  it('an den Einstellungen zählt nur, was abgeglichen wird und sich wirklich ändert', () => {
+    const current = { exposure: 'public', notifyRecipients: ['ops@example.org'], autoUpdateTime: '04:00', smtpPass: null } as never;
+    // Ein Formular schickt seine Felder unverändert mit: das ist keine Änderung.
+    expect(syncedChanges({ exposure: 'public', notifyRecipients: ['ops@example.org'] }, current)).toEqual([]);
+    // Selbsttätige Updates stellt jeder Knoten für sich ein.
+    expect(syncedChanges({ autoUpdateTime: '03:00', autoUpdate: ['haproxy'], setupStatus: 'done' }, current)).toEqual([]);
+    expect(syncedChanges({ exposure: 'internal', autoUpdateTime: '03:00' }, current)).toEqual(['exposure']);
+    expect(syncedChanges({ notifyRecipients: [] }, current)).toEqual(['notifyRecipients']);
+    expect(syncedChanges({ smtpPass: 'iv:tag:daten' }, current)).toEqual(['smtpPass']);
+  });
+
+  it('der Hinweis steht über jeder Seite, auf der sich sonst etwas davon ändern ließe', () => {
+    for (const page of ['/dashboard', '/reverse-proxy', '/reverse-proxy/zertifikate', '/reverse-proxy/crowdsec', '/reverse-proxy/api', '/dns', '/users', '/konto', '/system', '/notifications']) {
+      expect(replicaNoticeFor(page), page).toEqual(expect.any(String));
+    }
+    // Was dieser Knoten selbst mitschreibt oder für sich einstellt.
+    for (const page of ['/reverse-proxy/statistiken', '/reverse-proxy/logs', '/protokoll', '/updates', '/backup', '/abgleich', '/system/darstellung']) {
+      expect(replicaNoticeFor(page), page).toBeNull();
+    }
+    expect(replicaNoticeFor('/reverse-proxy/crowdsec')).not.toBe(replicaNoticeFor('/reverse-proxy'));
   });
 });
 

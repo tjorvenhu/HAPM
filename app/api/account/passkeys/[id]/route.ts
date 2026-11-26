@@ -7,6 +7,7 @@ import type { PasskeyApi } from '@/lib/auth/core';
 import { logAudit, getClientIP } from '@/lib/audit';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
 import { msg } from '@/lib/i18n';
+import { assertDataWritable } from '@/lib/sync/role';
 
 /**
  * Ein Passkey des eigenen Kontos: umbenennen und entfernen.
@@ -28,6 +29,7 @@ export async function PATCH(request: Request, { params }: Params) {
   try {
     await requireCsrf(request);
     const session = await requireVerifiedSession();
+    await assertDataWritable('accounts');
     const passkeys = await requirePasskeys();
     const { id } = await params;
     const { name } = await jsonBody<{ name?: unknown }>(request);
@@ -59,6 +61,7 @@ export async function DELETE(request: Request, { params }: Params) {
   try {
     await requireCsrf(request);
     const session = await requireVerifiedSession();
+    await assertDataWritable('accounts');
     const passkeys = await requirePasskeys();
     const { id } = await params;
 

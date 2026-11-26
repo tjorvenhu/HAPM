@@ -10,15 +10,15 @@
  * Fassung von HAPM dort anlegt, geht damit von selbst mit, statt vergessen zu
  * werden. Was auf der Liste steht, steht dort mit Grund (`EXCLUDED`).
  *
- * Nicht im Paket: die Datenbank und `secrets.json`. Was verschlüsselt in der
- * Datenbank liegt, wäre auf dem anderen Knoten ohnehin nicht lesbar, dort gilt
- * ein anderer Schlüssel.
+ * Dazu kommt der Datenteil (`data.ts`): Konten, Einstellungen, DNS-Zonen,
+ * API-Keys und von CrowdSec, was jemand eingestellt hat. Nicht im Paket: der
+ * Rest der Datenbank (Statistik, Protokoll, Historie) und `secrets.json`.
  *
  * ── Die Form ──
  *
- * Vier Bytes Länge, ein Kopf als JSON (Angaben zum Absender, je Datei Pfad,
- * Größe und SHA-256), dahinter die Inhalte in der Reihenfolge des Kopfs, das
- * Ganze mit gzip gepackt. Eine eigene Form statt tar, weil der Empfänger jede
+ * Vier Bytes Länge, ein Kopf als JSON (Angaben zum Absender, der Datenteil, je
+ * Datei Pfad, Größe und SHA-256), dahinter die Inhalte in der Reihenfolge des
+ * Kopfs, das Ganze mit gzip gepackt. Eine eigene Form statt tar, weil der Empfänger jede
  * Zeile des Kopfs prüft, bevor er ein Byte schreibt: nur Dateien und Ordner,
  * keine Verweise, keine Pfade nach außen.
  *
@@ -39,6 +39,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { gunzipSync, gzipSync } from 'node:zlib';
+import { SyncDataError, crowdsecFingerprint, dataFingerprint, parseSyncData, type SyncData } from './data';
 import { SYNC_PROTOCOL } from './types';
 
 export const ROOT_NAMES = ['haproxy', 'acme'] as const;
@@ -120,6 +121,10 @@ export interface BundleMeta {
   /** Laufende Nummer: die Uhrzeit des Packens in Millisekunden. Ein Folgeknoten nimmt keine kleinere als die letzte. */
   seq: number;
   fingerprint: string;
+  /** Fingerabdruck des Datenteils ohne CrowdSec. `null`: das Paket trägt nur Dateien. */
+  dataFingerprint: string | null;
+  /** Fingerabdruck des Teils für CrowdSec. `null`: er fehlt, der Folgeknoten behält, was er hat. */
+  crowdsecFingerprint: string | null;
   sender: BundleSender;
   /** Die Ordner, die es beim Absender gab. Nur diese werden beim Empfänger getauscht. */
   roots: RootName[];
@@ -256,21 +261,26 @@ export function validEntryPath(value: unknown): value is string {
 interface BundleHead {
   v: number;
   meta: BundleMeta;
+  /** `null`: nur Dateien (Prüfskripte). Im Betrieb packt `send.ts` immer mit Daten. */
+  data: SyncData | null;
   entries: BundleEntry[];
 }
 
 export function pack(
-  meta: Omit<BundleMeta, 'protocol' | 'fingerprint' | 'roots' | 'skipped'>,
-  collected: Collected
+  meta: Omit<BundleMeta, 'protocol' | 'fingerprint' | 'dataFingerprint' | 'crowdsecFingerprint' | 'roots' | 'skipped'>,
+  collected: Collected,
+  data: SyncData | null = null
 ): { bundle: Buffer; meta: BundleMeta } {
   const full: BundleMeta = {
     ...meta,
     protocol: SYNC_PROTOCOL,
     fingerprint: fingerprintOf(collected.entries),
+    dataFingerprint: data ? dataFingerprint(data) : null,
+    crowdsecFingerprint: data?.crowdsec ? crowdsecFingerprint(data.crowdsec) : null,
     roots: collected.roots,
     skipped: collected.skipped,
   };
-  const head = Buffer.from(JSON.stringify({ v: SYNC_PROTOCOL, meta: full, entries: collected.entries } satisfies BundleHead), 'utf8');
+  const head = Buffer.from(JSON.stringify({ v: SYNC_PROTOCOL, meta: full, data, entries: collected.entries } satisfies BundleHead), 'utf8');
   const length = Buffer.alloc(4);
   length.writeUInt32BE(head.length);
   const files = collected.entries
@@ -281,6 +291,8 @@ export function pack(
 
 export interface Unpacked {
   meta: BundleMeta;
+  /** Der geprüfte Datenteil. `null`: das Paket trägt nur Dateien. */
+  data: SyncData | null;
   entries: BundleEntry[];
   contents: Map<string, Buffer>;
 }
@@ -365,8 +377,31 @@ export function unpack(bundle: Buffer): Unpacked {
   if (fingerprintOf(entries) !== meta.fingerprint) fail('Der Fingerabdruck des Pakets passt nicht zu seinem Inhalt.');
   if (!meta.roots.includes('haproxy') || kinds.get('haproxy:haproxy.cfg') !== 'file') fail('Im Paket fehlt haproxy.cfg.');
 
+  let data: SyncData | null = null;
+  if (head.data !== null && head.data !== undefined) {
+    try {
+      data = parseSyncData(head.data);
+    } catch (err) {
+      if (err instanceof SyncDataError) fail(err.message);
+      throw err;
+    }
+  }
+  // Aus dem geprüften Inhalt gerechnet, nicht aus dem Kopf übernommen: danach
+  // entscheidet der Hauptknoten, ob dieser Knoten den Stand trägt.
+  const dataPrint = data ? dataFingerprint(data) : null;
+  const crowdsecPrint = data?.crowdsec ? crowdsecFingerprint(data.crowdsec) : null;
+  if ((meta.dataFingerprint ?? null) !== dataPrint || (meta.crowdsecFingerprint ?? null) !== crowdsecPrint) {
+    fail('Der Fingerabdruck des Datenteils passt nicht zu seinem Inhalt.');
+  }
+
   return {
-    meta: { ...meta, skipped: Array.isArray(meta.skipped) ? meta.skipped.map(String).slice(0, 50) : [] },
+    meta: {
+      ...meta,
+      dataFingerprint: dataPrint,
+      crowdsecFingerprint: crowdsecPrint,
+      skipped: Array.isArray(meta.skipped) ? meta.skipped.map(String).slice(0, 50) : [],
+    },
+    data,
     entries,
     contents,
   };

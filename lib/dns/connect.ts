@@ -37,6 +37,7 @@ import { createDocument, updateDocument } from '../db';
 import { COLLECTIONS, type DnsZone } from '../types';
 import { encrypt } from '../crypto';
 import { ApiError } from '../api';
+import { assertDataWritable } from '../sync/role';
 import { msg, msgid, type Message } from '../i18n';
 import { providerFor, type ProviderZone, type RecordWrite } from './provider';
 import { dnsProviderLabel } from './provider-info';
@@ -108,6 +109,8 @@ export async function connectZone(input: {
   domain: string;
   token: string;
 }): Promise<ConnectedZone> {
+  // Auf einem Folgeknoten kommen die Zonen mit dem Abgleich (`lib/sync/data.ts`).
+  await assertDataWritable('dns');
   const domain = normalizeDomain(input.domain);
   if (domain === '') throw new ApiError(msg('Bitte eine Domain angeben.'));
   const token = input.token.trim();
@@ -177,6 +180,7 @@ export async function connectZone(input: {
  * und wäre als „gespeichert" zurückgekommen.
  */
 export async function replaceZoneToken(zoneDocumentId: string, token: string): Promise<ZoneForClient> {
+  await assertDataWritable('dns');
   const zone = await getZoneRow(zoneDocumentId);
   const provider = providerOf(zone);
   const lists = PROVIDER_RULES[provider].listsZones;

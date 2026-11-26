@@ -158,6 +158,8 @@ vi.mock('@/lib/crowdsec/actions', () => ({
   crowdsecStatistics: more.crowdsecStatistics,
   crowdsecRules: more.crowdsecRules,
   changeRules: more.changeRules,
+  // Die Sperre für Folgeknoten: hier ein einzelner Knoten.
+  assertRulesWritable: async () => undefined,
   setCrowdsecEnabled: more.setCrowdsecEnabled,
 }));
 vi.mock('@/lib/geoip/actions', () => ({

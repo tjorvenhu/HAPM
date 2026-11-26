@@ -5,6 +5,7 @@ import { MAX_PASSKEYS_PER_USER } from '@/lib/auth/passkey-rules';
 import { rateLimit } from '@/lib/rate-limit';
 import { ok, handleError, ApiError } from '@/lib/api';
 import { msg } from '@/lib/i18n';
+import { assertDataWritable } from '@/lib/sync/role';
 
 /**
  * Schritt 1 beim Hinterlegen eines Passkeys: die Aufgabe für das Gerät.
@@ -17,6 +18,7 @@ export async function POST(request: Request) {
   try {
     await requireCsrf(request);
     const session = await requireVerifiedSession();
+    await assertDataWritable('accounts');
 
     const rl = rateLimit(`passkey-register:${session.userId}`, 10, 15 * 60 * 1000);
     if (!rl.success) throw new ApiError(msg('Zu viele Versuche. Bitte warten Sie 15 Minuten.'), 429);
