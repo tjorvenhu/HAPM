@@ -9,7 +9,9 @@ import {
   ChevronDown,
   ChevronRight,
   Eye,
+  KeyRound,
   Loader2,
+  LockKeyhole,
   RotateCcw,
   Trash2,
   Upload,
@@ -26,6 +28,7 @@ import RunStepList from '@/components/runs/RunStepList';
 import { openRun, startRun, subscribeRunFinished } from '@/components/runs/runs';
 import { formatBytes, formatDateTime, type Locale } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
+import { isEncryptedName } from '@/lib/backup/passphrase';
 // Nur Typen: die Dateien dahinter erreichen `lib/db` und `lib/docker`.
 import type { RestoreOverview } from '@/lib/backup/restore';
 import type { BackupFile } from '@/lib/backup/run';
@@ -132,6 +135,8 @@ export default function RestorePanel({ files, filesAsOf, listedPath, hostPath }:
   const [offline, setOffline] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [password, setPassword] = useState('');
+  /** Der Sicherungsschlüssel für ein verschlüsseltes Archiv, das auf ihn wartet. */
+  const [passphrase, setPassphrase] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
@@ -192,6 +197,7 @@ export default function RestorePanel({ files, filesAsOf, listedPath, hostPath }:
 
   async function checkFromFolder(name: string) {
     setPassword('');
+    setPassphrase('');
     await send(
       '/api/backup/restore/check',
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) },
@@ -203,6 +209,7 @@ export default function RestorePanel({ files, filesAsOf, listedPath, hostPath }:
   async function upload(file: File) {
     if (fileInput.current) fileInput.current.value = '';
     setPassword('');
+    setPassphrase('');
     if (data && file.size > data.maxBytes) {
       notify({
         variant: 'error',
@@ -224,7 +231,22 @@ export default function RestorePanel({ files, filesAsOf, listedPath, hostPath }:
 
   async function discard() {
     setPassword('');
+    setPassphrase('');
     await send('/api/backup/restore', { method: 'DELETE' }, 'discard', t('Verwerfen fehlgeschlagen'));
+  }
+
+  /** Das wartende Archiv entschlüsseln und prüfen. Ein falscher Schlüssel lässt Archiv und Eingabe stehen. */
+  async function unlock(event: FormEvent, id: string) {
+    event.preventDefault();
+    const unlocked = await send(
+      '/api/backup/restore/unlock',
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, passphrase }) },
+      'unlock',
+      t('Entschlüsseln fehlgeschlagen')
+    );
+    if (unlocked) setPassphrase('');
+    // Ein beschädigtes Archiv ist danach weg: die Karte soll das zeigen und nicht weiter danach fragen.
+    else await load();
   }
 
   async function start(event: FormEvent, staged: Staged) {
@@ -299,6 +321,8 @@ export default function RestorePanel({ files, filesAsOf, listedPath, hostPath }:
   }
 
   const staged = data.staged;
+  /** Ein verschlüsseltes Archiv, das auf seinen Sicherungsschlüssel wartet. */
+  const waiting = staged ? null : data.locked;
   const locked = running || busy !== null || data.busy || !data.available;
   const lastRun = data.runs[0] ?? null;
 
@@ -349,6 +373,14 @@ export default function RestorePanel({ files, filesAsOf, listedPath, hostPath }:
               </dd>
               <dt>{t('Größe')}</dt>
               <dd>{formatBytes(locale, staged.sizeBytes)}</dd>
+              <dt>{t('Verschlüsselt')}</dt>
+              <dd>
+                {staged.unlockedWith === 'stored'
+                  ? t('Ja, entschlüsselt mit dem gespeicherten Sicherungsschlüssel.')
+                  : staged.unlockedWith === 'entered'
+                    ? t('Ja, entschlüsselt mit dem eingegebenen Sicherungsschlüssel.')
+                    : t('Nein')}
+              </dd>
               <dt>{t('Enthalten')}</dt>
               <dd>
                 {t('Datenbank ({size}), Schlüssel, HAProxy mit {files} Dateien und {certs} Zertifikaten, acme.sh mit {acme} Dateien.', {
@@ -387,6 +419,13 @@ export default function RestorePanel({ files, filesAsOf, listedPath, hostPath }:
                       : t('Vorher sichert HAPM den aktuellen Stand nach {path}. Eine frühere Datei dort wird ersetzt.', {
                           path: data.beforeTarget.path,
                         })}{' '}
+                    {data.beforeTarget.encrypted && (
+                      <>
+                        {t(
+                          'Sie wird mit dem jetzt gespeicherten Sicherungsschlüssel verschlüsselt. Danach gilt der Sicherungsschlüssel aus der zurückgespielten Sicherung.'
+                        )}{' '}
+                      </>
+                    )}
                     {t('Scheitert diese Sicherung, wird nichts zurückgespielt.')}
                   </span>
                 </div>
@@ -427,7 +466,57 @@ export default function RestorePanel({ files, filesAsOf, listedPath, hostPath }:
           </form>
         )}
 
-        {!running && !staged && (
+        {!running && waiting && (
+          <form onSubmit={(event) => void unlock(event, waiting.id)} className="card-body">
+            <div className="form-section-title">{t('Verschlüsselt: {name}', { name: waiting.name })}</div>
+            <dl className="detail-grid">
+              <dt>{t('Quelle')}</dt>
+              <dd>{waiting.source === 'folder' ? t('Aus dem Ordner {path}', { path: hostPath ?? '' }) : t('Hochgeladen')}</dd>
+              <dt>{t('Größe')}</dt>
+              <dd>{formatBytes(locale, waiting.sizeBytes)}</dd>
+            </dl>
+            <div className="alert alert-info">
+              <LockKeyhole size={16} strokeWidth={1.5} />
+              <span>
+                {waiting.storedFailed
+                  ? t('Der gespeicherte Sicherungsschlüssel passt nicht zu diesem Archiv. Geben Sie den ein, mit dem es geschrieben wurde.')
+                  : t('Hier ist kein Sicherungsschlüssel gespeichert. Geben Sie den ein, mit dem das Archiv geschrieben wurde.')}{' '}
+                {t('Geprüft wird das Archiv danach. Zurückgespielt wird noch nichts.')}
+              </span>
+            </div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="restore-passphrase">
+                {t('Sicherungsschlüssel')}
+              </label>
+              <input
+                id="restore-passphrase"
+                className="form-input"
+                type="password"
+                required
+                value={passphrase}
+                disabled={locked}
+                onChange={(event) => setPassphrase(event.target.value)}
+                autoComplete="off"
+              />
+            </div>
+            <div className="hapm-form-actions">
+              <button className="btn btn-primary" type="submit" disabled={locked || !passphrase}>
+                {busy === 'unlock' ? (
+                  <Loader2 size={16} strokeWidth={1.5} className="spin" />
+                ) : (
+                  <KeyRound size={16} strokeWidth={1.5} />
+                )}
+                {t('Entschlüsseln und prüfen')}
+              </button>
+              <button className="btn btn-secondary" type="button" disabled={locked} onClick={() => void discard()}>
+                {busy === 'discard' ? <Loader2 size={16} strokeWidth={1.5} className="spin" /> : <Trash2 size={16} strokeWidth={1.5} />}
+                {t('Verwerfen')}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {!running && !staged && !waiting && (
           <>
             <div>
               <div className="form-section-title">
@@ -469,7 +558,15 @@ export default function RestorePanel({ files, filesAsOf, listedPath, hostPath }:
                     {files.map((file) => (
                       <tr key={file.name}>
                         <td data-label="primary">
-                          <span className="ranking-mono">{file.name}</span>
+                          <span className="hapm-inline-actions">
+                            <span className="ranking-mono">{file.name}</span>
+                            {isEncryptedName(file.name) && (
+                              <span className="badge-status badge-neutral">
+                                <LockKeyhole size={12} strokeWidth={1.5} />
+                                {t('Verschlüsselt')}
+                              </span>
+                            )}
+                          </span>
                         </td>
                         <td data-label={t('Zeitpunkt')}>{localTime(fileLocal(file.name), locale)}</td>
                         <td data-label={t('Größe')} className="sys-td-num">
@@ -519,7 +616,7 @@ export default function RestorePanel({ files, filesAsOf, listedPath, hostPath }:
             <input
               ref={fileInput}
               type="file"
-              accept=".gz,.tgz,application/gzip"
+              accept=".gz,.tgz,.gpg,application/gzip,application/pgp-encrypted"
               style={{ display: 'none' }}
               onChange={(event) => {
                 const file = event.target.files?.[0];
@@ -537,7 +634,9 @@ export default function RestorePanel({ files, filesAsOf, listedPath, hostPath }:
                 {t('Archiv hochladen')}
               </button>
               <span className="form-hint">
-                {t('Ein Archiv von HAPM (.tar.gz), höchstens {max}.', { max: formatBytes(locale, data.maxBytes) })}
+                {t('Ein Archiv von HAPM (.tar.gz oder .tar.gz.gpg), höchstens {max}.', {
+                  max: formatBytes(locale, data.maxBytes),
+                })}
                 <InfoHint
                   text={t('Das Archiv wird erst geprüft. Zurückgespielt wird es danach mit einem eigenen Schritt.')}
                 />

@@ -11,6 +11,7 @@ import {
   History,
   ListChecks,
   Loader2,
+  LockKeyhole,
   RotateCcw,
   Save,
 } from 'lucide-react';
@@ -26,6 +27,7 @@ import { RUN_STATUS_CLASS, RUN_STATUS_LABELS, formatClock } from '@/components/s
 import { MISSING, formatBytes, formatDateTime, msgid, type Translator } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
 import RestorePanel from '@/components/backup/RestorePanel';
+import EncryptionCard from '@/components/backup/EncryptionCard';
 import RunStepList from '@/components/runs/RunStepList';
 import { startRun, subscribeRunFinished } from '@/components/runs/runs';
 import { remainingBackupSteps } from '@/lib/backup/plan';
@@ -115,6 +117,8 @@ function Backup() {
   const [error, setError] = useState('');
   /** Nur was im Formular geändert wurde. So überschreibt eine Abfrage keine Eingabe. */
   const [draft, setDraft] = useState<FormState | null>(null);
+  /** Auf der Karte „Verschlüsselung" ist etwas getippt, das noch nicht gespeichert ist. */
+  const [encryptionDirty, setEncryptionDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [starting, setStarting] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
@@ -301,141 +305,164 @@ function Backup() {
 
       {error && <div className="alert alert-danger sys-block"><ErrorNote text={error} /></div>}
 
-      <AreaTabs areas={AREAS} value={area} onChange={selectArea} dirty={(key) => key === 'einstellungen' && draft !== null} />
+      <AreaTabs
+        areas={AREAS}
+        value={area}
+        onChange={selectArea}
+        dirty={(key) => key === 'einstellungen' && (draft !== null || encryptionDirty)}
+      />
 
-      {area === 'einstellungen' && (
-        <>
-          <div className="card sys-block">
-            <div className="card-header">
-              <h2 className="card-title">
-                <FolderClock size={17} strokeWidth={1.5} />
-                {t('Wohin und wann')}
-              </h2>
+      {/* Bleibt eingehängt wie das Zurückspielen darunter: ein eingetippter
+          Sicherungsschlüssel soll einen Wechsel des Reiters überstehen. */}
+      <div hidden={area !== 'einstellungen'}>
+        <div className="card sys-block">
+          <div className="card-header">
+            <h2 className="card-title">
+              <FolderClock size={17} strokeWidth={1.5} />
+              {t('Wohin und wann')}
+            </h2>
+          </div>
+
+          <form className="card-body" onSubmit={save}>
+            <div className="form-group">
+              <label className="form-label" htmlFor="backup-path">
+                {t('Ordner auf dem Server')}
+                <InfoHint
+                  text={t('Ein eingebundenes Netzlaufwerk geht genauso, wenn es auf dem Server unter diesem Pfad liegt.')}
+                />
+              </label>
+              <input
+                id="backup-path"
+                className="form-input"
+                type="text"
+                placeholder="/srv/hapm-backup"
+                value={form.hostPath}
+                disabled={saving}
+                onChange={(event) => edit({ hostPath: event.target.value })}
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <p className="form-hint">{t('Liegt auf dem Server, nicht im Container. Fehlt er, wird er angelegt.')}</p>
             </div>
 
-            <form className="card-body" onSubmit={save}>
-              <div className="form-group">
-                <label className="form-label" htmlFor="backup-path">
-                  {t('Ordner auf dem Server')}
+            <div className="hapm-auto">
+              <label className="form-subsection hapm-auto-switch">
+                <div className="form-subsection-head">
+                  <div>
+                    <div className="form-section-title">{t('Täglich sichern')}</div>
+                    <div className="form-section-sub">{t('Einmal am Tag zur eingestellten Uhrzeit.')}</div>
+                  </div>
+                  <span className="toggle-switch">
+                    <input
+                      type="checkbox"
+                      checked={form.enabled}
+                      disabled={saving}
+                      onChange={(event) => edit({ enabled: event.target.checked })}
+                    />
+                    <span className="toggle-slider" />
+                  </span>
+                </div>
+              </label>
+              <div className="form-group hapm-auto-time">
+                <label className="form-label" htmlFor="backup-time">
+                  {t('Uhrzeit')}
                   <InfoHint
-                    text={t('Ein eingebundenes Netzlaufwerk geht genauso, wenn es auf dem Server unter diesem Pfad liegt.')}
+                    text={t(
+                      'Es gilt die Zeitzone des Containers, gesetzt über die Variable TZ. Gesichert wird einmal am Tag zu dieser Minute.'
+                    )}
                   />
                 </label>
                 <input
-                  id="backup-path"
+                  id="backup-time"
+                  type="time"
                   className="form-input"
-                  type="text"
-                  placeholder="/srv/hapm-backup"
-                  value={form.hostPath}
-                  disabled={saving}
-                  onChange={(event) => edit({ hostPath: event.target.value })}
-                  autoComplete="off"
-                  spellCheck={false}
+                  required
+                  value={form.time}
+                  disabled={saving || !form.enabled}
+                  onChange={(event) => edit({ time: event.target.value })}
                 />
-                <p className="form-hint">{t('Liegt auf dem Server, nicht im Container. Fehlt er, wird er angelegt.')}</p>
               </div>
-
-              <div className="hapm-auto">
-                <label className="form-subsection hapm-auto-switch">
-                  <div className="form-subsection-head">
-                    <div>
-                      <div className="form-section-title">{t('Täglich sichern')}</div>
-                      <div className="form-section-sub">{t('Einmal am Tag zur eingestellten Uhrzeit.')}</div>
-                    </div>
-                    <span className="toggle-switch">
-                      <input
-                        type="checkbox"
-                        checked={form.enabled}
-                        disabled={saving}
-                        onChange={(event) => edit({ enabled: event.target.checked })}
-                      />
-                      <span className="toggle-slider" />
-                    </span>
-                  </div>
+              <div className="form-group hapm-auto-keep">
+                <label className="form-label" htmlFor="backup-keep">
+                  {t('Aufbewahren')}
                 </label>
-                <div className="form-group hapm-auto-time">
-                  <label className="form-label" htmlFor="backup-time">
-                    {t('Uhrzeit')}
-                    <InfoHint
-                      text={t(
-                        'Es gilt die Zeitzone des Containers, gesetzt über die Variable TZ. Gesichert wird einmal am Tag zu dieser Minute.'
-                      )}
-                    />
-                  </label>
-                  <input
-                    id="backup-time"
-                    type="time"
-                    className="form-input"
-                    required
-                    value={form.time}
-                    disabled={saving || !form.enabled}
-                    onChange={(event) => edit({ time: event.target.value })}
-                  />
-                </div>
-                <div className="form-group hapm-auto-keep">
-                  <label className="form-label" htmlFor="backup-keep">
-                    {t('Aufbewahren')}
-                  </label>
-                  <input
-                    id="backup-keep"
-                    type="number"
-                    className="form-input"
-                    required
-                    min={KEEP_MIN}
-                    max={KEEP_MAX}
-                    value={form.keep}
-                    disabled={saving}
-                    onChange={(event) => edit({ keep: readKeepField(event.target.value, form.keep) })}
-                  />
-                  <p className="form-hint">{t('Anzahl Sicherungen. Ältere entfernt der nächste Lauf.')}</p>
-                </div>
+                <input
+                  id="backup-keep"
+                  type="number"
+                  className="form-input"
+                  required
+                  min={KEEP_MIN}
+                  max={KEEP_MAX}
+                  value={form.keep}
+                  disabled={saving}
+                  onChange={(event) => edit({ keep: readKeepField(event.target.value, form.keep) })}
+                />
+                <p className="form-hint">{t('Anzahl Sicherungen. Ältere entfernt der nächste Lauf.')}</p>
               </div>
-
-              <div className="hapm-form-actions">
-                <button className="btn btn-primary" type="submit" disabled={saving || !draft}>
-                  {saving ? <Loader2 size={16} strokeWidth={1.5} className="spin" /> : <Save size={16} strokeWidth={1.5} />}
-                  {t('Speichern')}
-                </button>
-                <button
-                  className="btn btn-secondary"
-                  type="button"
-                  disabled={saving || locked || !data.available || !form.hostPath.trim()}
-                  onClick={() => void saveAndStart()}
-                >
-                  <Archive size={16} strokeWidth={1.5} />
-                  {draft ? t('Speichern und jetzt sichern') : t('Jetzt sichern')}
-                </button>
-              </div>
-              <p className="form-hint">{t('Eine Sicherung von Hand braucht nur den Ordner, keinen Zeitplan.')}</p>
-            </form>
-          </div>
-
-          <div className="card sys-block">
-            <div className="card-header">
-              <h2 className="card-title">
-                <ListChecks size={17} strokeWidth={1.5} />
-                {t('Was gesichert wird')}
-              </h2>
             </div>
 
-            <div className="card-body">
-              <dl className="detail-grid">
-                <dt>{t('Datenbank')}</dt>
-                <dd>{t('Die Datenbank von HAPM: Konten, Einstellungen, Historie.')}</dd>
-                <dt>{t('Schlüssel')}</dt>
-                <dd>
-                  {rich('{file}, der Schlüssel zu den verschlüsselten Einstellungen.', {
-                    file: <code>secrets.json</code>,
-                  })}
-                </dd>
-                <dt>HAProxy</dt>
-                <dd>{rich('{path}: Konfiguration, Zertifikate, Fehlerseiten.', { path: <code>/etc/haproxy</code> })}</dd>
-                <dt>acme.sh</dt>
-                <dd>{t('acme.sh mit Konto und Erneuerungseinträgen.')}</dd>
-                <dt>{t('Nicht gesichert')}</dt>
-                <dd className="muted">{t('Das Zugriffsprotokoll und die Abbilder.')}</dd>
-              </dl>
+            <div className="hapm-form-actions">
+              <button className="btn btn-primary" type="submit" disabled={saving || !draft}>
+                {saving ? <Loader2 size={16} strokeWidth={1.5} className="spin" /> : <Save size={16} strokeWidth={1.5} />}
+                {t('Speichern')}
+              </button>
+              <button
+                className="btn btn-secondary"
+                type="button"
+                disabled={saving || locked || !data.available || !form.hostPath.trim()}
+                onClick={() => void saveAndStart()}
+              >
+                <Archive size={16} strokeWidth={1.5} />
+                {draft ? t('Speichern und jetzt sichern') : t('Jetzt sichern')}
+              </button>
+            </div>
+            <p className="form-hint">{t('Eine Sicherung von Hand braucht nur den Ordner, keinen Zeitplan.')}</p>
+          </form>
+        </div>
 
+        <EncryptionCard
+          encrypted={data.settings.encrypted}
+          unreadable={data.settings.passphraseUnreadable}
+          onSaved={load}
+          onDirty={setEncryptionDirty}
+        />
+
+        <div className="card sys-block">
+          <div className="card-header">
+            <h2 className="card-title">
+              <ListChecks size={17} strokeWidth={1.5} />
+              {t('Was gesichert wird')}
+            </h2>
+          </div>
+
+          <div className="card-body">
+            <dl className="detail-grid">
+              <dt>{t('Datenbank')}</dt>
+              <dd>{t('Die Datenbank von HAPM: Konten, Einstellungen, Historie.')}</dd>
+              <dt>{t('Schlüssel')}</dt>
+              <dd>
+                {rich('{file}, der Schlüssel zu den verschlüsselten Einstellungen.', {
+                  file: <code>secrets.json</code>,
+                })}
+              </dd>
+              <dt>HAProxy</dt>
+              <dd>{rich('{path}: Konfiguration, Zertifikate, Fehlerseiten.', { path: <code>/etc/haproxy</code> })}</dd>
+              <dt>acme.sh</dt>
+              <dd>{t('acme.sh mit Konto und Erneuerungseinträgen.')}</dd>
+              <dt>{t('Nicht gesichert')}</dt>
+              <dd className="muted">{t('Das Zugriffsprotokoll und die Abbilder.')}</dd>
+            </dl>
+
+            {data.settings.encrypted ? (
+              <div className="alert alert-info">
+                <LockKeyhole size={16} strokeWidth={1.5} />
+                <span>
+                  {t(
+                    'Das Archiv enthält private Schlüssel und den Schlüssel zu den verschlüsselten Einstellungen. Es wird mit dem Sicherungsschlüssel verschlüsselt, bevor es in den Ordner geht.'
+                  )}
+                </span>
+              </div>
+            ) : (
               <div className="alert alert-warning">
                 <AlertTriangle size={16} strokeWidth={1.5} />
                 <span>
@@ -444,11 +471,11 @@ function Backup() {
                   )}
                 </span>
               </div>
+            )}
 
-            </div>
           </div>
-        </>
-      )}
+        </div>
+      </div>
 
       {/* Bleibt auf jedem Reiter eingehängt: ein geprüftes Archiv und das
           eingetippte Passwort sollen einen Wechsel des Reiters überstehen. */}
@@ -509,7 +536,15 @@ function Backup() {
                           </td>
                           <td data-label={t('Datei')}>
                             {run.status === 'success' && run.fileName ? (
-                              <span className="ranking-mono">{run.fileName}</span>
+                              <span className="hapm-inline-actions">
+                                <span className="ranking-mono">{run.fileName}</span>
+                                {run.encrypted && (
+                                  <span className="badge-status badge-neutral">
+                                    <LockKeyhole size={12} strokeWidth={1.5} />
+                                    {t('Verschlüsselt')}
+                                  </span>
+                                )}
+                              </span>
                             ) : run.status === 'running' ? (
                               <span className="hapm-muted">{t('Wird geschrieben')}</span>
                             ) : (

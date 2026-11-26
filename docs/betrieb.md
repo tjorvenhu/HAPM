@@ -783,11 +783,12 @@ Server** ein, eine Uhrzeit und wie viele Archive liegen bleiben. Die anderen
 Reiter: „Zurückspielen“ (`?bereich=zurueckspielen`) und „Historie“
 (`?bereich=historie`, die Läufe mit ihren Schritten). Ein laufender Lauf steht
 im Fenster der Läufe, nicht auf der Seite. Ein Lauf (täglich oder auf Knopfdruck)
-schreibt `hapm-backup-JJJJMMTT-HHMMSS.tar.gz` dorthin:
+schreibt `hapm-backup-JJJJMMTT-HHMMSS.tar.gz` dorthin, mit einem
+Sicherungsschlüssel verschlüsselt als `….tar.gz.gpg` (siehe „Verschlüsselung“):
 
 | Im Archiv | Inhalt |
 |---|---|
-| `manifest.json` | Fassung von HAPM, Zeitpunkt, Art des Laufs, Fingerabdruck des Schlüssels (seit 0.5, `lib/backup/manifest.ts`) |
+| `manifest.json` | Fassung von HAPM, Zeitpunkt, Art des Laufs, Fingerabdruck des Schlüssels, ob verschlüsselt geschrieben wurde (seit 0.5, `lib/backup/manifest.ts`) |
 | `database.sql` | die Datenbank, mit `pg_dump` im Postgres-Container geschrieben |
 | `data/secrets.json` | der Schlüssel zu den verschlüsselten Werten |
 | `haproxy/` | `/etc/haproxy`: Konfiguration, Zertifikate, Fehlerseiten |
@@ -811,10 +812,75 @@ Nicht im Archiv: das Zugriffsprotokoll und die Abbilder.
 - **Aufgeräumt wird nur, was wie ein Archiv von HAPM heißt.** Was sonst im
   Ordner liegt, bleibt liegen. `tests/backup/backup.test.ts` lässt eine echte
   Shell das Skript des Helfers nachrechnen.
-- **Das Archiv ist nicht verschlüsselt** und enthält private Schlüssel. Es hat
-  die Rechte 600, mehr Schutz gibt HAPM ihm nicht.
+- **Das Archiv enthält private Schlüssel und ist in der Vorgabe nicht
+  verschlüsselt.** Es hat die Rechte 600, mehr Schutz gibt HAPM ihm ohne
+  Sicherungsschlüssel nicht. Mit einem verschlüsselt HAPM es, siehe unten.
 - Scheitert ein Lauf, geht eine Mail hinaus (`backup_failed`), wenn
   Benachrichtigungen eingerichtet sind.
+
+### Verschlüsselung: der Sicherungsschlüssel
+
+Auf dem Reiter „Einstellungen“ steht die Karte „Verschlüsselung“. Wer dort
+einen **Sicherungsschlüssel** einträgt (eine Passphrase, mindestens 12 Zeichen,
+`lib/backup/passphrase.ts`), bekommt ab dem nächsten Lauf
+`hapm-backup-JJJJMMTT-HHMMSS.tar.gz.gpg` statt `.tar.gz`.
+
+- **Zwei Schlüssel, zwei Namen.** „Schlüssel“ heißt auf der Seite und im
+  Archiv `encryptionKey` aus `secrets.json`: er verschlüsselt Werte in der
+  Datenbank und geht mit ins Archiv. Der „Sicherungsschlüssel“ verschlüsselt
+  das Archiv selbst und steht in keinem. Wer ihn verliert, kann eine
+  verschlüsselte Sicherung nicht zurückspielen: die Karte sagt das sichtbar,
+  bevor man ihn setzt.
+- **Das Verfahren ist `gpg --symmetric`** (OpenPGP, AES-256, Integritätsschutz
+  über MDC, der Sicherungsschlüssel wird mit SHA-512 und der höchsten Zahl an
+  Runden zum AES-Schlüssel, `GPG_ENCRYPT_FLAGS` in `lib/backup/run.ts`). Kein
+  eigenes Format: das Archiv lässt sich auf jedem Linux mit gpg entschlüsseln,
+  auch wenn es HAPM nicht mehr gibt. `openssl enc` schied aus, weil es
+  Veränderungen am Archiv nicht bemerkt. Im Abbild liegt dafür das Paket `gpg`
+  (rund 3 MB), ohne gpg-agent: mit `--no-symkey-cache` und einem Schlüssel aus
+  einer Datei fragt gpg keinen Agenten.
+- **Verschlüsselt wird beim Schreiben.** Im Helfer reicht `tar` an `gpg`
+  weiter, im Ordner liegt nie ein Archiv im Klartext. Der Helfer läuft dafür
+  mit bash und `pipefail`: scheitert `tar`, gilt der Lauf als gescheitert, auch
+  wenn gpg das Wenige sauber verschlüsselt hat. gpg bekommt je Lauf einen
+  leeren Ordner als `--homedir`.
+- **Der Sicherungsschlüssel liegt verschlüsselt in der Datenbank**
+  (`backup_settings.passphrase`, mit `encryptionKey`), weil der nächtliche Lauf
+  ihn braucht. Die Oberfläche, die API und MCP erfahren nur `encrypted` (und
+  `passphraseUnreadable`). Setzen, ändern und entfernen geht nur in der
+  Oberfläche (`PUT /api/backup/encryption`) und verlangt das Passwort des
+  Kontos, wie das Zurückspielen. Ändern und Abschalten fragen vorher nach.
+- **Er steht in keiner Kommandozeile und in keiner Umgebung.** Der Helfer liest
+  ihn aus `/data/.backup-passphrase` (600), die HAPM für die Dauer des Laufs
+  schreibt und danach löscht (auch beim Start, falls ein Lauf abbrach). In der
+  Umgebung des Helfers stünde er in `docker inspect`. Die Datei liegt neben
+  `secrets.json`, mit dem sich der gespeicherte Schlüssel ohnehin lesen lässt.
+- **Unlesbar ist nicht „keiner“.** Passt `encryptionKey` nicht mehr zum
+  gespeicherten Sicherungsschlüssel (`ENCRYPTION_KEY` wurde geändert), scheitert
+  der Lauf mit dieser Meldung und einer Mail. Er schreibt nicht ersatzweise
+  unverschlüsselt in einen Ordner, für den jemand Verschlüsselung eingestellt
+  hat. Die Karte zeigt den Zustand, behoben wird er durch neues Eintragen.
+- **Schon geschriebene Archive bleiben, wie sie sind.** Ein neuer Schlüssel
+  gilt ab der nächsten Sicherung, alte Archive brauchen den alten. Die
+  Aufbewahrung zählt verschlüsselte und unverschlüsselte zusammen.
+- **Die Sicherung vor dem Zurückspielen** wird im Ordner mit dem dann
+  gespeicherten Sicherungsschlüssel verschlüsselt. Ohne Ordner landet sie im
+  Daten-Ordner und bleibt unverschlüsselt: dort liegt `secrets.json` im
+  Klartext daneben.
+
+Geprüft im November 2026 mit Docker, in einem Container aus
+`node:24-bookworm-slim` mit der `apt`-Zeile des `Dockerfile` (gpg 2.2.40), mit
+demselben Aufruf wie `runHelper` (kein TTY, kein Netz, die Volumes nur lesend):
+der Helfer schreibt das Archiv, auch mit schreibgeschütztem
+Wurzeldateisystem; ohne Schlüsseldatei scheitert er, statt unverschlüsselt zu
+schreiben; `docker inspect` und die Ausgabe des Helfers enthalten den
+Schlüssel nicht; kein gpg-agent wird gestartet; das Kommando aus
+`lib/backup/decrypt.ts` entschlüsselt, meldet einen falschen Schlüssel als
+`BAD_PASSPHRASE` und lehnt ein verändertes Archiv ab; ein Debian 12 mit
+gewöhnlichem `gnupg` entschlüsselt mit dem Kommando aus „Von Hand“.
+`tests/backup/` rechnet dasselbe bei jedem Lauf mit einem echten gpg nach. Der
+ganze Weg über die Oberfläche (Karte, nächtlicher Lauf, Zurückspielen eines
+verschlüsselten Archivs im Stack) ist damit noch nicht durchgespielt.
 
 ### Zurückspielen
 
@@ -828,6 +894,23 @@ das Skript des Helfers in `lib/backup/restore-script.ts`). Der Ablauf:
    ein paar MB plus die Datenbank, und die wächst vor allem mit Statistik und
    Protokoll. Es liegt immer höchstens ein Archiv bereit, in
    `/data/.restore/`, und es wird nach dem Lauf oder beim Verwerfen gelöscht.
+   **Ein verschlüsseltes Archiv wird hier entschlüsselt**, vor der Prüfung
+   (`lib/backup/decrypt.ts`). Erkannt wird es am Inhalt, nicht am Namen: ein
+   hochgeladenes heißt, wie der Benutzer es genannt hat. Zuerst mit dem
+   gespeicherten Sicherungsschlüssel. Ist keiner gespeichert oder passt er
+   nicht (ein Archiv von einem anderen Server, ein inzwischen geänderter
+   Schlüssel), bleibt die Datei als `archive.tar.gz.gpg` liegen, und die Seite
+   fragt nach dem Schlüssel (`POST /api/backup/restore/unlock`, begrenzt auf
+   zehn Versuche in 15 Minuten). Ein falscher Schlüssel ist eine Meldung, das
+   Archiv wartet weiter. Ein verändertes oder abgeschnittenes lehnt gpg auch
+   mit dem richtigen ab, dann wird es gelöscht. Danach liegt in
+   `/data/.restore/` ein gewöhnliches `.tar.gz`, und alles Weitere ist wie bei
+   einem unverschlüsselten: der Helfer des Zurückspielens kennt keine
+   Verschlüsselung. Der Daten-Ordner ist dafür der richtige Ort, dort liegen
+   `secrets.json` und die privaten Schlüssel ohnehin im Klartext. Den
+   Sicherungsschlüssel bekommt gpg aus einer Datei (600) in einem eigenen
+   Temp-Ordner: `lib/ssh.ts` gibt ein Kommando als Argument an bash, ein
+   Heredoc stünde samt Inhalt in `ps`.
 2. **Prüfen**, bevor irgendetwas angefasst wird (`lib/backup/archive.ts`):
    `tar -t` liest das Archiv bis zum Ende, es muss `database.sql`,
    `data/secrets.json`, `haproxy/haproxy.cfg` und `.acme.sh/` enthalten, die
@@ -847,7 +930,9 @@ das Skript des Helfers in `lib/backup/restore-script.ts`). Der Ablauf:
    Ordner nach `hapm-before-restore.tar.gz` im Daten-Ordner (`data/hapm/` auf
    dem Server), eine frühere wird ersetzt. Scheitert diese Sicherung, wird
    nicht zurückgespielt. Die herausgeschriebene Datenbank bleibt als
-   `before.sql` für ein Zurückrollen liegen.
+   `before.sql` für ein Zurückrollen liegen. Im Ordner wird sie mit dem jetzt
+   gespeicherten Sicherungsschlüssel verschlüsselt (`….tar.gz.gpg`), im
+   Daten-Ordner nicht. Die Seite sagt das vor dem Start.
 5. **Der Helfer.** HAPM startet `hapm-restore` (Name des eigenen Containers mit
    `-restore` dahinter) aus dem eigenen Abbild, mit allen Volumes von HAPM
    schreibend und darüber dem Docker-Socket, wie `hapm-updater` beim
@@ -894,6 +979,16 @@ entfernen ist). Ohne Manifest bleibt es bei einer Warnung, falls
 `ENCRYPTION_KEY` gesetzt ist. Nach dem Neustart vergleicht HAPM den Schlüssel,
 mit dem es läuft, noch einmal und schreibt das Ergebnis als Schritt in den Lauf.
 
+**Der Sicherungsschlüssel danach.** Er steht in der Datenbank, und die kommt
+aus dem Archiv: nach dem Zurückspielen gilt der Sicherungsschlüssel, der
+gespeichert war, als das Archiv geschrieben wurde, oder keiner, wenn damals
+nicht verschlüsselt wurde. Lesbar ist er, weil `secrets.json` aus demselben
+Archiv kommt (die Prüfung des Schlüssels oben stellt das sicher). Ein Archiv,
+das mit einem eingegebenen Schlüssel entschlüsselt wurde, ändert daran nichts:
+gespeichert wird die Eingabe nicht. Die Sicherung von unmittelbar vorher trägt
+dagegen den Sicherungsschlüssel von vor dem Zurückspielen. Wer beide
+unterscheidet, bewahrt beide auf.
+
 Der laufende Vorgang steht im Fenster der Läufe; auf dem Reiter steht nur eine
 Zeile mit „Fortschritt ansehen“. Die Seite verliert die Verbindung, während
 HAPM neu startet. Das Fenster sagt das und fragt weiter, die Pille lädt neu,
@@ -918,6 +1013,13 @@ cd /opt/hapm
 mkdir /tmp/hapm-restore
 tar -xzf /srv/hapm-backup/hapm-backup-JJJJMMTT-HHMMSS.tar.gz -C /tmp/hapm-restore
 
+#    Ein verschlüsseltes Archiv (….tar.gz.gpg) stattdessen erst entschlüsseln:
+#    read -rsp 'Sicherungsschlüssel: ' KEY && echo
+#    printf '%s\n' "$KEY" | gpg --batch --pinentry-mode loopback --passphrase-fd 0 \
+#      -o /tmp/hapm-backup.tar.gz -d /srv/hapm-backup/hapm-backup-JJJJMMTT-HHMMSS.tar.gz.gpg
+#    unset KEY
+#    tar -xzf /tmp/hapm-backup.tar.gz -C /tmp/hapm-restore && rm /tmp/hapm-backup.tar.gz
+
 # 2. Nur die Datenbank starten und einspielen
 docker compose up -d --wait postgres
 docker exec -i hapm-postgres psql -U hapm -d hapm -q -v ON_ERROR_STOP=1 < /tmp/hapm-restore/database.sql
@@ -937,6 +1039,15 @@ Die Namen im Archiv sind die aus dem Container (`data/`, `haproxy/`,
 `.acme.sh/`), die Unterordner auf dem Server heißen `hapm/`, `haproxy/` und
 `acme/`: daher das Kopieren Stück für Stück. HAPM darf erst starten, wenn die
 Datenbank eingespielt ist, sonst legt es eine frische an.
+
+**Zum Entschlüsseln von Hand:** erst in eine Datei, dann auspacken, nicht
+`gpg … | tar`. Ob das Archiv verändert wurde, weiß gpg erst am Ende, und `tar`
+hätte bis dahin schon ausgepackt. Endet gpg mit einem Fehler, die Datei
+verwerfen. Das Kommando oben liest den Sicherungsschlüssel selbst
+(`read -rs`, ohne Anzeige) und gibt ihn über stdin an gpg: so braucht es weder
+gpg-agent noch pinentry und geht auch dort, wo `gpg -d` am fehlenden Terminal
+scheitert. `printf` ist in bash eingebaut, der Schlüssel steht in keiner
+Kommandozeile. Fehlt gpg auf dem Server: `apt install gnupg`.
 
 Geprüft im November 2026 gegen den ganzen Stack: mit `install.sh --uninstall`
 alles entfernt,

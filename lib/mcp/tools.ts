@@ -967,9 +967,11 @@ export const TOOLS: ToolDefinition[] = [
     name: 'get_backup',
     title: 'Backup overview',
     description:
-      'Backup settings (enabled, hostPath = folder on the host, time HH:MM, keep = how many archives stay), whether backups are available ' +
+      'Backup settings (enabled, hostPath = folder on the host, time HH:MM, keep = how many archives stay, ' +
+      'encrypted = archives are encrypted with a backup passphrase and end in .tar.gz.gpg), whether backups are available ' +
       '(HAPM must run in a container), whether one is running, the recent runs (without steps) and the archives in the folder after the last run. ' +
-      'An archive contains the database and the HAProxy files.',
+      'An archive contains the database and the HAProxy files. The backup passphrase is a secret: it can only be set, changed or removed ' +
+      'in the web interface and is never returned. passphraseUnreadable = true means it has to be entered there again before backups work.',
     input: {},
     annotations: READ_ONLY,
     run: async () => {

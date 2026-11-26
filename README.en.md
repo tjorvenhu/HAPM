@@ -127,7 +127,7 @@ has HAProxy check it, reloads and fetches the certificates.
 - History of every operation with its steps
 - The HAProxy and CrowdSec logs in your browser, with search and filters
 - One-click updates for HAPM, HAProxy, acme.sh and CrowdSec
-- Daily backups and restore from the web interface
+- Daily backups, optionally encrypted, and restore from the web interface
 - Email alerts on outages, expiring certificates and errors
 - API with tokens for scripts and other services
 - MCP server: control HAPM from Claude and other AI clients
@@ -703,15 +703,24 @@ docker compose pull && docker compose up -d
 Under **"Backup"**, set a folder on the server. HAPM then backs up daily or on
 demand: database, keys, HAProxy with certificates, and acme.sh.
 
+**Encryption:** on the same page, under "Encryption", enter a backup
+passphrase. From then on HAPM encrypts every archive with gpg (AES-256), and
+the file is named `….tar.gz.gpg`. This is recommended whenever the folder is on
+a network share or another server.
+
 > [!WARNING]
-> The archive contains private keys and is not encrypted. Store it only where
-> nobody but you has access.
+> The archive contains private keys. Without a backup passphrase it is not
+> encrypted: store it only where nobody but you has access. With a backup
+> passphrase: a backup cannot be restored without it. It is not part of any
+> archive, so keep it separate from the server.
 
 ### Restoring
 
 **From the web interface:** under "Backup", card "Restore backup". Pick an
-archive or upload one, for example when moving to a new server. HAPM backs up
-the current state first and restores it if a step fails.
+archive or upload one, for example when moving to a new server. HAPM decrypts
+an encrypted archive with the stored backup passphrase and asks for it if none
+is stored or it does not match. HAPM backs up the current state first and
+restores it if a step fails.
 
 <details>
 <summary><b>Manually</b>, when HAPM is not running</summary>
@@ -725,6 +734,13 @@ cd /opt/hapm
 # 1. Unpack the archive
 mkdir /tmp/hapm-restore
 tar -xzf /srv/hapm-backup/hapm-backup-YYYYMMDD-HHMMSS.tar.gz -C /tmp/hapm-restore
+
+#    For an encrypted archive (….tar.gz.gpg), decrypt it first instead:
+#    read -rsp 'Backup passphrase: ' KEY && echo
+#    printf '%s\n' "$KEY" | gpg --batch --pinentry-mode loopback --passphrase-fd 0 \
+#      -o /tmp/hapm-backup.tar.gz -d /srv/hapm-backup/hapm-backup-YYYYMMDD-HHMMSS.tar.gz.gpg
+#    unset KEY
+#    tar -xzf /tmp/hapm-backup.tar.gz -C /tmp/hapm-restore && rm /tmp/hapm-backup.tar.gz
 
 # 2. Start only the database and import it
 docker compose up -d --wait postgres

@@ -8,6 +8,12 @@
  *     `RESTORE_MAX_BYTES`). Es liegt in `/data/.restore/archive.tar.gz`, immer
  *     höchstens eins, und wird sofort geprüft (`./archive.ts`). Ein Archiv,
  *     das die Prüfung nicht besteht, wird gleich wieder gelöscht.
+ *     Ein verschlüsseltes Archiv (`./decrypt.ts`, erkannt am Inhalt) wird hier
+ *     entschlüsselt, vor der Prüfung: zuerst mit dem gespeicherten
+ *     Sicherungsschlüssel. Fehlt er oder passt er nicht (ein Archiv von einem
+ *     anderen Server, ein inzwischen geänderter Schlüssel), bleibt die Datei
+ *     als `archive.tar.gz.gpg` liegen, und die Seite fragt nach dem Schlüssel
+ *     (`unlockStaged`). Ab dann ist alles wie bei einem unverschlüsselten.
  *  2. Starten (nach Bestätigung und Passwort): HAPM sichert den aktuellen Stand
  *     über den gewöhnlichen Weg (`writeArchive`). Scheitert das, wird nicht
  *     zurückgespielt. Die herausgeschriebene Datenbank bleibt als
@@ -40,12 +46,13 @@ import { dataPath } from '../paths';
 import { secrets } from '../secrets';
 import { engine, ownContainer } from '../docker';
 import type { DbDoc, HaproxyStep, RunStatus, UpdateRun } from '../types';
-import { BACKUP_RUNS, getBackupSettings } from './settings';
+import { BACKUP_RUNS, getBackupSettings, passphraseState, readPassphrase } from './settings';
+import { archiveFormat, decryptArchive } from './decrypt';
 import {
   BACKUP_INTERRUPTED,
   BEFORE_RESTORE_DATA_FILE,
   BEFORE_RESTORE_SUFFIX,
-  backupFileName,
+  archiveNameFor,
   backupRunning,
   claimBackupLock,
   isBackupArchiveName,
@@ -88,6 +95,9 @@ const DIR = '.restore';
 const ARCHIVE = 'archive.tar.gz';
 const PART = 'archive.tar.gz.part';
 const META = 'archive.json';
+/** Ein verschlüsseltes Archiv, das noch auf seinen Sicherungsschlüssel wartet, und was die Seite dazu zeigt. */
+const LOCKED = 'archive.tar.gz.gpg';
+const LOCKED_META = 'locked.json';
 const STATE = 'state.json';
 const PROGRESS = 'progress';
 const BEFORE_SQL = 'before.sql';
@@ -100,7 +110,25 @@ export interface StagedArchive {
   sizeBytes: number;
   stagedAt: string;
   stagedBy: string;
+  /**
+   * Womit das Archiv entschlüsselt wurde: mit dem gespeicherten
+   * Sicherungsschlüssel oder mit einem eingegebenen. `null`: es war nicht
+   * verschlüsselt. Fehlt bei einem Archiv, das eine ältere Fassung bereitgelegt hat.
+   */
+  unlockedWith?: 'stored' | 'entered' | null;
   check: ArchiveCheck;
+}
+
+/** Ein verschlüsseltes Archiv, das bereitliegt, aber noch nicht entschlüsselt und geprüft ist. */
+export interface LockedArchive {
+  id: string;
+  source: 'folder' | 'upload';
+  name: string;
+  sizeBytes: number;
+  stagedAt: string;
+  stagedBy: string;
+  /** Der gespeicherte Sicherungsschlüssel wurde versucht und passt nicht. */
+  storedFailed: boolean;
 }
 
 interface RestoreState {
@@ -190,6 +218,17 @@ export function readStaged(): StagedArchive | null {
   return staged;
 }
 
+export function readLocked(): LockedArchive | null {
+  const locked = readJson<LockedArchive>(dir(LOCKED_META));
+  if (!locked || !fs.existsSync(dir(LOCKED))) return null;
+  return locked;
+}
+
+/** Alles, was vom Bereitlegen liegen kann. Nie mehr als ein Archiv, in welchem Zustand auch immer. */
+function clearStaged(): void {
+  for (const name of [ARCHIVE, PART, META, LOCKED, LOCKED_META]) fs.rmSync(dir(name), { force: true });
+}
+
 /** Ob gerade zurückgespielt wird: ein Lauf hat begonnen und hat noch kein Ergebnis. */
 export function restoreActive(): boolean {
   return Boolean(flags.__hapmRestoreRunning) || (fs.existsSync(dir(STATE)) && !readProgress().done);
@@ -209,8 +248,8 @@ function guardIdle(): void {
 /** Das bereitgelegte Archiv verwerfen. Nicht, solange es zurückgespielt wird. */
 export function discardStaged(): boolean {
   guardIdle();
-  const had = fs.existsSync(dir(ARCHIVE)) || fs.existsSync(dir(META));
-  for (const name of [ARCHIVE, PART, META]) fs.rmSync(dir(name), { force: true });
+  const had = [ARCHIVE, META, LOCKED, LOCKED_META].some((name) => fs.existsSync(dir(name)));
+  clearStaged();
   return had;
 }
 
@@ -225,7 +264,8 @@ async function inspectStaged(
   source: StagedArchive['source'],
   name: string,
   sizeBytes: number,
-  actor: BackupActor
+  actor: BackupActor,
+  unlockedWith: StagedArchive['unlockedWith'] = null
 ): Promise<StagedArchive> {
   let check: ArchiveCheck;
   try {
@@ -249,10 +289,99 @@ async function inspectStaged(
     sizeBytes,
     stagedAt: new Date().toISOString(),
     stagedBy: actor.userEmail,
+    unlockedWith,
     check,
   };
   writeJson(dir(META), staged);
   return staged;
+}
+
+const DAMAGED = msgid('Das Archiv lässt sich nicht entschlüsseln. Es ist beschädigt, unvollständig oder nicht mit gpg verschlüsselt.');
+const NO_GPG = msgid('gpg fehlt in diesem Container. Ein verschlüsseltes Archiv lässt sich hier nicht entschlüsseln.');
+
+/** Der gespeicherte Sicherungsschlüssel. `null`, wenn keiner gesetzt oder er nicht lesbar ist: dann fragt die Seite. */
+async function storedPassphrase(): Promise<string | null> {
+  try {
+    return readPassphrase(await getBackupSettings());
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Entschlüsselt das wartende Archiv nach `ARCHIVE`. `false`: der Schlüssel
+ * passt nicht, das Archiv wartet weiter. Alles andere wirft, und das Archiv ist
+ * dann weg: ein beschädigtes entschlüsselt auch der richtige Schlüssel nicht.
+ */
+async function decryptLocked(passphrase: string, name: string): Promise<boolean> {
+  const { result, detail } = await decryptArchive(dir(LOCKED), dir(ARCHIVE), passphrase);
+  if (result === 'wrong-passphrase') return false;
+  if (result === 'ok') {
+    for (const file of [LOCKED, LOCKED_META]) fs.rmSync(dir(file), { force: true });
+    return true;
+  }
+  clearStaged();
+  if (detail) console.log(`[restore] Archiv ${name} ließ sich nicht entschlüsseln: ${detail}`);
+  throw new ApiError(result === 'unavailable' ? NO_GPG : DAMAGED);
+}
+
+/**
+ * Das Archiv liegt als `ARCHIVE` da: prüfen, und vorher entschlüsseln, falls
+ * nötig. Gibt das geprüfte Archiv zurück, oder das wartende, wenn der
+ * Sicherungsschlüssel fehlt.
+ */
+async function admit(
+  source: StagedArchive['source'],
+  name: string,
+  sizeBytes: number,
+  actor: BackupActor
+): Promise<StagedArchive | LockedArchive> {
+  if (archiveFormat(dir(ARCHIVE)) !== 'gpg') return inspectStaged(source, name, sizeBytes, actor);
+
+  fs.renameSync(dir(ARCHIVE), dir(LOCKED));
+  const stored = await storedPassphrase();
+  if (stored !== null && (await decryptLocked(stored, name))) {
+    return inspectStaged(source, name, sizeBytes, actor, 'stored');
+  }
+  const locked: LockedArchive = {
+    id: randomUUID(),
+    source,
+    name,
+    sizeBytes,
+    stagedAt: new Date().toISOString(),
+    stagedBy: actor.userEmail,
+    storedFailed: stored !== null,
+  };
+  writeJson(dir(LOCKED_META), locked);
+  return locked;
+}
+
+/**
+ * Das wartende Archiv mit einem eingegebenen Sicherungsschlüssel entschlüsseln
+ * und prüfen. Geprüft wird die Eingabe nur so weit, wie gpg sie als eine Zeile
+ * lesen muss: die Regeln aus `./passphrase.ts` gelten für Schlüssel, die HAPM
+ * speichert, nicht für einen, mit dem jemand von Hand verschlüsselt hat.
+ */
+export async function unlockStaged(id: unknown, passphrase: unknown, actor: BackupActor): Promise<StagedArchive> {
+  requireDocker();
+  guardIdle();
+  const locked = readLocked();
+  if (!locked || typeof id !== 'string' || locked.id !== id) {
+    throw new ApiError(msg('Das verschlüsselte Archiv liegt nicht mehr bereit. Bitte wählen Sie es erneut.'), 409);
+  }
+  if (typeof passphrase !== 'string' || passphrase === '') throw new ApiError(msg('Der Sicherungsschlüssel fehlt.'));
+  if (passphrase.length > 1000 || /[\u0000-\u001f\u007f]/.test(passphrase)) {
+    throw new ApiError(msg('Der Sicherungsschlüssel passt nicht zu diesem Archiv.'));
+  }
+  flags.__hapmRestoreStaging = true;
+  try {
+    if (!(await decryptLocked(passphrase, locked.name))) {
+      throw new ApiError(msg('Der Sicherungsschlüssel passt nicht zu diesem Archiv.'));
+    }
+    return await inspectStaged(locked.source, locked.name, locked.sizeBytes, actor, 'entered');
+  } finally {
+    flags.__hapmRestoreStaging = false;
+  }
 }
 
 class TooLarge extends Error {}
@@ -262,14 +391,14 @@ export async function stageUpload(
   body: ReadableStream<Uint8Array> | null,
   rawName: string | null,
   actor: BackupActor
-): Promise<StagedArchive> {
+): Promise<StagedArchive | LockedArchive> {
   requireDocker();
   guardIdle();
   if (!body) throw new ApiError(msg('Es kam keine Datei an.'));
   flags.__hapmRestoreStaging = true;
   try {
     fs.mkdirSync(dir(), { recursive: true, mode: 0o700 });
-    for (const name of [ARCHIVE, META]) fs.rmSync(dir(name), { force: true });
+    clearStaged();
     let size = 0;
     const limit = new Transform({
       transform(chunk: Buffer, _encoding, callback) {
@@ -296,7 +425,7 @@ export async function stageUpload(
       throw new ApiError(msg('Die Datei ist leer.'));
     }
     fs.renameSync(dir(PART), dir(ARCHIVE));
-    return await inspectStaged('upload', displayName(rawName), size, actor);
+    return await admit('upload', displayName(rawName), size, actor);
   } finally {
     flags.__hapmRestoreStaging = false;
   }
@@ -305,7 +434,7 @@ export async function stageUpload(
 /* eslint-disable @typescript-eslint/no-explicit-any -- Antworten der Engine */
 
 /** Ein Archiv aus dem Sicherungsordner bereitlegen. */
-export async function stageFromFolder(name: string, actor: BackupActor): Promise<StagedArchive> {
+export async function stageFromFolder(name: string, actor: BackupActor): Promise<StagedArchive | LockedArchive> {
   const own = requireDocker();
   if (!isBackupArchiveName(name)) throw new ApiError(msg('Das ist kein Name eines Archivs von HAPM.'));
   const settings = await getBackupSettings();
@@ -314,7 +443,7 @@ export async function stageFromFolder(name: string, actor: BackupActor): Promise
   flags.__hapmRestoreStaging = true;
   try {
     fs.mkdirSync(dir(), { recursive: true, mode: 0o700 });
-    for (const file of [ARCHIVE, META]) fs.rmSync(dir(file), { force: true });
+    clearStaged();
 
     const self: any = await engine.inspectContainer(own);
     const helper = `hapm-restore-stage-${Date.now()}`;
@@ -349,7 +478,7 @@ export async function stageFromFolder(name: string, actor: BackupActor): Promise
       console.log(`[restore] ${name} ließ sich nicht holen: ${output.trim().slice(-400)}`);
       throw new ApiError(msg('Das Archiv ließ sich nicht aus dem Ordner holen.'));
     }
-    return await inspectStaged('folder', name, size, actor);
+    return await admit('folder', name, size, actor);
   } finally {
     flags.__hapmRestoreStaging = false;
   }
@@ -434,11 +563,18 @@ async function execute(state: RestoreState, own: string): Promise<void> {
     const target: BackupTarget = settings.hostPath
       ? { kind: 'folder', hostPath: settings.hostPath, keep: settings.keep, prune: false }
       : { kind: 'data' };
-    const fileName = settings.hostPath ? backupFileName(now, BEFORE_RESTORE_SUFFIX) : BEFORE_RESTORE_DATA_FILE;
+    // Im Ordner gilt der Sicherungsschlüssel wie für jede Sicherung, und zwar
+    // der jetzt gespeicherte: nach dem Zurückspielen steht in der Datenbank der
+    // aus dem Archiv. Im Daten-Ordner wird nicht verschlüsselt, dort liegt
+    // `secrets.json` im Klartext daneben.
+    const { fileName, passphrase } = settings.hostPath
+      ? await archiveNameFor(now, BEFORE_RESTORE_SUFFIX)
+      : { fileName: BEFORE_RESTORE_DATA_FILE, passphrase: null };
     const steps: HaproxyStep[] = [];
     const written = await writeArchive({
       target,
       fileName,
+      passphrase,
       kind: 'before-restore',
       keepDumpAt: dir(BEFORE_SQL),
       onStep: async (label, ok, detail) => {
@@ -456,6 +592,7 @@ async function execute(state: RestoreState, own: string): Promise<void> {
         completedAt: new Date().toISOString(),
         hostPath: target.hostPath,
         fileName,
+        encrypted: passphrase !== null,
         sizeBytes: written.sizeBytes,
         files: JSON.stringify(written.files),
         steps: JSON.stringify(steps),
@@ -682,6 +819,8 @@ export async function restoreOverview() {
     available: own !== null,
     maxBytes: RESTORE_MAX_BYTES,
     staged: readStaged(),
+    /** Ein verschlüsseltes Archiv, das auf seinen Sicherungsschlüssel wartet. Nie zugleich mit `staged`. */
+    locked: readLocked(),
     active: state
       ? {
           runId: state.runId,
@@ -692,12 +831,13 @@ export async function restoreOverview() {
           done: progress.done,
         }
       : null,
-    /** Wohin die Sicherung von vorher geht. */
+    /** Wohin die Sicherung von vorher geht, und ob sie mit dem jetzt gespeicherten Sicherungsschlüssel verschlüsselt wird. */
     beforeTarget: settings.hostPath
-      ? { kind: 'folder' as const, path: settings.hostPath }
+      ? { kind: 'folder' as const, path: settings.hostPath, encrypted: passphraseState(settings).encrypted }
       : {
           kind: 'data' as const,
           path: (own ? await hostPathOfData(own, BEFORE_RESTORE_DATA_FILE) : null) ?? dataPath(BEFORE_RESTORE_DATA_FILE),
+          encrypted: false,
         },
     busy: backupRunning() || Boolean(flags.__hapmRestoreStaging),
     runs: await listRestoreRuns(),

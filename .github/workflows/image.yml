@@ -49,6 +49,10 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Die Tests der verschlüsselten Sicherung rechnen mit einem echten gpg
+      # nach (tests/backup/). Die Runner bringen es mit; fehlt es einmal, wird
+      # es geholt, statt dass die Tests scheitern.
+      - run: command -v gpg || (sudo apt-get update && sudo apt-get install -y --no-install-recommends gpg)
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test

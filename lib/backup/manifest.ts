@@ -29,6 +29,13 @@ export interface BackupManifest {
    */
   keyFingerprint: string;
   keyFromEnvironment: boolean;
+  /**
+   * Ob das Archiv mit einem Sicherungsschlüssel verschlüsselt geschrieben wurde.
+   * Ältere Archive nennen es nicht und waren es nie. Lesen kann das nur, wer es
+   * schon entschlüsselt hat: die Angabe sagt, wie die Sicherung entstand, nicht,
+   * wie die Datei gerade vorliegt.
+   */
+  encrypted: boolean;
 }
 
 /**
@@ -47,6 +54,7 @@ export function buildManifest(input: {
   kind: BackupKind;
   encryptionKey: string;
   keyFromEnvironment: boolean;
+  encrypted?: boolean;
   now?: Date;
 }): BackupManifest {
   return {
@@ -57,6 +65,7 @@ export function buildManifest(input: {
     kind: input.kind,
     keyFingerprint: keyFingerprint(input.encryptionKey),
     keyFromEnvironment: input.keyFromEnvironment,
+    encrypted: input.encrypted === true,
   };
 }
 
@@ -82,6 +91,7 @@ export function parseManifest(text: string): BackupManifest | null {
     kind,
     keyFingerprint: typeof value.keyFingerprint === 'string' ? value.keyFingerprint : '',
     keyFromEnvironment: value.keyFromEnvironment === true,
+    encrypted: value.encrypted === true,
   };
 }
 

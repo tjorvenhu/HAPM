@@ -123,7 +123,7 @@ Konfiguration, prüft sie mit HAProxy, lädt neu und holt die Zertifikate.
 - Historie jedes Vorgangs mit seinen Schritten
 - Die Logs von HAProxy und CrowdSec im Browser, mit Suche und Filter
 - Updates von HAPM, HAProxy, acme.sh und CrowdSec auf Klick
-- Tägliche Sicherung und Zurückspielen über die Oberfläche
+- Tägliche Sicherung, auf Wunsch verschlüsselt, und Zurückspielen über die Oberfläche
 - Mails bei Ausfällen, ablaufenden Zertifikaten und Fehlern
 - API mit Token für Skripte und andere Dienste
 - MCP-Server: HAPM aus Claude und anderen KI-Clients steuern
@@ -709,16 +709,26 @@ Unter **„Sicherung“** einen Ordner auf dem Server einstellen. HAPM sichert d
 täglich oder auf Knopfdruck: Datenbank, Schlüssel, HAProxy mit Zertifikaten und
 acme.sh.
 
+**Verschlüsseln:** Auf derselben Seite unter „Verschlüsselung“ einen
+Sicherungsschlüssel eintragen. Ab dann verschlüsselt HAPM jedes Archiv mit gpg
+(AES-256), die Datei heißt `….tar.gz.gpg`. Das empfiehlt sich immer, wenn der
+Ordner auf einem Netzlaufwerk oder einem anderen Server liegt.
+
 > [!WARNING]
-> Das Archiv enthält private Schlüssel und ist nicht verschlüsselt. Legen Sie
-> es nur an einen Ort, auf den außer Ihnen niemand zugreift.
+> Das Archiv enthält private Schlüssel. Ohne Sicherungsschlüssel ist es nicht
+> verschlüsselt: legen Sie es dann nur an einen Ort, auf den außer Ihnen
+> niemand zugreift. Mit Sicherungsschlüssel gilt: ohne ihn lässt sich eine
+> Sicherung nicht zurückspielen. Er steht in keinem Archiv, bewahren Sie ihn
+> getrennt vom Server auf.
 
 ### Zurückspielen
 
 **Über die Oberfläche:** Unter „Sicherung“, Karte „Sicherung zurückspielen“.
 Ein Archiv auswählen oder hochladen, etwa beim Umzug auf einen neuen Server.
-HAPM sichert vorher den aktuellen Stand und stellt ihn wieder her, wenn ein
-Schritt scheitert.
+Ein verschlüsseltes Archiv entschlüsselt HAPM mit dem gespeicherten
+Sicherungsschlüssel und fragt nach ihm, wenn keiner gespeichert ist oder er
+nicht passt. HAPM sichert vorher den aktuellen Stand und stellt ihn wieder her,
+wenn ein Schritt scheitert.
 
 <details>
 <summary><b>Von Hand</b>, wenn HAPM nicht läuft</summary>
@@ -733,6 +743,13 @@ cd /opt/hapm
 # 1. Archiv auspacken
 mkdir /tmp/hapm-restore
 tar -xzf /srv/hapm-backup/hapm-backup-JJJJMMTT-HHMMSS.tar.gz -C /tmp/hapm-restore
+
+#    Ein verschlüsseltes Archiv (….tar.gz.gpg) stattdessen erst entschlüsseln:
+#    read -rsp 'Sicherungsschlüssel: ' KEY && echo
+#    printf '%s\n' "$KEY" | gpg --batch --pinentry-mode loopback --passphrase-fd 0 \
+#      -o /tmp/hapm-backup.tar.gz -d /srv/hapm-backup/hapm-backup-JJJJMMTT-HHMMSS.tar.gz.gpg
+#    unset KEY
+#    tar -xzf /tmp/hapm-backup.tar.gz -C /tmp/hapm-restore && rm /tmp/hapm-backup.tar.gz
 
 # 2. Nur die Datenbank starten und einspielen
 docker compose up -d --wait postgres
