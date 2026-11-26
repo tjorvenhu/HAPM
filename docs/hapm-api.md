@@ -103,6 +103,7 @@ der Anfrage (`Accept-Language`).
 | `crowdsec` | | CrowdSec oder Bouncer steht, obwohl Ziele ihn benutzen. Fehlt, wenn kein Ziel CrowdSec benutzt |
 | `backup` | | letzte Sicherung gescheitert oder älter als 50 Stunden. Fehlt ohne tägliche Sicherung |
 | `audit_forwarding` | | die Weiterleitung des Protokolls an ein SIEM scheitert. Fehlt, wenn kein Ziel eingeschaltet ist |
+| `sync` | | Hauptknoten: ein Folgeknoten antwortet nicht oder trägt den Stand nicht. Folgeknoten: noch kein Stand übernommen, oder hier wurden Dateien geändert. Fehlt auf einem einzelnen Knoten |
 
 - **`fail` heißt: der Proxy selbst arbeitet nicht.** Ein Ziel ohne Backend ist
   deshalb nur `warn`: das Backend ist kaputt, nicht der Proxy, und wer daran
@@ -145,6 +146,7 @@ scrape_configs:
 | `hapm_stats_last_run_timestamp_seconds` | wann die Zähler von HAProxy zuletzt gelesen wurden |
 | `hapm_backup_enabled`, `hapm_backup_last_success_timestamp_seconds`, `hapm_backup_last_run_ok` | Sicherung |
 | `hapm_audit_forward_failing{destination}`, `hapm_audit_forward_backlog{destination}` | Weiterleitung des Protokolls je eingeschaltetem Ziel (`syslog`, `http`) |
+| `hapm_sync_role{role}`, `hapm_sync_peer_reachable{peer}`, `hapm_sync_peer_in_sync{peer}`, `hapm_sync_last_applied_timestamp_seconds` | Abgleich zwischen Knoten: Rolle, je Folgeknoten erreichbar und auf Stand (Hauptknoten), letzter übernommener Stand (Folgeknoten) |
 | `hapm_crowdsec_active_decisions`, `hapm_crowdsec_protected_targets` | CrowdSec, nur wenn der Stack es mitbringt |
 
 - **Unbekannt fehlt, statt 0 zu sein.** `hapm_haproxy_up 0` heißt, HAProxy

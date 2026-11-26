@@ -23,7 +23,7 @@
  */
 
 import type { CertificateDue } from './certificates';
-import type { BackupHealthInput, CheckStatus, ForwardHealthInput, HealthReport } from './health';
+import type { BackupHealthInput, CheckStatus, ForwardHealthInput, HealthReport, SyncHealthInput } from './health';
 import type { SystemContainer, SystemOverview } from './overview';
 
 type Labels = Readonly<Record<string, string>>;
@@ -82,9 +82,12 @@ export interface MetricsInput {
   backup: BackupHealthInput | null;
   /** Die Ziele der Weiterleitung des Protokolls. `null` oder fehlend: nicht zu lesen. */
   forwarding?: ForwardHealthInput[] | null;
+  /** Der Abgleich zwischen Knoten. `null` oder fehlend: nicht zu lesen. */
+  sync?: SyncHealthInput | null;
 }
 
-export function renderMetrics({ overview, health, certificates, backup, forwarding }: MetricsInput): string {
+export function renderMetrics({ overview, health, certificates, backup, forwarding, sync }: MetricsInput): string {
+  const peers = sync?.role === 'primary' ? sync.peers : [];
   const forwards = (forwarding ?? []).filter((target) => target.enabled);
   const containers: { role: string; container: SystemContainer }[] = [
     { role: 'haproxy', container: overview.haproxy },
@@ -300,6 +303,34 @@ export function renderMetrics({ overview, health, certificates, backup, forwardi
       samples: forwards.flatMap((target) =>
         target.backlog === null ? [] : [{ labels: { destination: target.destination }, value: target.backlog }]
       ),
+    },
+    {
+      name: 'hapm_sync_role',
+      help: 'Role of this node in the configuration sync: single, primary or replica.',
+      type: 'gauge',
+      samples: sync ? [{ labels: { role: sync.role }, value: 1 }] : [],
+    },
+    {
+      name: 'hapm_sync_peer_reachable',
+      help: 'Primary node only: whether a replica answered the last check. Absent when unknown.',
+      type: 'gauge',
+      samples: peers.flatMap((peer) =>
+        peer.reachable === null ? [] : [{ labels: { peer: peer.name }, value: bool(peer.reachable) }]
+      ),
+    },
+    {
+      name: 'hapm_sync_peer_in_sync',
+      help: 'Primary node only: whether a replica carries the state of this node. Absent when unknown.',
+      type: 'gauge',
+      samples: peers.flatMap((peer) =>
+        peer.inSync === null ? [] : [{ labels: { peer: peer.name }, value: bool(peer.inSync) }]
+      ),
+    },
+    {
+      name: 'hapm_sync_last_applied_timestamp_seconds',
+      help: 'Replica only: last time a state from the primary node was applied, as Unix time.',
+      type: 'gauge',
+      samples: single(sync?.role === 'replica' ? seconds(sync.appliedAt) : null),
     },
     {
       name: 'hapm_crowdsec_active_decisions',

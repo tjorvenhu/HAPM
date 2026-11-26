@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { createTranslator } from '@/lib/i18n';
-import { BACKUP_STALE_HOURS, judge, overall, type BackupHealthInput } from '@/lib/system/health';
+import {
+  BACKUP_STALE_HOURS,
+  judge,
+  overall,
+  type BackupHealthInput,
+  type SyncHealthInput,
+} from '@/lib/system/health';
 import { renderMetrics, escapeLabel } from '@/lib/system/metrics';
 import type { SystemContainer, SystemOverview } from '@/lib/system/overview';
 import type { CertificateDue } from '@/lib/system/certificates';
@@ -181,6 +187,24 @@ describe('judge', () => {
     expect(status(forward({ failingSince: '2026-11-26T11:00:00.000Z', backlog: 12 }))).toBe('warn');
   });
 
+  it('prüft den Abgleich nur auf einem Hauptknoten mit Folgeknoten und auf einem Folgeknoten', () => {
+    const peer = { name: 'lb2', reachable: true as boolean | null, inSync: true as boolean | null, failed: false };
+    const status = (sync: SyncHealthInput | null | undefined) =>
+      judge(healthy(), { backup: NO_BACKUP, sync }, de, NOW).checks.find((entry) => entry.id === 'sync')?.status;
+    const base = { peers: [], appliedAt: null, intact: null };
+    expect(status(undefined)).toBeUndefined();
+    expect(status(null)).toBe('unknown');
+    expect(status({ ...base, role: 'single' })).toBeUndefined();
+    expect(status({ ...base, role: 'primary' })).toBeUndefined();
+    expect(status({ ...base, role: 'primary', peers: [peer] })).toBe('ok');
+    expect(status({ ...base, role: 'primary', peers: [{ ...peer, inSync: null }] })).toBe('unknown');
+    expect(status({ ...base, role: 'primary', peers: [peer, { ...peer, name: 'lb3', inSync: false }] })).toBe('warn');
+    expect(status({ ...base, role: 'primary', peers: [{ ...peer, reachable: false }] })).toBe('warn');
+    expect(status({ ...base, role: 'replica' })).toBe('warn');
+    expect(status({ ...base, role: 'replica', appliedAt: '2026-11-26T11:00:00.000Z', intact: true })).toBe('ok');
+    expect(status({ ...base, role: 'replica', appliedAt: '2026-11-26T11:00:00.000Z', intact: false })).toBe('warn');
+  });
+
   it('übersetzt die Meldungen', () => {
     const report = judge(
       healthy({ haproxy: container('hapm-haproxy', { running: false }) }),
@@ -310,6 +334,31 @@ describe('renderMetrics', () => {
     expect(text).toContain('hapm_audit_forward_failing{destination="syslog"} 1');
     expect(text).toContain('hapm_audit_forward_backlog{destination="syslog"} 12');
     expect(text).not.toContain('destination="http"');
+  });
+
+  it('führt Rolle und Folgeknoten des Abgleichs', () => {
+    const overview = healthy();
+    const sync: SyncHealthInput = {
+      role: 'primary',
+      peers: [
+        { name: 'lb2', reachable: true, inSync: false, failed: true },
+        { name: 'lb3', reachable: null, inSync: null, failed: false },
+      ],
+      appliedAt: null,
+      intact: null,
+    };
+    const text = renderMetrics({
+      overview,
+      health: judge(overview, { backup: NO_BACKUP, sync }, de, NOW),
+      certificates: [],
+      backup: NO_BACKUP,
+      sync,
+    });
+    expect(text).toContain('hapm_sync_role{role="primary"} 1');
+    expect(text).toContain('hapm_sync_peer_reachable{peer="lb2"} 1');
+    expect(text).toContain('hapm_sync_peer_in_sync{peer="lb2"} 0');
+    expect(text).not.toContain('peer="lb3"');
+    expect(text).not.toContain('hapm_sync_last_applied_timestamp_seconds');
   });
 
   it('maskiert Labels', () => {

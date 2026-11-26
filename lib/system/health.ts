@@ -62,11 +62,24 @@ export interface ForwardHealthInput {
   backlog: number | null;
 }
 
+/** Der Abgleich zwischen Knoten (`lib/sync/`), aus der Sicht dieses Knotens. */
+export interface SyncHealthInput {
+  role: 'single' | 'primary' | 'replica';
+  /** Nur Hauptknoten: seine Folgeknoten. `null` je Feld heißt unbekannt. */
+  peers: { name: string; reachable: boolean | null; inSync: boolean | null; failed: boolean }[];
+  /** Nur Folgeknoten: wann zuletzt ein Stand übernommen wurde. */
+  appliedAt: string | null;
+  /** Nur Folgeknoten: `false`, wenn hier seit dem letzten Stand Dateien geändert wurden. */
+  intact: boolean | null;
+}
+
 /** Was `judge` neben der Übersicht liest. `null` heißt je Feld: nicht zu lesen. */
 export interface HealthExtras {
   backup: BackupHealthInput | null;
   /** Fehlt das Feld, wird die Weiterleitung nicht geprüft. */
   forwarding?: ForwardHealthInput[] | null;
+  /** Fehlt das Feld, wird der Abgleich nicht geprüft. */
+  sync?: SyncHealthInput | null;
 }
 
 /** Eine tägliche Sicherung, die so lange nicht gelang, ist ausgefallen. */
@@ -93,7 +106,7 @@ function containerCheck(
 
 export function judge(
   overview: SystemOverview,
-  { backup, forwarding }: HealthExtras,
+  { backup, forwarding, sync }: HealthExtras,
   { t, plural }: Translator,
   now = Date.now()
 ): HealthReport {
@@ -266,6 +279,37 @@ export function judge(
       forwarding.some((target) => target.enabled && target.failingSince)
         ? check('audit_forwarding', 'warn', t('Die Weiterleitung des Protokolls an das SIEM scheitert.'))
         : check('audit_forwarding', 'ok')
+    );
+  }
+
+  // Ein einzelner Knoten gleicht nichts ab.
+  if (sync === null) {
+    checks.push(check('sync', 'unknown', t('Der Stand des Abgleichs zwischen den Knoten ist nicht zu lesen.')));
+  } else if (sync?.role === 'primary' && sync.peers.length > 0) {
+    const behind = sync.peers.filter((peer) => peer.failed || peer.reachable === false || peer.inSync === false).length;
+    if (behind > 0) {
+      checks.push(
+        check(
+          'sync',
+          'warn',
+          plural(behind, {
+            one: 'Ein Folgeknoten trägt den Stand dieses Knotens nicht.',
+            other: '{count} Folgeknoten tragen den Stand dieses Knotens nicht.',
+          })
+        )
+      );
+    } else if (sync.peers.some((peer) => peer.inSync === null)) {
+      checks.push(check('sync', 'unknown', t('Von einem Folgeknoten ist nicht bekannt, ob er den Stand trägt.')));
+    } else {
+      checks.push(check('sync', 'ok'));
+    }
+  } else if (sync?.role === 'replica') {
+    checks.push(
+      sync.appliedAt === null
+        ? check('sync', 'warn', t('Dieser Folgeknoten hat noch keinen Stand vom Hauptknoten übernommen.'))
+        : sync.intact === false
+          ? check('sync', 'warn', t('Auf diesem Folgeknoten wurden Dateien geändert, seit der Stand kam.'))
+          : check('sync', 'ok')
     );
   }
 

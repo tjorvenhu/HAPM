@@ -8,7 +8,14 @@ import type { Translator } from '../i18n';
 import { getBackupSettings } from '../backup/settings';
 import { listBackupRuns } from '../backup/run';
 import { forwardingStatus } from '../audit-log/forward';
-import { judge, type BackupHealthInput, type ForwardHealthInput, type HealthReport } from './health';
+import { syncOverview } from '../sync/actions';
+import {
+  judge,
+  type BackupHealthInput,
+  type ForwardHealthInput,
+  type HealthReport,
+  type SyncHealthInput,
+} from './health';
 import { renderMetrics } from './metrics';
 import { listCertificateExpiries, systemOverview } from './overview';
 
@@ -45,9 +52,34 @@ export async function readForwardHealth(): Promise<ForwardHealthInput[] | null> 
   }
 }
 
+/** Der Abgleich zwischen Knoten, wie die Seite „Abgleich" ihn zeigt. `null`: nicht zu lesen. */
+export async function readSyncHealth(): Promise<SyncHealthInput | null> {
+  try {
+    const overview = await syncOverview();
+    return {
+      role: overview.role,
+      peers: overview.peers.map((peer) => ({
+        name: peer.name,
+        reachable: peer.reachable,
+        inSync: peer.inSync,
+        failed: peer.lastError !== null,
+      })),
+      appliedAt: overview.replica.applied?.at ?? null,
+      intact: overview.replica.intact,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function readHealth(translator: Translator): Promise<HealthReport> {
-  const [overview, backup, forwarding] = await Promise.all([systemOverview(), readBackupHealth(), readForwardHealth()]);
-  return judge(overview, { backup, forwarding }, translator);
+  const [overview, backup, forwarding, sync] = await Promise.all([
+    systemOverview(),
+    readBackupHealth(),
+    readForwardHealth(),
+    readSyncHealth(),
+  ]);
+  return judge(overview, { backup, forwarding, sync }, translator);
 }
 
 /**
@@ -55,17 +87,19 @@ export async function readHealth(translator: Translator): Promise<HealthReport> 
  * die Sprache ist deshalb gleich.
  */
 export async function readMetrics(translator: Translator): Promise<string> {
-  const [overview, backup, forwarding, certificates] = await Promise.all([
+  const [overview, backup, forwarding, sync, certificates] = await Promise.all([
     systemOverview(),
     readBackupHealth(),
     readForwardHealth(),
+    readSyncHealth(),
     listCertificateExpiries(),
   ]);
   return renderMetrics({
     overview,
-    health: judge(overview, { backup, forwarding }, translator),
+    health: judge(overview, { backup, forwarding, sync }, translator),
     certificates,
     backup,
     forwarding,
+    sync,
   });
 }
