@@ -23,7 +23,7 @@ import { COLLECTIONS } from '../types';
 import { sshExec } from '../ssh';
 import { getSSHConfig } from '../helpers';
 import { buildCommand, shellEscape } from '../shell';
-import { HAPROXY_CFG, parseStatsSocket } from './config';
+import { CROWDSEC_SPOA_BACKEND, HAPROXY_CFG, parseStatsSocket } from './config';
 import { proxyServers } from './internal';
 import {
   hasMeasurement,
@@ -190,7 +190,18 @@ async function askSocket(
   );
 
   const [stat = '', info = ''] = result.stdout.split(`${SPLIT}\n`);
-  return { rows: parseStatRows(stat), uptimeSec: parseProcessInfo(info).uptimeSec };
+  return { rows: trafficRows(parseStatRows(stat)), uptimeSec: parseProcessInfo(info).uptimeSec };
+}
+
+/**
+ * Ohne die Abschnitte, die kein Verkehr von Besuchern sind. Das Backend zum
+ * CrowdSec-Bouncer zählt jede Rückfrage von HAProxy als Sitzung (TCP), also
+ * etwa eine je geprüfter Anfrage, und seine Verbindungszeiten gingen in die
+ * Antwortzeiten der ganzen Statistik ein (`foldInBackends`). Ein Ziel ist es
+ * nicht.
+ */
+export function trafficRows<T extends { scope: string }>(rows: T[]): T[] {
+  return rows.filter((row) => row.scope !== CROWDSEC_SPOA_BACKEND);
 }
 
 /**
@@ -292,7 +303,8 @@ export async function readHaproxyMetrics(options: {
   if (options.serverId) filters.push(Query.equal('serverId', options.serverId));
   if (options.scope) filters.push(Query.equal('scope', options.scope));
 
-  const rows = await listAll<HaproxyMetric>(COLLECTIONS.HAPROXY_METRICS, filters);
+  // Auch hier: Zeilen von vor dem Filter beim Sammeln stehen noch in der Datenbank.
+  const rows = trafficRows(await listAll<HaproxyMetric>(COLLECTIONS.HAPROXY_METRICS, filters));
   rows.sort((a, b) => a.collectedAt.localeCompare(b.collectedAt));
   return rows;
 }

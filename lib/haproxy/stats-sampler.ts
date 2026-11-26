@@ -34,7 +34,7 @@
 
 import { localServer } from '../helpers';
 import { parseProcessInfo, parseStatRows } from './stats-parse';
-import { readConfiguredStatsSocket, rememberedStatsSocket } from './stats-collect';
+import { readConfiguredStatsSocket, rememberedStatsSocket, trafficRows } from './stats-collect';
 import { askStatsSocket } from './stats-socket';
 import {
   prune,
@@ -116,7 +116,7 @@ async function probe(): Promise<SecondSample | null> {
     const text = await askStatsSocket(socket, 'show info;show stat', PROBE_TIMEOUT_MS);
     const at = Date.now();
     const { info, stat } = splitInfoAndStat(text);
-    const rows = parseStatRows(stat);
+    const rows = trafficRows(parseStatRows(stat));
     if (rows.length > 0) return { at, uptimeSec: parseProcessInfo(info).uptimeSec, rows: slimRows(rows) };
   } catch {
     // Unten: der Pfad taugt nicht mehr.

@@ -2040,6 +2040,12 @@ Zahl herauskommt.
   nach; die Flussgrößen bleiben beim Frontend. `denied` und `errors` werden
   **addiert** statt ersetzt: `dreq`/`ereq` fallen an der Eingangsseite an,
   `dresp`/`econ`/`eresp` an der Zielseite, das sind verschiedene Ereignisse.
+- **Das Backend zum CrowdSec-Bouncer (`hapm_crowdsec_spoa`) zählt nicht**
+  (`trafficRows` in `stats-collect.ts`, beim Sammeln, in den Sekundenwerten und
+  beim Lesen). Es ist TCP, jede Rückfrage von HAProxy ist eine Sitzung, also
+  etwa eine je geprüfter Anfrage: in der Liste der Dienste stand es mit den
+  meisten „Anfragen“, und seine Verbindungszeiten gingen über `foldInBackends`
+  in die Antwortzeiten ein. Ein Ziel ist es nicht.
 - **Drei Arten, ein Fenster zusammenzufassen, und der Mittelwert über alle
   Zeilen ist keine davon.** In einem Rasterfenster liegen mehrere Zeitpunkte
   *und* mehrere Abschnitte. Mengen (Anfragen, Bytes) werden über beides
