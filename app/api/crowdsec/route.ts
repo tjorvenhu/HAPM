@@ -1,7 +1,7 @@
-import { requireSession } from '@/lib/session';
-import { ok, handleError } from '@/lib/api';
+import { requireCsrf, requireSession } from '@/lib/session';
+import { ok, handleError, jsonBody } from '@/lib/api';
 import { getClientIP } from '@/lib/audit';
-import { crowdsecOverview } from '@/lib/crowdsec/actions';
+import { crowdsecOverview, setCrowdsecEnabled } from '@/lib/crowdsec/actions';
 
 /**
  * Zustand von CrowdSec und Bouncer, welche Ziele geprüft werden, Zahlen der
@@ -12,6 +12,19 @@ export async function GET(request: Request) {
   try {
     await requireSession();
     return ok({ ...(await crowdsecOverview()), client: getClientIP(request) });
+  } catch (err) {
+    return handleError(err);
+  }
+}
+
+/** `{ enabled: false }` schaltet CrowdSec ganz ab (aus jedem Ziel, Container angehalten), `true` wieder ein. */
+export async function PATCH(request: Request) {
+  try {
+    await requireCsrf(request);
+    const session = await requireSession();
+    const body = await jsonBody(request);
+    const actor = { userId: session.userId, userEmail: session.email, ip: getClientIP(request) };
+    return ok(await setCrowdsecEnabled(body, actor));
   } catch (err) {
     return handleError(err);
   }

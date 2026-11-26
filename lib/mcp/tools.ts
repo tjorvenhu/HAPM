@@ -82,6 +82,7 @@ import {
   addDecision,
   changeRules,
   crowdsecOverview,
+  setCrowdsecEnabled,
   crowdsecRules,
   crowdsecStatistics,
   listAlerts,
@@ -804,6 +805,19 @@ export const TOOLS: ToolDefinition[] = [
     input: {},
     annotations: READ_ONLY,
     run: () => crowdsecOverview(),
+  }),
+
+  defineTool({
+    name: 'set_crowdsec_enabled',
+    title: 'Switch CrowdSec on or off entirely',
+    description:
+      '{"enabled":false} switches CrowdSec off entirely: a reverse-proxy run removes it from haproxy.cfg (global and every service), ' +
+      'waits for it (up to 2 minutes), then stops both containers and hides CrowdSec in the UI. If the run fails, nothing changes. ' +
+      '{"enabled":true} starts the containers again; which services are checked stays off until switched on per service or globally. ' +
+      'Returns runId of the reverse-proxy run (null if nothing used CrowdSec).',
+    input: { enabled: z.boolean() },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    run: (args, ctx) => setCrowdsecEnabled(args, auditActor(ctx.actor)),
   }),
 
   defineTool({

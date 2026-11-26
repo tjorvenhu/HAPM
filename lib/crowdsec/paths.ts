@@ -11,6 +11,7 @@
  */
 
 import { existsSync } from 'node:fs';
+import path from 'node:path';
 
 export function crowdsecContainerName(): string {
   return process.env.HAPM_CROWDSEC_CONTAINER || 'hapm-crowdsec';
@@ -33,8 +34,25 @@ export function crowdsecInStack(): boolean {
  * `install.sh` erneut ausführen (docs/crowdsec.md).
  */
 export function crowdsecInstalled(): boolean {
+  return crowdsecPresent() && !crowdsecDisabled();
+}
+
+/** Da, gleich ob in der Oberfläche abgeschaltet: der Schalter zum Einschalten braucht das. */
+export function crowdsecPresent(): boolean {
   return crowdsecInStack() && existsSync(crowdsecDir());
 }
+
+/**
+ * In der Oberfläche abgeschaltet (System, Allgemein, oder oben auf der Seite
+ * CrowdSec). Eine Datei im Ordner von CrowdSec und kein Feld in der Datenbank:
+ * `crowdsecInstalled` fragen viele Stellen ohne `await`, und die Angabe gehört
+ * zu dem Ordner, den sie beschreibt.
+ */
+export function crowdsecDisabled(): boolean {
+  return existsSync(path.join(crowdsecDir(), DISABLED_FILE));
+}
+
+export const DISABLED_FILE = 'hapm-disabled';
 
 /** Der Ordner im HAPM-Container, in dem die Dateien für beide Container liegen
  *  (auf dem Server `HAPM_STORAGE/crowdsec`). */

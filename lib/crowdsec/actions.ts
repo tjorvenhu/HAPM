@@ -17,7 +17,14 @@ import { ApiError } from '../api';
 import { msg } from '../i18n';
 import { logAudit, type AuditAction } from '../audit';
 import { containerInfo, engine, type ContainerInfo } from '../docker';
-import { HAPROXY_CFG, parseHaproxyConfig, parseCrowdsecGlobal, type HaproxyService } from '../haproxy/config';
+import {
+  HAPROXY_CFG,
+  parseCrowdsecGlobal,
+  parseGlobalSettings,
+  parseHaproxyConfig,
+  usesCrowdsec,
+  type HaproxyService,
+} from '../haproxy/config';
 import { cscli, cscliJson, cscliOk, CrowdsecUnavailable } from './cscli';
 import {
   BASE_COLLECTIONS,
@@ -30,8 +37,10 @@ import {
   ALLOWLIST_NAME,
   bouncerContainerName,
   crowdsecContainerName,
+  crowdsecDisabled,
   crowdsecInStack,
   crowdsecInstalled,
+  crowdsecPresent,
   BOUNCER_NAME,
 } from './paths';
 import {
@@ -53,8 +62,11 @@ import {
   ensureAllowlist,
   reloadCrowdsec,
   setAppWhitelist,
+  setDisabledMarker,
   writeCrowdsecFiles,
 } from './setup';
+import { localServer } from '../helpers';
+import { startHaproxyRun, waitForRun } from '../haproxy/runner';
 import { APP_RULES } from './apps';
 import { syncAllowFile } from './allow-file';
 
@@ -116,9 +128,10 @@ export function protection(text: string | null = readConfig()) {
 export interface CrowdsecStatus {
   /** Ob CrowdSec auf dieser Installation da ist (`crowdsecInstalled`). */
   inStack: boolean;
-  /** Warum nicht: bei der Installation abgewählt, oder die Installation stammt
-   *  von vor CrowdSec und hat weder Ordner noch Container. */
-  missing: 'off' | 'not-installed' | null;
+  /** Warum nicht: bei der Installation abgewählt, die Installation stammt von
+   *  vor CrowdSec und hat weder Ordner noch Container, oder in der Oberfläche
+   *  abgeschaltet. */
+  missing: 'off' | 'not-installed' | 'disabled' | null;
   crowdsec: ContainerInfo | null;
   bouncer: ContainerInfo | null;
   /** `cscli version`, oder `null`, wenn nicht zu erfahren. */
@@ -135,7 +148,7 @@ export interface CrowdsecStatus {
 export async function crowdsecStatus(): Promise<CrowdsecStatus> {
   const status: CrowdsecStatus = {
     inStack: crowdsecInstalled(),
-    missing: !crowdsecInStack() ? 'off' : crowdsecInstalled() ? null : 'not-installed',
+    missing: !crowdsecInStack() ? 'off' : !crowdsecPresent() ? 'not-installed' : crowdsecDisabled() ? 'disabled' : null,
     crowdsec: null,
     bouncer: null,
     version: null,
@@ -376,12 +389,22 @@ export interface CrowdsecSummary {
 
 const summaryCache = globalThis as unknown as { __hapmCrowdsecSummary?: { at: number; value: CrowdsecSummary } };
 
-/** Kurz zwischengespeichert: das Dashboard fragt alle paar Sekunden, `cscli` ist ein `exec`. */
+/** Was CrowdSec schützt, aus `haproxy.cfg`: bei jedem Aufruf frisch, das ist nur eine Datei. */
+function protectionSummary(): Pick<CrowdsecSummary, 'global' | 'protectedServices' | 'totalServices'> {
+  const prot = protection();
+  return { global: prot.global, protectedServices: prot.services.length, totalServices: prot.total };
+}
+
+/**
+ * Kurz zwischengespeichert: das Dashboard fragt alle paar Sekunden, `cscli` ist
+ * ein `exec`. Nicht im Speicher steht, welche Ziele geschützt sind: das ändert
+ * ein Lauf am Reverse-Proxy, und die Übersicht soll es sofort zeigen, nicht
+ * nach bis zu 30 Sekunden.
+ */
 export async function crowdsecSummary(): Promise<CrowdsecSummary> {
   const cached = summaryCache.__hapmCrowdsecSummary;
-  if (cached && Date.now() - cached.at < 30_000) return cached.value;
+  if (cached && Date.now() - cached.at < 30_000) return { ...cached.value, ...protectionSummary() };
 
-  const prot = protection();
   const value: CrowdsecSummary = {
     inStack: crowdsecInstalled(),
     running: false,
@@ -390,9 +413,7 @@ export async function crowdsecSummary(): Promise<CrowdsecSummary> {
     alerts24h: null,
     waf24h: null,
     communityBlocklist: null,
-    global: prot.global,
-    protectedServices: prot.services.length,
-    totalServices: prot.total,
+    ...protectionSummary(),
     topScenarios: [],
     version: null,
     bouncerVersion: null,
@@ -574,6 +595,81 @@ export async function crowdsecOverview() {
     protection: prot,
     crs: currentCrsMode(),
   };
+}
+
+/* ── Ganz ein- und ausschalten ── */
+
+/** So lange darf das Entfernen aus `haproxy.cfg` dauern, bevor der Schalter aufgibt. */
+const SWITCH_RUN_TIMEOUT_MS = 120_000;
+
+/**
+ * CrowdSec ganz abschalten oder wieder einschalten.
+ *
+ * Aus: erst nimmt ein Lauf am Reverse-Proxy CrowdSec aus `haproxy.cfg` (global
+ * und aus jedem Ziel, über `applyGlobalSettings` mit Prüfung und Reload). Erst
+ * wenn er durch ist, hält HAPM beide Container an und setzt die Marke. Scheitert
+ * der Lauf, bleibt alles, wie es war: eine Konfiguration, die einen angehaltenen
+ * Bouncer fragt, ließe jede Anfrage ungeprüft durch, ohne dass es jemand sieht.
+ *
+ * An: Marke weg, Dateien schreiben, beide Container starten. Welche Ziele
+ * geprüft werden, bleibt aus: das schaltet man danach wie gewohnt ein.
+ */
+export async function setCrowdsecEnabled(body: unknown, actor: CrowdsecActor) {
+  const raw = (body ?? {}) as Record<string, unknown>;
+  if (typeof raw.enabled !== 'boolean') throw new ApiError(msg('Erwartet wird enabled: true oder false.'));
+  if (!crowdsecPresent()) throw new ApiError(msg('CrowdSec ist auf dieser Installation nicht vorhanden.'), 409);
+  const on = raw.enabled;
+  let runId: string | null = null;
+
+  if (!on) {
+    const text = readConfig();
+    if (text !== null && usesCrowdsec(text)) {
+      const current = parseGlobalSettings(text);
+      if (current.httpsLines === null) {
+        throw new ApiError(msg('Die globalen Einstellungen in {file} sind nicht lesbar. CrowdSec bleibt an.', { file: HAPROXY_CFG }), 409);
+      }
+      const run = await startHaproxyRun({
+        server: localServer(),
+        action: 'settings',
+        serviceId: 'globale-einstellungen',
+        settings: { httpsLines: current.httpsLines, adminIps: current.adminIps, crowdsec: false, crowdsecRemoveAll: true },
+        actor: { userId: actor.userId, email: actor.userEmail, ip: actor.ip ?? null },
+      });
+      runId = run.$id;
+      const done = await waitForRun(run.$id, SWITCH_RUN_TIMEOUT_MS);
+      if (done.status !== 'success' && done.status !== 'warning') {
+        throw new ApiError(
+          msg('HAProxy ließ sich nicht umstellen, CrowdSec bleibt an. Was gescheitert ist, steht unter Logs, Vorgänge.'),
+          409
+        );
+      }
+    }
+    setDisabledMarker(true);
+    for (const name of [bouncerContainerName(), crowdsecContainerName()]) {
+      await engine.stop(name).catch(() => undefined);
+    }
+  } else {
+    setDisabledMarker(false);
+    writeCrowdsecFiles();
+    const missing: string[] = [];
+    for (const name of [crowdsecContainerName(), bouncerContainerName()]) {
+      await engine.start(name).catch(() => missing.push(name));
+    }
+    if (missing.length > 0) {
+      forgetCrowdsecSummary();
+      await audit(actor, 'crowdsec_switched', 'crowdsec', 'CrowdSec: an');
+      throw new ApiError(
+        msg('CrowdSec ist wieder an, aber {names} ließ sich nicht starten. Auf dem Server legt docker compose up -d im Ordner der Installation die Container an.', {
+          names: missing.join(', '),
+        }),
+        409
+      );
+    }
+  }
+
+  forgetCrowdsecSummary();
+  await audit(actor, 'crowdsec_switched', 'crowdsec', `CrowdSec: ${on ? 'an' : 'aus'}`);
+  return { enabled: on, runId };
 }
 
 /** Eine Änderung an den Regeln: OWASP-Modus, eine Sammlung oder der Hub. */

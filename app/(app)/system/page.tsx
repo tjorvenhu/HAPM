@@ -1,7 +1,7 @@
 'use client';
 
 import { Suspense, useCallback, useEffect, useState, type FormEvent } from 'react';
-import { AlertTriangle, ArrowRightLeft, AtSign, Globe, Home, Loader2, Network, Save, ShieldCheck, Trash2 } from 'lucide-react';
+import { AlertTriangle, ArrowRightLeft, AtSign, Globe, Home, Loader2, Network, Save, ShieldCheck, ShieldHalf, Trash2 } from 'lucide-react';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
@@ -10,6 +10,7 @@ import { SkeletonDetail } from '@/components/Skeleton';
 import AreaTabs, { useArea, type Area } from '@/components/AreaTabs';
 import CertificateSourceCard from '@/components/system/CertificateSourceCard';
 import AddressMoveWizard from '@/components/system/AddressMoveWizard';
+import { CrowdsecSwitchCard } from '@/components/crowdsec/CrowdsecSwitch';
 import { MOVE_STAGE_LABELS, moveOutcome } from '@/lib/address-move/rules';
 import { msgid } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
@@ -33,16 +34,20 @@ const EXPOSURE_CHOICES: { value: Exposure; title: string; text: string }[] = [
 ];
 
 /**
- * Zwei Reiter: die Adresse von HAPM, und alles, was bestimmt, wie Zertifikate
- * entstehen (Art der Installation, Herkunft, Kontakt beim ACME-Server). Der
- * gewählte steht als `?bereich=` in der Adresse.
+ * Die Reiter: die Adresse von HAPM, alles, was bestimmt, wie Zertifikate
+ * entstehen (Art der Installation, Herkunft, Kontakt beim ACME-Server), und,
+ * wo CrowdSec im Stack ist, der Schalter dafür. Er steht hier und nicht nur
+ * auf der Seite CrowdSec, weil die abgeschaltet aus der Seitenleiste fällt.
+ * Der gewählte Reiter steht als `?bereich=` in der Adresse.
  */
-type GeneralArea = 'adresse' | 'zertifikate';
+type GeneralArea = 'adresse' | 'zertifikate' | 'crowdsec';
 
 const AREAS: Area<GeneralArea>[] = [
   { key: 'adresse', label: msgid('Adresse'), icon: Globe },
   { key: 'zertifikate', label: msgid('Zertifikate'), icon: ShieldCheck },
 ];
+
+const CROWDSEC_AREA: Area<GeneralArea> = { key: 'crowdsec', label: 'CrowdSec', icon: ShieldHalf };
 
 interface SaveResult {
   settings: SettingsView;
@@ -58,8 +63,9 @@ export default function GeneralSettingsPage() {
 }
 
 function GeneralSettings() {
-  const { apiFetch } = useApp();
-  const [area, selectArea] = useArea(AREAS, '/system');
+  const { apiFetch, session } = useApp();
+  const areas = session.features?.crowdsecPresent ? [...AREAS, CROWDSEC_AREA] : AREAS;
+  const [area, selectArea] = useArea(areas, '/system');
   const { notify } = useToast();
   const confirm = useConfirm();
   const { t } = useT();
@@ -227,7 +233,9 @@ function GeneralSettings() {
 
       {error && <div className="alert alert-danger sys-block">{error}</div>}
 
-      <AreaTabs areas={AREAS} value={area} onChange={selectArea} dirty={(key) => key === 'zertifikate' && emailChanged} />
+      <AreaTabs areas={areas} value={area} onChange={selectArea} dirty={(key) => key === 'zertifikate' && emailChanged} />
+
+      {area === 'crowdsec' && <CrowdsecSwitchCard />}
 
       {area === 'adresse' && (
       <div className="card sys-block">

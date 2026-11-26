@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Check, CheckCircle2, Loader2, Minimize2, XCircle } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { useNow } from '@/components/useNow';
-import { HAPROXY_PHASES, HAPROXY_PHASE_LABELS } from '@/components/runPhases';
+import { HAPROXY_PHASE_LABELS, haproxyPhases } from '@/components/runPhases';
 import { useT } from '@/lib/i18n/react';
 import RunStepList from './RunStepList';
 import { emitRunFinished, type RunRef } from './runs';
@@ -95,9 +95,10 @@ export default function RunOverlay({ run, onClose }: Props) {
     ? 0
     : ((view.completedAt ? Date.parse(view.completedAt) : now) - Date.parse(view.startedAt)) / 1000;
   const failedStep = view && !running ? firstFailedStep(view) : null;
-  const context = runContext(view);
+  const context = run.context ?? runContext(view);
   const haproxy = run.kind === 'haproxy';
-  const currentIndex = view?.phase ? HAPROXY_PHASES.indexOf(view.phase) : -1;
+  const phases = haproxyPhases(view?.action);
+  const currentIndex = view?.phase ? phases.indexOf(view.phase) : -1;
 
   const statusIcon = !view ? null : view.status === 'success' ? (
     <CheckCircle2 size={28} style={{ color: 'var(--success)' }} />
@@ -131,13 +132,13 @@ export default function RunOverlay({ run, onClose }: Props) {
                 <>
                   {haproxy && (
                     <div className="run-steps">
-                      {HAPROXY_PHASES.map((phase, i) => {
+                      {phases.map((phase, i) => {
                         const done = currentIndex >= 0 && i < currentIndex;
                         const active = i === currentIndex;
                         const stateClass = done ? 'run-step-done' : active ? 'run-step-active' : '';
                         return (
                           <div key={phase} className={`run-step ${stateClass}`.trimEnd()}>
-                            {i < HAPROXY_PHASES.length - 1 && <span className="run-step-line" />}
+                            {i < phases.length - 1 && <span className="run-step-line" />}
                             <span className="run-step-marker">
                               {done ? (
                                 <Check size={16} />

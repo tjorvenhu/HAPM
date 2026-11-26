@@ -12,11 +12,10 @@
 import { msgid } from '@/lib/i18n/translate';
 
 /**
- * Der Reverse-Proxy-Vorgang (lib/haproxy/provision.ts). Dieselben Phasen für
- * Anlegen, Ändern und Löschen, obwohl nicht jede Art jede durchläuft: ein
- * Löschvorgang beantragt kein Zertifikat, ein Ändern ohne Domainwechsel auch
- * nicht. Eine eigene Liste je Art hieße drei Listen für einen Ablauf, der sich
- * nur in einem übersprungenen Schritt unterscheidet.
+ * Der Reverse-Proxy-Vorgang (lib/haproxy/provision.ts) für ein Ziel: Anlegen,
+ * Ändern, ein Zertifikat. Nicht jeder Lauf durchläuft jede Phase (ein Ändern
+ * ohne neue Domain beantragt kein Zertifikat), die Reihe zeigt trotzdem alle:
+ * es ist derselbe Ablauf mit einem übersprungenen Schritt.
  */
 export const HAPROXY_PHASES: string[] = [
   'dns',
@@ -26,6 +25,30 @@ export const HAPROXY_PHASES: string[] = [
   'installing',
   'cleanup',
 ];
+
+/** Was nur die Konfiguration ändert: Einstellungen, Gruppen, Weiterleitungen, Import. Kein DNS, kein Zertifikat. */
+const CONFIG_PHASES: string[] = ['preflight', 'checking', 'installing'];
+
+/**
+ * Die Phasen, die ein Lauf dieser Art durchläuft. Ohne Art (ältere Zeile) die
+ * volle Reihe. Die Liste je Art folgt den `steps.phase(…)` in `provision.ts`.
+ */
+export function haproxyPhases(action: string | null | undefined): string[] {
+  switch (action) {
+    case 'delete':
+      return ['preflight', 'checking', 'installing', 'cleanup'];
+    case 'settings':
+    case 'scope-add':
+    case 'scope-remove':
+    case 'stream-create':
+    case 'stream-update':
+    case 'stream-delete':
+    case 'import':
+      return CONFIG_PHASES;
+    default:
+      return HAPROXY_PHASES;
+  }
+}
 
 export const HAPROXY_PHASE_LABELS: Record<string, string> = {
   // Der DNS-Eintrag steht vorn, weil er vor dem Zertifikat gesetzt sein muss.

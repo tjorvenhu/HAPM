@@ -18,7 +18,8 @@ export interface SessionData {
   /** Die gewählte Sprache der Oberfläche, `null` ohne Wahl. Nur in `/api/auth/me`. */
   locale?: 'de' | 'en' | null;
   /** Was diese Installation mitbringt. Nur in `/api/auth/me`. */
-  features?: { crowdsec: boolean };
+  /** `crowdsec`: da und eingeschaltet. `crowdsecPresent`: da, auch wenn abgeschaltet. */
+  features?: { crowdsec: boolean; crowdsecPresent?: boolean };
 }
 
 /* ── Konten ──

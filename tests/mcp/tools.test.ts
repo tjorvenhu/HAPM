@@ -86,6 +86,7 @@ const more = vi.hoisted(() => ({
   crowdsecStatistics: vi.fn(),
   crowdsecRules: vi.fn(),
   changeRules: vi.fn(async () => ({})),
+  setCrowdsecEnabled: vi.fn(async () => ({})),
 }));
 
 vi.mock('@/lib/updates/actions', () => ({
@@ -138,6 +139,7 @@ vi.mock('@/lib/crowdsec/actions', () => ({
   crowdsecStatistics: more.crowdsecStatistics,
   crowdsecRules: more.crowdsecRules,
   changeRules: more.changeRules,
+  setCrowdsecEnabled: more.setCrowdsecEnabled,
 }));
 vi.mock('@/lib/geoip/actions', () => ({
   refreshGeoipNow: more.refreshGeoipNow,
@@ -177,6 +179,8 @@ const OTHER_WRITING = [
   'add_crowdsec_allowlist',
   'remove_crowdsec_allowlist',
   'update_crowdsec_rules',
+  // Ganz abschalten wartet selbst auf den Lauf am Reverse-Proxy.
+  'set_crowdsec_enabled',
   'update_backup_settings',
   'start_backup',
   'update_settings',
@@ -352,6 +356,7 @@ describe('Rechte: die übrigen schreibenden Werkzeuge schreiben unter dem Namen 
     ['add_crowdsec_allowlist', { value: '203.0.113.7' }, 'addAllowlist', auditActor],
     ['remove_crowdsec_allowlist', { value: '203.0.113.7' }, 'removeAllowlist', auditActor],
     ['update_crowdsec_rules', { crs: 'detect' }, 'changeRules', auditActor],
+    ['set_crowdsec_enabled', { enabled: false }, 'setCrowdsecEnabled', auditActor],
   ];
 
   it('deckt jedes übrige schreibende Werkzeug ab', () => {

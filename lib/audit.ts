@@ -90,7 +90,8 @@ export type AuditAction =
   | 'crowdsec_decision_removed'
   | 'crowdsec_allowlist_added'
   | 'crowdsec_allowlist_removed'
-  | 'crowdsec_rules_updated';
+  | 'crowdsec_rules_updated'
+  | 'crowdsec_switched';
 
 interface AuditParams {
   userId: string;

@@ -343,6 +343,30 @@ noch trägt, zeigt seinen Schalter weiter, damit es sie loswerden kann.
 
 ## Abschalten
 
+**Ganz, in der Oberfläche:** „CrowdSec abschalten“ oben auf der Seite CrowdSec,
+wieder einschalten unter System, Allgemein, Reiter „CrowdSec“ (oder auf der
+Seite selbst, die bleibt über die Adresse erreichbar). `setCrowdsecEnabled` in
+`lib/crowdsec/actions.ts`, auch über `PATCH /api/internal/crowdsec` und das
+MCP-Werkzeug `set_crowdsec_enabled`.
+
+- Aus: ein Lauf am Reverse-Proxy nimmt CrowdSec aus `haproxy.cfg`, global und
+  aus jedem Ziel (`crowdsecRemoveAll` in `applyGlobalSettings`), der Schalter
+  wartet darauf. **Erst wenn der Lauf durch ist**, hält HAPM beide Container an
+  und legt `crowdsec/hapm-disabled` an. Scheitert er, bleibt alles an: eine
+  Konfiguration, die einen angehaltenen Bouncer fragt, ließe jede Anfrage
+  ungeprüft durch.
+- Die Marke ist eine Datei und kein Feld in der Datenbank, weil
+  `crowdsecInstalled()` an vielen Stellen ohne `await` gefragt wird. Mit Marke
+  ist es `false`: Seitenleiste, Übersicht, Logs, Statistik, Updates,
+  Benachrichtigungen, der Schalter im Dialog des Ziels und der Assistent
+  blenden CrowdSec aus. `crowdsecPresent()` sagt, ob es trotzdem da ist (für den
+  Schalter zum Einschalten, `features.crowdsecPresent`).
+- Startet jemand die Container wieder (`docker compose up -d` bei einem
+  Update), hält der Abgleich im Scheduler sie wieder an (`keepCrowdsecStopped`).
+- An: Marke weg, Dateien schreiben, Container starten. Welche Ziele geprüft
+  werden, bleibt aus. Sperren, Freigaben und Regeln liegen im Datenordner und
+  gelten wieder.
+
 **Für alle Ziele, Stack bleibt:** in der Oberfläche den globalen Schalter und
 die Schalter der Ziele aus. Danach steht in `haproxy.cfg` nichts mehr von
 CrowdSec, und `backend hapm_crowdsec_spoa` verschwindet mit.

@@ -2,7 +2,7 @@
 
 import { Suspense, useCallback, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Ban, CheckCircle2, LayoutDashboard, ListChecks, Loader2, RefreshCw, ScrollText } from 'lucide-react';
+import { Ban, CheckCircle2, LayoutDashboard, ListChecks, Loader2, Power, RefreshCw, ScrollText } from 'lucide-react';
 import PageHeading from '@/components/PageHeading';
 import { SkeletonRows } from '@/components/Skeleton';
 import AreaTabs, { useArea, type Area } from '@/components/AreaTabs';
@@ -13,6 +13,7 @@ import AllowlistPanel from '@/components/crowdsec/AllowlistPanel';
 import AlertsPanel, { WINDOWS, type AlertWindow } from '@/components/crowdsec/AlertsPanel';
 import RulesPanel from '@/components/crowdsec/RulesPanel';
 import { useCrowdsecData } from '@/components/crowdsec/useCrowdsecData';
+import { useCrowdsecSwitch } from '@/components/crowdsec/CrowdsecSwitch';
 import type { CrowdsecOverview } from '@/components/crowdsec/types';
 import { msgid } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
@@ -52,6 +53,7 @@ function CrowdsecView() {
   const [area, select] = useArea(AREAS, '/reverse-proxy/crowdsec');
   const overview = useCrowdsecData<CrowdsecOverview>('/api/crowdsec', 30_000);
   const [refreshing, setRefreshing] = useState(false);
+  const power = useCrowdsecSwitch(() => void overview.reload());
 
   const [period, setPeriod] = useState<AlertWindow>(() => {
     const wanted = searchParams.get('zeitraum');
@@ -91,6 +93,12 @@ function CrowdsecView() {
           note={t('WAF, Sperren und Freigaben')}
         />
         <div className="page-actions">
+          {inStack && data && (
+            <button className="btn btn-ghost" onClick={() => power.ask(false)} disabled={power.busy}>
+              {power.busy ? <Loader2 size={16} className="spin" /> : <Power size={16} />}
+              {t('CrowdSec abschalten')}
+            </button>
+          )}
           <button className="btn btn-secondary" onClick={refresh} disabled={refreshing}>
             {refreshing ? <Loader2 size={16} className="spin" /> : <RefreshCw size={16} />}
             {t('Aktualisieren')}

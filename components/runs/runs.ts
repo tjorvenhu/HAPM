@@ -19,6 +19,8 @@ export interface RunRef {
   id: string;
   /** Titel der Meldung am Ende, schon übersetzt. Nur für Läufe, die ihre Art nicht selbst benennt (Import). */
   label?: string;
+  /** Ein Wort neben dem Titel des Fensters, schon übersetzt, etwa „Einschalten“. */
+  context?: string;
 }
 
 export interface RunRequest extends RunRef {

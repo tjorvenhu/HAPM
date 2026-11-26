@@ -182,6 +182,29 @@ describe('CrowdSec global', () => {
   });
 });
 
+describe('CrowdSec ganz abschalten (crowdsecRemoveAll)', () => {
+  it('nimmt es aus dem Frontend und aus jedem Ziel, danach fällt das Backend des Bouncers weg', () => {
+    const second: CreateServiceInput = { ...SERVICE, id: 'blog', domains: ['blog.example.org'] };
+    const withServices = addService(addService(BASE, SERVICE), second);
+    const on = syncCrowdsecBackend(applyGlobalSettings(withServices, settingsInput(withServices, true)), ADDRESS);
+    expect(usesCrowdsec(on)).toBe(true);
+
+    const off = applyGlobalSettings(on, { ...settingsInput(on, false), crowdsecRemoveAll: true });
+    expect(usesCrowdsec(off)).toBe(false);
+    expect(parseGlobalSettings(off).crowdsec).toBe(false);
+    expect(find(off, 'shop').crowdsec).toBe(false);
+    expect(find(off, 'blog').crowdsec).toBe(false);
+    expect(find(off, 'shop').editable).toBe(true);
+    expect(syncCrowdsecBackend(off, ADDRESS)).not.toContain(CROWDSEC_SPOA_BACKEND);
+  });
+
+  it('wirkt nur zusammen mit crowdsec: false', () => {
+    const on = addService(BASE, SERVICE);
+    const kept = applyGlobalSettings(on, { ...settingsInput(on), crowdsecRemoveAll: true });
+    expect(find(kept, 'shop').crowdsec).toBe(true);
+  });
+});
+
 describe('syncCrowdsecBackend', () => {
   it('legt das Backend des Bouncers an, sobald etwas CrowdSec benutzt', () => {
     const text = syncCrowdsecBackend(addService(BASE, SERVICE), ADDRESS);

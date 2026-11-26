@@ -540,7 +540,12 @@ see the two services at all: it neither pulls their images nor starts
 containers. With options 1 and 3: `HAPM_CROWDSEC_OFF=1` in `.env` or in the
 variables of the stack, before the first start.
 
-**Remove it later:** switch it off everywhere in the web interface, then
+**Switch it off in the web interface:** "Switch off CrowdSec" at the top of
+the CrowdSec page removes it from every target, stops both containers and hides
+CrowdSec everywhere. Bans, allowlist and rules stay stored. Switch it on again
+under System, General, tab "CrowdSec".
+
+**Remove it entirely later:** switch it off in the web interface, then
 
 ```bash
 cd /opt/hapm

@@ -34,7 +34,9 @@ import {
   PARSER_FILE,
   bouncerContainerName,
   crowdsecContainerName,
+  DISABLED_FILE,
   crowdsecDir,
+  crowdsecDisabled,
   crowdsecInStack,
 } from './paths';
 
@@ -84,7 +86,7 @@ export interface CrowdsecFiles {
  * Stack ohne CrowdSec) geschieht nichts.
  */
 export function writeCrowdsecFiles(crs: CrsMode = currentCrsMode()): CrowdsecFiles {
-  if (!crowdsecInStack() || !fs.existsSync(crowdsecDir())) {
+  if (!crowdsecInStack() || !fs.existsSync(crowdsecDir()) || crowdsecDisabled()) {
     return { mounted: false, crowdsecChanged: false, bouncerChanged: false };
   }
   const key = bouncerKey();
@@ -133,6 +135,29 @@ export function setAppWhitelist(app: AppRules, on: boolean): boolean {
   } catch {
     return false;
   }
+}
+
+/** Den Schalter der Oberfläche setzen (`crowdsecDisabled`). */
+export function setDisabledMarker(disabled: boolean): void {
+  const target = file(DISABLED_FILE);
+  if (disabled) fs.writeFileSync(target, `${new Date().toISOString()}\n`);
+  else fs.rmSync(target, { force: true });
+}
+
+/**
+ * Abgeschaltet heißt: beide Container stehen. Startet sie jemand neu (etwa
+ * `docker compose up -d` bei einem Update), hält der Abgleich sie wieder an.
+ * Gibt zurück, was angehalten wurde.
+ */
+export async function keepCrowdsecStopped(): Promise<string[]> {
+  const stopped: string[] = [];
+  for (const name of [bouncerContainerName(), crowdsecContainerName()]) {
+    if (await running(name)) {
+      await engine.stop(name).catch(() => undefined);
+      stopped.push(name);
+    }
+  }
+  return stopped;
 }
 
 function pendingChanges() {

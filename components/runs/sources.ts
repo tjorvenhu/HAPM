@@ -30,6 +30,8 @@ export interface RunView {
   output: string | null;
   /** Wofür der Lauf ist: Dienst, Bestandteil, Ordner, Archiv. */
   subject: string | null;
+  /** Nur Reverse-Proxy: die Art (`settings`, `create`, …), sie bestimmt die Phasen. */
+  action: string | null;
   component: UpdateComponent | null;
   toVersion: string | null;
   fromVersion: string | null;
@@ -63,6 +65,7 @@ interface RawRun {
   phase?: string | null;
   output?: string;
   serverName?: string;
+  action?: string;
   component?: UpdateComponent;
   fromVersion?: string | null;
   toVersion?: string | null;
@@ -76,7 +79,8 @@ function toView(kind: RunKind, raw: RawRun): RunView {
   let pending: string[] = [];
   let subject: string | null = null;
   if (kind === 'haproxy') {
-    subject = raw.serverName ?? null;
+    // Die Einstellungen tragen einen festen Namen (`globale-einstellungen`), der niemandem etwas sagt.
+    subject = raw.action === 'settings' ? null : (raw.serverName ?? null);
   } else if (kind === 'update' && raw.component) {
     subject = COMPONENT_LABELS[raw.component];
     if (running) pending = remainingSteps(raw.component, steps);
@@ -100,6 +104,7 @@ function toView(kind: RunKind, raw: RawRun): RunView {
     phase: kind === 'haproxy' ? (raw.phase ?? null) : null,
     output: kind === 'haproxy' ? (raw.output ?? '') : null,
     subject,
+    action: kind === 'haproxy' ? (raw.action ?? null) : null,
     component: raw.component ?? null,
     fromVersion: raw.fromVersion ?? null,
     toVersion: raw.toVersion ?? null,
@@ -157,7 +162,7 @@ export function runTitle(view: RunView | null, ref: RunRef, t: Translator['t']):
           ? t('Zurückspielen fehlgeschlagen: {name}', { name: subject })
           : t('Zurückgespielt: {name}', { name: subject });
     default: {
-      const noun = ref.label ?? t('Reverse-Proxy');
+      const noun = ref.label ?? (view?.action === 'settings' ? t('Globale Einstellungen') : t('Reverse-Proxy'));
       const head = running
         ? t('{noun} läuft', { noun })
         : failed

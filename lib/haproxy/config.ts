@@ -3098,6 +3098,9 @@ export interface GlobalSettingsInput {
   protection?: AccessProtection;
   /** Fehlt das Feld, bleibt CrowdSec im Frontend, wie es ist. */
   crowdsec?: boolean;
+  /** `true`: auch die Zeilen aus jedem Backend nehmen. Nur mit `crowdsec: false`,
+   *  wenn CrowdSec ganz abgeschaltet wird (`setCrowdsecEnabled`). */
+  crowdsecRemoveAll?: boolean;
 }
 
 /* ── Zugriffsschutz ──
@@ -3788,6 +3791,11 @@ export function applyGlobalSettings(text: string, input: GlobalSettingsInput): s
       );
     }
     lines = applyCrowdsecBlock(lines, input.crowdsec);
+  }
+  if (input.crowdsecRemoveAll === true && input.crowdsec === false) {
+    // Die Zeilen sind fest (`CROWDSEC_LINES`) und kommen sonst nirgends vor.
+    // Das Backend des Bouncers nimmt danach `syncCrowdsecBackend` weg.
+    lines = lines.filter((line) => !CROWDSEC_LINES.includes(clean(line)));
   }
 
   const block = httpsBlockRange(lines)!;

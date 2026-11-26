@@ -541,7 +541,12 @@ beiden Dienste dann gar nicht: es holt ihre Abbilder nicht und startet keine
 Container. Bei Weg 1 und 3: `HAPM_CROWDSEC_OFF=1` in `.env` bzw. in den
 Variablen des Stacks, bevor Sie zum ersten Mal starten.
 
-**Später entfernen:** in der Oberfläche überall ausschalten, dann
+**In der Oberfläche abschalten:** „CrowdSec abschalten“ oben auf der Seite
+CrowdSec nimmt es aus jedem Ziel, hält beide Container an und blendet CrowdSec
+überall aus. Sperren, Freigaben und Regeln bleiben gespeichert. Wieder
+einschalten unter System, Allgemein, Reiter „CrowdSec“.
+
+**Später ganz entfernen:** in der Oberfläche abschalten, dann
 
 ```bash
 cd /opt/hapm

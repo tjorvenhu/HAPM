@@ -189,6 +189,31 @@ export const crowdsec: Readonly<Record<string, string>> = {
   'Erkennt Adressen, die in kurzer Zeit sehr viele Anfragen schicken, und sperrt sie. Vorsicht bei Diensten, die viele Anfragen von einer Adresse bekommen, etwa Apps zum Abgleich hinter einem gemeinsamen Ausgang (Firmennetz, Mobilfunk). Solche Adressen gehören in die Freigaben.':
     'Detects addresses that send very many requests in a short time and bans them. Take care with services that get many requests from one address, such as sync apps behind a shared exit (company network, mobile carrier). Such addresses belong in the allowlist.',
 
+  // Ganz ab- und einschalten
+  'CrowdSec abschalten': 'Switch off CrowdSec',
+  'CrowdSec einschalten': 'Switch on CrowdSec',
+  'CrowdSec ist wieder an. Welche Ziele es prüft, schalten Sie unter CrowdSec ein.':
+    'CrowdSec is on again. Choose which targets it checks under CrowdSec.',
+  'CrowdSec ist abgeschaltet.': 'CrowdSec is switched off.',
+  'CrowdSec ist abgeschaltet': 'CrowdSec is switched off',
+  'CrowdSec ganz abschalten?': 'Switch off CrowdSec entirely?',
+  'HAPM nimmt CrowdSec aus allen Zielen und aus der globalen Einstellung, lädt HAProxy neu und hält beide Container an. Danach prüft niemand mehr Anfragen, und CrowdSec verschwindet aus Übersicht, Logs, Statistik und Benachrichtigungen. Sperren, Freigaben und Regeln bleiben gespeichert. Wieder einschalten lässt es sich unter System, Allgemein.':
+    'HAPM removes CrowdSec from all targets and from the global setting, reloads HAProxy and stops both containers. After that nothing checks requests, and CrowdSec disappears from the overview, logs, statistics and notifications. Bans, allowlist and rules stay stored. You can switch it on again under System, General.',
+  'Abgeschaltet nimmt HAPM CrowdSec aus jedem Ziel, hält beide Container an und blendet CrowdSec in der Oberfläche aus. Sperren, Freigaben und Regeln bleiben gespeichert. Eingeschaltet laufen die Container wieder, welche Ziele geprüft werden, stellen Sie danach unter Reverse-Proxy, CrowdSec ein.':
+    'When switched off, HAPM removes CrowdSec from every target, stops both containers and hides CrowdSec in the interface. Bans, allowlist and rules stay stored. When switched on, the containers run again; choose which targets are checked afterwards under Reverse proxy, CrowdSec.',
+  'WAF und Sperren für die Ziele hinter HAProxy.': 'WAF and bans for the targets behind HAProxy.',
+  'CrowdSec verwenden': 'Use CrowdSec',
+  'Kein Ziel wird geprüft, und beide Container stehen. Sperren, Freigaben und Regeln sind gespeichert und gelten wieder, sobald CrowdSec läuft.':
+    'No target is checked, and both containers are stopped. Bans, allowlist and rules are stored and apply again as soon as CrowdSec runs.',
+  'Erwartet wird enabled: true oder false.': 'Expected enabled: true or false.',
+  'CrowdSec ist auf dieser Installation nicht vorhanden.': 'CrowdSec is not present on this installation.',
+  'Die globalen Einstellungen in {file} sind nicht lesbar. CrowdSec bleibt an.':
+    'The global settings in {file} cannot be read. CrowdSec stays on.',
+  'HAProxy ließ sich nicht umstellen, CrowdSec bleibt an. Was gescheitert ist, steht unter Logs, Vorgänge.':
+    'HAProxy could not be switched over, CrowdSec stays on. What failed is under Logs, Tasks.',
+  'CrowdSec ist wieder an, aber {names} ließ sich nicht starten. Auf dem Server legt docker compose up -d im Ordner der Installation die Container an.':
+    'CrowdSec is on again, but {names} could not be started. On the server, docker compose up -d in the installation folder creates the containers.',
+
   // Benachrichtigungen
   'CrowdSec prüft nicht': 'CrowdSec is not checking',
   'CrowdSec oder Bouncer läuft nicht, Anfragen gehen ungeprüft durch.':

@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, Ban, Globe, Loader2, ShieldAlert, ShieldCheck, Users } from 'lucide-react';
+import { AlertTriangle, Ban, Globe, Loader2, Power, ShieldAlert, ShieldCheck, Users } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { openRun } from '@/components/runs/runs';
+import { useCrowdsecSwitch } from './CrowdsecSwitch';
 import BrandLogo from '@/components/BrandLogo';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import { formatDateTime, formatNumber, formatRelative, msgid } from '@/lib/i18n';
@@ -106,7 +107,12 @@ export default function OverviewPanel({ data, onChanged }: { data: CrowdsecOverv
     const result = await patch.json();
     if (!patch.ok || !result.success) throw new Error(result.error || t('Speichern fehlgeschlagen'));
     setPendingRun(result.data.runId);
-    openRun({ kind: 'haproxy', id: result.data.runId });
+    openRun({
+      kind: 'haproxy',
+      id: result.data.runId,
+      label: t('CrowdSec für alle Ziele'),
+      context: on ? t('Einschalten') : t('Ausschalten'),
+    });
   }
 
   function askGlobal(on: boolean) {
@@ -130,6 +136,7 @@ export default function OverviewPanel({ data, onChanged }: { data: CrowdsecOverv
   }
 
   if (!status.inStack) {
+    if (status.missing === 'disabled') return <DisabledState onChanged={onChanged} />;
     return status.missing === 'not-installed' ? (
       <div className="empty-state sys-block">
         <BrandLogo brand="crowdsec" size={40} />
@@ -389,5 +396,26 @@ export default function OverviewPanel({ data, onChanged }: { data: CrowdsecOverv
         </div>
       </div>
     </>
+  );
+}
+
+/** In der Oberfläche abgeschaltet: hier und unter System, Allgemein wieder einschalten. */
+function DisabledState({ onChanged }: { onChanged: () => void }) {
+  const { t } = useT();
+  const power = useCrowdsecSwitch(onChanged);
+  return (
+    <div className="empty-state sys-block">
+      <BrandLogo brand="crowdsec" size={40} />
+      <h3>{t('CrowdSec ist abgeschaltet')}</h3>
+      <p>
+        {t(
+          'Kein Ziel wird geprüft, und beide Container stehen. Sperren, Freigaben und Regeln sind gespeichert und gelten wieder, sobald CrowdSec läuft.'
+        )}
+      </p>
+      <button className="btn btn-primary" onClick={() => power.ask(true)} disabled={power.busy}>
+        {power.busy ? <Loader2 size={16} className="spin" /> : <Power size={16} />}
+        {t('CrowdSec einschalten')}
+      </button>
+    </div>
   );
 }

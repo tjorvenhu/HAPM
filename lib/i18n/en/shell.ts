@@ -5,6 +5,7 @@ export const shell: Dictionary = {
   // Seitenleiste (`components/Sidebar.tsx`), auch Titel im Browser und Seiten der Suche
   'Übersicht': 'Overview',
   'Reverse-Proxy': 'Reverse proxy',
+  'Globale Einstellungen': 'Global settings',
   'Ziele': 'Targets',
   'Statistik': 'Statistics',
   'Zertifikate': 'Certificates',

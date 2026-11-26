@@ -30,8 +30,8 @@ import { getBackupSettings } from './backup/settings';
 import { onBackupFailure, pruneBackupRuns, reconcileBackupRuns, startBackup } from './backup/run';
 import { reconcileRestore } from './backup/restore';
 import { notify } from './notifications';
-import { reconcileCrowdsec } from './crowdsec/setup';
-import { crowdsecInStack } from './crowdsec/paths';
+import { keepCrowdsecStopped, reconcileCrowdsec } from './crowdsec/setup';
+import { crowdsecDisabled, crowdsecInStack } from './crowdsec/paths';
 
 /** CrowdSec startet nach HAPM. Angemeldet wird der Bouncer danach, und
  *  nachgesehen wird regelmäßig, falls jemand den Container neu angelegt hat. */
@@ -39,6 +39,10 @@ const CROWDSEC_RECONCILE_MS = 15 * 60_000;
 
 async function tickCrowdsec(): Promise<void> {
   if (!crowdsecInStack() || process.platform !== 'linux') return;
+  if (crowdsecDisabled()) {
+    for (const name of await keepCrowdsecStopped()) log(`CrowdSec ist abgeschaltet, ${name} angehalten`);
+    return;
+  }
   const notes = await reconcileCrowdsec();
   for (const note of notes) log(note);
 }
