@@ -123,14 +123,14 @@ export async function ensureCollections(): Promise<void> {
   for (const collectionId of Object.values(COLLECTIONS)) await ensureTable(collectionId);
 }
 
-interface Row {
+export interface Row {
   id: string;
   created_at: string;
   updated_at: string;
   data: unknown;
 }
 
-function toDoc<T>(row: Row): WithMeta<T> {
+export function toDoc<T>(row: Row): WithMeta<T> {
   // Über `unsafe` kommt `jsonb` je nach Weg als Objekt oder als Text an.
   const data = typeof row.data === 'string' ? (JSON.parse(row.data) as T) : (row.data as T);
   return { ...data, $id: row.id, $createdAt: row.created_at, $updatedAt: row.updated_at };
@@ -149,6 +149,15 @@ function serialise<T>(data: Partial<T>): string {
 async function run(collectionId: string, statement: Statement) {
   await ensureTable(collectionId);
   return sql().unsafe(statement.text, statement.params);
+}
+
+/**
+ * Eine eigene Anweisung auf der Tabelle einer Collection, für die Dateien in
+ * `lib/db/`, die mehr brauchen als die sechs Operationen der Fassade
+ * (`audit-query.ts`). Legt die Tabelle an, falls sie fehlt, wie jede Operation.
+ */
+export async function runStatement<R = Row>(collectionId: string, statement: Statement): Promise<R[]> {
+  return (await run(collectionId, statement)) as unknown as R[];
 }
 
 export const postgresDriver: DbDriver = {

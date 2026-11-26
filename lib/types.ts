@@ -406,6 +406,7 @@ export const NOTIFICATION_EVENT_TYPES = [
   'update_completed',
   'update_failed',
   'backup_failed',
+  'audit_forward_failed',
   'crowdsec_down',
   'crowdsec_report',
 ] as const;
@@ -481,6 +482,8 @@ export const COLLECTIONS = {
   USER_STATE: 'user_state',
   SETTINGS: 'settings',
   AUDIT_LOGS: 'audit_logs',
+  AUDIT_SETTINGS: 'audit_settings',
+  AUDIT_FORWARD_STATE: 'audit_forward_state',
   HAPROXY_RUNS: 'haproxy_runs',
   HAPROXY_METRICS: 'haproxy_metrics',
   GEOIP_TABLE: 'geoip_table',

@@ -9,7 +9,7 @@
  * Reverse-Proxy, dazu die `*-actions.ts` und `actions.ts` der übrigen Bereiche
  * (Updates, Sicherung, Einstellungen, Zertifikate, Grundkonfiguration,
  * Fehlerseiten, GeoIP) und die Lesefunktionen der Seiten (`systemOverview`,
- * `readStatsOverview`, `checkZones`, `readHaproxyLog`). Damit gelten dieselben
+ * `readStatsOverview`, `checkZones`, `readHaproxyLog`, `readAuditLog`). Damit gelten dieselben
  * Prüfungen, dieselbe Vorabprüfung, derselbe Schutz des Ziels der Oberfläche
  * und dasselbe Protokoll, ohne dass sie hier ein zweites Mal stehen. Die
  * Tabelle, welche Route zu welchem Werkzeug gehört, steht in docs/mcp.md.
@@ -104,6 +104,8 @@ import {
 } from '../haproxy/maintenance-actions';
 import { readHaproxyLog } from '../haproxy/log-read';
 import { LOG_FILTERS } from '../haproxy/log-view';
+import { AUDIT_ACTOR_TYPES, AUDIT_PAGE_MAX, readAuditLog, readAuditQuery } from '../audit-log/read';
+import { AUDIT_AREAS } from '../audit-log/labels';
 import { haproxyContainer, restartHaproxy } from '../system/haproxy-container';
 import { geoipOverview } from '../geoip/fetch';
 import { changeGeoipAutoRefresh, refreshGeoipNow } from '../geoip/actions';
@@ -1153,6 +1155,44 @@ export const TOOLS: ToolDefinition[] = [
     },
     annotations: READ_ONLY,
     run: (args) => readHaproxyLog({ lines: args.lines ?? null, filter: args.filter ?? null, q: args.query ?? null }),
+  }),
+
+  defineTool({
+    name: 'list_audit_log',
+    title: 'Audit log',
+    description:
+      'The HAPM audit log: who did what and when (sign-ins, changes to targets, certificates, DNS, backups, updates, settings, API keys). ' +
+      'Each entry: id, timestamp (UTC), action (e.g. "login_failed"), area, actorType (user, service = API key, system), actor, resource, details, ip, outcome. ' +
+      'Default: newest first; pass the returned cursor as "before" for older entries. ' +
+      'To collect everything without gaps, pass "after" (or order "asc"): entries then come oldest first and end about two seconds before now; ' +
+      'pass the returned cursor as "after" on the next call. more=true means there is another page. ' +
+      'Details are stored in German. Retention and forwarding to a SIEM can only be changed in the HAPM web interface.',
+    input: {
+      from: z.string().optional().describe('Only entries at or after this time, ISO 8601, e.g. "2026-11-26T00:00:00Z".'),
+      to: z.string().optional().describe('Only entries at or before this time, ISO 8601.'),
+      actor: z.enum(AUDIT_ACTOR_TYPES).optional().describe('user, service (API key) or system (scheduler).'),
+      area: z.enum(AUDIT_AREAS).optional().describe('Only actions of one area.'),
+      query: z.string().optional().describe('Case-insensitive text search in actor, action, resource, details and IP.'),
+      limit: z.number().int().min(1).max(AUDIT_PAGE_MAX).optional().describe('Entries per call, up to 1000. Default 50.'),
+      before: z.string().optional().describe('Cursor of a previous call: entries older than it (newest first).'),
+      after: z.string().optional().describe('Cursor of a previous call: entries newer than it (oldest first).'),
+      order: z.enum(['asc', 'desc']).optional().describe('asc: oldest first. desc: newest first (default).'),
+    },
+    annotations: READ_ONLY,
+    run: (args) =>
+      readAuditLog(
+        readAuditQuery({
+          from: args.from,
+          to: args.to,
+          actor: args.actor,
+          area: args.area,
+          q: args.query,
+          limit: args.limit,
+          before: args.before,
+          after: args.after,
+          order: args.order,
+        })
+      ),
   }),
 
   defineTool({

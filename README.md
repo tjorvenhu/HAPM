@@ -122,6 +122,8 @@ Konfiguration, prüft sie mit HAProxy, lädt neu und holt die Zertifikate.
 - Statistik: Anfragen, Statuscodes, Antwortzeiten, Länder, dazu die von CrowdSec
 - Historie jedes Vorgangs mit seinen Schritten
 - Die Logs von HAProxy und CrowdSec im Browser, mit Suche und Filter
+- Protokoll: wer was wann geändert hat, mit Filter und Export (CSV, JSON Lines)
+- Weiterleitung des Protokolls an ein SIEM: Syslog (UDP, TCP, TLS) und HTTP, etwa Splunk HEC
 - Updates von HAPM, HAProxy, acme.sh und CrowdSec auf Klick
 - Tägliche Sicherung, auf Wunsch verschlüsselt, und Zurückspielen über die Oberfläche
 - Mails bei Ausfällen, ablaufenden Zertifikaten und Fehlern
@@ -446,8 +448,9 @@ allem HTTPS (TCP 443) zu diesen Hosts:
 - **CrowdSec:** `cdn-hub.crowdsec.net`, `hub-data.crowdsec.net`, für die
   Community-Blocklist `api.crowdsec.net` und `blocklists.api.crowdsec.net`
 
-Dazu DNS (53), NTP (123 UDP) und, wenn Mails eingerichtet sind, der
-SMTP-Server (587 oder 465). Geben Sie Hosts nach Namen frei, nicht nach
+Dazu DNS (53), NTP (123 UDP), wenn Mails eingerichtet sind, der
+SMTP-Server (587 oder 465), und wenn das Protokoll weitergeleitet wird, der
+Syslog-Server oder Endpunkt des SIEM. Geben Sie Hosts nach Namen frei, nicht nach
 IP-Adressen: dahinter stehen CDNs mit wechselnden Adressen.
 
 Mit einem Proxy braucht die Docker-Engine ihn für die Abbilder, die Container
@@ -930,6 +933,7 @@ jeder Entscheidung, warum sie so getroffen wurde.
 | [`docs/mcp.md`](docs/mcp.md) | Der MCP-Server für Claude und andere Clients |
 | [`docs/dns.md`](docs/dns.md) | DNS bei Cloudflare und Hetzner |
 | [`docs/crowdsec.md`](docs/crowdsec.md) | CrowdSec: Aufbau, Regeln, Freigaben, Grenzen, Fehlersuche |
+| [`docs/protokoll.md`](docs/protokoll.md) | Protokoll: Lesen, Export, Weiterleitung an ein SIEM (Syslog, HTTP), Aufbewahrung |
 | [`docs/i18n.md`](docs/i18n.md) | Übersetzungen der Oberfläche |
 
 ## Mitmachen

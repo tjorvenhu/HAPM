@@ -19,6 +19,7 @@ import { proxyServer } from './proxyServer';
 import { system } from './system';
 import { mail } from './mail';
 import { logs } from './logs';
+import { audit } from './audit';
 import { mcp } from './mcp';
 import { branding } from './branding';
 import { crowdsec } from './crowdsec';
@@ -39,6 +40,7 @@ export const PARTS: Readonly<Record<string, Dictionary>> = {
   system,
   mail,
   logs,
+  audit,
   mcp,
   branding,
   crowdsec,

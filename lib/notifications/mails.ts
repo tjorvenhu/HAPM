@@ -553,6 +553,27 @@ function draft(event: NotificationEvent, ctx: NotificationMailContext, w: Writer
           mailText(t('Was zu tun ist: Unter „Sicherung“ steht, was eingestellt ist und wie der letzte Lauf ausging.')),
         action: { label: t('Sicherung ansehen'), path: '/backup' },
       };
+
+    case 'audit_forward_failed':
+      return {
+        subject: t('Weiterleitung des Protokolls gescheitert'),
+        eyebrow: t('Protokoll'),
+        heading: t('Weiterleitung des Protokolls gescheitert'),
+        body:
+          mailText(
+            t('HAPM auf {node} kann das Protokoll nicht an {target} weiterleiten. Die Einträge bleiben in HAPM und gehen hinaus, sobald der Empfänger wieder annimmt.', {
+              node,
+              target: code(event.target),
+            })
+          ) +
+          mailFacts([
+            { label: t('Art'), value: event.destination === 'syslog' ? 'Syslog' : t('HTTP-Endpunkt') },
+            { label: t('Seit'), value: w.when(event.since) },
+          ]) +
+          mailNote(machineHead(event.error, w), 'danger', t('Fehler')) +
+          mailText(t('Was zu tun ist: Unter „Protokoll“, Reiter „Weiterleitung an SIEM“, stehen Rückstand und der letzte Fehler. Eine Testnachricht zeigt, ob der Empfänger wieder antwortet.')),
+        action: { label: t('Protokoll ansehen'), path: '/protokoll?bereich=weiterleitung' },
+      };
   }
 }
 

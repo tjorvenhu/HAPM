@@ -129,6 +129,7 @@ Stunde (`429`), zurückgezogen heißt `401`.
 | `get_haproxy_container` | lesen | Container von HAProxy, auf Wunsch mit Ausgabe |
 | `restart_haproxy` | schreiben | Neustart des Containers |
 | `get_haproxy_log` | lesen | letzte Zeilen des Logs, gefiltert |
+| `list_audit_log` | lesen | das Protokoll: wer was wann getan hat, gefiltert, geblättert über `before` und `after` |
 | `delete_certificate` | schreiben | übriges Zertifikat von acme.sh entfernen |
 | `reissue_certificate` | schreiben | nie ausgestellten Antrag erneut stellen → `runId` |
 | `get_base_config_diff`, `apply_base_config` | lesen, schreiben | Abgleich mit der Grundkonfiguration, Auswahl übernehmen |
@@ -152,6 +153,7 @@ Welche Route zu welchem Werkzeug gehört:
 | Adresse von HAPM | `GET settings/address?domain=` | `check_address` |
 | HAProxy-Container | `GET`/`POST system/haproxy` | `get_haproxy_container`, `restart_haproxy` |
 | Log | `GET haproxy/log` | `get_haproxy_log` |
+| Protokoll | `GET audit` | `list_audit_log` |
 | Grundkonfiguration | `GET`/`POST haproxy/base-config` | `get_base_config_diff`, `apply_base_config` |
 | Fehlerseiten | `GET`/`POST haproxy/error-pages` | `get_error_pages`, `redeploy_error_pages` |
 | GeoIP | `GET`/`PATCH geoip`, `POST geoip/refresh` | `get_geoip`, `set_geoip_auto_refresh`, `refresh_geoip` |
@@ -184,8 +186,9 @@ Jedes Werkzeug ruft eine Funktion, die auch eine Route ruft:
   und rufen eine Funktion. Die Antworten der API sind dabei Feld für Feld
   dieselben geblieben.
 - `systemOverview()` (Übersicht), `readStatsOverview()`
-  (`lib/haproxy/stats-overview.ts`, Statistik) und `checkZones()`
-  (`lib/dns/zone-check.ts`, DNS). Die beiden letzten standen vorher in ihren
+  (`lib/haproxy/stats-overview.ts`, Statistik), `checkZones()`
+  (`lib/dns/zone-check.ts`, DNS) und `readAuditLog()`
+  (`lib/audit-log/read.ts`, Protokoll). Die beiden letzten standen vorher in ihren
   Routen und sind aus demselben Grund herausgezogen.
 - Für alles außerhalb des Reverse-Proxys je Bereich eine Datei:
   `lib/updates/actions.ts`, `lib/backup/actions.ts`, `lib/settings-actions.ts`,
@@ -223,6 +226,7 @@ Gilt für API und MCP gleich; die Funktionen lehnen es ab, nicht die Werkzeuge.
 | Design der Fehlerseiten, Darstellung (Logo, Farben) | Gestaltung mit Vorschau und Datei-Upload, keine Automatisierung. Die Fehlerseiten im gespeicherten Design neu schreiben geht (`redeploy_error_pages`). |
 | GeoIP-Tabelle hochladen oder zurücksetzen | Der Upload ist eine Datei von 4,5 MB für Server ohne Zugang nach außen, das Zurücksetzen der Weg zurück nach einem falschen Upload. Erneuern und der Schalter gehen. |
 | Konfiguration importieren | Einmalige Übernahme einer fremden `haproxy.cfg` mit Vorschau, die ein Mensch durchsieht. |
+| Protokoll: Aufbewahrung, Weiterleitung an ein SIEM, Testnachricht, Export | Das Protokoll ist die Stelle, an der man nachliest, was ein gestohlener Key getan hat. Ein Key, der die Aufbewahrung kürzen oder die Weiterleitung umbiegen könnte, räumte hinter sich auf. Der Wert der Kopfzeile eines HTTP-Endpunkts ist außerdem ein Geheimnis. Lesen geht (`list_audit_log`), siehe [`protokoll.md`](protokoll.md). |
 | Gespeicherte Ziele (Eingabehilfe der Dialoge) | `haproxy.cfg` erfährt davon nichts; wer automatisiert, schreibt die Adresse direkt. |
 | Fehlgeschlagene Läufe als gesehen markieren | Ein Zustand der Anzeige in der Oberfläche, kein Zustand des Proxys. |
 | Live-Kennzahlen (Sekundenwerte) | Noch nicht: daran wird parallel gearbeitet. `get_traffic_stats` liefert die gespeicherte Zeitreihe. |

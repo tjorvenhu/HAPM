@@ -602,7 +602,9 @@ die Datei beiseitegelegt, eine Vorgängerin bleibt liegen.
 In diesem Prozess, also genau eine Instanz: jede Minute die Zähler von HAProxy
 (Statistik), alle sechs Stunden die Update-Prüfung, täglich um 03:17 die
 Erneuerung der Zertifikate (`acme.sh --cron`) und das Aufräumen (Metriken nach
-14 Tagen, Historie nach 180, Protokoll nach 365). Alle zwei Minuten sieht er für
+14 Tagen, Historie nach 180, Protokoll nach der eingestellten Dauer, ohne
+Angabe 365: [`protokoll.md`](protokoll.md)). Jede Minute liefert er außerdem
+dem SIEM nach, was es vom Protokoll noch nicht angenommen hat. Alle zwei Minuten sieht er für
 die Benachrichtigungen nach, ob HAProxy läuft und die Ziele antworten.
 
 **Tägliche Uhrzeiten** (Erneuerung, Sicherung, selbsttätige Updates) vergleicht
@@ -649,6 +651,7 @@ bekommt eine eigene Mail.
 | `update_available` | die Update-Prüfung findet eine neue Fassung, einmal je Fassung | `lib/updates/check.ts` |
 | `update_completed`, `update_failed` | Ende eines Update-Laufs, auch beim Abgleich nach dem Start | `lib/updates/apply.ts` |
 | `backup_failed` | die Sicherung ruft `notify({ type: 'backup_failed', detail })` | Sicherung |
+| `audit_forward_failed` | Syslog-Server oder HTTP-Endpunkt nimmt seit 15 Minuten nichts vom Protokoll an ([`protokoll.md`](protokoll.md)) | Weiterleitung des Protokolls |
 | `crowdsec_down` | der Container von CrowdSec oder des Bouncers läuft bei zwei Prüfungen in Folge nicht, solange CrowdSec ein Ziel schützt | alle zwei Minuten |
 | `crowdsec_report` | was CrowdSec in 24 Stunden gemeldet hat, nur wenn etwas war; **Vorgabe aus** | täglicher Lauf |
 
@@ -1155,10 +1158,15 @@ DNS-01. Für eine interne Installation, die nur DNS-01 kennt, heißt das: ohne
 | `github.com`, `codeload.github.com` | 443 | acme.sh `--upgrade` | Neue Fassung von acme.sh | nur beim Update von acme.sh |
 | `download.db-ip.com` | 443 | HAPM (`lib/geoip/fetch.ts`) | Neue Länder-Tabelle. HAPM folgt nur Weiterleitungen innerhalb von `db-ip.com` | nein, die mitgelieferte gilt weiter |
 | SMTP-Server | 587, 465 oder der eingetragene Port | HAPM | Mails | wenn Mails eingerichtet sind |
+| Syslog-Server oder HTTP-Endpunkt des SIEM | der eingetragene Port (üblich 6514, 514, 443) | HAPM | Weiterleitung des Protokolls ([`protokoll.md`](protokoll.md)) | wenn sie eingerichtet ist |
 
 **SMTP geht nicht über einen HTTP-Proxy.** HAPM verbindet sich direkt mit dem
 Mailserver. Ist das gesperrt, braucht es eine Freigabe in der Firewall oder
 einen Mailserver im eigenen Netz.
+
+**Die Weiterleitung des Protokolls geht ebenfalls direkt**, an Syslog wie an
+einen HTTP-Endpunkt: ein SIEM steht im eigenen Netz, und HAPM benutzt dafür
+keinen Proxy aus der Umgebung.
 
 ### CrowdSec (Container `hapm-crowdsec`)
 

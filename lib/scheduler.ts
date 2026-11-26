@@ -7,6 +7,7 @@
  *  - alle zwei Minuten: läuft HAProxy, antworten die Ziele (Benachrichtigungen)
  *  - alle sechs Stunden: nach neuen Abbildern und einem neuen acme.sh sehen
  *  - einmal am Tag: Zertifikate erneuern und Altes aufräumen
+ *  - jede Minute: das Protokoll an ein SIEM nachliefern, falls eines eingerichtet ist
  */
 
 import { deleteWhere, getDocument, Query } from './db';
@@ -42,6 +43,8 @@ import { crowdsecDisabled, crowdsecInStack } from './crowdsec/paths';
 import { dropOrphanedCrowdsec, queueAppSync } from './crowdsec/actions';
 import { ruleRunActive } from './crowdsec/rule-jobs';
 import { timeReached } from './schedule-time';
+import { AUDIT_RETENTION_DEFAULT, getAuditSettings } from './audit-log/settings';
+import { onForwardingFailing, runAuditForwarding, startAuditForwarding } from './audit-log/forward';
 
 /** CrowdSec startet nach HAPM. Angemeldet wird der Bouncer danach, und
  *  nachgesehen wird regelmäßig, falls jemand den Container neu angelegt hat. */
@@ -80,7 +83,6 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Wie lange Historie und Protokoll aufgehoben werden. */
 const RUN_RETENTION_DAYS = 180;
-const AUDIT_RETENTION_DAYS = 365;
 
 interface SchedulerState {
   started: boolean;
@@ -170,7 +172,11 @@ export async function runDaily(): Promise<void> {
     ]);
     await deleteWhere(COLLECTIONS.HAPROXY_RUNS, [Query.lessThan('startedAt', daysAgo(RUN_RETENTION_DAYS))]);
     await deleteWhere(COLLECTIONS.UPDATE_RUNS, [Query.lessThan('startedAt', daysAgo(RUN_RETENTION_DAYS))]);
-    await deleteWhere(COLLECTIONS.AUDIT_LOGS, [Query.lessThan('timestamp', daysAgo(AUDIT_RETENTION_DAYS))]);
+    // Die Dauer steht unter „Protokoll", Reiter „Aufbewahrung". Ist sie nicht zu lesen, gilt die Vorgabe.
+    const auditDays = await getAuditSettings()
+      .then((settings) => settings.retentionDays)
+      .catch(() => AUDIT_RETENTION_DEFAULT);
+    await deleteWhere(COLLECTIONS.AUDIT_LOGS, [Query.lessThan('timestamp', daysAgo(auditDays))]);
     await pruneBackupRuns(daysAgo(RUN_RETENTION_DAYS));
     await pruneExpiredSessions();
     s.lastDailyRun = new Date().toISOString();
@@ -190,6 +196,9 @@ async function tickMinute(): Promise<void> {
   const from = s.lastTick ?? to - 60_000;
   s.lastTick = to;
   const day = now.toDateString();
+
+  // Die Weiterleitung des Protokolls: holt nach, was ein Ziel eben nicht annahm. Wirft nie.
+  void runAuditForwarding();
 
   // Kurz nach drei: dann ist auf einem Proxy am wenigsten los.
   if (timeReached('03:17', from, to)) void runDaily();
@@ -273,6 +282,25 @@ export async function initializeScheduler(): Promise<void> {
       if (count > 0) void notify({ type: 'backup_failed', detail: BACKUP_INTERRUPTED });
     })
     .catch(() => undefined);
+
+  // Ab jetzt geht jeder neue Eintrag des Protokolls an ein eingerichtetes SIEM.
+  onForwardingFailing((destination, since, error) => {
+    void getAuditSettings()
+      .then((settings) =>
+        notify({
+          type: 'audit_forward_failed',
+          destination,
+          target:
+            destination === 'syslog'
+              ? `${settings.syslog.protocol}://${settings.syslog.host ?? ''}:${settings.syslog.port}`
+              : (settings.http.url ?? ''),
+          since,
+          error,
+        })
+      )
+      .catch(() => undefined);
+  });
+  startAuditForwarding();
 
   startLogFollower();
 

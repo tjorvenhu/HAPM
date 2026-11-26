@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  LayoutDashboard, Network, BarChart3, ShieldCheck, ScrollText, Globe, SlidersHorizontal,
+  LayoutDashboard, Network, BarChart3, ShieldCheck, ScrollText, ClipboardList, Globe, SlidersHorizontal,
   Plug, PackageCheck, DatabaseBackup, Bell, Settings, Users, UserCog, FileWarning, Palette, ShieldAlert, type LucideIcon,
 } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
@@ -62,6 +62,7 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: msgid('Statistik'), href: '/reverse-proxy/statistiken', icon: BarChart3 },
       { label: msgid('Logs'), href: '/reverse-proxy/logs', icon: ScrollText },
+      { label: msgid('Protokoll'), href: '/protokoll', icon: ClipboardList },
     ],
   },
   {

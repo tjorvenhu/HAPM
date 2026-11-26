@@ -22,6 +22,7 @@ Next.js (App Router) mit TypeScript strict, pnpm. Drei Container: HAPM, HAProxy
 | `app/setup/`, `app/api/setup/`, `lib/setup/`, `lib/address-move/`, `lib/haproxy/challenge.ts` | [`docs/betrieb.md`](docs/betrieb.md), Abschnitt „Ersteinrichtung", und [`docs/reverse-proxy.md`](docs/reverse-proxy.md), „Interne Installation" |
 | `lib/db/`, `lib/setup-db.ts`, `bin/hapm-admin.mjs` | [`docs/betrieb.md`](docs/betrieb.md), Abschnitt „Postgres" |
 | `lib/crowdsec/`, `app/(app)/reverse-proxy/crowdsec/`, `app/api/crowdsec/`, `app/api/internal/crowdsec/` | [`docs/crowdsec.md`](docs/crowdsec.md) |
+| `lib/audit.ts`, `lib/audit-log/`, `lib/db/audit-query.ts`, `app/(app)/protokoll/`, `app/api/audit/`, `app/api/internal/audit/` | [`docs/protokoll.md`](docs/protokoll.md): Lesen, Export, Weiterleitung an ein SIEM, Aufbewahrung, was nur mit Sitzung geht |
 | `lib/branding/`, `app/(app)/system/darstellung/`, `app/branding.css`, `ui/primitives/Logo.tsx` | [`docs/betrieb.md`](docs/betrieb.md), Abschnitt „Darstellung" |
 | `lib/auth/`, `lib/session.ts`, `lib/two-factor.ts`, `app/api/auth/`, `app/api/account/` | die Köpfe der Dateien: dort steht zu jeder Stelle, warum sie so ist |
 | `ui/`, `components/`, jede Seite unter `app/`, `app/globals.css`, `app/hapm.css` | [`docs/oberflaeche.md`](docs/oberflaeche.md): Seitenkopf, lange Texte hinter dem „i", Wortwahl, Meldungen, Layout. Dazu unten „Regeln, die überall gelten", Punkte „Oberfläche" und „Design" |

@@ -15,6 +15,7 @@
 import fs from 'node:fs';
 import type { IncomingMessage } from 'node:http';
 import { engine, haproxyContainerName } from './docker';
+import { forwardHaproxyLines } from './audit-log/forward';
 
 export const HAPROXY_LOG_FILE = '/var/log/haproxy/haproxy.log';
 const STATE_FILE = '/var/log/haproxy/.hapm-position';
@@ -61,13 +62,13 @@ function rotateIfNeeded(): void {
  * Geschrieben wird sie mit einem Kopf wie von syslog, das ist die Form, die
  * die Auswertung kennt.
  */
-export function formatLogLine(raw: string): { stamp: string; line: string } | null {
+export function formatLogLine(raw: string): { stamp: string; line: string; text: string } | null {
   const space = raw.indexOf(' ');
   if (space === -1) return null;
   const stamp = raw.slice(0, space);
   const text = raw.slice(space + 1).trimEnd();
   if (!/^\d{4}-\d{2}-\d{2}T/.test(stamp) || text === '') return null;
-  return { stamp, line: `${stamp.slice(0, 19)}Z haproxy: ${text}` };
+  return { stamp, line: `${stamp.slice(0, 19)}Z haproxy: ${text}`, text };
 }
 
 async function followOnce(): Promise<void> {
@@ -85,6 +86,8 @@ async function followOnce(): Promise<void> {
   s.connected = true;
   let pending = '';
   let batch: string[] = [];
+  /** Dieselben Zeilen für ein Syslog-Ziel, falls eines das Zugriffslog haben will. */
+  let forward: { stamp: string; text: string }[] = [];
 
   const flush = () => {
     if (batch.length === 0) return;
@@ -93,6 +96,8 @@ async function followOnce(): Promise<void> {
     s.lines += batch.length;
     batch = [];
     fs.writeFile(STATE_FILE, s.last, () => undefined);
+    forwardHaproxyLines(forward);
+    forward = [];
   };
 
   const feed = engine.demuxer((_channel: 1 | 2, chunk: Buffer) => {
@@ -106,6 +111,7 @@ async function followOnce(): Promise<void> {
       if (!parsed || parsed.stamp <= s.last) continue;
       s.last = parsed.stamp;
       batch.push(parsed.line);
+      forward.push({ stamp: parsed.stamp, text: parsed.text });
     }
     flush();
   });
