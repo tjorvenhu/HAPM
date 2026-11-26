@@ -4,8 +4,16 @@
 änderst.**
 
 Der Bereich „DNS" ist eine **Anbindung**, keine Verwaltung von Einträgen. HAPM hält den
-Zugang zu Zonen bei zwei Anbietern, Cloudflare und Hetzner (das DNS in der
-Cloud-Konsole), und schreibt damit nur, was es selbst braucht:
+Zugang zu Zonen bei vier Anbietern und schreibt damit nur, was es selbst braucht:
+
+| Anbieter | Kennung | Zugang | acme.sh-Hook |
+|---|---|---|---|
+| Hetzner (das DNS in der Cloud-Konsole) | `hetzner` | API-Token | `dns_hetznercloud` |
+| Cloudflare | `cloudflare` | API-Token | `dns_cf` |
+| Ein eigener Nameserver über RFC 2136 (BIND und andere) | `rfc2136` | Nameserver und TSIG-Schlüssel | `dns_nsupdate` |
+| Infoblox (WAPI) | `infoblox` | Appliance, Benutzer, Passwort, DNS-View | `dns_infoblox` |
+
+Geschrieben wird:
 
 - **den Eintrag eines Ziels.** Beim Anlegen eines Ziels am Reverse-Proxy setzt
   `lib/dns/sync.ts` auf Wunsch den CNAME der Domain, und beim Löschen nimmt es ihn wieder
@@ -23,19 +31,21 @@ ein zweiter Ort, an dem etwas falsch stehen kann.
 
 **Zertifikate über DNS-01 laufen nicht über diese Anbindung**, sondern über die
 Zugangsdaten von acme.sh (Reverse-Proxy, Einstellungen, siehe
-[`reverse-proxy.md`](reverse-proxy.md)). Es ist derselbe Anbieter und dasselbe Token,
-und der Einrichtungsassistent richtet beides in einem Schritt ein: das Token geht an
+[`reverse-proxy.md`](reverse-proxy.md)). Es ist derselbe Anbieter und derselbe Zugang,
+und der Einrichtungsassistent richtet beides in einem Schritt ein: der Zugang geht an
 acme.sh, und die Zone wird hier angebunden.
 
 Die Zugänge liegen als Dokumente in Postgres (`dns_zones`), der Schlüssel für die Tokens
-entsteht beim ersten Start von selbst. Für eine Hetzner-Zone gilt alles, was für eine
-Cloudflare-Zone gilt.
+entsteht beim ersten Start von selbst. Was unten für Cloudflare und Hetzner steht, gilt
+für RFC 2136 und Infoblox genauso, soweit ihr eigener Abschnitt nichts anderes sagt.
 
 ## Ohne Anbieter: der eigene DNS-Server
 
 Nicht jede Installation hat einen Anbieter mit API. Ein Netz mit Pi-hole,
-AdGuard Home, dem Router oder einem eigenen BIND trägt seine Einträge von Hand
-ein. Dafür steht im Assistenten neben Hetzner und Cloudflare die Karte „Eigener
+AdGuard Home oder dem Router trägt seine Einträge von Hand ein, und ein BIND,
+für den niemand einen TSIG-Schlüssel freigeben will, ebenso. (Mit TSIG-Schlüssel
+ist ein eigener Nameserver ein Anbieter wie die anderen, siehe „RFC 2136".)
+Dafür steht im Assistenten neben den Anbietern die Karte „Eigener
 DNS-Server" (`SetupState.dns: 'manual'`). Gewählt heißt: HAPM legt bei keinem
 Anbieter etwas an, es gibt keine Zone unter „DNS", und überall, wo sonst ein
 Eintrag entstünde, steht, was einzutragen ist (der Schritt „Adresse der
@@ -53,23 +63,52 @@ hochgeladen.
 ## Ein Anbieter ist eine Schnittstelle, kein zweiter Bereich
 
 `lib/dns/provider.ts` beschreibt, was HAPM von einem Anbieter braucht: die Zonen eines
-Tokens auflisten, die Einträge einer Zone lesen, einen Eintrag anlegen, ändern, löschen.
+Zugangs nennen, die Einträge einer Zone lesen, einen Eintrag anlegen, ändern, löschen.
 Gelesen wird, um zu wissen, was unter einem Namen schon steht; geschrieben wird nur von
-`sync.ts` und `ensureAddressRecord`. Dahinter stehen `cloudflare.ts` und `hetzner.ts`,
-und nur dort entsteht eine Anfrage an den Anbieter. Routen, `sync.ts` und `connect.ts`
-holen sich den Anbieter einer Zone mit `providerFor(zone)` und kennen keinen beim Namen.
+`sync.ts` und `ensureAddressRecord`. Dahinter stehen `cloudflare.ts`, `hetzner.ts`,
+`rfc2136.ts` und `infoblox.ts`, und nur dort entsteht eine Anfrage an den Anbieter.
+Routen, `sync.ts` und `connect.ts` holen sich den Anbieter einer Zone mit
+`providerFor(zone)` und kennen keinen beim Namen.
 
 | Datei | Was dort steht |
 |---|---|
 | `provider.ts` | die Schnittstelle (`DnsProvider`) und die Zuordnung Kennung → Anbieter |
 | `cloudflare.ts`, `hetzner.ts` | je ein Anbieter: URL, Fehlermeldungen, Blättern |
 | `hetzner-rrsets.ts` | RRSet ↔ Einträge, rein und ohne Netz |
+| `rfc2136.ts` | der eigene Nameserver: Abfragen und Änderungen über TCP, jede mit TSIG |
+| `dns-wire.ts` | DNS-Nachrichten und TSIG als Bytes, rein und ohne Netz |
+| `infoblox.ts` | die Appliance über die WAPI, mit `node:https` wegen der eigenen CA |
+| `access.ts` | der Zugang zu RFC 2136 und Infoblox: Prüfung der Eingabe, Form als Text, rein |
+| `errors.ts` | `DnsUnreachableError`: nicht erreichbar sagt nichts über die Zugangsdaten |
 | `records.ts` | was ein Eintrag ist, `PROVIDER_RULES`, `sameAddress` |
 | `zones.ts` | Domain → Zone, `DnsProviderId`, `dnsProviderForHook`, `providerOf`, Prüfung des Zonennamens |
-| `provider-info.ts` | Name, Zeichen und Konsole eines Anbieters für Oberfläche und Meldungen |
+| `provider-info.ts` | Name, Zeichen, Konsole und Felder eines Anbieters für Oberfläche und Meldungen, `accessFromInput` |
 | `store.ts` | die eigene Datenbank: Zeilen, Token entschlüsseln, Ergebnis vermerken |
 | `connect.ts` | eine Zone anbinden, den Token austauschen, einen Adress-Eintrag sicherstellen |
 | `sync.ts` | der DNS-Teil eines Reverse-Proxy-Vorgangs |
+
+**Der Zugang ist für alles außerhalb des Anbieters ein Text.** Bei Cloudflare und Hetzner
+ist es der API-Token. Bei RFC 2136 und Infoblox sind es mehrere Angaben, als JSON
+(`access.ts`). `connect.ts` und `store.ts` verschlüsseln und entschlüsseln ihn, ohne
+hineinzusehen, und `dns_zones.apiToken` heißt weiter so. Wer den Zugang aus einem
+Formular baut, nimmt `accessFromInput` (`provider-info.ts`): es prüft die Felder mit
+derselben Funktion wie die Zugangsdaten für acme.sh.
+
+**Nicht jeder Anbieter zählt auf.** Cloudflare und Hetzner nennen alle Zonen eines
+Tokens und alle Einträge einer Zone. Ein Nameserver über RFC 2136 kann beides nicht
+(ohne Zonentransfer), und ein Infoblox-Grid führt oft Tausende Zonen. Deshalb sagt
+jeder Aufrufer dazu, worum es ihm geht:
+
+- `listZones(token, near)` bekommt die Domain. Wer nicht aufzählt
+  (`PROVIDER_RULES[...].listsZones === false`), liefert die Zone, in der sie liegt.
+- `listRecords(token, zone, names)` bekommt die vollen Namen. Wer nicht aufzählt,
+  liefert, was unter ihnen steht. `sync.ts`, `ensureAddressRecord` und
+  `/api/dns/match` geben die Namen ihrer Zone mit.
+- `assertWritable(token, zone)` gibt es nur, wo Lesen und Ändern zweierlei sind
+  (RFC 2136). `connect.ts` ruft es vor dem Speichern.
+
+Wer aufzählen kann, darf `near` und `names` übergehen. Für einen neuen Aufrufer heißt
+das: immer mitgeben, sonst liest er bei RFC 2136 nichts.
 
 **`dns_zones.provider` darf fehlen.** Eine Zeile ohne das Feld ist Cloudflare: sie
 stammt aus der Zeit, in der es nur diesen Anbieter gab. Deshalb gibt es keine Migration,
@@ -79,17 +118,24 @@ und deshalb liest jede Stelle über `providerOf(zone)` und nie über das Feld
 **Was nur ein Anbieter kennt, bleibt an ihm hängen.** Die Unterschiede stehen in
 `PROVIDER_RULES` (`records.ts`), und wer schreibt, fragt dort:
 
-| | Cloudflare | Hetzner |
-|---|---|---|
-| Proxy über die Server des Anbieters (`proxied`) | ja, HAPM schreibt immer `false` | gibt es nicht, das Feld geht nicht mit |
-| „keine eigene TTL" | `ttl: 1` („automatisch", keine Sekunde) | `ttl: null`, es gilt die TTL der Zone |
-| wem die TTL gehört | dem Eintrag | dem Namen samt Art (RRSet), also allen seinen Werten |
+| | Cloudflare | Hetzner | RFC 2136 | Infoblox |
+|---|---|---|---|---|
+| Proxy über die Server des Anbieters (`proxied`) | ja, HAPM schreibt immer `false` | gibt es nicht | gibt es nicht | gibt es nicht |
+| „keine eigene TTL" | `ttl: 1` („automatisch", keine Sekunde) | `ttl: null`, es gilt die TTL der Zone | `ttl: null`: die TTL, die der Name schon hat, sonst eine Stunde | `ttl: null` (`use_ttl: false`), es gilt die der Zone |
+| wem die TTL gehört | dem Eintrag | dem Namen samt Art (RRSet) | dem Namen samt Art (RRSet) | dem Eintrag |
+| zählt Zonen und Einträge auf (`listsZones`) | ja | ja | nein | nein, gefragt wird gezielt |
+| Kennung eines Eintrags | die des Anbieters | Name, Art und Wert | Name, Art und Wert (wie auf der Leitung) | die des Anbieters (`_ref`) |
+| Notiz am Eintrag (`comment`) | ja | ja | gibt es nicht | ja |
+| ob die Nameserver auf den Anbieter zeigen (`delegated`) | ja | ja | `null`, er ist selbst der Nameserver | `null` |
 
-**Name, Zeichen und Konsole stehen genau einmal**, bei den Zugangsdaten für acme.sh
-(`DNS_PROVIDERS` in `lib/haproxy/dns-credentials.ts`): es ist derselbe Anbieter und
-dasselbe Token, ob acme.sh damit eine Wildcard ausstellt (Hook `dns_hetznercloud` bzw.
-`dns_cf`) oder HAPM damit Einträge schreibt. `provider-info.ts` schlägt über den Hook
-nach, `dnsProviderForHook` und `hookForDnsProvider` in `zones.ts` sind die Brücke.
+**Name, Zeichen, Konsole und Felder stehen genau einmal**, bei den Zugangsdaten für
+acme.sh (`DNS_PROVIDERS` in `lib/haproxy/dns-credentials.ts`): es ist derselbe Anbieter
+und derselbe Zugang, ob acme.sh damit eine Wildcard ausstellt oder HAPM damit Einträge
+schreibt. `provider-info.ts` schlägt über den Hook nach, `dnsProviderForHook` und
+`hookForDnsProvider` in `zones.ts` sind die Brücke. RFC 2136 und Infoblox haben kein
+Zeichen unter `public/providers/`: `components/dns/ProviderName.tsx` zeigt für sie ein
+Symbol. Ihre Felder zeigt an allen drei Stellen (Assistent, Zugangsdaten für acme.sh,
+Zone anbinden) derselbe Baustein, `components/dns/CredentialFields.tsx`.
 
 ## Es gibt keine Collection für die Einträge
 
@@ -101,10 +147,15 @@ Einträge der Zone in dem Moment beim Anbieter.
 
 `dns_zones` trägt deshalb nur den **Zugang**: Anbieter, Name, Zone-ID, Token, und wann
 er zuletzt funktioniert hat. Die Liste unter `/dns` prüft ihn bei jedem Aufruf: sie
-fragt mit dem Token, welche Zonen er sieht (`listZones`). Steht die Zone darunter,
-funktioniert der Zugang, und dieselbe Antwort sagt, ob die Nameserver auf den Anbieter
-zeigen. Der Preis ist eine Abfrage je Zone und Poll-Takt, deshalb läuft die Seite im
-60-Sekunden-Takt und nicht in 30.
+fragt mit dem Token, welche Zonen er sieht (`listZones`, mit dem Namen der Zone als
+`near`). Steht die Zone darunter, funktioniert der Zugang, und dieselbe Antwort sagt, ob
+die Nameserver auf den Anbieter zeigen. Der Preis ist eine Abfrage je Zone und
+Poll-Takt, deshalb läuft die Seite im 60-Sekunden-Takt und nicht in 30. Bei RFC 2136
+ist die Abfrage eine unterschriebene Frage nach dem SOA der Zone, bei Infoblox eine
+Suche nach genau dieser Zone. Die „Zone-ID" ist dort keine Kennung des Anbieters,
+sondern nennt, wen HAPM anspricht: den Nameserver (`ns1.example.org`, mit Port, wenn er
+nicht 53 ist) oder Appliance und View (`infoblox.example.org/default`). Die Karte zeigt
+sie unter diesem Namen und lässt die Zeile „Nameserver zeigen auf …" weg.
 
 ## Der Token wird gespeichert, und das ist der Unterschied zu acme.sh
 
@@ -133,7 +184,11 @@ Daraus folgen drei Dinge, die zusammengehören:
 Welcher Token es sein muss: bei Cloudflare ein API-Token mit „Zone → DNS → Bearbeiten"
 auf der Zone, bei Hetzner ein Token des Projekts, in dem die Zone liegt, mit Lese- und
 Schreibrecht. Der von Hetzner gilt für alle Zonen seines Projekts, und es ist derselbe,
-den der acme.sh-Hook als `HETZNER_TOKEN` benutzt.
+den der acme.sh-Hook als `HETZNER_TOKEN` benutzt. Bei RFC 2136 ist es ein TSIG-Schlüssel,
+den der Nameserver für die Zone freigibt (`allow-update` oder `update-policy`), bei
+Infoblox ein Konto mit API-Zugang und Schreibrecht auf die Zonen. Für beide gilt
+dasselbe wie für den Token: verschlüsselt gespeichert, nie an den Browser, nie im
+Protokoll. Zum Austauschen gibt man alle Angaben neu ein, weil sich keine anzeigen lässt.
 
 Jeder Aufruf vermerkt sein Ergebnis an der Zeile (`withZone`). Ohne das sähe eine Zone,
 deren Token seit drei Wochen abgelaufen ist, aus wie jede andere. Auffallen würde es beim
@@ -163,6 +218,14 @@ Funktion, `connectZone` in `lib/dns/connect.ts`. Drei Entscheidungen stehen dort
   Prüfung (`delegation_status`). `null` heißt unbekannt (bei Hetzner: noch nicht
   geprüft) und nicht „ja". Die Seite warnt beim Anbinden nur bei einem klaren Nein und
   zeigt den Stand danach an jeder Zone.
+- **Wer nicht aufzählt, wird nach der Domain gefragt.** RFC 2136 und Infoblox bekommen
+  sie als `near` und liefern die Zone, in der sie liegt. Findet sich keine, nennt die
+  Meldung keine Zonen, „die der Zugang stattdessen sieht": es gibt keine Liste, aus der
+  sie kämen. Die Fehler davor (falscher Schlüssel, abgelehnte Anmeldung, falsche View)
+  wirft der Anbieter selbst, mit seinem Grund.
+- **Lesen dürfen heißt nicht ändern dürfen.** Wo der Anbieter das unterscheidet
+  (`assertWritable`, heute nur RFC 2136), wird es vor dem Speichern geprüft. Ein
+  Schlüssel ohne Freigabe fiele sonst erst beim ersten Ziel auf.
 
 **Den Token austauschen ist nicht dasselbe** (`replaceZoneToken`): dort muss der neue
 Token genau DIESE Zone sehen. Mit dem längsten Suffix hätte ein Token, der
@@ -194,8 +257,8 @@ Anlegen der Zone, und ohne sie wird die Zone nicht mehr ausgeliefert.
 `lib/dns/zones.ts` importiert nichts außer dem reinen `lib/i18n`, aus demselben Grund
 wie `lib/haproxy/config.ts`: das Formular im Browser stellt dieselbe Frage wie die Route
 auf dem Server, und zwei Antworten darauf wären ein Dialog, der einen Haken anbietet,
-den das Speichern anders auslegt. Der Vergleich ist bei beiden Anbietern derselbe: er
-arbeitet auf dem Namen der Zone, und den führen beide gleich.
+den das Speichern anders auslegt. Der Vergleich ist bei jedem Anbieter derselbe: er
+arbeitet auf dem Namen der Zone, und den führen alle gleich.
 
 - **Der Punkt ist der Riegel.** `kunde.example` liegt nicht in der Zone `fremdekunde.example`,
   obwohl der Name darin vorkommt. Dieselbe Falle wie beim `-m end -i .kunde.example` der
@@ -300,6 +363,123 @@ wie Hetzner einen Namen wie `*` im Pfad erwartet, und in welchen Fällen es `loc
 `conflict` meldet. Wer hier einen Fehler findet, findet ihn in `hetzner.ts` oder
 `hetzner-rrsets.ts` und sonst nirgends.
 
+## RFC 2136: ein eigener Nameserver
+
+Für BIND und jeden Nameserver, der Änderungen als DNS-UPDATE (RFC 2136) mit einem
+TSIG-Schlüssel (RFC 8945) annimmt. Eingegeben werden der primäre Nameserver (Name oder
+Adresse, Port 53 als Vorgabe), der Name des Schlüssels, das Verfahren (HMAC-SHA256 als
+Vorgabe, dazu SHA384 und SHA512) und das Geheimnis als Base64.
+
+**HAPM spricht den Nameserver selbst**, in Node (`rfc2136.ts`, die Bytes in
+`dns-wire.ts`), und ruft dafür kein `nsupdate` auf. Das Geheimnis geht so durch kein
+Kommando und liegt für HAPMs eigene Aufrufe in keiner Datei, die Antwort wird geprüft
+statt aus Text gelesen, und es läuft auch unter `pnpm dev` und in den Tests. `nsupdate`
+liegt trotzdem im Abbild (`bind9-dnsutils`): acme.sh ruft es für die Challenge auf, siehe
+[`reverse-proxy.md`](reverse-proxy.md).
+
+- **Über TCP, jede Nachricht unterschrieben, jede Antwort geprüft.** Eine Antwort ohne
+  gültige Unterschrift desselben Schlüssels ist ein Fehler (`verifyTsig`), kein
+  „gespeichert". Die Uhren dürfen fünf Minuten auseinanderliegen, wie TSIG es vorsieht.
+  Der Nameserver muss Port 53 über TCP annehmen.
+- **Die Zone wird gesucht** (`findZone`): gefragt wird nach dem SOA der Domain und dann
+  ihrer Eltern, bis der Nameserver einen als seinen eigenen beantwortet (`AA`). Führt er
+  `example.org` und `intern.example.org`, gewinnt die engere. Verweist er auf andere
+  Nameserver, führt er die Domain nicht.
+- **Beim Anbinden geht eine Änderung ohne Inhalt hinaus** (`assertWritable`). Der
+  Nameserver prüft daran Zone, Schlüssel und, bei `allow-update`, die Freigabe, und
+  ändert nichts. Bei `update-policy` entscheidet er je Eintrag: dort zeigt sich eine
+  fehlende Freigabe erst beim ersten Schreiben, mit derselben Meldung.
+- **Gelesen wird gezielt**, je Name die Arten CNAME, A, AAAA, TXT, MX und NS. `NXDOMAIN`
+  auf die erste Frage spart die übrigen. Einen Zonentransfer braucht es nicht.
+- **Ein CNAME entsteht nur unter einem freien Namen**, und das entscheidet der
+  Nameserver: die Änderung trägt die Vorbedingung „unter dem Namen steht nichts"
+  (RFC 2136, 2.4.5). Ohne sie nimmt ein Nameserver einen CNAME neben anderen Daten an
+  und wirft ihn still weg (3.4.2.2). Ein A-Eintrag trägt umgekehrt „hier steht kein
+  CNAME". Nach jeder Änderung liest HAPM nach: steht der Eintrag nicht da, ist das ein
+  Fehler.
+- **Ändern ist eine Nachricht** (alter Wert weg, neuer hin): der Nameserver führt sie
+  ganz aus oder gar nicht. Anders als bei Hetzner gibt es keinen Zwischenstand.
+- **Die TTL gehört dem Namen samt Art.** Ein neuer Wert übernimmt die der vorhandenen.
+  Hat der Name noch keine, ist es eine Stunde (`RFC2136_DEFAULT_TTL`): eine Vorgabe der
+  Zone kennt das Protokoll nicht.
+- **Ein Stern in der Zone antwortet für jeden Namen darunter**, und die Antwort trägt
+  den erfragten Namen. Sie sähe aus wie ein Eintrag, den es nicht gibt, und HAPM
+  meldete beim Anlegen eines Ziels „steht bereits". Deshalb die Gegenprobe
+  (`synthesized`): antwortet ein erfundener Nachbarname genauso, fragt HAPM den
+  Nameserver, ob es den Namen wirklich gibt, mit einer Änderung, die nur aus der
+  Vorbedingung „der Name ist belegt" besteht und nichts ändert.
+- **Was es nicht gibt:** GSS-TSIG (das Verfahren von Windows DNS mit Active Directory),
+  HMAC-MD5 und HMAC-SHA1, Notizen an Einträgen, mehrere Nameserver für eine Zone. Wer
+  zwei primäre hat, nennt einen.
+
+**Geprüft gegen ein echtes BIND 9.20** mit `pnpm dns:verify` (Docker): Zone finden,
+falsches Geheimnis, unbekannter Schlüssel, fehlende Freigabe (`allow-update` und
+`update-policy`), Anlegen, Lesen, Ändern und Entfernen von CNAME, A, AAAA und TXT, der
+Stern, dazu der Weg von acme.sh bis zum ausgestellten und erneuerten Zertifikat. Andere
+Nameserver (Knot, PowerDNS) liefen nicht mit. Was dort abweichen kann: wie eine leere
+Änderung beantwortet wird und ob eine verneinende Antwort den SOA der Zone nennt. Die
+Tests gegen den nachgestellten Nameserver (`tests/dns/fake-nameserver.ts`) halten fest,
+was HAPM erwartet.
+
+Eingerichtet wird der Schlüssel auf dem Nameserver, bei BIND etwa so:
+
+```
+# tsig-keygen -a hmac-sha256 hapm
+key "hapm" {
+    algorithm hmac-sha256;
+    secret "…";
+};
+
+zone "example.org" {
+    type primary;
+    file "example.org.zone";
+    update-policy { grant hapm zonesub ANY; };
+};
+```
+
+## Infoblox: die WAPI
+
+Eingegeben werden die Appliance (Grid Master, Name oder Adresse, wahlweise mit Port),
+Benutzer, Passwort, die DNS-View (Vorgabe `default`), wahlweise die Fassung der WAPI
+(Vorgabe 2.2.2, dieselbe, die der acme.sh-Hook fest benutzt) und wahlweise das
+Zertifikat einer eigenen Zertifizierungsstelle als PEM.
+
+- **Je Eintragsart ein eigenes Objekt** (`record:a`, `record:aaaa`, `record:cname`,
+  `record:txt`), gelesen mit vollem Namen und View. Ein Eintrag hat eine Kennung
+  (`_ref`), Ändern und Entfernen gehen über sie.
+- **Zonen werden gesucht, nicht gelistet**: `zone_auth?fqdn=` für die Domain und ihre
+  Eltern. Findet sich keine, fragt HAPM nach der View: „die View gibt es nicht" ist eine
+  andere Meldung als „keine Zone". Rückwärtszonen bleiben außen vor.
+- **Ein Host-Eintrag** (`record:host`) ist bei Infoblox ein eigenes Objekt mit Adressen.
+  Er erscheint als A oder AAAA und gesperrt: HAPM sieht ihn, damit unter dem Namen kein
+  zweiter Eintrag entsteht, und ändert ihn nicht.
+- **Nach dem Schreiben liest HAPM den Eintrag über seine Kennung**, statt die Eingabe zu
+  glauben.
+- **Das Zertifikat der Appliance wird geprüft, immer.** Einen Schalter dagegen gibt es
+  nicht: darüber gehen Benutzer und Passwort. Die eigene CA gilt zusätzlich zu den
+  öffentlichen Stellen, und das Zertifikat muss auf den eingetragenen Namen ausgestellt
+  sein. Eine Appliance mit dem Werkszertifikat (ausgestellt auf `www.infoblox.com`)
+  braucht also zuerst ein eigenes. Die Meldungen sagen, woran es liegt: unbekannte
+  Stelle, falscher Name, abgelaufen.
+- **`node:https` und nicht `fetch`**, weil nur dort eine eigene CA je Anfrage mitgehen
+  kann. Ein Proxy für ausgehende Verbindungen (`HTTPS_PROXY`) gilt für diese Aufrufe
+  nicht: die Appliance steht im eigenen Netz.
+- **Das Passwort** kennt kein Leerzeichen, keinen Apostroph, keinen Backslash und keine
+  Umlaute. Die Grenze kommt von acme.sh, das dieselben Zugangsdaten als Shell-Zeile
+  ablegt, und sie gilt hier mit, damit unter „DNS" nichts durchgeht, was dort scheitert.
+  Ein Benutzer der Form `DOMAIN\name` geht aus demselben Grund nicht.
+
+**Was davon nie gegen eine echte Appliance lief: alles.** Beim Bau gab es keine. Die
+Aufrufe folgen der WAPI-Dokumentation von Infoblox und dem acme.sh-Hook `dns_infoblox`,
+der dieselbe Anmeldung, dieselbe Fassung und `view` als Parameter benutzt.
+`tests/dns/infoblox.test.ts` prüft gegen einen Nachbau im Speicher und die Verbindung
+selbst (eigene CA, falscher Name) gegen einen echten HTTPS-Server. Insbesondere nur aus
+der Beschreibung gelesen: dass eine Folgeseite über `_page_id` ihre Felder behält, dass
+`POST` die Kennung als JSON-Text zurückgibt, wie die Appliance einen CNAME neben
+vorhandenen Daten ablehnt (erwartet: 400 mit `text`), dass `view?name=` für eine
+unbekannte View eine leere Liste liefert, und die Namen der Felder an `record:host`.
+Wer hier einen Fehler findet, findet ihn in `infoblox.ts` und sonst nirgends.
+
 ## Der Haken im Reverse-Proxy-Dialog
 
 Liegt eine Domain des Dienstes in einer angebundenen Zone, steht sie im Abschnitt
@@ -313,12 +493,15 @@ falsch da, wenn jemand den Eintrag dort gerade gelöscht hat. Die Antwort nennt 
 Anbieter der Zone (`zone.provider`), damit der Dialog nur bei Cloudflare etwas über den
 Proxy sagt.
 
-**Der Schalter arbeitet für beide Anbieter gleich**, und `sync.ts` kennt keinen beim
+**Der Schalter arbeitet für jeden Anbieter gleich**, und `sync.ts` kennt keinen beim
 Namen: es bekommt den Anbieter über `providerFor(zone)`. Angelegt wird derselbe Eintrag,
 ein CNAME auf die Zone selbst. Was abweicht, kommt aus `PROVIDER_RULES`: die TTL ist die
-Vorgabe des Anbieters (Cloudflare `1`, Hetzner die der Zone), und `proxied: false` geht
-nur an Cloudflare mit. Bei Hetzner steht der Wert als `example.org.` mit Punkt in der
-Zone und kommt ohne Punkt zurück, `isProxyRecord` erkennt ihn also unverändert.
+Vorgabe des Anbieters (Cloudflare `1`, Hetzner und Infoblox die der Zone, RFC 2136 eine
+Stunde), und `proxied: false` geht nur an Cloudflare mit. Bei Hetzner steht der Wert als
+`example.org.` mit Punkt in der Zone und kommt ohne Punkt zurück, bei RFC 2136 und
+Infoblox ebenfalls ohne Punkt und klein, `isProxyRecord` erkennt ihn also unverändert.
+Die Zone selbst bekommt bei keinem Anbieter einen CNAME (`proxyRecordPlan`). Bei
+RFC 2136 lehnte ihn zudem der Nameserver ab: dort steht immer schon der SOA.
 `proxyRecordPlan` trägt weiter `ttl: 1` und `proxied: false`: das ist der Plan in der
 Schreibweise von Cloudflare, und wer schreibt, nimmt die Vorgabe seines Anbieters.
 
@@ -337,7 +520,9 @@ Die Antwort kommt dann von woanders, meist vom DNS-Server im eigenen Netz, und
 die Domain ist absichtlich nur dort bekannt. Ein Eintrag in der angebundenen
 Zone machte sie im ganzen Internet auflösbar. Der Schalter lässt sich trotzdem
 einschalten, und die Zeile sagt genau das dazu (`resolvesElsewhere`,
-`dnsChosen` im Dialog).
+`dnsChosen` im Dialog). Bei RFC 2136 trifft das auch einen Namen, den nur ein
+Stern in der angebundenen Zone beantwortet: er löst auf, steht aber nicht als
+eigener Eintrag da.
 
 Fünf Zustände, und jeder sagt etwas anderes:
 
@@ -418,8 +603,9 @@ Umgekehrt kennt `lib/dns/sync.ts` kein HAProxy; es bekommt Domains und liefert S
 
 ## Eine Anbindung zu entfernen ändert beim Anbieter nichts
 
-Die Zone bleibt, ihre Einträge bleiben, alles läuft weiter. Das gilt bei Cloudflare wie
-bei Hetzner: gelöscht wird nur die Zeile in `dns_zones`. Weg ist nur der Zugang von
+Die Zone bleibt, ihre Einträge bleiben, alles läuft weiter. Das gilt bei jedem
+Anbieter: gelöscht wird nur die Zeile in `dns_zones`. Die Zugangsdaten für acme.sh
+(Reverse-Proxy, Einstellungen) bleiben dabei auch stehen: sie gehören acme.sh. Weg ist nur der Zugang von
 hier, und damit der Haken im Proxy-Dialog. Der Bestätigungsdialog sagt genau das: ein
 Knopf, der wie „aus der Liste nehmen" aussieht und eine ganze Domain offline nimmt,
 wäre die teuerste Verwechslung, die diese Seite anbieten könnte.

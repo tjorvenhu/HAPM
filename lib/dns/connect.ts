@@ -21,6 +21,15 @@
  * keine zweite angelegt. Mit zwei Zeilen für denselben Namen wüsste niemand, in
  * welche `sync.ts` schreibt. Ersetzt wird erst, nachdem der neue Token die Zone
  * gezeigt hat: ein falscher lässt den alten stehen.
+ *
+ * ── „Token" heißt hier: der Zugang ──
+ *
+ * Bei Cloudflare und Hetzner ist es der API-Token. Bei RFC 2136 und Infoblox
+ * sind es die Zugangsdaten als Text (`access.ts`), die der Aufrufer aus den
+ * Feldern des Formulars baut (`zoneAccess` in `lib/haproxy/dns-credentials.ts`).
+ * Diese beiden zählen ihre Zonen nicht auf (`PROVIDER_RULES[...].listsZones`):
+ * `listZones` bekommt die Domain mit und sucht die Zone zu ihr. Die Meldung
+ * nennt dann keine Zonen, die der Zugang „stattdessen sieht".
  */
 
 import { isIP } from 'node:net';
@@ -103,10 +112,24 @@ export async function connectZone(input: {
   if (domain === '') throw new ApiError(msg('Bitte eine Domain angeben.'));
   const token = input.token.trim();
   const label = dnsProviderLabel(input.provider);
-  if (!token) throw new ApiError(msg('Bitte den API-Token von {provider} angeben.', { provider: label }));
+  const lists = PROVIDER_RULES[input.provider].listsZones;
+  if (!token) {
+    throw new ApiError(
+      lists
+        ? msg('Bitte den API-Token von {provider} angeben.', { provider: label })
+        : msg('Bitte die Zugangsdaten für {provider} angeben.', { provider: label })
+    );
+  }
 
-  const visible = await providerFor(input.provider).listZones(token);
+  const provider = providerFor(input.provider);
+  const visible = await provider.listZones(token, domain);
   const found = matchZone(domain, visible);
+  if (!found && !lists) {
+    throw new ApiError(
+      msg('{provider}: Dort gibt es keine Zone, in der "{domain}" liegt.', { provider: label, domain }),
+      404
+    );
+  }
   if (!found) {
     // Der häufigste Fehler ist ein Token, der für eine andere Domain oder ein
     // anderes Projekt erzeugt wurde. „Nicht gefunden" schickt einen dabei in
@@ -124,6 +147,10 @@ export async function connectZone(input: {
       404
     );
   }
+
+  // Lesen dürfen heißt nicht ändern dürfen. Wo der Anbieter das unterscheidet,
+  // fällt es hier auf und nicht beim ersten Ziel.
+  await provider.assertWritable?.(token, { id: found.id, name: found.name });
 
   const name = normalizeDomain(found.name);
   const existing = await findZoneRow(name);
@@ -152,13 +179,27 @@ export async function connectZone(input: {
 export async function replaceZoneToken(zoneDocumentId: string, token: string): Promise<ZoneForClient> {
   const zone = await getZoneRow(zoneDocumentId);
   const provider = providerOf(zone);
+  const lists = PROVIDER_RULES[provider].listsZones;
   const secret = token.trim();
   if (!secret) {
-    throw new ApiError(msg('Bitte den API-Token von {provider} angeben.', { provider: dnsProviderLabel(provider) }));
+    throw new ApiError(
+      lists
+        ? msg('Bitte den API-Token von {provider} angeben.', { provider: dnsProviderLabel(provider) })
+        : msg('Bitte die Zugangsdaten für {provider} angeben.', { provider: dnsProviderLabel(provider) })
+    );
   }
 
-  const visible = await providerFor(provider).listZones(secret);
+  const visible = await providerFor(provider).listZones(secret, zone.name);
   const found = visible.find((seen) => normalizeDomain(seen.name) === normalizeDomain(zone.name));
+  if (!found && !lists) {
+    throw new ApiError(
+      msg('{provider}: Mit diesen Zugangsdaten gibt es die Zone "{zone}" dort nicht.', {
+        provider: dnsProviderLabel(provider),
+        zone: zone.name,
+      }),
+      404
+    );
+  }
   if (!found) {
     throw new ApiError(
       notVisible(
@@ -173,6 +214,8 @@ export async function replaceZoneToken(zoneDocumentId: string, token: string): P
       404
     );
   }
+
+  await providerFor(provider).assertWritable?.(secret, { id: found.id, name: found.name });
 
   const updated = await updateDocument<DnsZone>(
     COLLECTIONS.DNS_ZONES,
@@ -219,7 +262,7 @@ export async function ensureAddressRecord(
   const rules = PROVIDER_RULES[provider.id];
   const direct = rules.proxy ? { proxied: false } : {};
 
-  const records = await withZone(zone, (token, ref) => provider.listRecords(token, ref));
+  const records = await withZone(zone, (token, ref) => provider.listRecords(token, ref, [fqdn]));
   const here = records.filter((record) => normalizeDomain(record.name) === fqdn);
 
   // Die zwei Absagen stehen außerhalb von `withZone`: ein Eintrag, der im Weg

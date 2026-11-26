@@ -147,10 +147,16 @@ import {
 } from './backend-ca';
 import {
   findDnsProvider,
+  credentialFiles,
   credentialLines,
   credentialNamesToClear,
+  plainNamesToClear,
+  removeCredentialFileCommand,
+  writeCredentialFileCommand,
   writeCredentialsCommand,
   validateDnsCredentials,
+  TRUST_SYNC,
+  type CredentialFile,
   type DnsCredentialInput,
 } from './dns-credentials';
 import {
@@ -627,6 +633,14 @@ async function assertPortFree(
  * steht, den kein Hook liest, wäre sonst ein grüner Haken ohne Deckung — und
  * auffallen würde er erst beim ersten Wildcard-Antrag. Dieselbe Regel wie bei
  * `ensureDatabase()`.
+ *
+ * ── Dateien neben `account.conf` ──
+ *
+ * RFC 2136 braucht den TSIG-Schlüssel als Datei, Infoblox wahlweise eine
+ * Zertifizierungsstelle (`credentialFiles`). Beim Setzen entstehen sie VOR der
+ * Zeile, die auf sie zeigt, beim Entfernen gehen sie nach ihr: eine Zeile ohne
+ * ihre Datei wäre ein Hook, der als eingerichtet gilt und nicht arbeiten kann.
+ * Ihr Inhalt geht über stdin, wie der Token.
  */
 export async function writeDnsCredentials(
   server: Server,
@@ -639,10 +653,28 @@ export async function writeDnsCredentials(
     const ssh = await getSSHConfig(server);
     const provider = findDnsProvider(input.hook)!;
 
+    const putFile = async (file: CredentialFile) => {
+      const done =
+        file.content === null
+          ? await sshExec(ssh, buildCommand(['sh', '-c', removeCredentialFileCommand(file.path)]), SHORT_MS)
+          : await sshExec(ssh, withStdin(['sh', '-c', writeCredentialFileCommand(file.path)], file.content), SHORT_MS);
+      if (done.code !== 0) {
+        throw new ApiError(
+          msg('Die Zugangsdaten ließen sich nicht ablegen: {detail}', { detail: tail(done.stderr || done.stdout) })
+        );
+      }
+    };
+    const files = credentialFiles(input);
+    if (!input.remove) for (const file of files) await putFile(file);
+
     const res = await sshExec(
       ssh,
       withStdin(
-        ['sh', '-c', writeCredentialsCommand(credentialNamesToClear(provider, input.remove))],
+        [
+          'sh',
+          '-c',
+          writeCredentialsCommand(credentialNamesToClear(provider, input.remove), plainNamesToClear(provider)),
+        ],
         // Ohne abschließenden Zeilenumbruch klebte die erste neue Zeile an der
         // letzten der Datei, falls die keinen hatte.
         `${credentialLines(input).join('\n')}\n`
@@ -659,6 +691,19 @@ export async function writeDnsCredentials(
             )
           : msg('Die Zugangsdaten ließen sich nicht ablegen: {detail}', { detail: tail(res.stderr || res.stdout) })
       );
+    }
+
+    if (input.remove) for (const file of files) await putFile(file);
+    if (provider.trust) {
+      const trusted = await sshExec(ssh, buildCommand(['sh', '-c', TRUST_SYNC]), SHORT_MS);
+      if (trusted.code !== 0) {
+        throw new ApiError(
+          msg(
+            'Die Zugangsdaten sind abgelegt, die Zertifizierungsstelle ließ sich im Container aber nicht hinterlegen: {detail}',
+            { detail: tail(trusted.stderr || trusted.stdout) }
+          )
+        );
+      }
     }
 
     return (await probeProxy(server)).dnsHooks;

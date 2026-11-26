@@ -93,6 +93,8 @@ Konfiguration, prüft sie mit HAProxy, lädt neu und holt die Zertifikate.
 - Let's Encrypt über acme.sh, automatisch erneuert
 - Wildcard-Zertifikate über DNS-01
 - Zonen bei Cloudflare und Hetzner anbinden
+- Eigener Nameserver über RFC 2136 (BIND mit TSIG-Schlüssel)
+- Infoblox über die WAPI (noch an keiner echten Appliance erprobt)
 - DNS-Eintrag zu einem Ziel auf Wunsch gleich mit anlegen
 - Im Dialog sehen, worauf eine Domain gerade zeigt
 - Server nur im eigenen Netz: jedes Zertifikat über DNS-01
@@ -444,7 +446,8 @@ allem HTTPS (TCP 443) zu diesen Hosts:
   `production.cloudflare.docker.com`
 - **Zertifikate:** `acme-v02.api.letsencrypt.org`, bei DNS-01 dazu
   `cloudflare-dns.com` und die API des DNS-Anbieters (`api.cloudflare.com` oder
-  `api.hetzner.cloud`)
+  `api.hetzner.cloud`). Mit einem eigenen Nameserver (RFC 2136) stattdessen
+  Port 53 (TCP und UDP) dorthin, mit Infoblox Port 443 zur Appliance
 - **Updates und Länder:** `api.github.com`, `github.com`,
   `codeload.github.com`, `download.db-ip.com`
 - **CrowdSec:** `cdn-hub.crowdsec.net`, `hub-data.crowdsec.net`, für die
@@ -470,7 +473,7 @@ sieben Schritte:
 |---|---|
 | **1. Konto** | Sie legen das erste Konto an, mit dem Sie HAPM verwalten |
 | **2. Erreichbarkeit** | Aus dem Internet erreichbar oder nur im eigenen Netz? Davon hängt ab, wie Zertifikate entstehen |
-| **3. DNS** | Cloudflare oder Hetzner mit einem API-Token, dann legt HAPM DNS-Einträge selbst an. Oder **eigener DNS-Server**: HAPM nennt Ihnen jeden Eintrag, den Sie selbst setzen |
+| **3. DNS** | Cloudflare oder Hetzner mit einem API-Token, ein eigener Nameserver mit TSIG-Schlüssel (RFC 2136) oder Infoblox: dann legt HAPM DNS-Einträge selbst an. Oder **eigener DNS-Server**: HAPM nennt Ihnen jeden Eintrag, den Sie selbst setzen |
 | **4. Zertifikate** | **Let's Encrypt** (Vorgabe), ein **eigener ACME-Server** mit Directory-URL, etwa step-ca im eigenen Netz, oder **hochladen**: HAPM beantragt nichts, Sie laden Zertifikat und Schlüssel hoch |
 | **5. E-Mail** | Das SMTP-Konto, über das HAPM Mails verschickt: für Passkeys, „Passwort vergessen“ und Benachrichtigungen. Lässt sich überspringen und später unter „Benachrichtigungen“ einrichten |
 | **6. Adresse der Oberfläche** | Die Domain für HAPM selbst, etwa `hapm.example.org`. HAPM zeigt den nötigen DNS-Eintrag und legt ihn beim Anbieter an, wenn einer verbunden ist |
@@ -917,8 +920,8 @@ etwa mit `systemctl disable --now apache2`. Danach `docker compose up -d`.
   sie auflöst. Ein neuer DNS-Eintrag braucht manchmal einige Minuten.
 - **Ist Port 80 aus dem Internet erreichbar?** Let's Encrypt prüft darüber.
   Steht der Server nur im eigenen Netz, gibt es drei Wege: einen DNS-Anbieter
-  mit API (Cloudflare, Hetzner), einen eigenen ACME-Server im Netz oder
-  hochgeladene Zertifikate. Den DNS-Anbieter tragen Sie unter „Reverse-Proxy,
+  mit API (Cloudflare, Hetzner, ein eigener Nameserver über RFC 2136,
+  Infoblox), einen eigenen ACME-Server im Netz oder hochgeladene Zertifikate. Den DNS-Anbieter tragen Sie unter „Reverse-Proxy,
   Einstellungen“ ein, ACME-Server und Herkunft der Zertifikate unter
   „Allgemein“, hochgeladen wird unter „Zertifikate“.
 - **Zu viele Versuche?** Let's Encrypt begrenzt fehlgeschlagene Anträge. Zum
@@ -956,7 +959,7 @@ jeder Entscheidung, warum sie so getroffen wurde.
 | [`docs/reverse-proxy.md`](docs/reverse-proxy.md) | Ziele, Gruppen, Zertifikate, Wildcards, Sperren, Fehlerseiten, Statistik, Import |
 | [`docs/reverse-proxy-api.md`](docs/reverse-proxy-api.md) | Die API für Skripte und andere Dienste |
 | [`docs/mcp.md`](docs/mcp.md) | Der MCP-Server für Claude und andere Clients |
-| [`docs/dns.md`](docs/dns.md) | DNS bei Cloudflare und Hetzner |
+| [`docs/dns.md`](docs/dns.md) | DNS bei Cloudflare, Hetzner, einem eigenen Nameserver (RFC 2136) und Infoblox |
 | [`docs/crowdsec.md`](docs/crowdsec.md) | CrowdSec: Aufbau, Regeln, Freigaben, Grenzen, Fehlersuche |
 | [`docs/protokoll.md`](docs/protokoll.md) | Protokoll: Lesen, Export, Weiterleitung an ein SIEM (Syslog, HTTP), Aufbewahrung |
 | [`docs/hochverfuegbarkeit.md`](docs/hochverfuegbarkeit.md) | Hochverfügbarkeit: Hauptknoten und Folgeknoten, Abgleich, gemeinsame Adresse, Grenzen |
@@ -987,6 +990,8 @@ Lizenz zugänglich machen. Eine Gewährleistung gibt es nicht.
 - Die Zeichen von Hetzner und Cloudflare stammen aus
   [Simple Icons](https://simpleicons.org) (CC0). Die Marken gehören ihren
   Inhabern. HAPM steht mit keinem der beiden in Verbindung.
+- Infoblox und BIND sind Marken ihrer Inhaber. HAPM spricht ihre
+  Schnittstellen an und steht mit keinem der beiden in Verbindung.
 - HAProxy und CrowdSec sind Marken ihrer Inhaber. Ihre Zeichen stehen in der
   Oberfläche und hier nur, um das jeweilige Programm zu kennzeichnen. HAPM
   steht mit keinem der beiden in Verbindung.

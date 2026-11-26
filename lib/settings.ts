@@ -7,7 +7,14 @@ import { DEFAULT_SMTP_PORT, SMTP_SECURITIES, parseSender } from './mail/config';
 import { rememberPublicUrl } from './mail/installation';
 import { isLocale, msg, type Locale } from './i18n';
 import { normalizeAcmeDirectory, validateAcmeDirectory } from './acme-server';
-import { challengeChoice, type ChallengeChoice } from './haproxy/challenge';
+import {
+  DEFAULT_DNS_WAIT,
+  MAX_DNS_WAIT,
+  MIN_DNS_WAIT,
+  challengeChoice,
+  validDnsWait,
+  type ChallengeChoice,
+} from './haproxy/challenge';
 import {
   COLLECTIONS,
   NOTIFICATION_EVENT_TYPES,
@@ -74,6 +81,7 @@ const DEFAULTS: SettingsData = {
   certificateSource: 'acme',
   acmeDirectory: null,
   acmeHttpReachable: false,
+  dnsWait: DEFAULT_DNS_WAIT,
   setupStatus: null,
 };
 
@@ -107,6 +115,7 @@ export function withDefaults(row: Partial<Settings>): SettingsData {
       : DEFAULTS.certificateSource,
     acmeDirectory: typeof merged.acmeDirectory === 'string' && merged.acmeDirectory ? merged.acmeDirectory : null,
     acmeHttpReachable: merged.acmeHttpReachable === true,
+    dnsWait: validDnsWait(merged.dnsWait) ? merged.dnsWait : DEFAULTS.dnsWait,
     setupStatus: SETUP_STATUSES.includes(merged.setupStatus as SetupStatus) ? merged.setupStatus : null,
   };
 }
@@ -151,6 +160,7 @@ export function settingsView(settings: Settings): SettingsView {
     certificateSource: settings.certificateSource,
     acmeDirectory: settings.acmeDirectory,
     acmeHttpReachable: settings.acmeHttpReachable,
+    dnsWait: settings.dnsWait,
     setupStatus: settings.setupStatus,
     listenPort: Number.isInteger(port) ? port : null,
   };
@@ -254,6 +264,8 @@ export interface SettingsInput {
   /** `null` heißt: zurück zu Let's Encrypt (oder `HAPM_ACME_SERVER`). */
   acmeDirectory?: string | null;
   acmeHttpReachable?: boolean;
+  /** Sekunden, siehe `Settings.dnsWait`. */
+  dnsWait?: number;
   setupStatus?: SetupStatus;
 }
 
@@ -408,6 +420,17 @@ export function settingsPatch(
       throw new ApiError(msg('Der Schalter für HTTP über Port 80 kennt nur an und aus.'));
     }
     patch.acmeHttpReachable = input.acmeHttpReachable;
+  }
+  if (input.dnsWait !== undefined) {
+    if (!validDnsWait(input.dnsWait)) {
+      throw new ApiError(
+        msg('Die Wartezeit nach dem DNS-Eintrag ist eine ganze Zahl von {min} bis {max} Sekunden.', {
+          min: MIN_DNS_WAIT,
+          max: MAX_DNS_WAIT,
+        })
+      );
+    }
+    patch.dnsWait = input.dnsWait;
   }
   if (input.setupStatus !== undefined) {
     if (!SETUP_STATUSES.includes(input.setupStatus)) throw new ApiError(msg('Unbekannter Stand der Einrichtung.'));

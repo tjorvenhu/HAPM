@@ -22,28 +22,39 @@ export interface ProviderRules {
   proxy: boolean;
   /**
    * Was „keine eigene TTL" heißt. Cloudflare: 1, der Anbieter entscheidet.
-   * Hetzner: `null`, es gilt die Vorgabe der Zone.
+   * Hetzner: `null`, es gilt die Vorgabe der Zone. RFC 2136 und Infoblox:
+   * `null`, der Anbieter nimmt die TTL, die der Name schon hat, sonst seine
+   * Vorgabe (`rfc2136.ts`: eine Stunde, Infoblox: die der Zone).
    */
   defaultTtl: number | null;
+  /**
+   * Ob der Zugang seine Zonen aufzählen kann. Ein Nameserver über RFC 2136
+   * kann es nicht, und ein Infoblox-Grid führt oft Tausende: beide suchen
+   * stattdessen die Zone zu der Domain, die `listZones` als `near` bekommt.
+   * Die Meldung „der Token sieht: …" gibt es dort deshalb nicht.
+   */
+  listsZones: boolean;
 }
 
 export const PROVIDER_RULES: Record<DnsProviderId, ProviderRules> = {
-  cloudflare: { proxy: true, defaultTtl: TTL_AUTO },
-  hetzner: { proxy: false, defaultTtl: null },
+  cloudflare: { proxy: true, defaultTtl: TTL_AUTO, listsZones: true },
+  hetzner: { proxy: false, defaultTtl: null, listsZones: true },
+  rfc2136: { proxy: false, defaultTtl: null, listsZones: false },
+  infoblox: { proxy: false, defaultTtl: null, listsZones: false },
 };
 
 /** Ein Eintrag, wie HAPM ihn führt, bei jedem Anbieter gleich. */
 export interface DnsRecord {
   /**
-   * Die Kennung beim Anbieter. Bei Cloudflare seine eigene, bei Hetzner aus
-   * Name, Art und Wert gebildet (`hetzner-rrsets.ts`): dort gibt es keine.
+   * Die Kennung beim Anbieter. Bei Cloudflare und Infoblox seine eigene, bei
+   * Hetzner und RFC 2136 aus Name, Art und Wert gebildet: dort gibt es keine.
    */
   id: string;
   type: string;
   /** Der volle Name. */
   name: string;
   content: string;
-  /** `null`: keine eigene TTL, es gilt die Vorgabe der Zone (Hetzner). */
+  /** `null`: keine eigene TTL, es gilt die Vorgabe der Zone (Hetzner, Infoblox). */
   ttl: number | null;
   /** Nur bei Cloudflare je wahr. */
   proxied: boolean;

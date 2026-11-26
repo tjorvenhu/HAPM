@@ -19,8 +19,12 @@ import type { AddressVerdict } from '../setup/rules';
 /** Die Eintragsart, die dieses Werkzeug für ein Proxy-Ziel setzt. */
 export const PROXY_RECORD_TYPE = 'CNAME';
 
-/** Die Anbieter, bei denen HAPM Zonen verwaltet. */
-export type DnsProviderId = 'cloudflare' | 'hetzner';
+/**
+ * Die Anbieter, bei denen HAPM Zonen verwaltet. `rfc2136` ist ein eigener
+ * Nameserver (BIND und andere, Änderungen über RFC 2136 mit TSIG), `infoblox`
+ * eine Infoblox-Appliance (WAPI).
+ */
+export type DnsProviderId = 'cloudflare' | 'hetzner' | 'rfc2136' | 'infoblox';
 
 /**
  * Der acme.sh-Hook, der mit demselben Token arbeitet wie der Bereich „DNS".
@@ -32,6 +36,8 @@ export type DnsProviderId = 'cloudflare' | 'hetzner';
 const PROVIDER_HOOKS: Record<DnsProviderId, string> = {
   hetzner: 'dns_hetznercloud',
   cloudflare: 'dns_cf',
+  rfc2136: 'dns_nsupdate',
+  infoblox: 'dns_infoblox',
 };
 
 /** In der Reihenfolge, in der die Oberfläche sie anbietet. */
@@ -41,7 +47,7 @@ export function isDnsProviderId(value: unknown): value is DnsProviderId {
   return (DNS_PROVIDER_IDS as unknown[]).includes(value);
 }
 
-/** dns_cf → cloudflare, dns_hetznercloud → hetzner, sonst null. */
+/** dns_cf → cloudflare, dns_hetznercloud → hetzner, dns_nsupdate → rfc2136, dns_infoblox → infoblox, sonst null. */
 export function dnsProviderForHook(hook: string): DnsProviderId | null {
   return DNS_PROVIDER_IDS.find((id) => PROVIDER_HOOKS[id] === hook) ?? null;
 }

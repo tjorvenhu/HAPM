@@ -15,6 +15,7 @@ import { localExec } from './ssh';
 import { buildCommand, shellEscape, withStdin } from './shell';
 import { msg, msgid, type Message } from './i18n/translate';
 import { DEFAULT_ACME_SERVER, registerAccountInput, registerAccountScript, type EabInput } from './acme-server';
+import { TRUST_SYNC } from './haproxy/dns-credentials';
 
 export const ACME_HOME = '/root/.acme.sh';
 export const ACME = `${ACME_HOME}/acme.sh`;
@@ -100,6 +101,16 @@ export async function ensureAcme(email: string | null): Promise<{ ok: boolean; d
   }
   const res = await localExec(`${steps.join(' && ')} 2>&1`, 120_000);
   if (res.code !== 0) return { ok: false, detail: res.stdout.trim().slice(-500) };
+
+  // Eine eigene Zertifizierungsstelle (Infoblox) liegt im Volume von acme.sh,
+  // vertraut wird ihr im Container: ein neuer Container kennt sie erst hiernach.
+  const trust = await localExec(`${buildCommand(['sh', '-c', TRUST_SYNC])} 2>&1`, 60_000);
+  if (trust.code !== 0) {
+    return {
+      ok: false,
+      detail: `Die eigenen Zertifizierungsstellen ließen sich nicht hinterlegen: ${trust.stdout.trim().slice(-300)}`,
+    };
+  }
   return { ok: true, detail: msgid(status.installed ? 'acme.sh ist eingerichtet.' : 'acme.sh wurde installiert.') };
 }
 

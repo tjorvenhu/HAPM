@@ -10,8 +10,19 @@
  * antwortete unerwartet: dann wird der Token trotzdem abgelegt, und das
  * Ausstellen entscheidet. Eine Ablehnung wird nur aus einer Antwort gelesen,
  * die eine ist.
+ *
+ * Ein eigener Nameserver (RFC 2136) und Infoblox haben keinen Token, sondern
+ * Zugangsdaten. Gefragt wird dort über den Anbieter selbst (`probe` in
+ * `lib/dns/rfc2136.ts` und `lib/dns/infoblox.ts`): eine unterschriebene Frage
+ * an den Nameserver, eine Anmeldung an der Appliance.
  */
 
+import { ApiError } from '../api';
+import { readInfobloxAccess, readRfc2136Access } from '../dns/access';
+import { DnsUnreachableError } from '../dns/errors';
+import { infoblox } from '../dns/infoblox';
+import { rfc2136 } from '../dns/rfc2136';
+import { findDnsProvider } from '../haproxy/dns-credentials';
 import { germanText, msg, type Message } from '../i18n/translate';
 
 /**
@@ -68,7 +79,44 @@ export function judgeTokenResponse(label: string, status: number): TokenCheck {
   );
 }
 
+/** Je Hook, wie der Anbieter selbst gefragt wird. Der Zugang ist der Text aus `DnsProvider.access`. */
+const ACCESS_PROBES: Record<string, (access: string) => Promise<void> | null> = {
+  dns_nsupdate: (token) => {
+    const access = readRfc2136Access(token);
+    return access ? rfc2136.probe(access) : null;
+  },
+  dns_infoblox: (token) => {
+    const access = readInfobloxAccess(token);
+    return access ? infoblox.probe(access) : null;
+  },
+};
+
+async function checkAccess(label: string, probe: Promise<void> | null): Promise<TokenCheck> {
+  if (!probe) return withDetail('unknown', msg('Für diesen Anbieter gibt es keine Vorabprüfung.'));
+  try {
+    await probe;
+    return { result: 'accepted' };
+  } catch (err) {
+    if (err instanceof DnsUnreachableError) {
+      return withDetail(
+        'unknown',
+        msg('{provider} war nicht erreichbar. Ob die Zugangsdaten gelten, zeigt sich beim Ausstellen des Zertifikats.', {
+          provider: label,
+        })
+      );
+    }
+    // Die Meldung des Anbieters nennt den Grund schon (falsches Geheimnis, Anmeldung abgelehnt).
+    if (err instanceof ApiError) return withDetail('rejected', { text: err.text, params: err.params });
+    throw err;
+  }
+}
+
 export async function checkDnsToken(hook: string, values: Record<string, string>): Promise<TokenCheck> {
+  const provider = findDnsProvider(hook);
+  if (provider?.access && ACCESS_PROBES[hook]) {
+    return checkAccess(provider.label, ACCESS_PROBES[hook](provider.access(values)));
+  }
+
   const probe = PROBES[hook];
   if (!probe) return withDetail('unknown', msg('Für diesen Anbieter gibt es keine Vorabprüfung.'));
 

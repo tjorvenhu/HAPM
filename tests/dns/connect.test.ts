@@ -28,6 +28,12 @@ interface FakeProvider extends DnsProvider {
   /** Kennung der Zone → ihr Bestand. */
   records: Map<string, DnsRecord[]>;
   calls: string[];
+  /** Die Domain, die `listZones` mitbekam, je Aufruf. */
+  nears: (string | undefined)[];
+  /** Die Namen, die `listRecords` mitbekam, je Aufruf. */
+  names: (readonly string[] | undefined)[];
+  /** Nur gesetzt, wo der Anbieter Lesen und Ändern unterscheidet. `false`: er lehnt ab. */
+  writable?: boolean;
 }
 
 function fakeProvider(id: DnsProviderId): FakeProvider {
@@ -37,14 +43,18 @@ function fakeProvider(id: DnsProviderId): FakeProvider {
     tokens: new Map(),
     records: new Map(),
     calls: [],
-    async listZones(token) {
+    nears: [],
+    names: [],
+    async listZones(token, near) {
       fake.calls.push('listZones');
+      fake.nears.push(near);
       const zones = fake.tokens.get(token);
       if (!zones) throw new Error('Der API-Token wurde abgelehnt.');
       return zones;
     },
-    async listRecords(_token: string, zone: ZoneRef) {
+    async listRecords(_token: string, zone: ZoneRef, names) {
       fake.calls.push('listRecords');
+      fake.names.push(names);
       return [...(fake.records.get(zone.id) ?? [])];
     },
     async createRecord(_token: string, zone: ZoneRef, input: RecordWrite) {
@@ -88,6 +98,14 @@ function fakeProvider(id: DnsProviderId): FakeProvider {
       );
     },
   };
+  // Wie ein Nameserver über RFC 2136: ein gültiger Schlüssel darf nicht unbedingt ändern.
+  if (id === 'rfc2136') {
+    fake.writable = true;
+    fake.assertWritable = async () => {
+      fake.calls.push('assertWritable');
+      if (!fake.writable) throw new Error('Der Schlüssel darf die Zone nicht ändern.');
+    };
+  }
   return fake;
 }
 
@@ -95,7 +113,9 @@ let providers: Record<DnsProviderId, FakeProvider>;
 
 vi.mock('@/lib/dns/provider', () => ({
   providerFor: (zone: DnsProviderId | { provider?: string | null }) => {
-    const id = typeof zone === 'string' ? zone : zone.provider === 'hetzner' ? 'hetzner' : 'cloudflare';
+    const named = typeof zone === 'string' ? zone : zone.provider;
+    // Eine Zeile ohne das Feld ist Cloudflare (`providerOf`).
+    const id = named && named in providers ? (named as DnsProviderId) : 'cloudflare';
     return providers[id];
   },
 }));
@@ -141,13 +161,20 @@ async function zoneWith(provider: DnsProviderId | undefined, records: DnsRecord[
 
 beforeEach(() => {
   resetFakeDb();
-  providers = { cloudflare: fakeProvider('cloudflare'), hetzner: fakeProvider('hetzner') };
+  providers = {
+    cloudflare: fakeProvider('cloudflare'),
+    hetzner: fakeProvider('hetzner'),
+    rfc2136: fakeProvider('rfc2136'),
+    infoblox: fakeProvider('infoblox'),
+  };
 });
 
 describe('dnsProviderForHook', () => {
-  it('ordnet die zwei acme.sh-Hooks ihrem Anbieter zu', () => {
+  it('ordnet die acme.sh-Hooks ihrem Anbieter zu', () => {
     expect(dnsProviderForHook('dns_cf')).toBe('cloudflare');
     expect(dnsProviderForHook('dns_hetznercloud')).toBe('hetzner');
+    expect(dnsProviderForHook('dns_nsupdate')).toBe('rfc2136');
+    expect(dnsProviderForHook('dns_infoblox')).toBe('infoblox');
   });
 
   it('kennt keinen anderen, auch nicht den früheren Hetzner-Hook', () => {
@@ -233,6 +260,41 @@ describe('connectZone', () => {
     );
     expect(providers.hetzner.calls).toEqual([]);
   });
+
+  it('gibt einem Anbieter, der seine Zonen nicht aufzählt, die Domain mit', async () => {
+    providers.rfc2136.tokens.set('zugang', [seen('ns1.example.org', 'example.org', null)]);
+
+    const result = await connectZone({ provider: 'rfc2136', domain: 'App.Example.org', token: 'zugang' });
+
+    expect(providers.rfc2136.nears).toEqual(['app.example.org']);
+    expect(result.zone).toMatchObject({ provider: 'rfc2136', name: 'example.org', zoneId: 'ns1.example.org' });
+    expect(result.delegated).toBeNull();
+    expect(rowsOf(ZONES)[0]).toMatchObject({ provider: 'rfc2136', apiToken: 'enc:zugang' });
+  });
+
+  it('prüft beim Anbinden, ob der Zugang die Zone auch ändern darf, und speichert sonst nichts', async () => {
+    providers.rfc2136.tokens.set('zugang', [seen('ns1.example.org', 'example.org', null)]);
+    providers.rfc2136.writable = false;
+
+    await expect(connectZone({ provider: 'rfc2136', domain: 'app.example.org', token: 'zugang' })).rejects.toThrow(
+      /nicht ändern/
+    );
+    expect(providers.rfc2136.calls).toEqual(['listZones', 'assertWritable']);
+    expect(rowsOf(ZONES)).toHaveLength(0);
+  });
+
+  it('nennt bei einem solchen Anbieter keine Zonen, die der Zugang stattdessen sähe', async () => {
+    providers.infoblox.tokens.set('zugang', []);
+    await expect(connectZone({ provider: 'infoblox', domain: 'app.fremd.example', token: 'zugang' })).rejects.toThrow(
+      'Infoblox: Dort gibt es keine Zone, in der "app.fremd.example" liegt.'
+    );
+  });
+
+  it('verlangt dort Zugangsdaten statt eines Tokens', async () => {
+    await expect(connectZone({ provider: 'rfc2136', domain: 'example.org', token: '' })).rejects.toThrow(
+      /Zugangsdaten für RFC 2136/
+    );
+  });
 });
 
 describe('replaceZoneToken', () => {
@@ -266,9 +328,40 @@ describe('replaceZoneToken', () => {
     expect(providers.cloudflare.calls).toEqual(['listZones']);
     expect(providers.hetzner.calls).toEqual([]);
   });
+
+  it('fragt einen Anbieter, der nicht aufzählt, nach genau dieser Zone und prüft das Ändern', async () => {
+    const row = await createDocument(ZONES, {
+      provider: 'rfc2136',
+      name: 'example.org',
+      zoneId: 'ns1.example.org',
+      apiToken: 'enc:alt',
+      status: 'ok',
+      lastCheckedAt: null,
+      lastError: null,
+    });
+    providers.rfc2136.tokens.set('leer', []);
+    providers.rfc2136.tokens.set('neu', [seen('ns2.example.org', 'example.org', null)]);
+
+    await expect(replaceZoneToken(String(row.$id), 'leer')).rejects.toThrow(
+      'RFC 2136: Mit diesen Zugangsdaten gibt es die Zone "example.org" dort nicht.'
+    );
+    expect(rowsOf(ZONES)[0]).toMatchObject({ apiToken: 'enc:alt' });
+
+    const updated = await replaceZoneToken(String(row.$id), 'neu');
+    expect(providers.rfc2136.nears).toEqual(['example.org', 'example.org']);
+    expect(providers.rfc2136.calls).toEqual(['listZones', 'listZones', 'assertWritable']);
+    expect(updated).toMatchObject({ zoneId: 'ns2.example.org' });
+  });
 });
 
 describe('ensureAddressRecord', () => {
+  it('sagt dem Anbieter, um welchen Namen es geht', async () => {
+    const id = await zoneWith('rfc2136', []);
+    await ensureAddressRecord(id, { name: 'HAPM.example.org', address: '203.0.113.10' });
+    // Ein Nameserver über RFC 2136 liest nur, was unter den genannten Namen steht.
+    expect(providers.rfc2136.names).toEqual([['hapm.example.org']]);
+  });
+
   it('legt den Eintrag an, wenn unter dem Namen nichts steht', async () => {
     const id = await zoneWith('hetzner', []);
 

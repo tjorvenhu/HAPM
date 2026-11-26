@@ -32,7 +32,7 @@ hier, die Tabelle dort sagt, welche.
 | `POST /sync` | „Jetzt abgleichen", nur auf einem Hauptknoten → `{ runId }` |
 | `GET /sync/runs/<id>` | Stand eines Laufs des Abgleichs |
 | `GET /settings` | `{ settings, notifications }`, ohne SMTP-Passwort (`smtpPassSet`) |
-| `PATCH /settings` | Teil-Patch wie `/api/settings`, ohne `publicUrl`, `smtpPass` und den SMTP-Server (`smtpHost`, `smtpPort`, `smtpSecurity`, `smtpUser`) |
+| `PATCH /settings` | Teil-Patch wie `/api/settings`, ohne `publicUrl`, `smtpPass` und den SMTP-Server (`smtpHost`, `smtpPort`, `smtpSecurity`, `smtpUser`). Dazu gehört `dnsWait`: Sekunden, die acme.sh bei DNS-01 über `dns_nsupdate` oder `dns_infoblox` nach dem TXT-Eintrag wartet (5 bis 900) |
 | `PUT /settings/certificates` | `source`, `acmeDirectory`, `httpReachable`, ohne EAB-Schlüssel |
 | `GET /settings/address?domain=` | Prüfung einer neuen Adresse für HAPM, nur lesend |
 | `POST /mail/test` | `{ "to": "…" }`: Testmail, fünf je zehn Minuten und Key |

@@ -21,6 +21,7 @@
     "haproxy:verify-tls": "tsx scripts/verify-backend-tls.ts",
     "crowdsec:verify": "tsx scripts/verify-crowdsec.ts",
     "sync:verify": "tsx scripts/verify-sync.ts",
+    "dns:verify": "tsx scripts/verify-dns.ts",
     "i18n:report": "tsx scripts/i18n-report.ts",
     "test": "vitest run"
   },

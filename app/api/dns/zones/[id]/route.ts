@@ -1,10 +1,10 @@
 import { requireSession, requireCsrf } from '@/lib/session';
 import { deleteDocument } from '@/lib/db';
 import { COLLECTIONS } from '@/lib/types';
-import { ok, handleError, jsonBody } from '@/lib/api';
+import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
 import { logAudit, getClientIP } from '@/lib/audit';
 import { replaceZoneToken } from '@/lib/dns/connect';
-import { dnsProviderLabel } from '@/lib/dns/provider-info';
+import { accessFromInput, dnsProviderLabel } from '@/lib/dns/provider-info';
 import { getZoneRow } from '@/lib/dns/store';
 import { providerOf } from '@/lib/dns/zones';
 
@@ -14,6 +14,8 @@ interface Params {
 
 interface PatchBody {
   apiToken?: string;
+  /** RFC 2136 und Infoblox: die Felder des Anbieters nach Namen. */
+  values?: Record<string, unknown>;
 }
 
 /**
@@ -36,7 +38,9 @@ export async function PATCH(request: Request, { params }: Params) {
     const { id } = await params;
     const body = await jsonBody<PatchBody>(request);
 
-    const updated = await replaceZoneToken(id, String(body.apiToken ?? ''));
+    const input = accessFromInput(providerOf(await getZoneRow(id)), { token: body.apiToken, values: body.values });
+    if ('error' in input) throw new ApiError(input.error);
+    const updated = await replaceZoneToken(id, input.access);
 
     await logAudit({
       userId: session.userId,
@@ -44,8 +48,8 @@ export async function PATCH(request: Request, { params }: Params) {
       action: 'dns_zone_updated',
       resource: 'dns_zone',
       resourceId: id,
-      // Der Token steht nie im Protokoll, auch nicht gekürzt.
-      details: `API-Token für ${updated.name} ausgetauscht`,
+      // Der Zugang steht nie im Protokoll, auch nicht gekürzt.
+      details: `Zugang für ${updated.name} ausgetauscht`,
       ip: getClientIP(request) ?? undefined,
     });
 

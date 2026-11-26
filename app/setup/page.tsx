@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
-import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -33,14 +32,21 @@ import BrandLogo from '@/components/BrandLogo';
 import Select from '@/components/Select';
 import IpAllowList from '@/components/IpAllowList';
 import FormHint from '@/components/FormHint';
-import { LONG_TEXT } from '@/ui/primitives/hint-text';
+import CredentialFields from '@/components/dns/CredentialFields';
+import { ProviderLogo as DnsProviderLogo } from '@/components/dns/ProviderName';
 import { usePolling } from '@/components/usePolling';
 import CertificateUploadDialog, { type UploadBody } from '@/components/reverse-proxy/CertificateUploadDialog';
 import { useToast } from '@/components/Toast';
 import { useT } from '@/lib/i18n/react';
 import { msgid, type Translatable } from '@/lib/i18n/translate';
 import { formatDate } from '@/lib/i18n/format';
-import { DNS_PROVIDERS, findDnsProvider, validateDnsCredentials } from '@/lib/haproxy/dns-credentials';
+import {
+  DNS_PROVIDERS,
+  findDnsProvider,
+  hasCredentialForm,
+  validateDnsCredentials,
+} from '@/lib/haproxy/dns-credentials';
+import { dnsProviderForHook } from '@/lib/dns/zones';
 import { needsDnsChallenge } from '@/lib/haproxy/challenge';
 import { normalizeAcmeDirectory, validateAcmeDirectory, validateEab } from '@/lib/acme-server';
 import { SMTP_DEFAULT_PORTS, SMTP_SECURITY_CHOICES } from '@/lib/mail/config';
@@ -757,28 +763,26 @@ function DnsStep({
       {provider && (
         <>
           <div className="hapm-setup-pair">
-            {provider.fields.map((field) => (
-              <div className="auth-field" key={field.name}>
-                <label htmlFor={`dns-${field.name}`}>
-                  {t(field.label)}
-                  {!field.required && ` ${t('(optional)')}`}
-                  {field.hint && field.hint.length > LONG_TEXT && <InfoHint text={t(field.hint)} />}
-                </label>
-                <input
-                  id={`dns-${field.name}`}
-                  type={field.required ? 'password' : 'text'}
-                  value={values[field.name] ?? ''}
-                  onChange={(e) => setValues({ ...values, [field.name]: e.target.value })}
-                  disabled={saving}
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-                {field.hint && field.hint.length <= LONG_TEXT && <p className="auth-hint">{t(field.hint)}</p>}
-              </div>
-            ))}
+            <CredentialFields
+              fields={provider.fields}
+              values={values}
+              onChange={(field, value) => setValues((before) => ({ ...before, [field]: value }))}
+              skin="auth"
+              idPrefix="dns"
+              disabled={saving}
+            />
           </div>
           <p className="auth-hint">
-            {provider.apiTokenField ? (
+            {hasCredentialForm(provider) ? (
+              <>
+                {t('HAPM speichert die Zugangsdaten verschlüsselt.')}
+                <InfoHint
+                  text={t(
+                    'Mit den Zugangsdaten stellt acme.sh Zertifikate aus. HAPM richtet damit auch die Zone unter „DNS“ ein und speichert sie dafür verschlüsselt.'
+                  )}
+                />
+              </>
+            ) : provider.apiTokenField ? (
               <>
                 {t('HAPM speichert den Token verschlüsselt.')}
                 <InfoHint
@@ -789,10 +793,15 @@ function DnsStep({
               </>
             ) : (
               t('Der Token geht an acme.sh und wird in HAPM nicht gespeichert.')
-            )}{' '}
-            <a href={provider.consoleUrl} target="_blank" rel="noreferrer">
-              {t('Token bei {provider} anlegen', { provider: provider.label })}
-            </a>
+            )}
+            {provider.consoleUrl && (
+              <>
+                {' '}
+                <a href={provider.consoleUrl} target="_blank" rel="noreferrer">
+                  {t('Token bei {provider} anlegen', { provider: provider.label })}
+                </a>
+              </>
+            )}
           </p>
         </>
       )}
@@ -817,11 +826,14 @@ function DnsStep({
  */
 const MANUAL_DNS = 'manual';
 
-/** Das Zeichen des Anbieters. Ein Hook ohne Datei (von Hand eingerichtet) bekommt keines. */
+/**
+ * Das Zeichen des Anbieters, oder sein Symbol, wenn er kein eigenes hat
+ * (`components/dns/ProviderName.tsx`). Ein Hook, den HAPM nicht kennt (von Hand
+ * eingerichtet), bekommt keines.
+ */
 function ProviderLogo({ hook, size }: { hook: string; size: number }) {
-  const logo = findDnsProvider(hook)?.logo;
-  if (!logo) return null;
-  return <Image src={logo} alt="" width={size} height={size} className="hapm-provider-logo" unoptimized />;
+  const provider = dnsProviderForHook(hook);
+  return provider ? <DnsProviderLogo provider={provider} size={size} /> : null;
 }
 
 /* ── Schritt 4: Zertifikate ── */
@@ -845,6 +857,8 @@ function CertificatesStep({
   // Let's Encrypt erreicht eine interne Installation nur über DNS-01.
   const letsEncryptPossible = !internal || dnsReady;
   const providerLabel = (setup.dnsHook && findDnsProvider(setup.dnsHook)?.label) || setup.dnsHook || '';
+  /** Ein Nameserver oder eine Appliance, die man selbst betreibt (`fixedWait`). */
+  const ownDns = Boolean(setup.dnsHook && findDnsProvider(setup.dnsHook)?.fixedWait);
 
   const [choice, setChoice] = useState<CertificateChoice | null>(
     setup.certificateSource === 'upload'
@@ -962,6 +976,18 @@ function CertificatesStep({
           </button>
         ))}
       </div>
+
+      {/* Eine Folge, die man vor der Wahl kennen muss: Let's Encrypt fragt den
+          TXT-Eintrag aus dem Internet ab. Einen Nameserver im eigenen Netz
+          erreicht es nicht, und der Antrag scheiterte erst beim Ausführen. */}
+      {choice === 'letsencrypt' && dnsReady && ownDns && (
+        <div className="alert alert-warning">
+          {t(
+            "Let's Encrypt prüft den DNS-Eintrag aus dem Internet. Das gelingt nur, wenn Ihre Zone bei {provider} auch dort ausgeliefert wird. Für eine Zone nur im eigenen Netz wählen Sie einen eigenen ACME-Server.",
+            { provider: providerLabel }
+          )}
+        </div>
+      )}
 
       {custom && (
         <>

@@ -1108,7 +1108,7 @@ export const TOOLS: ToolDefinition[] = [
     title: 'HAPM settings',
     description:
       'Settings of HAPM itself: publicUrl (the HAPM address), exposure ("internal": every certificate via DNS-01, "public": HTTP-01), ' +
-      'certificateSource ("acme" or "upload"), acmeDirectory (null: Let\'s Encrypt), acmeHttpReachable, acmeEmail, ' +
+      'certificateSource ("acme" or "upload"), acmeDirectory (null: Let\'s Encrypt), acmeHttpReachable, acmeEmail, dnsWait, ' +
       'automatic HAProxy updates, the SMTP account (smtpPassSet instead of the password), notification recipients and events, mailLocale. ' +
       'notifications tells whether mail is configured and how the last delivery went.',
     input: {},
@@ -1141,6 +1141,11 @@ export const TOOLS: ToolDefinition[] = [
         .optional()
         .describe('Switch single notification events on or off; events not listed keep their state.'),
       mailLocale: z.enum(LOCALES as [string, ...string[]]).optional().describe('Language of notification mails.'),
+      dnsWait: z
+        .number()
+        .int()
+        .optional()
+        .describe('Seconds acme.sh waits after setting the DNS-01 record when the hook is dns_nsupdate or dns_infoblox (5 to 900).'),
     },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
     run: (args, ctx) => changeSettings(readServiceSettingsInput(args), auditActor(ctx.actor)),

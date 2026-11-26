@@ -4,7 +4,7 @@ import { msg } from '@/lib/i18n';
 import { getLocale } from '@/lib/i18n/server';
 import { logAudit, getClientIP } from '@/lib/audit';
 import { connectZone } from '@/lib/dns/connect';
-import { dnsProviderLabel } from '@/lib/dns/provider-info';
+import { accessFromInput, dnsProviderLabel } from '@/lib/dns/provider-info';
 import { checkZones } from '@/lib/dns/zone-check';
 import { isDnsProviderId, normalizeDomain, validateZoneName } from '@/lib/dns/zones';
 
@@ -24,7 +24,10 @@ export async function GET() {
 interface CreateBody {
   provider?: string;
   name?: string;
+  /** Cloudflare und Hetzner: der API-Token. */
   apiToken?: string;
+  /** RFC 2136 und Infoblox: die Felder des Anbieters nach Namen. */
+  values?: Record<string, unknown>;
 }
 
 /**
@@ -49,11 +52,10 @@ export async function POST(request: Request) {
     if (!isDnsProviderId(body.provider)) throw new ApiError(msg('Bitte den Anbieter wählen.'));
     const provider = body.provider;
 
-    const { zone, created, delegated } = await connectZone({
-      provider,
-      domain: name,
-      token: String(body.apiToken ?? ''),
-    });
+    const input = accessFromInput(provider, { token: body.apiToken, values: body.values });
+    if ('error' in input) throw new ApiError(input.error);
+
+    const { zone, created, delegated } = await connectZone({ provider, domain: name, token: input.access });
 
     await logAudit({
       userId: session.userId,
@@ -61,7 +63,7 @@ export async function POST(request: Request) {
       action: created ? 'dns_zone_created' : 'dns_zone_updated',
       resource: 'dns_zone',
       resourceId: zone.$id,
-      // Der Token steht nie im Protokoll, auch nicht gekürzt.
+      // Der Zugang steht nie im Protokoll, auch nicht gekürzt.
       details: created
         ? `${zone.name} bei ${dnsProviderLabel(provider)} eingerichtet (Zone ${zone.zoneId})`
         : `Zugang zu ${zone.name} ersetzt (${dnsProviderLabel(provider)}, Zone ${zone.zoneId})`,

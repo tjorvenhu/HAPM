@@ -16,9 +16,12 @@ import Select from '@/components/Select';
 import {
   DNS_PROVIDERS,
   findDnsProvider,
+  hasCredentialForm,
   validateDnsCredentials,
   type DnsProvider,
 } from '@/lib/haproxy/dns-credentials';
+import CredentialFields from '@/components/dns/CredentialFields';
+import DnsWaitSetting from '@/components/reverse-proxy/DnsWaitSetting';
 import { usePolling } from '@/components/usePolling';
 import { openRun } from '@/components/runs/runs';
 import { HTTPS_MARKER, type GlobalSettings } from '@/lib/haproxy/config';
@@ -376,7 +379,7 @@ function SettingsPage() {
         title: provider.label,
         message: active
           ? t('Zugangsdaten abgelegt. Wildcard-Zertifikate lassen sich ab jetzt ausstellen, auch für neue Domains derselben Zone.')
-          : t('Die Datei wurde geschrieben, acme.sh erkennt daraus aber keinen Hook. Steht der Token unter dem erwarteten Namen?'),
+          : t('Die Datei wurde geschrieben, acme.sh erkennt daraus aber keinen Hook. Stehen die Zugangsdaten unter dem erwarteten Namen?'),
       });
     } catch (err: unknown) {
       notify({
@@ -393,7 +396,7 @@ function SettingsPage() {
     const ok = await confirm({
       title: t('{provider}-Zugangsdaten entfernen?', { provider: provider.label }),
       message: t(
-        'Der Token wird aus der acme.sh-Konfiguration gestrichen. Bestehende Zertifikate bleiben, aber ihre automatische Erneuerung scheitert ab dann, und eine neue Wildcard lässt sich nicht mehr ausstellen.'
+        'Die Zugangsdaten werden aus der acme.sh-Konfiguration gestrichen. Bestehende Zertifikate bleiben, aber ihre automatische Erneuerung über DNS scheitert ab dann, und eine neue Wildcard lässt sich nicht mehr ausstellen.'
       ),
       confirmLabel: t('Entfernen'),
       variant: 'danger',
@@ -770,7 +773,7 @@ function SettingsPage() {
                             <div className="form-section-title">{t('DNS-Zugangsdaten für Wildcards')}</div>
                             <div className="form-section-sub">
                               {rich(
-                                'Eine Wildcard lässt Let’s Encrypt nur über DNS-01 ausstellen. Der Token liegt in der Konfiguration von {acme} und wird dort für jede Erneuerung wiederverwendet. Anzeigen lässt er sich danach nicht mehr.',
+                                'Eine Wildcard gibt es nur über DNS-01, und eine interne Installation stellt jedes Zertifikat so aus. Die Zugangsdaten liegen in der Konfiguration von {acme} und werden dort für jede Erneuerung wiederverwendet. Anzeigen lassen sie sich danach nicht mehr.',
                                 { acme: <code>acme.sh</code> }
                               )}
                             </div>
@@ -784,14 +787,14 @@ function SettingsPage() {
                             darüber, was eingerichtet ist. */}
                         <div className="form-list">
                           {configuredProviders(row).length === 0 ? (
-                            <div className="form-list-empty">{t('Kein Token hinterlegt.')}</div>
+                            <div className="form-list-empty">{t('Keine Zugangsdaten hinterlegt.')}</div>
                           ) : (
                             configuredProviders(row).map((provider) => (
                               <div className="form-list-row" key={provider.hook}>
                                 <span style={{ flex: 1, minWidth: 0 }}>{provider.label}</span>
                                 <span className="badge-status badge-success">
                                   <span className="dot" />
-                                  {t('Token gesetzt')}
+                                  {hasCredentialForm(provider) ? t('Zugangsdaten gesetzt') : t('Token gesetzt')}
                                 </span>
                                 {/* Kein Bearbeiten: der Token lässt sich nicht
                                     anzeigen, ein Feld daneben hieße also „leer =
@@ -801,8 +804,8 @@ function SettingsPage() {
                                 <button
                                   type="button"
                                   className="btn btn-ghost btn-icon"
-                                  data-tooltip={t('Token entfernen')}
-                                  aria-label={t('Token entfernen')}
+                                  data-tooltip={t('Zugangsdaten entfernen')}
+                                  aria-label={t('Zugangsdaten entfernen')}
                                   disabled={savingCred === `${row.$id}|${provider.hook}`}
                                   onClick={() => removeCredentials(row, provider)}
                                 >
@@ -831,34 +834,23 @@ function SettingsPage() {
                               />
                             </div>
 
-                            {findDnsProvider(addHook)?.fields.map((field) => (
-                              <div className="form-group" key={field.name}>
-                                <label className="form-label">
-                                  {t(field.label)}
-                                  {!field.required && ` ${t('(optional)')}`}
-                                </label>
-                                {/* `type="password"`, weil daneben jemand steht. */}
-                                <input
-                                  className="form-input"
-                                  type="password"
-                                  value={credDraft[`${row.$id}|${addHook}|${field.name}`] ?? ''}
-                                  onChange={(e) =>
-                                    setCredDraft({
-                                      ...credDraft,
-                                      [`${row.$id}|${addHook}|${field.name}`]: e.target.value,
-                                    })
-                                  }
-                                  autoComplete="new-password"
-                                  spellCheck={false}
-                                />
-                                {field.hint && (
-                                  <div className="form-note">
-                                    <Info size={14} />
-                                    <span>{t(field.hint)}</span>
-                                  </div>
+                            {findDnsProvider(addHook) && (
+                              <CredentialFields
+                                fields={findDnsProvider(addHook)!.fields}
+                                values={Object.fromEntries(
+                                  findDnsProvider(addHook)!.fields.map((field) => [
+                                    field.name,
+                                    credDraft[`${row.$id}|${addHook}|${field.name}`] ?? '',
+                                  ])
                                 )}
-                              </div>
-                            ))}
+                                onChange={(field, value) =>
+                                  setCredDraft((before) => ({ ...before, [`${row.$id}|${addHook}|${field}`]: value }))
+                                }
+                                skin="form"
+                                idPrefix={`cred-${row.$id}`}
+                                disabled={savingCred !== null}
+                              />
+                            )}
 
                             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                               <button
@@ -897,13 +889,16 @@ function SettingsPage() {
                                   {findDnsProvider(addHook)!.note ? (
                                     <>{t(findDnsProvider(addHook)!.note!)} </>
                                   ) : null}
-                                  <a
-                                    href={findDnsProvider(addHook)!.consoleUrl}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                  >
-                                    {t('Token beim Anbieter anlegen')}
-                                  </a>
+                                  {/* Ein Anbieter, den man selbst betreibt, hat keine Konsole. */}
+                                  {findDnsProvider(addHook)!.consoleUrl && (
+                                    <a
+                                      href={findDnsProvider(addHook)!.consoleUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                    >
+                                      {t('Token beim Anbieter anlegen')}
+                                    </a>
+                                  )}
                                 </span>
                               </div>
                             )}
@@ -925,6 +920,8 @@ function SettingsPage() {
                             </div>
                           )
                         )}
+
+                        {configuredProviders(row).some((provider) => provider.fixedWait) && <DnsWaitSetting />}
                       </section>
                     </div>
                   </div>

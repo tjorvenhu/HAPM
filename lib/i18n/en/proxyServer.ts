@@ -75,6 +75,8 @@ export const proxyServer: Dictionary = {
   'Es gibt keine acme.sh-Konfiguration ({file}). HAPM richtet acme.sh beim Start ein. Ob das geklappt hat, steht in der Übersicht.':
     'There is no acme.sh configuration ({file}). HAPM sets up acme.sh at startup. The overview shows whether that worked.',
   'Die Zugangsdaten ließen sich nicht ablegen: {detail}': 'The credentials could not be stored: {detail}',
+  'Die Zugangsdaten sind abgelegt, die Zertifizierungsstelle ließ sich im Container aber nicht hinterlegen: {detail}':
+    'The credentials are stored, but the certificate authority could not be added in the container: {detail}',
   'Die Passwortsperre braucht HAProxy 2.4 oder neuer. Hier läuft {version}. Die Sperre auf Admin-IPs geht dort weiterhin.':
     'The password lock requires HAProxy 2.4 or newer. This server runs {version}. The lock by admin IPs still works there.',
   'acme.sh ({acme}) oder das Zertifikatsverzeichnis ({dir}) fehlt. Ohne beides lässt sich kein Zertifikat ausstellen. HAPM legt beides beim Start an. Ob das geklappt hat, steht in der Übersicht.':
@@ -534,6 +536,31 @@ export const proxyServer: Dictionary = {
   'Account-ID': 'Account ID',
   'Nur nötig, wenn der Token für mehrere Konten gilt. Steht in der Cloudflare-Übersicht rechts.': 'Only needed if the token applies to several accounts. Shown on the right of the Cloudflare overview.',
   'Der Token wird für jede Zone in diesem Konto benutzt. Eine neue Domain braucht danach nichts mehr.': 'The token is used for every zone in this account. A new domain needs nothing more after that.',
+  // RFC 2136 und Infoblox: die Felder aus `DNS_PROVIDERS`
+  'Als Name oder IP-Adresse. Nur der primäre Nameserver einer Zone nimmt Änderungen an.':
+    'As a name or IP address. Only the primary name server of a zone accepts changes.',
+  'Name des TSIG-Schlüssels': 'Name of the TSIG key',
+  'Wie er in der Konfiguration des Nameservers steht, etwa in key "hapm" { … }.':
+    'As it appears in the configuration of the name server, for example in key "hapm" { … }.',
+  'Verfahren': 'Algorithm',
+  'Geheimnis': 'Secret',
+  'Der Wert hinter secret, als Base64. Schlüssel und Geheimnis erzeugt tsig-keygen auf dem Nameserver.':
+    'The value after secret, as Base64. tsig-keygen on the name server creates key and secret.',
+  'BIND und andere Nameserver, die Änderungen mit einem TSIG-Schlüssel annehmen.':
+    'BIND and other name servers that accept changes with a TSIG key.',
+  'Appliance': 'Appliance',
+  'Name des Grid Masters, ohne https://. Das Zertifikat der Appliance muss auf diesen Namen ausgestellt sein.':
+    'Name of the grid master, without https://. The certificate of the appliance must be issued for this name.',
+  'Ein Konto mit API-Zugang und Schreibrecht auf die Zonen.': 'An account with API access and write permission for the zones.',
+  'DNS-View': 'DNS view',
+  'WAPI-Fassung': 'WAPI version',
+  'Nur für die Einträge, die HAPM selbst setzt. acme.sh spricht immer mit 2.2.2.':
+    'Only for the records HAPM sets itself. acme.sh always uses 2.2.2.',
+  'CA-Zertifikat': 'CA certificate',
+  'Nur bei einer eigenen Zertifizierungsstelle: ihr Zertifikat als PEM. HAPM und acme.sh vertrauen ihr dann.':
+    'Only with your own certificate authority: its certificate as PEM. HAPM and acme.sh then trust it.',
+  'Über die WAPI der Appliance, mit einem Benutzer für alle Zonen seiner View.':
+    'Through the WAPI of the appliance, with one user for all zones of its view.',
   'Das Feld {name} gehört nicht zu {provider}.': 'The field {name} does not belong to {provider}.',
   'Der Wert für {name} enthält ein Zeichen, das acme.sh nicht ablegen kann. Erlaubt sind Buchstaben, Ziffern und . _ ~ + / = : @ -': 'The value for {name} contains a character acme.sh cannot store. Allowed are letters, digits and . _ ~ + / = : @ -',
   'API-Token wird benötigt.': 'API token is required.',

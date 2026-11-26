@@ -6,7 +6,7 @@ import {
   isDnsProviderId,
   providerOf,
 } from '@/lib/dns/zones';
-import { DNS_PROVIDER_INFOS, dnsProviderInfo } from '@/lib/dns/provider-info';
+import { DNS_PROVIDER_INFOS, accessFromInput, dnsProviderInfo } from '@/lib/dns/provider-info';
 import { PROVIDER_RULES, sameAddress } from '@/lib/dns/records';
 import { findDnsProvider } from '@/lib/haproxy/dns-credentials';
 
@@ -20,6 +20,8 @@ describe('dnsProviderForHook', () => {
   it('ordnet jeden Hook seinem Anbieter zu und zurück', () => {
     expect(dnsProviderForHook('dns_cf')).toBe('cloudflare');
     expect(dnsProviderForHook('dns_hetznercloud')).toBe('hetzner');
+    expect(dnsProviderForHook('dns_nsupdate')).toBe('rfc2136');
+    expect(dnsProviderForHook('dns_infoblox')).toBe('infoblox');
     for (const id of DNS_PROVIDER_IDS) {
       expect(dnsProviderForHook(hookForDnsProvider(id))).toBe(id);
     }
@@ -50,6 +52,8 @@ describe('providerOf', () => {
   it('nimmt, was dasteht', () => {
     expect(providerOf({ provider: 'hetzner' })).toBe('hetzner');
     expect(providerOf({ provider: 'cloudflare' })).toBe('cloudflare');
+    expect(providerOf({ provider: 'rfc2136' })).toBe('rfc2136');
+    expect(providerOf({ provider: 'infoblox' })).toBe('infoblox');
   });
 
   it('hält einen unbekannten Wert nicht für einen Anbieter', () => {
@@ -63,13 +67,66 @@ describe('dnsProviderInfo', () => {
   it('nimmt Name, Zeichen und Konsole von der einen Stelle, die sie kennt', () => {
     for (const info of DNS_PROVIDER_INFOS) {
       const source = findDnsProvider(hookForDnsProvider(info.id));
+      expect(info.hook).toBe(source?.hook);
       expect(info.label).toBe(source?.label);
-      expect(info.consoleUrl).toBe(source?.consoleUrl);
-      expect(info.logo).toMatch(/^\/providers\/[a-z]+\.svg$/);
-      expect(info.tokenHint).toBeTruthy();
+      expect(info.consoleUrl).toBe(source?.consoleUrl ?? null);
+      expect(info.fields).toBe(source?.fields);
     }
     expect(dnsProviderInfo('hetzner').label).toBe('Hetzner');
     expect(dnsProviderInfo('cloudflare').label).toBe('Cloudflare');
+    expect(dnsProviderInfo('rfc2136').label).toBe('RFC 2136');
+    expect(dnsProviderInfo('infoblox').label).toBe('Infoblox');
+  });
+
+  it('kennt bei einem Anbieter mit Token dessen Zeichen, Konsole und Hinweis', () => {
+    for (const id of ['hetzner', 'cloudflare'] as const) {
+      const info = dnsProviderInfo(id);
+      expect(info.form).toBe(false);
+      expect(info.logo).toMatch(/^\/providers\/[a-z]+\.svg$/);
+      expect(info.consoleUrl).toMatch(/^https:\/\//);
+      expect(info.tokenHint).toBeTruthy();
+    }
+  });
+
+  it('kennt bei einem Anbieter, den man selbst betreibt, Felder statt eines Tokens', () => {
+    for (const id of ['rfc2136', 'infoblox'] as const) {
+      const info = dnsProviderInfo(id);
+      expect(info.form).toBe(true);
+      // Kein Zeichen und keine Konsole: die Oberfläche zeigt ein Symbol und keinen Link.
+      expect(info.logo).toBeNull();
+      expect(info.consoleUrl).toBeNull();
+      expect(info.tokenHint).toBeNull();
+      expect(info.fields.filter((field) => field.required).length).toBeGreaterThan(1);
+    }
+  });
+});
+
+describe('accessFromInput', () => {
+  it('nimmt bei einem Anbieter mit Token den Token, ohne Rand', () => {
+    expect(accessFromInput('hetzner', { token: ' geheim ', values: { egal: 'x' } })).toEqual({ access: 'geheim' });
+    expect(accessFromInput('cloudflare', {})).toEqual({ access: '' });
+  });
+
+  it('baut bei einem Anbieter mit Feldern den Zugang aus ihnen und prüft sie dabei', () => {
+    const values = {
+      NSUPDATE_SERVER: ' ns1.example.org ',
+      TSIG_NAME: 'hapm-key',
+      TSIG_SECRET: 'c2VjcmV0LXNlY3JldC1zZWNyZXQtc2VjcmV0LTEyMzQ=',
+      // Ein Feld, das der Anbieter nicht kennt, geht nicht mit.
+      Fremd: 'x',
+    };
+    const built = accessFromInput('rfc2136', { values });
+    expect('access' in built && JSON.parse(built.access)).toMatchObject({
+      server: 'ns1.example.org',
+      port: 53,
+      keyName: 'hapm-key',
+      algorithm: 'hmac-sha256',
+    });
+
+    const bad = accessFromInput('rfc2136', { values: { ...values, TSIG_SECRET: 'kein base64!' } });
+    expect('error' in bad && bad.error.text).toContain('Base64');
+    // Ohne Felder fehlt das erste Pflichtfeld, und ein Token zählt hier nicht.
+    expect('error' in accessFromInput('infoblox', { token: 'x' })).toBe(true);
   });
 });
 
@@ -82,6 +139,19 @@ describe('Regeln je Anbieter', () => {
   it('kennt den Proxy nur bei Cloudflare', () => {
     expect(PROVIDER_RULES.cloudflare.proxy).toBe(true);
     expect(PROVIDER_RULES.hetzner.proxy).toBe(false);
+    expect(PROVIDER_RULES.rfc2136.proxy).toBe(false);
+    expect(PROVIDER_RULES.infoblox.proxy).toBe(false);
+  });
+
+  it('weiß, wer seine Zonen aufzählt und wer nach der Domain gefragt wird', () => {
+    expect(PROVIDER_RULES.cloudflare.listsZones).toBe(true);
+    expect(PROVIDER_RULES.hetzner.listsZones).toBe(true);
+    expect(PROVIDER_RULES.rfc2136.listsZones).toBe(false);
+    expect(PROVIDER_RULES.infoblox.listsZones).toBe(false);
+  });
+
+  it('führt für jeden Anbieter eine Regel', () => {
+    expect(Object.keys(PROVIDER_RULES).sort()).toEqual([...DNS_PROVIDER_IDS].sort());
   });
 });
 
