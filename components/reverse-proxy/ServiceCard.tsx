@@ -144,15 +144,17 @@ const TLS_TOOLTIPS: Record<Exclude<BackendTlsKind, 'off' | 'ca'>, string> = {
   verify: msgid('HAProxy spricht HTTPS mit dem Ziel und prüft das Zertifikat'),
 };
 
-/** Der Satz zum Schloss. Bei einer hinterlegten Zertifizierungsstelle nennt er sie. */
-function tlsTooltip(tls: Exclude<BackendTls, 'off'>, t: Translator['t']): string {
+/**
+ * Der Satz zum Schloss. Bei einer hinterlegten Zertifizierungsstelle nennt er
+ * sie, und einen festen Namen, gegen den geprüft wird, ebenfalls.
+ */
+function tlsTooltip(tls: Exclude<BackendTls, 'off'>, verifyHost: string | null, t: Translator['t']): string {
   const ca = backendCaName(tls);
-  if (ca !== null) {
-    return t('HAProxy spricht HTTPS mit dem Ziel und prüft das Zertifikat gegen die Zertifizierungsstelle {name}', {
-      name: ca,
-    });
-  }
-  return t(TLS_TOOLTIPS[tls as 'insecure' | 'verify']);
+  const sentence =
+    ca !== null
+      ? t('HAProxy spricht HTTPS mit dem Ziel und prüft das Zertifikat gegen die Zertifizierungsstelle {name}', { name: ca })
+      : t(TLS_TOOLTIPS[tls as 'insecure' | 'verify']);
+  return verifyHost ? `${sentence} · ${t('Name im Zertifikat: {host}', { host: verifyHost })}` : sentence;
 }
 
 /**
@@ -512,7 +514,7 @@ export default function ServiceCard({
               <div
                 className="rp-row"
                 key={server.name}
-                data-tooltip={server.tls === 'off' ? address : `${address} · ${tlsTooltip(server.tls, t)}`}
+                data-tooltip={server.tls === 'off' ? address : `${address} · ${tlsTooltip(server.tls, service.backendVerifyHost, t)}`}
               >
                 <span className="rp-row-icon">
                   <Server size={14} />
@@ -563,7 +565,7 @@ export default function ServiceCard({
                 className="rp-row rp-route"
                 key={route.name}
                 data-tooltip={`${route.paths.join(' ')} → ${route.servers.map((s) => s.target).join(', ')}${
-                  route.backendTls === 'off' ? '' : ` · ${tlsTooltip(route.backendTls, t)}`
+                  route.backendTls === 'off' ? '' : ` · ${tlsTooltip(route.backendTls, route.backendVerifyHost, t)}`
                 }`}
               >
                 <span className="rp-chip is-accent">{route.paths.join(' ')}</span>

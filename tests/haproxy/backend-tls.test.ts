@@ -10,6 +10,11 @@ import {
   readServerParams,
   serverParams,
   backendCheckSni,
+  backendTlsParams,
+  serviceHealth,
+  backendVerifyHostFor,
+  isValidVerifyHost,
+  readVerifyHostInput,
   supportsSystemCa,
   usesSystemCa,
   serviceKind,
@@ -90,6 +95,39 @@ describe('Schreiben', () => {
     ]);
   });
 
+  it('schreibt mit festem Namen ihn als SNI und als check-sni, ohne verifyhost', () => {
+    // Der Fall der internen PKI: das Zertifikat des Ziels nennt seinen eigenen Namen.
+    const own = addService(CONFIG, { ...INPUT, backendTls: 'ca:intern-root', backendVerifyHost: 'app01.intern.example' });
+    expect(serverLines(own)).toEqual([
+      'server server1 10.0.0.5:8006 check ssl verify required ca-file /etc/haproxy/hapm-ca/intern-root.pem sni str(app01.intern.example) check-sni app01.intern.example',
+    ]);
+    const system = addService(CONFIG, { ...INPUT, backendTls: 'verify', backendVerifyHost: 'app01.intern.example', healthcheck: false });
+    expect(serverLines(system)).toEqual([
+      'server server1 10.0.0.5:8006 ssl verify required ca-file @system-ca sni str(app01.intern.example)',
+    ]);
+  });
+
+  it('schreibt den festen Namen nicht, wo nichts geprüft wird', () => {
+    for (const backendTls of ['off', 'insecure'] as const) {
+      const withName = addService(CONFIG, { ...INPUT, backendTls, backendVerifyHost: 'app01.intern.example' });
+      expect(withName, backendTls).toBe(addService(CONFIG, { ...INPUT, backendTls }));
+    }
+    expect(backendVerifyHostFor('insecure', 'app01.intern.example')).toBeNull();
+    expect(backendVerifyHostFor('off', 'app01.intern.example')).toBeNull();
+    expect(backendVerifyHostFor('verify', '')).toBeNull();
+    expect(backendVerifyHostFor('ca:intern-root', 'app01.intern.example')).toBe('app01.intern.example');
+    expect(backendTlsParams('insecure', 'app01.intern.example')).toBe('ssl verify none sni req.hdr(host)');
+  });
+
+  it('gibt dem Check unter einer Wildcard den festen Namen als SNI', () => {
+    // Ohne festen Namen gibt es dort keinen: `*.example.org` ist kein Hostname.
+    expect(backendCheckSni(true, 'verify', '*.example.org', 'app01.intern.example')).toBe('app01.intern.example');
+    expect(backendCheckSni(true, 'verify', '*.example.org')).toBeNull();
+    expect(backendCheckSni(false, 'verify', 'pve.example.org', 'app01.intern.example')).toBeNull();
+    // Wo nicht geprüft wird, bleibt es die Hauptdomain.
+    expect(backendCheckSni(true, 'insecure', 'pve.example.org', 'app01.intern.example')).toBe('pve.example.org');
+  });
+
   it('lässt check-sni weg, wenn nicht geprüft wird', () => {
     const text = addService(CONFIG, { ...INPUT, healthcheck: false });
     expect(serverLines(text)).toEqual(['server server1 10.0.0.5:8006 ssl verify none sni req.hdr(host)']);
@@ -155,6 +193,39 @@ describe('Lesen und Rundreise', () => {
     ['mit Prüfung, ohne Healthcheck', { backendTls: 'verify', healthcheck: false }],
     ['mit hinterlegter Zertifizierungsstelle, mit Healthcheck', { backendTls: 'ca:intern-root' }],
     ['mit hinterlegter Zertifizierungsstelle, ohne Healthcheck', { backendTls: 'ca:intern-root', healthcheck: false }],
+    ['hinterlegte Zertifizierungsstelle mit festem Namen', { backendTls: 'ca:intern-root', backendVerifyHost: 'app01.intern.example' }],
+    ['CAs des Systems mit festem Namen, ohne Healthcheck', { backendTls: 'verify', backendVerifyHost: 'app01.intern.example', healthcheck: false }],
+    [
+      'Lastverteilung mit festem Namen',
+      {
+        servers: [
+          { name: 'a', target: '10.0.0.5:443', weight: 3 },
+          { name: 'b', target: '10.0.0.6:443', weight: null },
+        ],
+        balance: 'leastconn',
+        sticky: true,
+        backendTls: 'ca:intern-root',
+        backendVerifyHost: 'app.intern.example',
+      },
+    ],
+    [
+      'Pfad-Regeln mit eigenem festen Namen',
+      {
+        backendTls: 'ca:intern-root',
+        backendVerifyHost: 'app01.intern.example',
+        routes: [
+          {
+            name: 'api',
+            paths: ['/api'],
+            servers: [{ name: 'api', target: '10.0.0.7:8443' }],
+            check: true,
+            backendTls: 'ca:intern-root',
+            backendVerifyHost: 'api01.intern.example',
+          },
+          { name: 'ws', paths: ['/ws'], servers: [{ name: 'ws', target: '10.0.0.7:6001' }], check: true, backendTls: 'ca:intern-root' },
+        ],
+      },
+    ],
     [
       'Lastverteilung gegen eine hinterlegte Zertifizierungsstelle',
       {
@@ -229,6 +300,39 @@ describe('Lesen und Rundreise', () => {
     expect(service.servers.map((server) => server.tls)).toEqual(['ca:intern-root']);
   });
 
+  it('meldet den festen Namen am Eintrag und an der Regel, sonst null', () => {
+    const service = find(
+      addService(CONFIG, {
+        ...INPUT,
+        backendTls: 'ca:intern-root',
+        backendVerifyHost: 'app01.intern.example',
+        routes: [{ name: 'api', paths: ['/api'], servers: [{ name: 'api', target: '10.0.0.7:8443' }], check: false, backendTls: 'verify' }],
+      }),
+      'pve'
+    );
+    expect(service.backendVerifyHost).toBe('app01.intern.example');
+    expect(service.routes[0].backendVerifyHost).toBeNull();
+    expect(find(addService(CONFIG, INPUT), 'pve').backendVerifyHost).toBeNull();
+    // Die Eingabe trägt das Feld nur, wenn einer gesetzt ist: so bleibt sie, was sie vor dem Feld war.
+    expect('backendVerifyHost' in toCreateInput(find(addService(CONFIG, INPUT), 'pve'))).toBe(false);
+  });
+
+  it('nimmt den festen Namen restlos weg und setzt ihn wieder', () => {
+    const plain = addService(CONFIG, { ...INPUT, backendTls: 'ca:intern-root' });
+    const named = replaceService(plain, 'pve', { ...INPUT, backendTls: 'ca:intern-root', backendVerifyHost: 'app01.intern.example' });
+    expect(named).toBe(addService(CONFIG, { ...INPUT, backendTls: 'ca:intern-root', backendVerifyHost: 'app01.intern.example' }));
+    expect(replaceService(named, 'pve', { ...INPUT, backendTls: 'ca:intern-root' })).toBe(plain);
+    // Die Hauptdomain ändert sich: der check-sni bleibt der feste Name.
+    const moved = replaceService(named, 'pve', {
+      ...INPUT,
+      domains: ['proxmox.example.org'],
+      backendTls: 'ca:intern-root',
+      backendVerifyHost: 'app01.intern.example',
+    });
+    expect(serverLines(moved)[0]).toContain('sni str(app01.intern.example) check-sni app01.intern.example');
+    expect(find(moved, 'pve').editable).toBe(true);
+  });
+
   it('wechselt zwischen den CAs des Systems und einer hinterlegten, ohne Reste', () => {
     const system = addService(CONFIG, { ...INPUT, backendTls: 'verify' });
     const own = replaceService(system, 'pve', { ...INPUT, backendTls: 'ca:intern-root' });
@@ -274,6 +378,14 @@ describe('Abwandlungen von Hand bleiben nur lesbar', () => {
     ['eine Datei neben dem Ordner der Zertifizierungsstellen', 'server server1 10.0.0.5:8006 check ssl verify required ca-file /etc/haproxy/hapm-ca/../certs/app.pem sni req.hdr(host) check-sni pve.example.org'],
     ['eine hinterlegte Zertifizierungsstelle ohne SNI', 'server server1 10.0.0.5:8006 check ssl verify required ca-file /etc/haproxy/hapm-ca/intern-root.pem check-sni pve.example.org'],
     ['eine hinterlegte Zertifizierungsstelle mit verifyhost', 'server server1 10.0.0.5:8006 check ssl verify required ca-file /etc/haproxy/hapm-ca/intern-root.pem sni req.hdr(host) check-sni pve.example.org verifyhost pve.lan'],
+    ['ein fester Name mit dem check-sni der Hauptdomain', 'server server1 10.0.0.5:8006 check ssl verify required ca-file @system-ca sni str(app01.intern.example) check-sni pve.example.org'],
+    ['ein fester Name ohne check-sni trotz Healthcheck', 'server server1 10.0.0.5:8006 check ssl verify required ca-file @system-ca sni str(app01.intern.example)'],
+    ['ein fester Name mit verifyhost dahinter', 'server server1 10.0.0.5:8006 check ssl verify required ca-file @system-ca sni str(app01.intern.example) check-sni app01.intern.example verifyhost app01.intern.example'],
+    ['ein fester Name mit verifyhost davor', 'server server1 10.0.0.5:8006 check ssl verify required ca-file @system-ca verifyhost app01.intern.example sni str(app01.intern.example) check-sni app01.intern.example'],
+    ['nur verifyhost, ohne SNI', 'server server1 10.0.0.5:8006 check ssl verify required ca-file @system-ca verifyhost app01.intern.example'],
+    ['ein fester Name mit Stern', 'server server1 10.0.0.5:8006 check ssl verify required ca-file @system-ca sni str(*.intern.example) check-sni *.intern.example'],
+    ['ein fester Name in Großbuchstaben', 'server server1 10.0.0.5:8006 check ssl verify required ca-file @system-ca sni str(App01.Intern.Example) check-sni App01.Intern.Example'],
+    ['ein anderer SNI-Ausdruck', 'server server1 10.0.0.5:8006 check ssl verify required ca-file @system-ca sni req.hdr(x-backend) check-sni pve.example.org'],
     ['eine hinterlegte Zertifizierungsstelle mit verify none', 'server server1 10.0.0.5:8006 check ssl verify none ca-file /etc/haproxy/hapm-ca/intern-root.pem sni req.hdr(host) check-sni pve.example.org'],
     ['verify required ohne ca-file', 'server server1 10.0.0.5:8006 check ssl verify required sni req.hdr(host) check-sni pve.example.org'],
     ['ein fester SNI', 'server server1 10.0.0.5:8006 check ssl verify none sni str(pve.example.org) check-sni pve.example.org'],
@@ -330,6 +442,25 @@ describe('Abwandlungen von Hand bleiben nur lesbar', () => {
     expect(service.editable).toBe(false);
   });
 
+  it('liest zwei verschiedene feste Namen in einem Backend als nicht bearbeitbar', () => {
+    const text = addService(CONFIG, {
+      ...INPUT,
+      healthcheck: false,
+      backendTls: 'ca:intern-root',
+      backendVerifyHost: 'app01.intern.example',
+      servers: [
+        { name: 'a', target: '10.0.0.5:8006', weight: null },
+        { name: 'b', target: '10.0.0.6:8006', weight: null },
+      ],
+    }).replace(/^( {4}server b .*)str\(app01\.intern\.example\)/m, '$1str(app02.intern.example)');
+    const service = find(text, 'pve');
+    expect(service.backendVerifyHost).toBe('app01.intern.example');
+    expect(service.extras).toEqual([
+      'server b 10.0.0.6:8006 ssl verify required ca-file /etc/haproxy/hapm-ca/intern-root.pem sni str(app02.intern.example)',
+    ]);
+    expect(service.editable).toBe(false);
+  });
+
   it('liest eine Pfad-Regel mit einer Abwandlung als nicht bearbeitbar', () => {
     const text = addService(CONFIG, {
       ...INPUT,
@@ -345,11 +476,21 @@ describe('readServerParams und serverParams', () => {
   it('sind Gegenstücke', () => {
     for (const tls of ['off', 'insecure', 'verify', 'ca:intern-root'] as const) {
       for (const check of [true, false]) {
-        const checkSni = backendCheckSni(check, tls, 'app.example.org');
-        const written = serverParams({ check, weight: 4, cookie: 's1', tls, checkSni });
-        expect(readServerParams(written)).toEqual({ check, weight: 4, cookie: 's1', tls, checkSni, leftover: [] });
+        for (const host of [null, 'app01.intern.example']) {
+          const verifyHost = backendVerifyHostFor(tls, host);
+          const checkSni = backendCheckSni(check, tls, 'app.example.org', host);
+          const written = serverParams({ check, weight: 4, cookie: 's1', tls, verifyHost: host, checkSni });
+          expect(readServerParams(written), written).toEqual({ check, weight: 4, cookie: 's1', tls, verifyHost, checkSni, leftover: [] });
+        }
       }
     }
+  });
+
+  it('lesen einen festen SNI ohne Prüfung nicht als Einstellung', () => {
+    const read = readServerParams('ssl verify none sni str(pve.lan)');
+    expect(read.tls).toBe('off');
+    expect(read.verifyHost).toBeNull();
+    expect(read.leftover.length).toBeGreaterThan(0);
   });
 });
 
@@ -382,6 +523,83 @@ describe('Prüfen und Umformen', () => {
     expect(input.backendTls).toBe('ca:intern-root');
     expect(input.routes[0].backendTls).toBe('ca:zweite');
     expect(validateCreateInput({ ...input, id: 'a' })).toBeNull();
+  });
+
+  it('nimmt als festen Namen nur einen Hostnamen', () => {
+    for (const name of ['app01.intern.example', 'pve', 'a-b.c', 'x1.y2.z3', `${'a'.repeat(63)}.example`]) {
+      expect(isValidVerifyHost(name), name).toBe(true);
+    }
+    for (const name of [
+      '',
+      '*.intern.example',
+      'App01.intern.example',
+      'app01.intern.example:8443',
+      '10.0.0.5',
+      '192.168.1',
+      'app 01',
+      'app01.intern.example)',
+      'str(x)',
+      'a,b',
+      '-app.example',
+      'app-.example',
+      'app..example',
+      'app_01.example',
+      'ä.example',
+      `${'a'.repeat(64)}.example`,
+      `${'a.'.repeat(127)}a`,
+      'a\nb',
+      'a#b',
+    ]) {
+      expect(isValidVerifyHost(name), JSON.stringify(name)).toBe(false);
+    }
+  });
+
+  it('lehnt einen ungültigen festen Namen ab, aber nur, wo er wirkt', () => {
+    for (const backendVerifyHost of ['*.intern.example', '10.0.0.5', 'app01:8443', 'a b', 'x) verify none sni str(y']) {
+      expect(de(validateCreateInput({ ...INPUT, backendTls: 'verify', backendVerifyHost })), backendVerifyHost).toMatch(/kein Name, gegen den/);
+      expect(
+        de(
+          validateCreateInput({
+            ...INPUT,
+            routes: [
+              { name: 'x', paths: ['/x'], servers: [{ name: '', target: '10.0.0.1:81' }], check: false, backendTls: 'ca:intern-root', backendVerifyHost },
+            ],
+          })
+        ),
+        backendVerifyHost
+      ).toMatch(/kein Name, gegen den/);
+      // Ohne Prüfung wird er nicht geschrieben und deshalb nicht beanstandet.
+      expect(validateCreateInput({ ...INPUT, backendTls: 'insecure', backendVerifyHost })).toBeNull();
+    }
+    expect(validateCreateInput({ ...INPUT, backendTls: 'verify', backendVerifyHost: 'app01.intern.example' })).toBeNull();
+    expect(validateCreateInput({ ...INPUT, backendTls: 'verify', backendVerifyHost: null })).toBeNull();
+  });
+
+  it('liest den festen Namen aus einem Rumpf: kleingeschrieben, und nur, wo geprüft wird', () => {
+    expect(readVerifyHostInput(' App01.Intern.Example ', 'verify')).toEqual({ backendVerifyHost: 'app01.intern.example' });
+    expect(readVerifyHostInput('app01.intern.example', 'ca:intern-root')).toEqual({ backendVerifyHost: 'app01.intern.example' });
+    for (const tls of ['off', 'insecure'] as const) expect(readVerifyHostInput('app01.intern.example', tls)).toEqual({});
+    for (const empty of ['', '  ', null, undefined, 3, ['x']]) expect(readVerifyHostInput(empty, 'verify')).toEqual({});
+
+    const input = readServiceInput({
+      scope: 'INTERN',
+      domains: ['a.example.org'],
+      servers: [{ target: '10.0.0.1:443' }],
+      backendTls: 'ca:intern-root',
+      backendVerifyHost: 'APP01.intern.example',
+      routes: [
+        { name: 'x', paths: ['/x'], servers: [{ target: '10.0.0.1:8443' }], backendTls: 'verify', backendVerifyHost: 'api01.intern.example' },
+        { name: 'y', paths: ['/y'], servers: [{ target: '10.0.0.1:8444' }], backendTls: 'insecure', backendVerifyHost: 'api01.intern.example' },
+      ],
+    });
+    expect(input.backendVerifyHost).toBe('app01.intern.example');
+    expect(input.routes[0].backendVerifyHost).toBe('api01.intern.example');
+    expect('backendVerifyHost' in input.routes[1]).toBe(false);
+    expect(validateCreateInput({ ...input, id: 'a' })).toBeNull();
+    // Ein Rumpf von vor dem Feld ergibt dieselbe Eingabe wie vorher.
+    expect('backendVerifyHost' in readServiceInput({ domains: ['a.example.org'], servers: [{ target: '10.0.0.1:443' }], backendTls: 'verify' })).toBe(false);
+    // Eine Weiterleitung hat keine Ziele, also auch keinen Namen.
+    expect('backendVerifyHost' in readServiceInput({ redirect: { to: 'https://example.org' }, backendTls: 'verify', backendVerifyHost: 'x.example' })).toBe(false);
   });
 
   it('lehnt einen Namen ab, der kein Dateiname von HAPM wäre', () => {
@@ -437,6 +655,39 @@ describe('Prüfen und Umformen', () => {
     ).toBe(true);
     // Eine hinterlegte Zertifizierungsstelle braucht @system-ca nicht.
     expect(usesSystemCa({ ...INPUT, backendTls: 'ca:intern-root' })).toBe(false);
+  });
+});
+
+describe('die Sicht der API', () => {
+  it('liefert den festen Namen immer mit, auch als null: ein PATCH ersetzt die ganze Definition', async () => {
+    const { serviceView } = await import('@/lib/haproxy/internal');
+    const server = { $id: 'local', name: 'test', host: '127.0.0.1', roleReverseProxy: true };
+    const health = serviceHealth({ id: 'pve', routes: [] }, []);
+    const named = serviceView(
+      server,
+      find(
+        addService(CONFIG, {
+          ...INPUT,
+          backendTls: 'ca:intern-root',
+          backendVerifyHost: 'app01.intern.example',
+          routes: [{ name: 'api', paths: ['/api'], servers: [{ name: 'api', target: '10.0.0.7:8443' }], check: false, backendTls: 'verify' }],
+        }),
+        'pve'
+      ),
+      health,
+      null
+    );
+    expect(named.backendTls).toBe('ca:intern-root');
+    expect(named.backendVerifyHost).toBe('app01.intern.example');
+    expect(named.routes[0]).toMatchObject({ backendTls: 'verify', backendVerifyHost: null });
+
+    const plain = serviceView(server, find(addService(CONFIG, INPUT), 'pve'), health, null);
+    expect(plain).toHaveProperty('backendVerifyHost', null);
+
+    // Was die API liefert, nimmt sie unverändert wieder an und schreibt dieselbe Datei.
+    const back = readServiceInput({ ...named, servers: named.servers.map((s) => ({ name: s.name, target: s.target })) });
+    expect(back.backendVerifyHost).toBe('app01.intern.example');
+    expect('backendVerifyHost' in back.routes[0]).toBe(false);
   });
 });
 

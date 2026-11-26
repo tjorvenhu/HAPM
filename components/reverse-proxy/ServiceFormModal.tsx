@@ -39,6 +39,7 @@ import {
   validateLockPassword,
   validateCreateInput,
   validateNewService,
+  readVerifyHostInput,
   certificateChanged,
   isWildcardDomain,
   healthcheckPossible,
@@ -111,6 +112,8 @@ interface RouteRow {
   servers: RouteServerRow[];
   check: boolean;
   backendTls: BackendTls;
+  /** Der Name, gegen den geprüft wird, wie er im Feld steht. Leer: die Domain der Anfrage. */
+  backendVerifyHost: string;
 }
 
 /** Die Wörter aus `TargetKindDialog`, damit die Überschrift dieselben trägt.
@@ -164,6 +167,7 @@ const EMPTY_ROUTE: RouteRow = {
   // HTTP und nicht die Wahl des Backends: eine Regel zeigt auf einen anderen
   // Port, und dort spricht oft ein anderes Programm.
   backendTls: 'off',
+  backendVerifyHost: '',
 };
 
 interface Props {
@@ -339,6 +343,7 @@ export default function ServiceFormModal({
           : [{ ...EMPTY_ROUTE_SERVER }],
       check: route.check,
       backendTls: route.backendTls,
+      backendVerifyHost: route.backendVerifyHost ?? '',
     })) ?? []
   );
   /** Zugeklappt, auch wenn es Regeln gibt: der Abschnitt ist aufgeklappt so
@@ -380,6 +385,8 @@ export default function ServiceFormModal({
   /** Wie HAProxy mit den Zielen spricht. Beim Bearbeiten aus der Datei gelesen
    *  (`readServerParams`), sonst HTTP. */
   const [backendTls, setBackendTls] = useState<BackendTls>(edit?.service.backendTls ?? 'off');
+  /** Der Name, gegen den das Zertifikat der Ziele geprüft wird. Leer: die Domain der Anfrage. */
+  const [backendVerifyHost, setBackendVerifyHost] = useState(edit?.service.backendVerifyHost ?? '');
   /**
    * Der Zugriff: offen, nur für die Admin-IPs oder mit Passwort.
    *
@@ -554,6 +561,8 @@ export default function ServiceFormModal({
             .filter((s) => s.target),
           check: route.check,
           backendTls: route.backendTls,
+          // Nur, wo geprüft wird, und nur, wenn einer dasteht: sonst fehlt das Feld.
+          ...readVerifyHostInput(route.backendVerifyHost, route.backendTls),
         })),
     balance: balancing ? balance : null,
     sticky: balancing && sticky,
@@ -577,6 +586,7 @@ export default function ServiceFormModal({
       healthcheckPossible(domainList),
     // Das Weiterleitungs-Formular zeigt die Frage nicht, also schickt es HTTP.
     backendTls: redirecting ? 'off' : backendTls,
+    ...readVerifyHostInput(backendVerifyHost, redirecting ? 'off' : backendTls),
   };
   /** Die Eingabe als ein Wert: woran eine Meldung der Prüfung hängt (`formErrorFor`). */
   const inputKey = JSON.stringify([input, lockPassword, dnsHook]);
@@ -1597,6 +1607,8 @@ export default function ServiceFormModal({
                   <BackendTlsPick
                     value={backendTls}
                     onChange={setBackendTls}
+                    verifyHost={backendVerifyHost}
+                    onVerifyHostChange={setBackendVerifyHost}
                     label={balancing ? msgid('Ziele sprechen') : msgid('Ziel spricht')}
                     targets={backends.map((b) => b.target)}
                     verifyUnsupported={verifyUnsupported}
@@ -2089,6 +2101,8 @@ export default function ServiceFormModal({
                       <BackendTlsPick
                         value={route.backendTls}
                         onChange={(value) => update({ backendTls: value })}
+                        verifyHost={route.backendVerifyHost}
+                        onVerifyHostChange={(value) => update({ backendVerifyHost: value })}
                         label={msgid('Ziele dieser Regel sprechen')}
                         targets={route.servers.map((s) => s.target)}
                         verifyUnsupported={verifyUnsupported}

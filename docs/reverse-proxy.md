@@ -271,15 +271,64 @@ Fassung hinter `haproxy:lts` (heute 3.4,
   in `/etc/haproxy/hapm-ca/` mit einem Namen, den HAPM vergibt
   (`caNameFromFile`); eine Zeile mit einer anderen `ca-file` wird gelesen und
   ist nur lesbar. Sonst gilt für `ca:<name>` alles, was für `verify` gilt:
-  derselbe SNI, derselbe `check-sni`, dieselbe Reihenfolge der Wörter. Die
+  derselbe SNI, derselbe `check-sni`, derselbe feste Name
+  (`backendVerifyHost`), dieselbe Reihenfolge der Wörter. Die
   Grenze 2.6 gilt hier nicht, eine `ca-file` aus einer Datei kennt jedes
   HAProxy.
-- **Geprüft wird in beiden Fällen gegen die Domain der Anfrage.** Das Ziel
-  braucht ein Zertifikat, das die öffentliche Domain nennt, auch wenn eine
-  interne CA es ausgestellt hat. Ein Zertifikat nur für den internen Namen
-  (`app01.intern.example`) fällt durch: `pnpm haproxy:verify-tls` zeigt das
-  (503). Eine Prüfung gegen den Hostnamen des Ziels (`verifyhost`, fester SNI)
-  schreibt HAPM nicht; eine solche Zeile ist nur lesbar.
+- **Geprüft wird gegen die Domain der Anfrage, oder gegen einen festen Namen:
+  `backendVerifyHost`.** Ohne das Feld braucht das Ziel ein Zertifikat, das die
+  öffentliche Domain nennt. Bei einer internen PKI nennt es meist nur den
+  eigenen Namen (`app01.intern.example`) und fiele damit durch (503). Dafür
+  gibt es neben `backendTls` ein zweites, freiwilliges Feld, je Backend und
+  je Pfad-Regel, im Formular „Name im Zertifikat" unter „Geprüft gegen". Mit
+  ihm steht an der Stelle von `sni req.hdr(host)` ein fester SNI:
+
+  `ssl verify required ca-file <…> sni str(app01.intern.example) check-sni app01.intern.example`
+
+  - **`sni str(<name>)` genügt, `verifyhost` schreibt HAPM nicht.** HAProxy
+    prüft das Zertifikat gegen den SNI, den es schickt („the resulting name
+    will also be matched against the server certificate's names").
+    `verifyhost` gilt laut Handbuch nur, „when no SNI was used". Nachgemessen
+    mit 2.6, 3.0 und 3.4: `sni str(<name>)` allein prüft gegen den Namen;
+    `verifyhost` allein tut es bis 3.2 (die Verbindung geht ohne SNI hinaus),
+    ab 3.3 aber nicht mehr, weil `sni-auto` dann die Domain der Anfrage als SNI
+    schickt und gegen sie geprüft wird. Ein Wort, das nichts hinzufügt und sich
+    allein je Fassung anders verhält, steht nicht in der Zeile.
+  - **Der Healthcheck bekommt `check-sni <name>`** statt der Hauptdomain
+    (`backendCheckSni`), auch unter einer Wildcard, wo es sonst keinen gäbe.
+    Der Check prüft das Zertifikat gegen seinen SNI: mit einem falschen meldet
+    HAProxy „Server presented an SSL certificate different from the expected
+    one" und nimmt das Ziel aus dem Betrieb, ohne `check-sni` scheitert bei
+    einem Ziel mit `strict-sni` schon der Handshake.
+  - **Der Host-Header zum Ziel bleibt die Domain der Anfrage.** HAProxy fasst
+    ihn nicht an, nur der SNI ist fest. `pnpm haproxy:verify-tls` prüft beides
+    am selben Ziel (`sni=app01.intern.test host=mitname.test`). Ein Ziel, das
+    SNI und Host-Header gegeneinander prüft, kann eine solche Anfrage
+    ablehnen (Apache mit mehreren virtuellen Hosts etwa mit „Misdirected
+    Request") und braucht dann einen virtuellen Host, der beide Namen trägt.
+    Das ist die Stelle, an der das Handbuch sagt „SNI in HTTPS must always
+    match the Host field". Nicht nachgemessen: geprüft ist hier nur gegen
+    HAProxy als Ziel.
+  - **Nur wo geprüft wird** (`verify`, `ca:<name>`, `backendVerifyHostFor`).
+    Bei `off` und `insecure` hätte der Name keine Wirkung: `readServiceInput`
+    lässt ihn dort weg, geschrieben und beanstandet wird er nicht.
+  - **Ein Hostname und nichts sonst** (`isValidVerifyHost`): kleingeschrieben,
+    kein Stern, kein Port, keine IP-Adresse (eine Adresse ist kein SNI, und
+    HAProxy vergleicht nur mit den DNS-Namen des Zertifikats). Er steht in
+    `str(…)` in der Zeile, eine Klammer oder ein Komma darin wäre ein anderer
+    Ausdruck.
+  - **Ein Name je Backend.** Die Ziele einer Lastverteilung brauchen damit ein
+    Zertifikat, das denselben Namen nennt (ein gemeinsamer Dienstname als
+    SAN). Stehen in einem Backend verschiedene, gilt der der ersten Zeile, die
+    anderen landen in `extras`, und der Eintrag ist nur lesbar.
+  - **Freiwillig im Typ** (`backendVerifyHost?: string | null` an
+    `CreateServiceInput` und `RouteInput`): eine Eingabe von vor dem Feld
+    schreibt dieselbe Datei wie vorher, und `toCreateInput` nennt es nur, wenn
+    einer gesetzt ist. Gelesen (`HaproxyService`, `HaproxyRoute`) und in der
+    Antwort der API steht es immer, als `null` ohne Namen.
+  - **Der Dialog schlägt den Namen vor**, wenn die Ziele unter genau einem
+    Hostnamen eingetragen sind (`targetHostname` in `BackendTlsPick`): dann ist
+    er der naheliegende. Bei einer IP-Adresse gibt es nichts vorzuschlagen.
 - **SNI ist die Domain der Anfrage, `sni req.hdr(host)`.** Das Handbuch sagt
   zu `sni`: „SNI in HTTPS must always match the Host field" und verweist für
   HTTPS auf `req.hdr(host)`. Die Hauptdomain als fester SNI wäre bei einem
@@ -320,7 +369,9 @@ Fassung hinter `haproxy:lts` (heute 3.4,
   HTTPS-Wörter, `check-sni`. Für HAProxy ist die Reihenfolge beliebig, hier
   nicht, aus demselben Grund wie bei den übrigen Parametern. Was davon
   abweicht (`ssl` allein, `verify none` ohne SNI, `verifyhost`, ein fester
-  SNI, eine andere Reihenfolge), bleibt in `extras`
+  SNI ohne Prüfung oder mit einem Namen, den `isValidVerifyHost` nicht nimmt,
+  ein `check-sni`, der nicht zum festen Namen passt, eine andere Reihenfolge),
+  bleibt in `extras`
   (`tests/haproxy/backend-tls.test.ts` hält die Varianten fest).
 - **Nicht bei TCP-Weiterleitungen.** Dort reicht HAProxy durch, was kommt; ob
   dahinter TLS gesprochen wird, macht der Client mit dem Ziel aus. Ein `ssl`
@@ -348,11 +399,19 @@ Fassung hinter `haproxy:lts` (heute 3.4,
     Vorabprüfung beim Anlegen (`assertCasPresent`). Eine `ca-file` an einem
     anderen Ort ist ein Grund: die Datei gehört HAPM nicht, und der Hinweis
     sagt, wo sie hinterlegt wird.
+  - `verify required` mit einem festen SNI (`sni str(<name>)`), mit oder ohne
+    `verifyhost <derselbe Name>`, wird `backendVerifyHost`. Nur `verifyhost`
+    ohne `sni` ebenso, mit dem Hinweis, dass HAPM den Namen jetzt als SNI
+    schickt (siehe oben, ab 3.3 prüfte die Zeile sonst gegen die Domain der
+    Anfrage). Ein Grund bleiben: zwei verschiedene Namen (`sni str(a)
+    verifyhost b`), `verifyhost` neben einem SNI aus dem Host (Anfragen und
+    Healthcheck würden gegen zwei Namen geprüft), ein anderer SNI-Ausdruck,
+    verschiedene Namen in einem Backend, `verifyhost` bei `verify none`.
   - `ssl` ohne `verify` gilt nach `ssl-server-verify none` in `global` als
     `insecure`, sonst lädt HAProxy die Zeile nicht.
   - `check-ssl` und `check-sni` entfallen: das eine ist bei `ssl` die
     Vorgabe, das andere schreibt HAPM selbst (`backendCheckSni`).
-  - `verifyhost`, `alpn`, Client-Zertifikate (`crt`) und alles Weitere
+  - `alpn`, Client-Zertifikate (`crt`) und alles Weitere
     bleiben ein Grund. HTTP und HTTPS gemischt in einem Backend auch, und
     `ssl` an einer TCP-Weiterleitung.
 
@@ -1199,7 +1258,8 @@ Prüfung". Auf der Zertifikatsseite, Reiter „Zertifizierungsstellen"
 (`?bereich=zertifizierungsstellen`), hinterlegt der Betreiber das Zertifikat
 der CA unter einem Namen, und ein Ziel wählt sie unter „HTTPS, Zertifikat
 prüfen" bei „Geprüft gegen" aus (`backendTls: 'ca:<name>'`, siehe „Ziele, die
-HTTPS sprechen"). Das ist die andere Richtung als alles Übrige auf der Seite:
+HTTPS sprechen"). Nennt das Zertifikat des Ziels nur dessen internen Namen,
+kommt der in das Feld „Name im Zertifikat" darunter (`backendVerifyHost`). Das ist die andere Richtung als alles Übrige auf der Seite:
 dort stehen Zertifikate, die HAProxy Besuchern ausliefert, hier
 Vertrauensanker, gegen die es selbst prüft.
 

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { z } from 'zod';
 import { createTranslator } from '@/lib/i18n';
 
 /**
@@ -247,6 +248,26 @@ describe('die Werkzeugliste', () => {
       expect(entry.description).not.toMatch(/ [–—] /);
     }
   );
+
+  it('nimmt im Schema eine hinterlegte Zertifizierungsstelle und den Namen im Zertifikat an', () => {
+    for (const name of ['create_service', 'update_service']) {
+      const schema = z.object(tool(name).input);
+      const base = { id: 's', scope: 'K', domains: ['a.example'] };
+      const accepted = schema.safeParse({
+        ...base,
+        backendTls: 'ca:intern-root',
+        backendVerifyHost: 'app01.intern.example',
+        routes: [{ name: 'api', paths: ['/api'], servers: [], backendTls: 'verify', backendVerifyHost: null }],
+      });
+      expect(accepted.success, name).toBe(true);
+      // Ohne das Feld wie bisher.
+      expect(schema.safeParse({ ...base, backendTls: 'verify' }).success, name).toBe(true);
+      // Die Allow-Liste sagt es früher als `validateCreateInput`.
+      for (const backendTls of ['yes', 'ca:', 'ca:../x', 'ca:Intern']) {
+        expect(schema.safeParse({ ...base, backendTls }).success, `${name} ${backendTls}`).toBe(false);
+      }
+    }
+  });
 
   it('nennt bei jedem Löschen und Ersetzen die Nebenwirkung', () => {
     for (const name of ['delete_service', 'delete_stream', 'update_service', 'update_stream', 'delete_scope']) {

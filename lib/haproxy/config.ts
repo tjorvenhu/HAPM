@@ -1060,9 +1060,52 @@ function backendTlsWords(tls: Exclude<BackendTls, 'off'>): readonly string[] {
  *  geschickt hat. Ein Ziel mit mehreren Zertifikaten wählt danach. */
 const BACKEND_SNI = ['sni', 'req.hdr(host)'] as const;
 
-/** Die Parameter einer HTTPS-Zeile als Text, für Doku, Hinweise und Tests. */
-export function backendTlsParams(tls: BackendTls): string {
-  return tls === 'off' ? '' : [...backendTlsWords(tls), ...BACKEND_SNI].join(' ');
+/**
+ * Der Name, gegen den das Zertifikat des Ziels geprüft wird, wenn es nicht die
+ * Domain der Anfrage sein soll (`backendVerifyHost`).
+ *
+ * Der Fall ist die interne PKI: das Ziel trägt ein Zertifikat für seinen
+ * eigenen Namen (`app01.intern.example`), nicht für die öffentliche Domain.
+ * Ein Hostname und nichts sonst: er steht als `sni str(<name>)` und
+ * `check-sni <name>` in der server-Zeile. Kein Stern (HAProxy schickt ihn als
+ * SNI, und ein Stern ist kein Name), kein Port, keine IP-Adresse (eine Adresse
+ * ist kein SNI, und HAProxy vergleicht nur mit den DNS-Namen des Zertifikats).
+ * Kleingeschrieben, damit dieselbe Zeile beim Zurücklesen dieselbe bleibt.
+ */
+export function isValidVerifyHost(name: string): boolean {
+  if (name.length > 253) return false;
+  if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/.test(name)) return false;
+  return !/^[0-9.]+$/.test(name);
+}
+
+/**
+ * Der Name, der wirklich gilt: nur, wo das Zertifikat geprüft wird (`verify`,
+ * `ca:<name>`). Ohne HTTPS und bei `insecure` wird nichts geprüft, ein Name
+ * dort hätte keine Wirkung und wird weder geschrieben noch gemeldet.
+ */
+export function backendVerifyHostFor(tls: BackendTls, host: string | null | undefined): string | null {
+  if (tls === 'off' || tls === 'insecure') return null;
+  return host ? host : null;
+}
+
+/** Der SNI einer geprüften Zeile: ein fester Name, sonst die Domain der Anfrage. */
+function backendSniWords(verifyHost: string | null): readonly string[] {
+  return verifyHost === null ? BACKEND_SNI : ['sni', `str(${verifyHost})`];
+}
+
+/** Der feste Name aus `str(<name>)`, wenn er einer ist, den HAPM schreibt. */
+function verifyHostFromSni(value: string | undefined): string | null {
+  const match = /^str\(([^()]+)\)$/.exec(value ?? '');
+  return match && isValidVerifyHost(match[1]) ? match[1] : null;
+}
+
+/**
+ * Die Parameter einer HTTPS-Zeile als Text, für Doku, Hinweise und Tests. Mit
+ * `verifyHost` steht dessen Name als SNI da (nur bei geprüften Arten).
+ */
+export function backendTlsParams(tls: BackendTls, verifyHost: string | null = null): string {
+  if (tls === 'off') return '';
+  return [...backendTlsWords(tls), ...backendSniWords(backendVerifyHostFor(tls, verifyHost))].join(' ');
 }
 
 /**
@@ -1074,9 +1117,22 @@ export function backendTlsParams(tls: BackendTls): string {
  * herausgibt (Caddy, Traefik), fiele damit durch, und HAProxy nähme ein
  * funktionierendes Ziel aus dem Betrieb. Die Hauptdomain, weil der
  * HTTP-Healthcheck sie ohnehin als Host-Header schickt.
+ *
+ * Mit einem festen Namen (`backendVerifyHost`) ist es dieser, auch unter einer
+ * Wildcard: der Check prüft das Zertifikat gegen seinen SNI
+ * (`pnpm haproxy:verify-tls`), und das Ziel hat eines für diesen Namen, nicht
+ * für die Hauptdomain.
  */
-export function backendCheckSni(check: boolean, tls: BackendTls, mainDomain: string): string | null {
-  if (!check || tls === 'off' || !mainDomain || isWildcardDomain(mainDomain)) return null;
+export function backendCheckSni(
+  check: boolean,
+  tls: BackendTls,
+  mainDomain: string,
+  verifyHost: string | null = null
+): string | null {
+  if (!check || tls === 'off') return null;
+  const fixed = backendVerifyHostFor(tls, verifyHost);
+  if (fixed !== null) return fixed;
+  if (!mainDomain || isWildcardDomain(mainDomain)) return null;
   return mainDomain;
 }
 
@@ -1160,6 +1216,9 @@ export interface HaproxyRoute {
    *  geerbt: eine Regel zeigt auf einen anderen Port, oft ein anderes
    *  Programm, und ob dort HTTPS spricht, ist eine Eigenschaft dieses Ports. */
   backendTls: BackendTls;
+  /** Der feste Name, gegen den das Zertifikat der Ziele dieser Regel geprüft
+   *  wird. `null`: die Domain der Anfrage. Siehe `isValidVerifyHost`. */
+  backendVerifyHost: string | null;
 }
 
 /**
@@ -1268,6 +1327,10 @@ export interface HaproxyService {
    *  verschiedene Arten nebeneinander, gilt die der ersten Zeile, und der
    *  Eintrag ist nur lesbar. */
   backendTls: BackendTls;
+  /** Der feste Name, gegen den das Zertifikat der Ziele geprüft wird
+   *  (`sni str(<name>)`). `null`: die Domain der Anfrage. Nur bei `verify` und
+   *  `ca:<name>` gesetzt. */
+  backendVerifyHost: string | null;
   /** Trägt den `# AUTO: id`-Kommentar, stammt also aus einem Vorgang wie diesem. */
   auto: boolean;
   /**
@@ -1343,6 +1406,8 @@ export interface RouteInput {
   check: boolean;
   /** Eigen je Regel, siehe `HaproxyRoute.backendTls`. */
   backendTls: BackendTls;
+  /** Eigen je Regel, siehe `CreateServiceInput.backendVerifyHost`. */
+  backendVerifyHost?: string | null;
 }
 
 export interface CreateServiceInput {
@@ -1392,6 +1457,16 @@ export interface CreateServiceInput {
    *  server-Zeile darin, nicht für die der Pfad-Regeln (die haben ihr eigenes).
    *  Setzt Ziele voraus und schließt eine Weiterleitung aus. */
   backendTls: BackendTls;
+  /**
+   * Der Name, gegen den HAProxy das Zertifikat der Ziele prüft, wenn es nicht
+   * die Domain der Anfrage sein soll: ein Ziel mit Zertifikat für seinen
+   * internen Namen. Fehlt es oder ist es `null`, gilt die Domain der Anfrage.
+   * Wirkt nur bei `verify` und `ca:<name>` (`backendVerifyHostFor`).
+   *
+   * Freiwillig im Typ, damit eine Eingabe von vor diesem Feld dieselbe Datei
+   * schreibt wie vorher.
+   */
+  backendVerifyHost?: string | null;
 }
 
 /**
@@ -1441,6 +1516,8 @@ function validateService(input: CreateServiceInput, idGiven: boolean): Message |
   if (!isBackendTls(input.backendTls)) {
     return msg('Unbekannte Angabe, wie das Ziel angesprochen wird. Erlaubt sind off, insecure, verify und ca: mit dem Namen einer hinterlegten Zertifizierungsstelle.');
   }
+  const hostInvalid = validateVerifyHost(input.backendTls, input.backendVerifyHost);
+  if (hostInvalid) return hostInvalid;
   // Auch die Anwendung geht als Wort in die Datei.
   if (input.app !== null && knownApp(input.app) === null) {
     return msg('Diese Anwendung kennt HAPM nicht: {app}', { app: input.app });
@@ -1579,6 +1656,8 @@ function validateService(input: CreateServiceInput, idGiven: boolean): Message |
     if (!isBackendTls(route.backendTls)) {
       return msg('Unbekannte Angabe, wie die Ziele der Pfad-Regel „{name}" angesprochen werden.', { name });
     }
+    const routeHostInvalid = validateVerifyHost(route.backendTls, route.backendVerifyHost);
+    if (routeHostInvalid) return routeHostInvalid;
 
     const routeServers = validateServers(route.servers, name);
     if (routeServers) return routeServers;
@@ -1767,6 +1846,8 @@ export function readServerParams(rest: string): {
   weight: number | null;
   cookie: string | null;
   tls: BackendTls;
+  /** Der feste Name aus `sni str(<name>)`, sonst `null` (SNI aus dem Host). */
+  verifyHost: string | null;
   checkSni: string | null;
   leftover: string[];
 } {
@@ -1803,13 +1884,20 @@ export function readServerParams(rest: string): {
   // und die Zeile bleibt wie bisher nur lesbar.
   const ca = tokens[at + 3] === 'ca-file' ? caNameFromFile(tokens[at + 4] ?? '') : null;
   const modes: Exclude<BackendTls, 'off'>[] = ['insecure', 'verify', ...(ca === null ? [] : [backendCaTls(ca)])];
+  let verifyHost: string | null = null;
   for (const mode of modes) {
-    const expected = [...backendTlsWords(mode), ...BACKEND_SNI];
-    if (expected.every((word, offset) => tokens[at + offset] === word)) {
-      tls = mode;
-      at += expected.length;
-      break;
-    }
+    const words = backendTlsWords(mode);
+    if (!words.every((word, offset) => tokens[at + offset] === word)) continue;
+    // Hinter den Wörtern der Art steht der SNI: die Domain der Anfrage oder,
+    // nur wo geprüft wird, ein fester Name. `verify none sni str(…)` bleibt
+    // stehen und macht die Zeile nur lesbar, wie jeder andere feste SNI dort.
+    const sni = tokens[at + words.length] === 'sni' ? tokens[at + words.length + 1] : undefined;
+    const fixed = mode === 'insecure' ? null : verifyHostFromSni(sni);
+    if (sni !== BACKEND_SNI[1] && fixed === null) continue;
+    tls = mode;
+    verifyHost = fixed;
+    at += words.length + 2;
+    break;
   }
 
   // Nur hinter einer erkannten HTTPS-Folge. Ob der Wert der richtige ist
@@ -1820,7 +1908,21 @@ export function readServerParams(rest: string): {
     at += 2;
   }
 
-  return { check, weight, cookie, tls, checkSni, leftover: tokens.slice(at) };
+  return { check, weight, cookie, tls, verifyHost, checkSni, leftover: tokens.slice(at) };
+}
+
+/**
+ * Die Meldung zu einem Namen, gegen den sich kein Zertifikat prüfen lässt,
+ * oder `null`. Nur wo er wirkt: ohne Prüfung wird er nicht geschrieben und
+ * deshalb auch nicht beanstandet.
+ */
+export function validateVerifyHost(tls: BackendTls, host: string | null | undefined): Message | null {
+  const name = backendVerifyHostFor(tls, host);
+  if (name === null || isValidVerifyHost(name)) return null;
+  return msg(
+    '„{name}" ist kein Name, gegen den sich ein Zertifikat prüfen lässt. Erwartet wird ein Hostname wie app01.intern.example: kleingeschrieben, ohne Stern, ohne Port, keine IP-Adresse.',
+    { name }
+  );
 }
 
 /** Die Parameter hinter dem Ziel, in der Reihenfolge, die `readServerParams`
@@ -1830,13 +1932,15 @@ export function serverParams(input: {
   weight: number | null;
   cookie: string | null;
   tls: BackendTls;
+  /** Der feste Name, gegen den geprüft wird. Fehlt er, gilt die Domain der Anfrage. */
+  verifyHost?: string | null;
   checkSni: string | null;
 }): string {
   return [
     input.check ? ' check' : '',
     input.weight === null ? '' : ` weight ${input.weight}`,
     input.cookie === null ? '' : ` cookie ${input.cookie}`,
-    input.tls === 'off' ? '' : ` ${backendTlsParams(input.tls)}`,
+    input.tls === 'off' ? '' : ` ${backendTlsParams(input.tls, input.verifyHost ?? null)}`,
     input.tls === 'off' || input.checkSni === null ? '' : ` check-sni ${input.checkSni}`,
   ].join('');
 }
@@ -1844,9 +1948,9 @@ export function serverParams(input: {
 /** Ein Backend-Block beim Lesen, bevor feststeht, zu welchem Dienst er gehört. */
 interface ParsedBackend {
   servers: HaproxyBackendServer[];
-  /** Je server-Zeile, in derselben Reihenfolge: ihr Text und ihr `check-sni`.
-   *  Erst am Ende ausgewertet, wenn die Hauptdomain feststeht. */
-  serverLines: { text: string; checkSni: string | null }[];
+  /** Je server-Zeile, in derselben Reihenfolge: ihr Text, ihr `check-sni` und
+   *  ihr fester SNI. Erst am Ende ausgewertet, wenn die Hauptdomain feststeht. */
+  serverLines: { text: string; checkSni: string | null; verifyHost: string | null }[];
   /** Die Zeilen der Healthcheck-Gruppe, wie sie dastehen. Erst am Ende
    *  ausgewertet: sie müssen vollständig sein UND den richtigen Host-Header
    *  tragen, sonst schriebe ein Neuschreiben etwas anderes hin. */
@@ -1894,15 +1998,19 @@ function readBackendTls(
   backend: ParsedBackend,
   check: boolean,
   mainDomain: string
-): { tls: BackendTls; extras: string[] } {
+): { tls: BackendTls; verifyHost: string | null; extras: string[] } {
   const tls = backend.servers[0]?.tls ?? 'off';
-  const expectedSni = backendCheckSni(check, tls, mainDomain);
+  // Wie die Art: der Name der ersten Zeile gilt. Das Formular kennt einen je
+  // Backend, und eine Zeile mit einem anderen prüfte neu geschrieben gegen
+  // den falschen.
+  const verifyHost = backend.serverLines[0]?.verifyHost ?? null;
+  const expectedSni = backendCheckSni(check, tls, mainDomain, verifyHost);
   const extras = backend.servers.flatMap((server, position) => {
     const line = backend.serverLines[position];
     if (!line || backend.extras.includes(line.text)) return [];
-    return server.tls !== tls || line.checkSni !== expectedSni ? [line.text] : [];
+    return server.tls !== tls || line.verifyHost !== verifyHost || line.checkSni !== expectedSni ? [line.text] : [];
   });
-  return { tls, extras };
+  return { tls, verifyHost, extras };
 }
 
 /**
@@ -2006,10 +2114,10 @@ export function parseHaproxyConfig(text: string): HaproxyService[] {
          * sie es nicht. Eine anders sortierte Zeile käme beim Speichern
          * umsortiert heraus, und ein Diff, in dem sich Zeilen bewegen, ohne
          * dass sich etwas ändert, ist der, den beim Nachsehen niemand liest. */
-        const { check, weight, cookie, tls, checkSni, leftover } = readServerParams(server[3] ?? '');
+        const { check, weight, cookie, tls, verifyHost, checkSni, leftover } = readServerParams(server[3] ?? '');
 
         entry.servers.push({ name, target: server[2], check, weight, tls });
-        entry.serverLines.push({ text: line, checkSni });
+        entry.serverLines.push({ text: line, checkSni, verifyHost });
         // Die Marke MUSS der eigene Servername sein: HAProxy schickt den Wert
         // aus dem Cookie an genau den Server, der so heißt. Ein abweichender
         // Wert bindet an ein anderes Ziel, und neu geschrieben stünde dort der
@@ -2310,7 +2418,7 @@ export function parseHaproxyConfig(text: string): HaproxyService[] {
     // ist der, den ein Neuschreiben setzen würde.
     const backendTls = backend
       ? readBackendTls(backend, healthcheck, domains[0] ?? '')
-      : { tls: 'off' as const, extras: [] };
+      : { tls: 'off' as const, verifyHost: null, extras: [] };
     extras.push(...backendTls.extras);
 
     // `option httpchk` ohne `check` auf der server-Zeile prüft nichts; unsere
@@ -2386,6 +2494,7 @@ export function parseHaproxyConfig(text: string): HaproxyService[] {
       // nicht zurück, und die Prüfung lehnte sie ab.
       app: redirect ? null : (backend?.app ?? null),
       backendTls: backendTls.tls,
+      backendVerifyHost: backendTls.verifyHost,
       auto: autoIds.has(id),
       extras,
       removable,
@@ -2471,6 +2580,7 @@ function readRoute(
     servers,
     check,
     backendTls: tls.tls,
+    backendVerifyHost: tls.verifyHost,
     // Eine Pfad-Regel schreibt keine httpchk-Zeilen: eine WebSocket-Strecke
     // antwortet auf ein `GET /` nicht mit 200. Stehen dort welche, hat sie
     // jemand von Hand gesetzt, und ein Neuschreiben nähme sie weg.
@@ -2659,7 +2769,8 @@ export function renderBackendBlock(input: CreateServiceInput): string[] {
         // zweiter Name daneben wäre eine zweite Quelle für dieselbe Zuordnung.
         cookie: input.sticky ? name : null,
         tls: input.backendTls,
-        checkSni: backendCheckSni(input.healthcheck, input.backendTls, input.domains[0]),
+        verifyHost: input.backendVerifyHost,
+        checkSni: backendCheckSni(input.healthcheck, input.backendTls, input.domains[0], input.backendVerifyHost),
       })}`
     );
   });
@@ -2704,7 +2815,8 @@ export function renderRouteBackend(input: CreateServiceInput, route: RouteInput)
         weight: null,
         cookie: null,
         tls: route.backendTls,
-        checkSni: backendCheckSni(route.check, route.backendTls, input.domains[0]),
+        verifyHost: route.backendVerifyHost,
+        checkSni: backendCheckSni(route.check, route.backendTls, input.domains[0], route.backendVerifyHost),
       })}`
     );
   });
@@ -4634,6 +4746,9 @@ export function toCreateInput(service: HaproxyService): CreateServiceInput {
       servers: route.servers.map((s) => ({ name: s.name, target: s.target })),
       check: route.check,
       backendTls: route.backendTls,
+      // Nur, wenn einer gesetzt ist: das Feld ist freiwillig, und ohne es ist
+      // die Eingabe dieselbe wie vor seiner Einführung.
+      ...(route.backendVerifyHost !== null ? { backendVerifyHost: route.backendVerifyHost } : {}),
     })),
     balance: service.balance,
     sticky: service.sticky,
@@ -4649,6 +4764,7 @@ export function toCreateInput(service: HaproxyService): CreateServiceInput {
     app: service.app,
     healthcheck: service.healthcheck,
     backendTls: service.backendTls,
+    ...(service.backendVerifyHost !== null ? { backendVerifyHost: service.backendVerifyHost } : {}),
   };
 }
 
@@ -4746,6 +4862,7 @@ export function readServiceInput(body: unknown): CreateServiceInput {
           servers: readServers(r.servers).map((s) => ({ name: s.name, target: s.target })),
           check: r.check === true,
           backendTls: readBackendTlsInput(r.backendTls),
+          ...readVerifyHostInput(r.backendVerifyHost, readBackendTlsInput(r.backendTls)),
         };
       })
     : [];
@@ -4848,6 +4965,7 @@ export function readServiceInput(body: unknown): CreateServiceInput {
     // Wie `balance`: bei einer Weiterleitung gibt es keine Ziele, die etwas
     // sprechen könnten, und ihr Formular zeigt die Frage nicht.
     backendTls: redirect ? 'off' : readBackendTlsInput(raw.backendTls),
+    ...readVerifyHostInput(raw.backendVerifyHost, redirect ? 'off' : readBackendTlsInput(raw.backendTls)),
   };
 }
 
@@ -4985,6 +5103,22 @@ function readServers(value: unknown): BackendServerInput[] {
 export function readBackendTlsInput(value: unknown): BackendTls {
   const raw = String(value ?? '').trim();
   return (raw === '' ? 'off' : raw) as BackendTls;
+}
+
+/**
+ * Der Name, gegen den das Zertifikat geprüft wird, aus einem Request-Rumpf,
+ * als Feld zum Einsetzen in die Eingabe.
+ *
+ * Kleingeschrieben und ohne Leerraum. Leer, `null` oder fehlend heißt: keiner,
+ * es gilt die Domain der Anfrage, und das Feld fehlt dann in der Eingabe wie
+ * vor seiner Einführung. Dasselbe, wo nicht geprüft wird (`off`, `insecure`):
+ * dort hätte er keine Wirkung und wird nicht gespeichert. Ein UNGÜLTIGER Name
+ * wird durchgereicht und von `validateCreateInput` abgelehnt.
+ */
+export function readVerifyHostInput(value: unknown, tls: BackendTls): { backendVerifyHost?: string } {
+  const raw = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  const host = backendVerifyHostFor(tls, raw);
+  return host === null ? {} : { backendVerifyHost: host };
 }
 
 /**

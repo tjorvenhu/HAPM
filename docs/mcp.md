@@ -100,7 +100,7 @@ Stunde (`429`), zurückgezogen heißt `401`.
 | `get_proxy` | lesen | das eine HAProxy: Gruppen, Admin-IPs, DNS-Hooks, `acmeReady`. Der Einstieg |
 | `list_services`, `get_service` | lesen | Ziele, gefiltert über Gruppe oder exakte Domain |
 | `create_service` | schreiben | Ziel anlegen → `runId`, `serviceId` |
-| `update_service` | schreiben | Ziel ersetzen, **vollständige Definition** → `runId` |
+| `update_service` | schreiben | Ziel ersetzen, **vollständige Definition** → `runId`. Dazu gehören `backendTls` (auch `ca:<name>`) und `backendVerifyHost`, der Name im Zertifikat des Ziels: `get_service` liefert beide immer mit |
 | `delete_service` | schreiben | Ziel entfernen, DNS nur mit `removeDns: true` → `runId` |
 | `list_streams`, `get_stream` | lesen | TCP-Weiterleitungen |
 | `check_port` | lesen | ist der Port frei |
@@ -289,8 +289,9 @@ Gilt für API und MCP gleich; die Funktionen lehnen es ab, nicht die Werkzeuge.
 
 Die Schemas (`zod`, im SDK zu JSON Schema umgewandelt) prüfen nur die Form:
 Typen, Pflichtfelder, Aufzählungen wie `balance` und `backendTls` (dieselbe
-Allow-Liste `BACKEND_TLS` wie in `validateCreateInput`, am Ziel und an jeder
-Pfad-Regel). Was eine gültige Domain oder
+Prüfung `isBackendTls` wie in `validateCreateInput`, am Ziel und an jeder
+Pfad-Regel: die drei festen Werte oder `ca:<name>`). `backendVerifyHost` ist
+dort ein Text oder `null`; ob er ein Hostname ist, sagt die Bibliothek. Was eine gültige Domain oder
 ein freier Port ist, entscheidet die Bibliothek, mit derselben Meldung wie bei
 der API. Zwei Regelwerke für dieselbe Eingabe laufen auseinander.
 

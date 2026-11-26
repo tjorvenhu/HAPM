@@ -186,7 +186,7 @@ export default function CertificateAuthoritiesPanel({ ref }: { ref?: Ref<Authori
             {t('Zertifizierungsstellen')}
             <InfoHint
               text={t(
-                'Für Ziele, die HTTPS sprechen und deren Zertifikat aus einer eigenen CA kommt. Hinterlegen Sie hier das Zertifikat der CA und wählen Sie sie am Ziel unter „HTTPS, Zertifikat prüfen“ aus. HAProxy nimmt das Zertifikat des Ziels dann nur an, wenn diese Stelle es ausgestellt hat und es für die aufgerufene Domain gilt.'
+                'Für Ziele, die HTTPS sprechen und deren Zertifikat aus einer eigenen CA kommt. Hinterlegen Sie hier das Zertifikat der CA und wählen Sie sie am Ziel unter „HTTPS, Zertifikat prüfen“ aus. HAProxy nimmt das Zertifikat des Ziels dann nur an, wenn diese Stelle es ausgestellt hat und es für die aufgerufene Domain gilt oder für den Namen, der am Ziel unter „Name im Zertifikat“ steht.'
               )}
             />
             <span className="section-count">

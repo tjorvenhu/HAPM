@@ -210,6 +210,18 @@ const backendTls = z
       'All HTTPS modes send the request Host as SNI; when checking, the upstream certificate must be valid for the requested domain.'
   );
 
+const backendVerifyHost = z
+  .string()
+  .nullable()
+  .optional()
+  .describe(
+    'Name the upstream certificate is checked against instead of the requested domain, e.g. "app01.intern.example". ' +
+      'For upstreams whose certificate only names their internal hostname (typical with an internal CA). ' +
+      'HAProxy then sends this name as SNI (also for the health check) and verifies the certificate against it; ' +
+      'the Host header sent to the upstream stays the requested domain. Lowercase hostname, no wildcard, no port, no IP address. ' +
+      'Only with backendTls "verify" or "ca:<name>"; ignored and not stored with "off" and "insecure". Omit or null: the requested domain.'
+  );
+
 const routeEntry = z.object({
   name: z.string().describe('Rule name, a-z 0-9 _, e.g. "terminal".'),
   paths: z
@@ -224,6 +236,9 @@ const routeEntry = z.object({
     .describe('Plain TCP check on these upstreams (no HTTP check: a WebSocket endpoint does not answer GET / with 200).'),
   backendTls: backendTls.describe(
     'Own setting per rule, not inherited from the target: off, insecure, verify or ca:<name> (see backendTls of the target).'
+  ),
+  backendVerifyHost: backendVerifyHost.describe(
+    'Own setting per rule, not inherited from the target (see backendVerifyHost of the target).'
   ),
 });
 
@@ -311,6 +326,7 @@ const serviceFields = {
     .optional()
     .describe('HTTP health check against domains[0]. Default false. Ignored when domains[0] is a wildcard or redirect is set.'),
   backendTls,
+  backendVerifyHost,
   dnsDomains: z
     .union([z.literal('auto'), z.array(z.string())])
     .optional()
@@ -461,7 +477,7 @@ export const TOOLS: ToolDefinition[] = [
     title: 'Update target',
     description:
       'Replaces a target with a COMPLETE new definition. This is not a partial patch: every field you omit is reset ' +
-      '(servers, routes, headers, tunnel, healthcheck, backendTls, lockedDomains). Always call get_service first, modify its result, and send all fields. ' +
+      '(servers, routes, headers, tunnel, healthcheck, backendTls, backendVerifyHost, lockedDomains). Always call get_service first, modify its result, and send all fields. ' +
       'Exception: omitting passwordLock keeps the current lock type and password. ' +
       'Domains removed from the list lose their DNS record if HAPM created it. ' +
       'Refused when editable=false, and for the surface target when the HAPM domain would be removed. ' +

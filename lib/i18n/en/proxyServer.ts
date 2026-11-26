@@ -223,13 +223,27 @@ export const proxyServer: Dictionary = {
   'server {name}: verify {verify} kennt HAProxy nicht.': 'server {name}: HAProxy does not know verify {verify}.',
   'server {name}: ssl prüft das Zertifikat, aber ohne ca-file. So lädt HAProxy die Zeile nicht.':
     'server {name}: ssl verifies the certificate, but there is no ca-file. HAProxy does not load the line like this.',
-  'server {name}: HAPM prüft das Zertifikat gegen die Domain der Anfrage (sni req.hdr(host)). Hier wird es anders geprüft, das Ziel könnte danach durchfallen.':
-    'server {name}: HAPM verifies the certificate against the domain of the request (sni req.hdr(host)). It is verified differently here, so the target could fail afterwards.',
   'Die Ziele sprechen teils HTTP, teils HTTPS. HAPM kennt eine Art je Backend.':
     'Some targets speak HTTP, others HTTPS. HAPM supports one kind per backend.',
   'HTTPS zum Ziel': 'HTTPS to the target',
   'HTTPS zum Ziel, Zertifikat geprüft': 'HTTPS to the target, certificate verified',
   'HTTPS zum Ziel, Zertifikat geprüft gegen {name}': 'HTTPS to the target, certificate verified against {name}',
+  'server {name}: verifyhost wirkt nur mit verify required. Hier wird das Zertifikat nicht geprüft.':
+    'server {name}: verifyhost only takes effect with verify required. Here the certificate is not verified.',
+  'server {name}: HAPM prüft das Zertifikat gegen die Domain der Anfrage (sni req.hdr(host)) oder gegen einen festen Namen (sni str(name)). Hier wird es anders geprüft, das Ziel könnte danach durchfallen.':
+    'server {name}: HAPM verifies the certificate against the domain of the request (sni req.hdr(host)) or against a fixed name (sni str(name)). Here it is verified differently, the target could fail afterwards.',
+  'server {name}: verifyhost {host} neben einem SNI aus der Domain der Anfrage. HAPM prüft gegen einen Namen, nicht gegen zwei.':
+    'server {name}: verifyhost {host} next to an SNI from the domain of the request. HAPM verifies against one name, not two.',
+  'server {name}: SNI {sni} und verifyhost {host} nennen verschiedene Namen. HAPM prüft gegen einen.':
+    'server {name}: SNI {sni} and verifyhost {host} name different names. HAPM verifies against one.',
+  'server {name}: {host} ist kein Name, gegen den HAPM ein Zertifikat prüft.':
+    'server {name}: {host} is not a name HAPM verifies a certificate against.',
+  'server {name}: HAPM schickt dem Ziel {host} als SNI und prüft das Zertifikat dagegen.':
+    'server {name}: HAPM sends {host} to the target as SNI and verifies the certificate against it.',
+  'Die Zertifikate der Ziele werden gegen verschiedene Namen geprüft. HAPM kennt einen Namen je Backend.':
+    'The certificates of the targets are verified against different names. HAPM knows one name per backend.',
+  '„{name}" ist kein Name, gegen den sich ein Zertifikat prüfen lässt. Erwartet wird ein Hostname wie app01.intern.example: kleingeschrieben, ohne Stern, ohne Port, keine IP-Adresse.':
+    '"{name}" is not a name a certificate can be verified against. Expected is a hostname such as app01.intern.example: lowercase, no wildcard, no port, no IP address.',
   'server {name}: Die CA-Datei {file} liegt nicht bei den hinterlegten Zertifizierungsstellen ({dir}). Hinterlegen Sie sie unter Zertifikate und wählen Sie sie danach am Ziel aus.':
     'server {name}: The CA file {file} is not among the added certificate authorities ({dir}). Add it under Certificates and then pick it on the target.',
   'Pfad-Regel: {what}': 'Path rule: {what}',

@@ -182,6 +182,8 @@ export interface ServiceView {
     servers: { name: string; target: string; check: boolean }[];
     check: boolean;
     backendTls: BackendTls;
+    /** Wie beim Ziel, eigen je Regel. */
+    backendVerifyHost: string | null;
   }[];
   /** Das Verteilverfahren. `null` heißt: keine `balance`-Zeile, es gilt der
    *  `defaults`-Block der Maschine. Nicht „roundrobin" — was dort steht, weiß
@@ -201,8 +203,13 @@ export interface ServiceView {
   app: string | null;
   healthcheck: boolean;
   /** Wie HAProxy die Ziele anspricht: `off` HTTP, `insecure` HTTPS ohne
-   *  Prüfung des Zertifikats, `verify` HTTPS gegen die CAs des Systems. */
+   *  Prüfung des Zertifikats, `verify` HTTPS gegen die CAs des Systems,
+   *  `ca:<name>` gegen eine hinterlegte Zertifizierungsstelle. */
   backendTls: BackendTls;
+  /** Der feste Name, gegen den das Zertifikat der Ziele geprüft wird. `null`:
+   *  die Domain der Anfrage. Immer dabei: ein PATCH ersetzt die ganze
+   *  Definition, und wer das Feld nicht zurückschickt, nähme den Namen weg. */
+  backendVerifyHost: string | null;
   editable: boolean;
   removable: boolean;
   /**
@@ -244,6 +251,7 @@ export function serviceView(
       servers: route.servers.map((s) => ({ name: s.name, target: s.target, check: s.check })),
       check: route.check,
       backendTls: route.backendTls,
+      backendVerifyHost: route.backendVerifyHost,
     })),
     balance: service.balance,
     sticky: service.sticky,
@@ -254,6 +262,7 @@ export function serviceView(
     app: service.app,
     healthcheck: service.healthcheck,
     backendTls: service.backendTls,
+    backendVerifyHost: service.backendVerifyHost,
     editable: service.editable,
     removable: service.removable,
     surface: surface?.serviceId === service.id,

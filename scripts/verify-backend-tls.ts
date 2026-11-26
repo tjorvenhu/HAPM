@@ -31,6 +31,14 @@
  *    Zertifikat eines Servers als „Stelle" lässt genau dieses Ziel durch.
  *    Fehlt die Datei, lehnt `haproxy -c` die ganze Konfiguration ab: deshalb
  *    `assertCasPresent` vor dem Lauf und die Sperre beim Entfernen.
+ *  - Ein fester Name (`backendVerifyHost`, `sni str(<name>)`): ein Ziel, dessen
+ *    Zertifikat nur seinen internen Namen nennt, fällt ohne ihn durch (503),
+ *    antwortet mit ihm, und fällt mit einem falschen Namen wieder durch. Das
+ *    Ziel bekommt den Namen als SNI und die Domain der Anfrage weiter als
+ *    Host-Header. Der Healthcheck geht mit `check-sni <name>` hinaus: das Ziel
+ *    hier nimmt ohne passenden SNI keine Verbindung an. `verifyhost` schreibt
+ *    HAPM nicht: der SNI genügt, und allein prüft es ab HAProxy 3.3 nicht
+ *    mehr gegen den Namen, sondern gegen die Domain der Anfrage (`sni-auto`).
  *
  * Wer `serverParams`, `backendTlsParams`, `backendCheckSni` oder
  * `inspectCaUpload` ändert, lässt dieses Skript laufen.
@@ -104,6 +112,19 @@ listen kettenziel
 listen pinziel
     bind 127.0.0.1:9446 ssl crt ${TARGETS}/pin-ziel.pem
     http-request return status 200 content-type text/plain lf-string "sni=%[ssl_fc_sni]"
+
+# Ein Ziel der internen PKI: sein Zertifikat nennt nur app01.intern.test, nicht
+# die Domain, unter der Besucher es aufrufen. Es nimmt nur diesen SNI an und
+# antwortet mit SNI und Host-Header, wie sie angekommen sind.
+listen internziel
+    bind 127.0.0.1:9447 ssl crt ${TARGETS}/intern-ziel.pem strict-sni
+    http-request return status 200 content-type text/plain lf-string "sni=%[ssl_fc_sni] host=%[req.hdr(host)]"
+
+# Dasselbe Zertifikat ohne strict-sni: jeder SNI bekommt es zu sehen, und ein
+# falscher Name muss an der Prüfung scheitern, nicht am Handshake.
+listen internoffen
+    bind 127.0.0.1:9448 ssl crt ${TARGETS}/intern-ziel.pem
+    http-request return status 200 content-type text/plain lf-string "sni=%[ssl_fc_sni] host=%[req.hdr(host)]"
 `;
 
 const service = (over: Partial<CreateServiceInput>): CreateServiceInput => ({
@@ -191,6 +212,59 @@ function config(): string {
       backendTls: 'off',
       routes: [
         { name: 'api', paths: ['/api'], servers: [{ name: '', target: '127.0.0.1:9444' }], check: true, backendTls: backendCaTls('test-ca') },
+      ],
+    })
+  );
+  // Ein fester Name statt der Domain der Anfrage: der Fall der internen PKI.
+  const strict = [{ name: '', target: '127.0.0.1:9447', weight: null }];
+  const open = [{ name: '', target: '127.0.0.1:9448', weight: null }];
+  const ca = backendCaTls('test-ca');
+  text = addService(text, service({ id: 'ohnename', domains: ['ohnename.test'], servers: open, healthcheck: false, backendTls: ca }));
+  text = addService(
+    text,
+    service({ id: 'mitname', domains: ['mitname.test'], servers: strict, backendTls: ca, backendVerifyHost: 'app01.intern.test' })
+  );
+  text = addService(
+    text,
+    service({
+      id: 'andername',
+      domains: ['andername.test'],
+      servers: open,
+      healthcheck: false,
+      backendTls: ca,
+      backendVerifyHost: 'anders.intern.test',
+    })
+  );
+  // Gegen die CAs des Systems mit festem Name: die Zeile muss laden, und geprüft wird weiter (die Test-CA kennt das System nicht).
+  text = addService(
+    text,
+    service({
+      id: 'systemname',
+      domains: ['systemname.test'],
+      servers: open,
+      healthcheck: false,
+      backendTls: 'verify',
+      backendVerifyHost: 'app01.intern.test',
+    })
+  );
+  // Unter einer Wildcard hat der Check sonst keinen SNI. Mit festem Namen bekommt er ihn.
+  text = addService(
+    text,
+    service({
+      id: 'wildname',
+      domains: ['*.wildname.test'],
+      servers: [{ name: '', target: '127.0.0.1:9000', weight: null }],
+      healthcheck: false,
+      backendTls: 'off',
+      routes: [
+        {
+          name: 'api',
+          paths: ['/api'],
+          servers: [{ name: '', target: '127.0.0.1:9447' }],
+          check: true,
+          backendTls: ca,
+          backendVerifyHost: 'app01.intern.test',
+        },
       ],
     })
   );
@@ -287,6 +361,7 @@ function ownPki(dir: string): { targets: string; cas: string } {
   issue(work, 'zwischen', 'HAPM Test Zwischenstelle', 'root', 'basicConstraints=critical,CA:TRUE,pathlen:0\nkeyUsage=critical,keyCertSign,cRLSign\n');
   issue(work, 'leaf', 'eigen.test', 'root', 'basicConstraints=CA:FALSE\nsubjectAltName=DNS:eigen.test,DNS:fremdeca.test,DNS:regelca.test\n');
   issue(work, 'kettenleaf', 'kette.test', 'zwischen', 'basicConstraints=CA:FALSE\nsubjectAltName=DNS:kette.test,DNS:nurroot.test\n');
+  issue(work, 'intern', 'app01.intern.test', 'root', 'basicConstraints=CA:FALSE\nsubjectAltName=DNS:app01.intern.test\n');
   openssl([
     'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1', '-subj', '/CN=pin.test',
     '-addext', 'basicConstraints=critical,CA:FALSE', '-addext', 'subjectAltName=DNS:pin.test',
@@ -296,6 +371,7 @@ function ownPki(dir: string): { targets: string; cas: string } {
   writeFileSync(join(targets, 'ca-ziel.pem'), read(work, 'leaf.crt') + read(work, 'leaf.key'), { mode: 0o644 });
   writeFileSync(join(targets, 'ketten-ziel.pem'), read(work, 'kettenleaf.crt') + read(work, 'kettenleaf.key'), { mode: 0o644 });
   writeFileSync(join(targets, 'pin-ziel.pem'), read(work, 'pin.crt') + read(work, 'pin.key'), { mode: 0o644 });
+  writeFileSync(join(targets, 'intern-ziel.pem'), read(work, 'intern.crt') + read(work, 'intern.key'), { mode: 0o644 });
 
   const store = (name: string, certificate: string, warnings: number) => {
     const checked = inspectCaUpload({ name, certificate }, Date.now());
@@ -394,6 +470,24 @@ async function verify(version: string): Promise<void> {
     check('selbst signiertes Zertifikat eines Servers als Stelle: genau dieses Ziel antwortet', pinned.status === 200 && pinned.body === 'sni=pin.test', `${pinned.status} ${pinned.body}`);
     const caRoute = await call('regelca.test', '/api/x');
     check('eine Pfad-Regel prüft gegen die eigene CA', caRoute.status === 200 && caRoute.body === 'sni=regelca.test', `${caRoute.status} ${caRoute.body}`);
+
+    const noName = await call('ohnename.test');
+    check('interner Name im Zertifikat, ohne festen Namen: abgelehnt (503)', noName.status === 503, `Status ${noName.status}`);
+    const named = await call('mitname.test');
+    check('mit festem Namen: das Ziel antwortet', named.status === 200, `Status ${named.status} ${named.body}`);
+    check('es bekommt den Namen als SNI', named.body.startsWith('sni=app01.intern.test '), named.body);
+    check('und die Domain der Anfrage weiter als Host-Header', named.body.endsWith(' host=mitname.test'), named.body);
+    check('der Healthcheck mit check-sni des Namens hält es im Betrieb', named.status === 200);
+    const otherName = await call('andername.test');
+    check('mit einem falschen Namen: abgelehnt (503)', otherName.status === 503, `Status ${otherName.status}`);
+    const systemName = await call('systemname.test');
+    check('fester Name gegen die CAs des Systems: geprüft wird weiter (503 bei der Test-CA)', systemName.status === 503, `Status ${systemName.status}`);
+    const wildName = await call('kunde.wildname.test', '/api/x');
+    check(
+      'unter einer Wildcard: Pfad-Regel mit festem Namen antwortet, Host ist die aufgerufene Domain',
+      wildName.status === 200 && wildName.body === 'sni=app01.intern.test host=kunde.wildname.test',
+      `${wildName.status} ${wildName.body}`
+    );
   } catch (err) {
     check('Durchlauf', false, err instanceof Error ? err.message : String(err));
   } finally {

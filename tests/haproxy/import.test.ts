@@ -435,14 +435,55 @@ describe('parseImport: Einzelheiten', () => {
       }
     });
 
+    it('ein fester SNI mit Prüfung wird der Name im Zertifikat, mit oder ohne verifyhost', () => {
+      const cases: [string, string, string][] = [
+        ['ca-file @system-ca sni str(intern.lan)', 'verify', 'intern.lan'],
+        ['ca-file @system-ca sni str(Intern.LAN) verifyhost intern.lan', 'verify', 'intern.lan'],
+        ['ca-file /etc/haproxy/hapm-ca/intern-root.pem sni str(app01.intern.example)', 'ca:intern-root', 'app01.intern.example'],
+        ['verifyhost app01.intern.example ca-file /etc/haproxy/hapm-ca/intern-root.pem sni str(app01.intern.example) check-sni app01.intern.example', 'ca:intern-root', 'app01.intern.example'],
+      ];
+      for (const [words, tls, host] of cases) {
+        const e = one(`server web 10.0.0.1:443 ssl verify required ${words}`);
+        expect(e.problems, words).toEqual([]);
+        expect(e.service?.backendTls, words).toBe(tls);
+        expect(e.service?.backendVerifyHost, words).toBe(host);
+        expect(e.extras, words).toContain(`Name im Zertifikat: ${host}`);
+        expect(e.notes.join(' '), words).not.toContain('SNI');
+      }
+    });
+
+    it('nur verifyhost: übernommen, mit dem Hinweis, dass der Name jetzt als SNI hinausgeht', () => {
+      const e = one('server web 10.0.0.1:443 ssl verify required ca-file @system-ca verifyhost app01.intern.example');
+      expect(e.problems).toEqual([]);
+      expect(e.service?.backendTls).toBe('verify');
+      expect(e.service?.backendVerifyHost).toBe('app01.intern.example');
+      expect(e.notes.join(' ')).toContain('app01.intern.example als SNI');
+    });
+
+    it('ohne festen Namen fehlt das Feld in der Eingabe', () => {
+      const e = one('server web 10.0.0.1:443 ssl verify required ca-file @system-ca sni req.hdr(host)');
+      expect(e.service && 'backendVerifyHost' in e.service).toBe(false);
+    });
+
+    it('verschiedene feste Namen in einem Backend werden nicht übernommen', () => {
+      const e = one(
+        'server a 10.0.0.1:443 ssl verify required ca-file @system-ca sni str(app01.intern.example)\n    server b 10.0.0.2:443 ssl verify required ca-file @system-ca sni str(app02.intern.example)'
+      );
+      expect(e.service).toBeNull();
+      expect(e.problems.join(' ')).toContain('verschiedene Namen');
+    });
+
     it('eine Prüfung, die HAPM anders hielte, wird nicht übernommen', () => {
       const cases: [string, string][] = [
         ['server web 10.0.0.1:443 ssl verify required ca-file /etc/ssl/intern.pem sni req.hdr(host)', 'liegt nicht bei den hinterlegten Zertifizierungsstellen'],
         ['server web 10.0.0.1:443 ssl verify required ca-file /etc/haproxy/hapm-ca/Intern.pem sni req.hdr(host)', 'liegt nicht bei den hinterlegten Zertifizierungsstellen'],
         ['server web 10.0.0.1:443 ssl verify required ca-file /etc/haproxy/hapm-ca/intern-root.pem', 'anders geprüft'],
-        ['server web 10.0.0.1:443 ssl verify required ca-file /etc/haproxy/hapm-ca/intern-root.pem sni str(intern.lan)', 'anders geprüft'],
         ['server web 10.0.0.1:443 ssl verify required ca-file @system-ca', 'anders geprüft'],
-        ['server web 10.0.0.1:443 ssl verify required ca-file @system-ca sni str(intern.lan)', 'anders geprüft'],
+        ['server web 10.0.0.1:443 ssl verify required ca-file @system-ca sni ssl_fc_sni', 'anders geprüft'],
+        ['server web 10.0.0.1:443 ssl verify required ca-file @system-ca sni str(intern.lan) verifyhost anders.lan', 'verschiedene Namen'],
+        ['server web 10.0.0.1:443 ssl verify required ca-file @system-ca sni req.hdr(host) verifyhost intern.lan', 'nicht gegen zwei'],
+        ['server web 10.0.0.1:443 ssl verify required ca-file @system-ca sni str(*.intern.lan)', 'kein Name, gegen den'],
+        ['server web 10.0.0.1:443 ssl verify required ca-file @system-ca verifyhost 10.0.0.1', 'kein Name, gegen den'],
         ['server web 10.0.0.1:443 ssl', 'ohne ca-file'],
         ['server web 10.0.0.1:443 ssl verify none verifyhost x.lan', 'verifyhost'],
         ['server web 10.0.0.1:443 ssl verify none alpn h2', 'alpn h2'],

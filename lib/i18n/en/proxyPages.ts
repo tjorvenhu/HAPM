@@ -452,8 +452,8 @@ export const proxyPages: Dictionary = {
     'The file of {name} is removed. After that it can no longer be picked on any target.',
   'Die Zertifizierungsstelle {name} ist entfernt.': 'The certificate authority {name} is removed.',
   'Die Zertifizierungsstelle ließ sich nicht entfernen.': 'The certificate authority could not be removed.',
-  'Für Ziele, die HTTPS sprechen und deren Zertifikat aus einer eigenen CA kommt. Hinterlegen Sie hier das Zertifikat der CA und wählen Sie sie am Ziel unter „HTTPS, Zertifikat prüfen“ aus. HAProxy nimmt das Zertifikat des Ziels dann nur an, wenn diese Stelle es ausgestellt hat und es für die aufgerufene Domain gilt.':
-    'For targets that speak HTTPS and whose certificate comes from your own CA. Add the CA certificate here and pick it on the target under "HTTPS, verify certificate". HAProxy then accepts the target certificate only if this authority issued it and it is valid for the requested domain.',
+  'Für Ziele, die HTTPS sprechen und deren Zertifikat aus einer eigenen CA kommt. Hinterlegen Sie hier das Zertifikat der CA und wählen Sie sie am Ziel unter „HTTPS, Zertifikat prüfen“ aus. HAProxy nimmt das Zertifikat des Ziels dann nur an, wenn diese Stelle es ausgestellt hat und es für die aufgerufene Domain gilt oder für den Namen, der am Ziel unter „Name im Zertifikat“ steht.':
+    'For targets that speak HTTPS and whose certificate comes from your own CA. Add the CA certificate here and pick it on the target under "HTTPS, verify certificate". HAProxy then accepts the target certificate only if this authority issued it and it is valid for the requested domain or for the name set on the target under "Name in the certificate".',
   '{count} Stelle': '{count} authority',
   '{count} Stellen': '{count} authorities',
   'Hinterlegen': 'Add',

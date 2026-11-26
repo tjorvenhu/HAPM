@@ -219,6 +219,7 @@ type Service = {
     servers: { name: string; target: string; check: boolean }[];
     check: boolean;
     backendTls: 'off' | 'insecure' | 'verify' | `ca:${string}`;   // eigen je Regel, siehe unten
+    backendVerifyHost: string | null;                              // eigen je Regel, siehe unten
   }[];
   // Das Verteilverfahren. null heißt: keine balance-Zeile, es gilt der
   // defaults-Block der Konfiguration — nicht "roundrobin".
@@ -236,6 +237,10 @@ type Service = {
   // HTTPS mit Prüfung gegen die CAs des Systems oder gegen eine hinterlegte
   // Zertifizierungsstelle ("ca:intern-root", Namen aus /certificate-authorities).
   backendTls: 'off' | 'insecure' | 'verify' | `ca:${string}`;
+  // Der feste Name, gegen den das Zertifikat der Ziele geprüft wird, statt der
+  // Domain der Anfrage ("app01.intern.example"). null: die Domain der Anfrage.
+  // Immer in der Antwort: PATCH ersetzt die ganze Definition.
+  backendVerifyHost: string | null;
   editable: boolean;           // false → PATCH wird abgelehnt
   removable: boolean;          // false → DELETE wird abgelehnt
   // true: über dieses Ziel läuft die Adresse von HAPM. DELETE wird abgelehnt,
@@ -278,6 +283,7 @@ Feld, bevor du aus einer leeren Liste einen Schluss ziehst.**
   "app": "nextcloud",                 // optional: Anwendung hinter dem Ziel, für CrowdSec
   "healthcheck": true,
   "backendTls": "off",                // optional: "insecure", "verify" oder "ca:<name>", wenn das Ziel HTTPS spricht
+  "backendVerifyHost": null,          // optional: Name im Zertifikat des Ziels, wenn es nicht die Domain nennt
   "dnsDomains": "auto",               // optional
   "dnsHook": "dns_cf"                 // nur für DNS-01, und nur bei mehreren Hooks nötig
 }
@@ -698,7 +704,8 @@ Token weg, und auffallen würde es zwei Monate später.
 | `app` | Welche Anwendung hinter dem Ziel läuft, eine Kennung aus `apps` von `GET /crowdsec/rules` (etwa `nextcloud`, `wordpress`). Steht als `# hapm-app: <id>` im Backend. HAPM holt danach die Ausnahmen von CrowdSec gegen bekannte Fehlsperren und lässt sie, wo CrowdSec das erlaubt, nur für dieses Ziel gelten (siehe docs/crowdsec.md, „Anwendungen“). **Fehlt das Feld, `null` oder leer: keine.** Wie bei den übrigen Feldern heißt ein PATCH ohne `app`, dass die Anwendung entfernt wird. Eine unbekannte Kennung ergibt `400`, bei einer Weiterleitung fällt das Feld weg. |
 | `preset` | Nur noch angenommen, nie gemeldet: `nextcloud` wird zu den beiden Headern der Antwort, `coolify` zu `tunnel: true`, `default` zu nichts. Ein anderer Wert ergibt `400`. |
 | `healthcheck` | **Geht nicht, wenn `domains[0]` eine Wildcard ist** — `*.kunde.example` ist als Host-Header kein gültiger Name, das Ziel antwortete mit 404 und HAProxy nähme ein funktionierendes Backend aus dem Betrieb. Der Wert wird in dem Fall stillschweigend auf `false` normalisiert, nicht abgelehnt. |
-| `backendTls` | Wie HAProxy die Ziele anspricht. **Fehlt oder `"off"`: HTTP**, wie bisher. `"insecure"`: HTTPS, das Zertifikat des Ziels wird nicht geprüft (`ssl verify none`), für selbst signierte wie bei Proxmox (8006) oder TrueNAS. `"verify"`: HTTPS, das Zertifikat muss von einer CA stammen, der das System vertraut, und für die aufgerufene Domain gelten (`ssl verify required ca-file @system-ca`); braucht HAProxy 2.6 oder neuer, sonst `400`. `"ca:<name>"`: wie `"verify"`, aber gegen eine hinterlegte Zertifizierungsstelle statt der CAs des Systems, für Ziele mit Zertifikat aus einer internen CA (`ssl verify required ca-file /etc/haproxy/hapm-ca/<name>.pem`); der Name kommt aus `GET /certificate-authorities`, eine nicht hinterlegte Stelle ergibt `409`. Auch dann muss das Zertifikat des Ziels für die aufgerufene Domain gelten. In allen HTTPS-Fällen geht die Domain der Anfrage als SNI hinaus (`sni req.hdr(host)`), der Healthcheck bekommt `domains[0]` (`check-sni`). Gilt für alle `servers`; jede Pfad-Regel hat ein eigenes `routes[].backendTls` und erbt es **nicht**. Ein anderer Wert ergibt `400`, ebenso ein HTTPS-Wert zusammen mit `redirect`. |
+| `backendTls` | Wie HAProxy die Ziele anspricht. **Fehlt oder `"off"`: HTTP**, wie bisher. `"insecure"`: HTTPS, das Zertifikat des Ziels wird nicht geprüft (`ssl verify none`), für selbst signierte wie bei Proxmox (8006) oder TrueNAS. `"verify"`: HTTPS, das Zertifikat muss von einer CA stammen, der das System vertraut, und für die aufgerufene Domain gelten (`ssl verify required ca-file @system-ca`); braucht HAProxy 2.6 oder neuer, sonst `400`. `"ca:<name>"`: wie `"verify"`, aber gegen eine hinterlegte Zertifizierungsstelle statt der CAs des Systems, für Ziele mit Zertifikat aus einer internen CA (`ssl verify required ca-file /etc/haproxy/hapm-ca/<name>.pem`); der Name kommt aus `GET /certificate-authorities`, eine nicht hinterlegte Stelle ergibt `409`. Wo geprüft wird, muss das Zertifikat des Ziels für die aufgerufene Domain gelten, oder für den Namen in `backendVerifyHost`. Ohne `backendVerifyHost` geht in allen HTTPS-Fällen die Domain der Anfrage als SNI hinaus (`sni req.hdr(host)`), der Healthcheck bekommt `domains[0]` (`check-sni`). Gilt für alle `servers`; jede Pfad-Regel hat ein eigenes `routes[].backendTls` und erbt es **nicht**. Ein anderer Wert ergibt `400`, ebenso ein HTTPS-Wert zusammen mit `redirect`. |
+| `backendVerifyHost` | Der Name, gegen den HAProxy das Zertifikat der Ziele prüft, wenn es nicht die Domain der Anfrage sein soll, etwa `"app01.intern.example"` bei einem Ziel mit Zertifikat aus einer internen CA. **Fehlt, `null` oder leer: die Domain der Anfrage**, wie bisher. HAProxy schickt den Namen dann als SNI (`sni str(<name>)`), auch im Healthcheck (`check-sni <name>`), und prüft das Zertifikat dagegen. Der Host-Header zum Ziel bleibt die Domain der Anfrage. Ein kleingeschriebener Hostname ohne Stern und ohne Port, keine IP-Adresse, sonst `400`. Wirkt nur bei `backendTls` `"verify"` und `"ca:<name>"`; bei `"off"` und `"insecure"` wird er verworfen und nicht gespeichert. Ein Name für alle `servers`; jede Pfad-Regel hat ein eigenes `routes[].backendVerifyHost` und erbt es **nicht**. `GET` liefert das Feld immer (`null` ohne Namen): wer es bei `PATCH` nicht zurückschickt, nimmt den Namen weg. |
 | `dnsDomains` | Fehlt → beim DNS-Anbieter wird nichts angefasst. `"auto"` → jede Domain, für die unter `/dns` eine Zone eingerichtet ist. Eine Liste → genau diese, geschnitten mit `domains`. |
 | `dnsHook` | Der acme.sh-Hook für DNS-01, aus `dnsHooks` von `GET /proxies`. DNS-01 gilt bei einer Wildcard und, in einer als intern eingerichteten Installation, bei jeder Domain. Ist genau ein Hook eingerichtet, darf das Feld fehlen. Bei mehreren muss es gesetzt sein. |
 

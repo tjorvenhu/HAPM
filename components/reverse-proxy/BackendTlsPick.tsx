@@ -1,5 +1,6 @@
 'use client';
 
+import { useId } from 'react';
 import Link from 'next/link';
 import { Info } from 'lucide-react';
 import { InfoHint } from '@/ui/primitives/InfoHint';
@@ -10,6 +11,7 @@ import {
   backendCaTls,
   backendTlsKind,
   backendTlsParams,
+  isValidVerifyHost,
   type BackendTls,
 } from '@/lib/haproxy/config';
 import { msgid } from '@/lib/i18n';
@@ -58,6 +60,24 @@ interface Props {
   verifyUnsupported: string | null;
   /** Die Namen der hinterlegten Zertifizierungsstellen. */
   authorities: string[];
+  /** Der Name, gegen den das Zertifikat geprüft wird, wie er im Feld steht. Leer: die Domain der Anfrage. */
+  verifyHost: string;
+  onVerifyHostChange: (value: string) => void;
+}
+
+/**
+ * Der Hostname, unter dem die Ziele eingetragen sind, wenn es genau einer ist.
+ * Dann ist er der naheliegende Name im Zertifikat. Eine IP-Adresse ist keiner,
+ * und bei zwei verschiedenen Namen gibt es nichts vorzuschlagen: geprüft wird
+ * gegen einen.
+ */
+function targetHostname(targets: string[]): string | null {
+  const names = new Set(
+    targets
+      .map((target) => target.trim().toLowerCase().replace(/:\d{1,5}$/, ''))
+      .filter((host) => host !== '' && isValidVerifyHost(host))
+  );
+  return names.size === 1 ? [...names][0] : null;
 }
 
 /**
@@ -70,8 +90,19 @@ interface Props {
  * wird, die zweite. Sie steht darunter, sobald geprüft wird. Der Wert bleibt
  * ein Feld (`verify` oder `ca:<name>`).
  */
-export default function BackendTlsPick({ value, onChange, label, targets, verifyUnsupported, authorities }: Props) {
+export default function BackendTlsPick({
+  value,
+  onChange,
+  label,
+  targets,
+  verifyUnsupported,
+  authorities,
+  verifyHost,
+  onVerifyHostChange,
+}: Props) {
   const { t } = useT();
+  const hostId = useId();
+  const suggestion = verifyHost.trim() === '' ? targetHostname(targets) : null;
   const kind = backendTlsKind(value);
   const mode: Mode = kind === 'ca' ? 'verify' : kind;
   const chosenCa = backendCaName(value);
@@ -116,7 +147,7 @@ export default function BackendTlsPick({ value, onChange, label, targets, verify
         <label className="form-label">{t(label)}</label>
         <InfoHint
           text={t(
-            'Für Ziele, die selbst verschlüsseln, etwa Proxmox auf 8006 oder TrueNAS. Ohne Prüfung passt das für selbst signierte Zertifikate. Mit Prüfung muss das Zertifikat von einer CA stammen, der das System vertraut, oder von einer hinterlegten Zertifizierungsstelle, und für die aufgerufene Domain gelten. HAProxy schickt die Domain der Anfrage als SNI. In der Konfiguration: „{insecure}“ oder „{verify}“ an jeder server-Zeile, bei einer hinterlegten Stelle mit ihrer Datei statt @system-ca.',
+            'Für Ziele, die selbst verschlüsseln, etwa Proxmox auf 8006 oder TrueNAS. Ohne Prüfung passt das für selbst signierte Zertifikate. Mit Prüfung muss das Zertifikat von einer CA stammen, der das System vertraut, oder von einer hinterlegten Zertifizierungsstelle, und für die aufgerufene Domain gelten oder für den Namen, den Sie dafür eintragen. HAProxy schickt die Domain der Anfrage als SNI, mit eingetragenem Namen diesen. In der Konfiguration: „{insecure}“ oder „{verify}“ an jeder server-Zeile, bei einer hinterlegten Stelle mit ihrer Datei statt @system-ca.',
             { insecure: backendTlsParams('insecure'), verify: backendTlsParams('verify') }
           )}
         />
@@ -144,7 +175,7 @@ export default function BackendTlsPick({ value, onChange, label, targets, verify
             <label className="form-label">{t('Geprüft gegen')}</label>
             <InfoHint
               text={t(
-                'Die CAs des Systems kennen nur öffentlich ausgestellte Zertifikate. Für ein Ziel mit Zertifikat aus einer eigenen CA hinterlegen Sie deren Zertifikat unter Zertifikate, Reiter Zertifizierungsstellen, und wählen sie hier aus. Das Zertifikat des Ziels muss in beiden Fällen für die aufgerufene Domain gelten.'
+                'Die CAs des Systems kennen nur öffentlich ausgestellte Zertifikate. Für ein Ziel mit Zertifikat aus einer eigenen CA hinterlegen Sie deren Zertifikat unter Zertifikate, Reiter Zertifizierungsstellen, und wählen sie hier aus.'
               )}
             />
           </div>
@@ -163,6 +194,37 @@ export default function BackendTlsPick({ value, onChange, label, targets, verify
                   name: chosenCa,
                 })}
               </span>
+            </div>
+          )}
+        </div>
+      )}
+      {mode === 'verify' && (
+        <div className="form-group">
+          <div className="form-label-row">
+            <label className="form-label" htmlFor={hostId}>
+              {t('Name im Zertifikat')}
+            </label>
+            <InfoHint
+              text={t(
+                'Leer heißt: das Zertifikat des Ziels muss für die aufgerufene Domain gelten. Nennt es stattdessen den eigenen Namen des Ziels, etwa app01.intern.example, tragen Sie ihn hier ein. HAProxy schickt ihn dann als SNI und prüft das Zertifikat dagegen. Die Anfrage selbst geht weiter mit der aufgerufenen Domain als Host an das Ziel. Ein Hostname, kein Stern, kein Port, keine IP-Adresse.'
+              )}
+            />
+          </div>
+          <input
+            id={hostId}
+            className="form-input mono"
+            value={verifyHost}
+            onChange={(event) => onVerifyHostChange(event.target.value)}
+            placeholder={t('Leer: die aufgerufene Domain')}
+            spellCheck={false}
+            autoComplete="off"
+            autoCapitalize="none"
+          />
+          {suggestion !== null && (
+            <div className="hapm-form-actions">
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => onVerifyHostChange(suggestion)}>
+                {t('Name des Ziels übernehmen: {name}', { name: suggestion })}
+              </button>
             </div>
           )}
         </div>
