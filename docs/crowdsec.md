@@ -105,9 +105,8 @@ in eine eigene Datei daneben in `acquis.d/`.
 | `crowdsecurity/appsec-generic-rules` | immer | Allgemeine Regeln der WAF |
 | `crowdsecurity/appsec-crs` | OWASP „nur melden" | OWASP Core Rule Set, außerhalb der Anfrage geprüft |
 | `crowdsecurity/appsec-crs-inband` | OWASP „sperren" | OWASP Core Rule Set, lehnt die Anfrage ab |
-| `crowdsecurity/appsec-wordpress` | Schalter | Virtuelle Patches für WordPress |
 | `crowdsecurity/http-dos` | Schalter | Erkennt HTTP-Fluten |
-| `crowdsecurity/appsec-crs-exclusion-plugin-nextcloud`, `…-wordpress` | Schalter | Ausnahmen, damit OWASP Nextcloud und WordPress nicht fälschlich sperrt |
+| je Anwendung | Schalter | siehe „Anwendungen“ |
 
 Die drei festen installiert Compose über `COLLECTIONS`. Die übrigen schaltet die
 Oberfläche unter „Regeln" (`cscli collections install`/`remove`). **Die Liste
@@ -115,6 +114,46 @@ ist fest** (`OPTIONAL_COLLECTIONS` in `lib/crowdsec/files.ts`): der Name geht
 als Argument an `cscli`, und was dort installiert wird, läuft danach in der WAF
 jeder Anfrage. Ein freies Feld wäre ein Weg, beliebigen Code in den Pfad jeder
 Anfrage zu legen.
+
+### Anwendungen
+
+Eine Zeile je Anwendung (`APP_RULES` in `lib/crowdsec/apps.ts`), ein Schalter
+installiert oder entfernt alles, was dazugehört. Drei Arten:
+
+- **Whitelists aus dem Hub** (`crowdsecurity/…-whitelist`, `…-allowlist`,
+  Parser in `s02-enrich`). Sie prüfen `http_verb`, `http_status` und
+  `http_path`, die das Log von HAProxy genauso liefert wie das von nginx.
+- **Ausnahmen für OWASP** (`crowdsecurity/appsec-crs-exclusion-plugin-…`). Die
+  Sammlung lädt nur Dateien, die die CRS-Regel selbst einbindet: **ohne
+  OWASP-Regeln tun sie nichts**. Die Oberfläche zeigt das an der Spalte
+  „Wirkt auf“.
+- **Eigene Whitelists von HAPM** (`local`), wo der Hub nichts oder zu wenig hat
+  (Matrix, Immich, Seafile, ONLYOFFICE, Synology, Audiobookshelf, Navidrome,
+  Git-Server, Ergänzungen für Nextcloud, Jellyfin und Plex). HAPM schreibt sie
+  nach `config/parsers/s02-enrich/hapm-app-<id>.yaml` und beim Start neu, wenn
+  sich die Liste mit einem Update geändert hat. Aufgenommen ist nur, was in
+  einem Ticket oder im Forum von CrowdSec **mit Pfad und Status** belegt ist;
+  die Quelle steht am Eintrag und als Kommentar in der Datei. Fälle ohne Pfad
+  (Kavita, Outline, Vaultwarden) oder mit einem Szenario, das HAPM nicht
+  installiert (Home Assistant, `http-generic-403-bf`), fehlen bewusst.
+
+Stolperfallen beim Schreiben eigener Ausnahmen:
+
+- **`http_path` ist bei HAProxy die ganze Anfrage samt `?…`.** `http-logs`
+  überschreibt das Feld nicht, weil `Parsed.http_path` leer bleibt. Ein Muster
+  mit `$` braucht davor `(\?.*)?`. `http-probing` zählt verschiedene
+  `http_path`: dieselbe Adresse mit anderen Parametern zählt mehrfach.
+- **Whitelist im Parser, nicht nach dem Überlauf.** `http-crawl-non_statics`
+  behält nur fünf Ereignisse (`cache_size`), eine Whitelist in
+  `postoverflows` sieht also nicht alle Anfragen.
+- **Backslashes zweimal:** einmal für die Ausdruckssprache (expr, Text in
+  einfachen Anführungszeichen), einmal für YAML. `localRuleExpression` und
+  `renderAppWhitelist` erledigen beides, `tests/crowdsec/apps.test.ts` prüft die
+  Muster gegen die Fälle aus den Quellen.
+- Prüfen gegen das echte CrowdSec: die Datei in den Container legen, neu
+  starten, dann
+  `cscli explain --type haproxy --log '<Zeile aus haproxy.log>'`. Eine
+  passende Zeile endet mit „whitelisted“.
 
 **OWASP hat einen eigenen Schalter**, weil es nicht nur eine Sammlung ist: die
 Konfiguration der WAF (`appsec_configs` in `acquis.d/hapm.yaml`) nennt

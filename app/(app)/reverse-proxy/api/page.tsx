@@ -1,10 +1,9 @@
 'use client';
 
 import { Suspense, useEffect, useState, useCallback, type FormEvent } from 'react';
-import Link from 'next/link';
+import PageHeading from '@/components/PageHeading';
 import {
-  ArrowLeft, KeyRound, Plus, Ban, Loader2, Copy, Check, X, Globe, Link2, Bot,
-} from 'lucide-react';
+  KeyRound, Plus, Ban, Loader2, Copy, Check, X, Globe, Link2, Bot, Plug } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { usePolling } from '@/components/usePolling';
 import { useNow } from '@/components/useNow';
@@ -273,14 +272,11 @@ function ApiPage() {
     <>
       <div className="page-header">
         <div>
-          <Link
-            href="/reverse-proxy"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '0.8125rem' }}
-          >
-            <ArrowLeft size={14} />
-            {t('Reverse-Proxy')}
-          </Link>
-          <h1 className="page-title">{t('API und MCP')}</h1>
+          <PageHeading
+            icon={<Plug size={20} />}
+            title={t('API und MCP')}
+            back={{ label: t('Übersicht'), href: '/reverse-proxy' }}
+          />
           <p className="page-subtitle">
             {rich(
               'Womit ein anderer Dienst oder ein KI-Assistent Domains und Ziele in HAProxy anlegt, ändert und entfernt. Die Anleitungen stehen in {api} und {mcp}.',

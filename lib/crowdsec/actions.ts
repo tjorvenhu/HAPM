@@ -47,7 +47,15 @@ import {
   type AlertTarget,
   type CrowdsecAlert,
 } from './data';
-import { currentCrsMode, ensureAllowlist, reloadCrowdsec, writeCrowdsecFiles } from './setup';
+import {
+  appWhitelistPresent,
+  currentCrsMode,
+  ensureAllowlist,
+  reloadCrowdsec,
+  setAppWhitelist,
+  writeCrowdsecFiles,
+} from './setup';
+import { APP_RULES } from './apps';
 import { syncAllowFile } from './allow-file';
 
 export interface CrowdsecActor {
@@ -431,16 +439,36 @@ export function forgetCrowdsecSummary(): void {
 /* ── Regeln ── */
 
 export async function crowdsecRules() {
-  const json = await cscliJson<any>(['collections', 'list']);
-  const installed = new Set<string>(
-    (Array.isArray(json?.collections) ? json.collections : [])
-      .filter((c: any) => String(c?.status ?? '').includes('enabled'))
-      .map((c: any) => String(c.name))
-  );
-  const versions = new Map<string, string>(
-    (Array.isArray(json?.collections) ? json.collections : []).map((c: any) => [String(c.name), String(c.local_version ?? '')])
-  );
+  // Ohne `-a` nennt `hub list` nur, was installiert ist, aus allen Arten.
+  const json = await cscliJson<any>(['hub', 'list']);
+  const items = (type: string): any[] => (Array.isArray(json?.[type]) ? json[type] : []);
+  const enabled = (type: string) =>
+    new Set<string>(
+      items(type)
+        .filter((c: any) => String(c?.status ?? '').includes('enabled'))
+        .map((c: any) => String(c.name))
+    );
+  const installed = enabled('collections');
+  const parsers = enabled('parsers');
+  const versions = new Map<string, string>(items('collections').map((c: any) => [String(c.name), String(c.local_version ?? '')]));
+  const apps = APP_RULES.map((app) => {
+    const parts = [
+      ...app.hub.map((item) => (item.type === 'parsers' ? parsers : installed).has(item.name)),
+      ...(app.local ? [appWhitelistPresent(app)] : []),
+    ];
+    const count = parts.filter(Boolean).length;
+    return {
+      id: app.id,
+      label: app.label,
+      hint: app.hint,
+      kinds: app.kinds,
+      items: [...app.hub.map((item) => item.name), ...(app.local ? [`hapm/${app.id}-allowlist`] : [])],
+      installed: count === parts.length,
+      partial: count > 0 && count < parts.length,
+    };
+  });
   return {
+    apps,
     crs: currentCrsMode(),
     base: BASE_COLLECTIONS.map((name) => ({ name, installed: installed.has(name), version: versions.get(name) || null })),
     optional: OPTIONAL_COLLECTIONS.map((entry) => ({
@@ -482,6 +510,27 @@ export async function setCollection(body: unknown, actor: CrowdsecActor) {
   await reloadCrowdsec();
   await audit(actor, 'crowdsec_rules_updated', entry.name, `${entry.name}: ${on ? 'an' : 'aus'}`);
   return { name: entry.name, installed: on };
+}
+
+/**
+ * Die Regeln einer Anwendung schalten: alles aus dem Hub installieren oder
+ * entfernen, die eigene Whitelist schreiben oder löschen, CrowdSec neu starten.
+ * Beim Entfernen bleibt, was noch eine andere Sammlung braucht (das regelt
+ * `cscli`).
+ */
+export async function setApp(body: unknown, actor: CrowdsecActor) {
+  const raw = (body ?? {}) as Record<string, unknown>;
+  const app = APP_RULES.find((entry) => entry.id === raw.app);
+  if (!app) throw new ApiError(msg('Für diese Anwendung gibt es hier keine Regeln.'), 404);
+  const on = raw.installed === true;
+  if (!crowdsecInstalled()) throw new CrowdsecUnavailable();
+  for (const item of app.hub) {
+    await cscliOk([item.type, on ? 'install' : 'remove', item.name], 180_000);
+  }
+  if (app.local) setAppWhitelist(app, on);
+  await reloadCrowdsec();
+  await audit(actor, 'crowdsec_rules_updated', `app:${app.id}`, `${app.label}: ${on ? 'an' : 'aus'}`);
+  return { app: app.id, installed: on };
 }
 
 /** Hub und Sammlungen auf den neuesten Stand bringen (`cscli hub update`, `hub upgrade`). */
@@ -532,6 +581,7 @@ export async function changeRules(body: unknown, actor: CrowdsecActor) {
   const raw = (body ?? {}) as Record<string, unknown>;
   if ('crs' in raw) return setCrsMode(raw, actor);
   if (raw.upgrade === true) return upgradeHub(actor);
+  if (typeof raw.app === 'string') return setApp(raw, actor);
   if (typeof raw.name === 'string') return setCollection(raw, actor);
-  throw new ApiError(msg('Was soll sich ändern? Erwartet wird crs, name mit installed oder upgrade.'));
+  throw new ApiError(msg('Was soll sich ändern? Erwartet wird crs, app oder name mit installed, oder upgrade.'));
 }

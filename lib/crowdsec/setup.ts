@@ -16,6 +16,7 @@ import { randomBytes } from 'node:crypto';
 import { engine } from '../docker';
 import { HAPROXY_LOG_FILE } from '../haproxy-log';
 import { cscli, cscliJson } from './cscli';
+import { APP_RULES, appWhitelistFile, renderAppWhitelist, type AppRules } from './apps';
 import {
   renderAcquis,
   renderBackendParser,
@@ -89,6 +90,13 @@ export function writeCrowdsecFiles(crs: CrsMode = currentCrsMode()): CrowdsecFil
   const key = bouncerKey();
   const acquis = writeIfChanged(ACQUIS_FILE, renderAcquis(crs));
   const parser = writeIfChanged(PARSER_FILE, renderBackendParser());
+  // Eingeschaltete Ausnahmen für Anwendungen auf den Stand dieser Version bringen.
+  let apps = false;
+  for (const app of APP_RULES) {
+    if (app.local && readText(appWhitelistFile(app.id)) !== null) {
+      apps = writeIfChanged(appWhitelistFile(app.id), renderAppWhitelist(app)) || apps;
+    }
+  }
   const bouncer = writeIfChanged(BOUNCER_CONFIG_FILE, renderBouncerConfig(key), 0o600);
   // CrowdSec liest eine Datei, die beim Start fehlt, nicht nach.
   try {
@@ -99,7 +107,7 @@ export function writeCrowdsecFiles(crs: CrsMode = currentCrsMode()): CrowdsecFil
   } catch {
     // Ohne Log-Ordner gibt es auch keinen Mitschnitt; die WAF geht trotzdem.
   }
-  const result = { mounted: true, crowdsecChanged: acquis || parser, bouncerChanged: bouncer };
+  const result = { mounted: true, crowdsecChanged: acquis || parser || apps, bouncerChanged: bouncer };
   // Beim Start laufen die Container noch nicht (Compose startet sie nach HAPM)
   // oder noch mit den alten Dateien (Update von HAPM). Den Neustart holt
   // `reconcileCrowdsec` nach, sobald sie laufen.
@@ -110,6 +118,22 @@ export function writeCrowdsecFiles(crs: CrsMode = currentCrsMode()): CrowdsecFil
 }
 
 const store = globalThis as unknown as { __hapmCrowdsecPending?: { crowdsec: boolean; bouncer: boolean } };
+
+/** Ob die eigene Whitelist einer Anwendung liegt. */
+export function appWhitelistPresent(app: AppRules): boolean {
+  return readText(appWhitelistFile(app.id)) !== null;
+}
+
+/** Die eigene Whitelist einer Anwendung schreiben oder entfernen. Gibt zurück, ob sich etwas geändert hat. */
+export function setAppWhitelist(app: AppRules, on: boolean): boolean {
+  if (on) return writeIfChanged(appWhitelistFile(app.id), renderAppWhitelist(app));
+  try {
+    fs.unlinkSync(file(appWhitelistFile(app.id)));
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function pendingChanges() {
   return (store.__hapmCrowdsecPending ??= { crowdsec: false, bouncer: false });

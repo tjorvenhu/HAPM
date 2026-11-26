@@ -23,8 +23,20 @@ export interface CrowdsecOverview {
   client: string;
 }
 
+export interface CrowdsecAppRules {
+  id: string;
+  label: string;
+  hint: string;
+  kinds: ('log' | 'waf' | 'owasp')[];
+  items: string[];
+  installed: boolean;
+  /** Nur ein Teil liegt, etwa nach einem Eingriff mit `cscli`. */
+  partial: boolean;
+}
+
 export interface CrowdsecRules {
   crs: CrsMode;
+  apps: CrowdsecAppRules[];
   base: { name: string; installed: boolean; version: string | null }[];
   optional: { name: string; label: string; hint: string; installed: boolean; version: string | null }[];
 }

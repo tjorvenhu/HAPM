@@ -1,9 +1,9 @@
 'use client';
 
 import { Suspense, useCallback, useState } from 'react';
-import Link from 'next/link';
+import PageHeading from '@/components/PageHeading';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, History } from 'lucide-react';
+import { History, ScrollText } from 'lucide-react';
 import { SkeletonRows } from '@/components/Skeleton';
 import { useT } from '@/lib/i18n/react';
 import RunsView from './RunsView';
@@ -59,14 +59,11 @@ function LogsPage() {
     <>
       <div className="page-header">
         <div>
-          <Link
-            href="/reverse-proxy"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '0.8125rem' }}
-          >
-            <ArrowLeft size={14} />
-            {t('Reverse-Proxy')}
-          </Link>
-          <h1 className="page-title">{t('Reverse-Proxy-Protokolle')}</h1>
+          <PageHeading
+            icon={<ScrollText size={20} />}
+            title={t('Reverse-Proxy-Protokolle')}
+            back={{ label: t('Übersicht'), href: '/reverse-proxy' }}
+          />
           <p className="page-subtitle">
             {view === 'runs'
               ? t(

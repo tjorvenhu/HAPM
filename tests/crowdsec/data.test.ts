@@ -180,6 +180,7 @@ describe('Zeit und Dauer', () => {
     expect(goDurationMs('3h59m57s')).toBe((3 * 3600 + 59 * 60 + 57) * 1000);
     expect(goDurationMs('1m47.5s')).toBe(107_500);
     expect(goDurationMs('-5s')).toBe(-5000);
+    expect(goDurationMs('416µs')).toBeCloseTo(0.416);
     expect(goDurationMs('kaputt')).toBeNull();
   });
 });

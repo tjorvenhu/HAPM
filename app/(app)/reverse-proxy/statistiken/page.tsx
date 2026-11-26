@@ -1,10 +1,10 @@
 'use client';
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
+import PageHeading from '@/components/PageHeading';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
-  ArrowLeft, BarChart3, Loader2, RefreshCw, Globe, Activity, AlertTriangle,
+  BarChart3, Loader2, RefreshCw, Globe, Activity, AlertTriangle,
   ArrowDownUp, Timer, Users, ShieldBan, FileText,
 } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
@@ -261,11 +261,11 @@ function StatsSwitch() {
       <>
         <div className="page-header">
           <div>
-            <Link className="sys-back" href="/reverse-proxy">
-              <ArrowLeft size={14} />
-              {t('Reverse-Proxy')}
-            </Link>
-            <h1 className="page-title">{t('Reverse-Proxy-Statistik')}</h1>
+            <PageHeading
+              icon={<BarChart3 size={20} />}
+              title={t('Reverse-Proxy-Statistik')}
+              back={{ label: t('Übersicht'), href: '/reverse-proxy' }}
+            />
             <p className="page-subtitle">{t('Was CrowdSec erkannt und abgelehnt hat: WAF-Treffer, Szenarien und Sperren.')}</p>
           </div>
         </div>
@@ -450,20 +450,15 @@ function StatsView({ tabs }: { tabs: React.ReactNode }) {
             Übersicht aus zur Zielliste zeigte, war beim Drilldown die falsche
             Richtung: er sprang zwei Ebenen und verlor den Zeitraum dazu.
           */}
-          {scope ? (
-            <button type="button" className="sys-back" onClick={() => selectScope('')}>
-              <ArrowLeft size={14} />
-              {t('Alle Dienste')}
-            </button>
-          ) : (
-            <Link className="sys-back" href="/reverse-proxy">
-              <ArrowLeft size={14} />
-              {t('Reverse-Proxy')}
-            </Link>
-          )}
-          <h1 className="page-title">
-            {scope ? t('Statistik: {scope}', { scope }) : t('Reverse-Proxy-Statistik')}
-          </h1>
+          <PageHeading
+            icon={<BarChart3 size={20} />}
+            title={scope ? t('Statistik: {scope}', { scope }) : t('Reverse-Proxy-Statistik')}
+            back={
+              scope
+                ? { label: t('Alle Dienste'), onClick: () => selectScope('') }
+                : { label: t('Übersicht'), href: '/reverse-proxy' }
+            }
+          />
           <p className="page-subtitle">
             {scope
               ? t('Nur dieser Dienst. Die Zahlen kommen aus HAProxys eigener Statistik, die Zugriffe aus seinem Log.')

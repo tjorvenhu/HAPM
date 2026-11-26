@@ -173,7 +173,7 @@ export default function OverviewPanel({ data, onChanged }: { data: CrowdsecOverv
         </div>
       )}
 
-      <div className="kpi-grid sys-block">
+      <div className="kpi-grid cs-kpis sys-block">
         <div className="kpi">
           <span className="kpi-icon"><Ban size={16} /></span>
           <div className="kpi-body">
@@ -206,7 +206,8 @@ export default function OverviewPanel({ data, onChanged }: { data: CrowdsecOverv
         </div>
       </div>
 
-      <div className="hapm-cols sys-block">
+      <div className="hapm-cols cs-overview sys-block">
+        <div className="cs-stack">
         <div className="card">
           <div className="card-header">
             <div>
@@ -304,6 +305,36 @@ export default function OverviewPanel({ data, onChanged }: { data: CrowdsecOverv
 
         <div className="card">
           <div className="card-header">
+            <h2 className="card-title">{t('Was CrowdSec hier tut')}</h2>
+          </div>
+          <ul className="cs-how">
+            <li>
+              <span className="kpi-icon"><ShieldCheck size={16} /></span>
+              <span>
+                <strong>{t('WAF')}</strong>
+                <span className="detail-sub">{t('Prüft jede Anfrage auf bekannte Angriffe und lehnt sie mit 403 ab.')}</span>
+              </span>
+            </li>
+            <li>
+              <span className="kpi-icon"><AlertTriangle size={16} /></span>
+              <span>
+                <strong>{t('Erkennung im Log')}</strong>
+                <span className="detail-sub">{t('Liest das Log von HAProxy und sperrt Adressen, die scannen oder raten.')}</span>
+              </span>
+            </li>
+            <li>
+              <span className="kpi-icon"><Globe size={16} /></span>
+              <span>
+                <strong>{t('Gemeinschaftsliste')}</strong>
+                <span className="detail-sub">{t('Sperrt Adressen, die anderen CrowdSec-Installationen aufgefallen sind.')}</span>
+              </span>
+            </li>
+          </ul>
+        </div>
+        </div>
+
+        <div className="card cs-state">
+          <div className="card-header">
             <h2 className="card-title">{t('Zustand')}</h2>
           </div>
           <div className="dash-kv">
@@ -355,35 +386,6 @@ export default function OverviewPanel({ data, onChanged }: { data: CrowdsecOverv
             )}
           </div>
           {status.error && <p className="form-hint">{status.error}</p>}
-        </div>
-      </div>
-
-      <div className="card sys-block">
-        <div className="card-header">
-          <h2 className="card-title">{t('Was CrowdSec hier tut')}</h2>
-        </div>
-        <div className="kind-grid">
-          <div className="kind-card">
-            <span className="kind-card-icon"><ShieldCheck size={17} /></span>
-            <span className="kind-card-text">
-              <span className="kind-card-title">{t('WAF')}</span>
-              <span className="kind-card-sub">{t('Prüft jede Anfrage auf bekannte Angriffe und lehnt sie mit 403 ab.')}</span>
-            </span>
-          </div>
-          <div className="kind-card">
-            <span className="kind-card-icon"><AlertTriangle size={17} /></span>
-            <span className="kind-card-text">
-              <span className="kind-card-title">{t('Erkennung im Log')}</span>
-              <span className="kind-card-sub">{t('Liest das Log von HAProxy und sperrt Adressen, die scannen oder raten.')}</span>
-            </span>
-          </div>
-          <div className="kind-card">
-            <span className="kind-card-icon"><Globe size={17} /></span>
-            <span className="kind-card-text">
-              <span className="kind-card-title">{t('Gemeinschaftsliste')}</span>
-              <span className="kind-card-sub">{t('Sperrt Adressen, die anderen CrowdSec-Installationen aufgefallen sind.')}</span>
-            </span>
-          </div>
         </div>
       </div>
     </>

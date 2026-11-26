@@ -38,28 +38,16 @@ export const BASE_COLLECTIONS: readonly string[] = [
  * Was sich in der Oberfläche dazuschalten lässt. Eine feste Liste: der Name
  * geht als Argument an `cscli`, und was dort installiert wird, läuft danach in
  * der WAF jeder Anfrage. Die OWASP-Regeln stehen nicht hier, sie haben einen
- * eigenen Schalter, weil sie auch die Quellen ändern.
+ * eigenen Schalter, weil sie auch die Quellen ändern. Was zu einer einzelnen
+ * Anwendung gehört, steht in `apps.ts`.
  */
 export const OPTIONAL_COLLECTIONS: readonly { name: string; label: string; hint: string }[] = [
   {
-    name: 'crowdsecurity/appsec-wordpress',
-    label: msgid('WordPress'),
-    hint: msgid('Virtuelle Patches für bekannte Lücken in WordPress und seinen Plugins.'),
-  },
-  {
     name: 'crowdsecurity/http-dos',
     label: msgid('HTTP-Flut'),
-    hint: msgid('Erkennt Adressen, die in kurzer Zeit sehr viele Anfragen schicken, und sperrt sie.'),
-  },
-  {
-    name: 'crowdsecurity/appsec-crs-exclusion-plugin-nextcloud',
-    label: msgid('Nextcloud-Ausnahmen für OWASP'),
-    hint: msgid('Nimmt Anfragen von Nextcloud aus, die die OWASP-Regeln sonst fälschlich sperren.'),
-  },
-  {
-    name: 'crowdsecurity/appsec-crs-exclusion-plugin-wordpress',
-    label: msgid('WordPress-Ausnahmen für OWASP'),
-    hint: msgid('Nimmt Anfragen von WordPress aus, die die OWASP-Regeln sonst fälschlich sperren.'),
+    hint: msgid(
+      'Erkennt Adressen, die in kurzer Zeit sehr viele Anfragen schicken, und sperrt sie. Vorsicht bei Diensten, die viele Anfragen von einer Adresse bekommen, etwa Apps zum Abgleich hinter einem gemeinsamen Ausgang (Firmennetz, Mobilfunk). Solche Adressen gehören in die Freigaben.'
+    ),
   },
 ];
 

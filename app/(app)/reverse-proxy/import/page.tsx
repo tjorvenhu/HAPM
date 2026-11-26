@@ -2,8 +2,9 @@
 
 import { useMemo, useRef, useState, useCallback } from 'react';
 import Link from 'next/link';
+import PageHeading from '@/components/PageHeading';
 import {
-  ArrowLeft, Upload, Eye, Loader2, FileInput, ChevronDown, ChevronRight,
+  Upload, Eye, Loader2, FileInput, ChevronDown, ChevronRight,
 } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
@@ -248,14 +249,11 @@ export default function ReverseProxyImportPage() {
     <>
       <div className="page-header">
         <div>
-          <Link
-            href="/reverse-proxy"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '0.8125rem' }}
-          >
-            <ArrowLeft size={14} />
-            {t('Reverse-Proxy')}
-          </Link>
-          <h1 className="page-title">{t('Konfiguration importieren')}</h1>
+          <PageHeading
+            icon={<FileInput size={20} />}
+            title={t('Konfiguration importieren')}
+            back={{ label: t('Übersicht'), href: '/reverse-proxy' }}
+          />
           <p className="page-subtitle">
             {t('Einträge aus einer bestehenden haproxy.cfg übernehmen, statt sie einzeln abzutippen.')}
           </p>

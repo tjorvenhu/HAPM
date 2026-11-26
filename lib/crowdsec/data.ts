@@ -88,7 +88,7 @@ export function goDurationMs(value: string): number | null {
     total += n * factor[match[2]];
     consumed += match[0].length;
   }
-  return consumed === text.length ? Math.round(total) : null;
+  return consumed === text.length ? total : null;
 }
 
 /** Die Metadaten eines Ereignisses oder Alarms als Liste von Werten je Schlüssel.

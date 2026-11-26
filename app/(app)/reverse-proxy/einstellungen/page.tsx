@@ -3,9 +3,10 @@
 import { Fragment, Suspense, useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import {
-  ShieldCheck, Loader2, RefreshCw, X, ArrowLeft, Network, Save, Lock, Plus, Info,
+  ShieldCheck, Loader2, RefreshCw, X, Network, Save, Lock, Plus, Info,
   KeyRound, Trash2, ShieldAlert, Globe, FileCog,
 } from 'lucide-react';
+import PageHeading from '@/components/PageHeading';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/ConfirmDialog';
@@ -432,21 +433,12 @@ function SettingsPage() {
   return (
     <>
       <div className="page-header">
-        <div className="page-heading">
-          <span className="page-heading-icon">
-            <ShieldCheck size={20} />
-          </span>
-          <div>
-            <h1 className="page-title">{t('Einstellungen')}</h1>
-            <div className="page-crumbs">
-              <Link className="page-back" href="/reverse-proxy">
-                <ArrowLeft size={14} />
-                {t('Übersicht')}
-              </Link>
-              <span>{t('Was für alle Dienste gilt')}</span>
-            </div>
-          </div>
-        </div>
+        <PageHeading
+          icon={<ShieldCheck size={20} />}
+          title={t('Einstellungen')}
+          back={{ label: t('Übersicht'), href: '/reverse-proxy' }}
+          note={t('Was für alle Dienste gilt')}
+        />
         <div className="page-actions">
           <button className="btn btn-secondary" onClick={refresh} disabled={refreshing}>
             {refreshing ? <Loader2 size={16} className="spin" /> : <RefreshCw size={16} />}

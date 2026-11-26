@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
-  ArrowLeft, Code, FileWarning, ImageIcon, LayoutTemplate, Loader2, Palette, RefreshCw, RotateCcw, Save, Type,
+  Code, FileWarning, ImageIcon, LayoutTemplate, Loader2, Palette, RefreshCw, RotateCcw, Save, Type,
   Upload, Undo2,
 } from 'lucide-react';
+import PageHeading from '@/components/PageHeading';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/ConfirmDialog';
@@ -565,21 +566,12 @@ export default function ErrorPagesDesignPage() {
   return (
     <>
       <div className="page-header">
-        <div className="page-heading">
-          <span className="page-heading-icon">
-            <FileWarning size={20} />
-          </span>
-          <div>
-            <h1 className="page-title">{t('Fehlerseiten')}</h1>
-            <div className="page-crumbs">
-              <Link className="page-back" href="/reverse-proxy">
-                <ArrowLeft size={14} />
-                {t('Übersicht')}
-              </Link>
-              <span>{t('Was Besucher sehen, wenn HAProxy selbst antwortet')}</span>
-            </div>
-          </div>
-        </div>
+        <PageHeading
+          icon={<FileWarning size={20} />}
+          title={t('Fehlerseiten')}
+          back={{ label: t('Übersicht'), href: '/reverse-proxy' }}
+          note={t('Was Besucher sehen, wenn HAProxy selbst antwortet')}
+        />
         <div className="page-actions">
           <button className="btn btn-secondary" onClick={refresh} disabled={refreshing}>
             {refreshing ? <Loader2 size={16} className="spin" /> : <RefreshCw size={16} />}

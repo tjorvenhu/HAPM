@@ -1,9 +1,9 @@
 'use client';
 
 import { Suspense, useCallback, useState } from 'react';
-import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, Ban, CheckCircle2, LayoutDashboard, ListChecks, Loader2, RefreshCw, ScrollText } from 'lucide-react';
+import { Ban, CheckCircle2, LayoutDashboard, ListChecks, Loader2, RefreshCw, ScrollText } from 'lucide-react';
+import PageHeading from '@/components/PageHeading';
 import { SkeletonRows } from '@/components/Skeleton';
 import AreaTabs, { useArea, type Area } from '@/components/AreaTabs';
 import BrandLogo from '@/components/BrandLogo';
@@ -84,21 +84,12 @@ function CrowdsecView() {
   return (
     <>
       <div className="page-header">
-        <div className="page-heading">
-          <span className="page-heading-icon">
-            <BrandLogo brand="crowdsec" size={22} />
-          </span>
-          <div>
-            <h1 className="page-title">CrowdSec</h1>
-            <div className="page-crumbs">
-              <Link className="page-back" href="/reverse-proxy">
-                <ArrowLeft size={14} />
-                {t('Übersicht')}
-              </Link>
-              <span>{t('WAF, Sperren und Freigaben')}</span>
-            </div>
-          </div>
-        </div>
+        <PageHeading
+          icon={<BrandLogo brand="crowdsec" size={22} />}
+          title="CrowdSec"
+          back={{ label: t('Übersicht'), href: '/reverse-proxy' }}
+          note={t('WAF, Sperren und Freigaben')}
+        />
         <div className="page-actions">
           <button className="btn btn-secondary" onClick={refresh} disabled={refreshing}>
             {refreshing ? <Loader2 size={16} className="spin" /> : <RefreshCw size={16} />}

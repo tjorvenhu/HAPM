@@ -901,7 +901,9 @@ export const TOOLS: ToolDefinition[] = [
   defineTool({
     name: 'get_crowdsec_rules',
     title: 'CrowdSec rules',
-    description: 'Installed rule collections, optional ones that can be switched, and the OWASP CRS mode (off, detect, block).',
+    description:
+      'The OWASP CRS mode (off, detect, block), the base collections, rules per application (apps: exclusions against known false bans, ' +
+      'for WordPress also virtual patches; partial = only some parts installed) and further optional collections.',
     input: {},
     annotations: READ_ONLY,
     run: () => crowdsecRules(),
@@ -912,9 +914,11 @@ export const TOOLS: ToolDefinition[] = [
     title: 'Change CrowdSec rules',
     description:
       'One change per call: {"crs":"off"|"detect"|"block"} for the OWASP Core Rule Set (block can reject harmless requests; start with detect), ' +
-      '{"name":"<collection>","installed":true|false} for an optional collection from get_crowdsec_rules, or {"upgrade":true} to update all rules from the hub.',
+      '{"app":"<id>","installed":true|false} for the rules of an application from get_crowdsec_rules (apps), ' +
+      '{"name":"<collection>","installed":true|false} for an optional collection, or {"upgrade":true} to update all rules from the hub.',
     input: {
       crs: z.enum(CRS_MODES as unknown as [string, ...string[]]).optional(),
+      app: z.string().optional(),
       name: z.string().optional(),
       installed: z.boolean().optional(),
       upgrade: z.boolean().optional(),

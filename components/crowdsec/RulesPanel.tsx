@@ -10,7 +10,7 @@ import { InfoHint } from '@/ui/primitives/InfoHint';
 import { msgid } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
 import { useCrowdsecData, useCrowdsecSend } from './useCrowdsecData';
-import type { CrowdsecRules, CrsMode } from './types';
+import type { CrowdsecAppRules, CrowdsecRules, CrsMode } from './types';
 
 const CRS_OPTIONS: { value: CrsMode; label: string; hint: string }[] = [
   { value: 'off', label: msgid('Aus'), hint: msgid('Nur virtuelle Patches und allgemeine Regeln.') },
@@ -24,16 +24,23 @@ const BASE_LABELS: Record<string, string> = {
   'crowdsecurity/appsec-generic-rules': msgid('WAF: allgemeine Angriffsmuster'),
 };
 
+const KIND_LABELS: Record<CrowdsecAppRules['kinds'][number], { label: string; hint: string }> = {
+  log: { label: msgid('Log'), hint: msgid('Ausnahmen für die Erkennung im Log von HAProxy') },
+  waf: { label: msgid('WAF'), hint: msgid('Virtuelle Patches in der WAF') },
+  owasp: { label: msgid('OWASP'), hint: msgid('Ausnahmen für die OWASP-Regeln') },
+};
+
 /**
  * Welche Regeln CrowdSec anwendet. Die Grundausstattung bringt Compose mit,
- * dazuschalten lässt sich eine feste Auswahl (`OPTIONAL_COLLECTIONS`) und das
- * OWASP Core Rule Set.
+ * dazuschalten lassen sich das OWASP Core Rule Set, Regeln je Anwendung
+ * (`APP_RULES`) und eine feste Auswahl weiterer Sammlungen
+ * (`OPTIONAL_COLLECTIONS`).
  */
 export default function RulesPanel() {
   const { notify } = useToast();
   const confirm = useConfirm();
   const send = useCrowdsecSend();
-  const { t } = useT();
+  const { t, locale } = useT();
   const { data, error, loading, reload } = useCrowdsecData<CrowdsecRules>('/api/crowdsec/rules', 120_000);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -92,6 +99,85 @@ export default function RulesPanel() {
                 />
               </div>
               {busy === 'crs' && <Loader2 size={16} className="spin" />}
+            </div>
+          </div>
+
+          <div className="card sys-block">
+            <div className="card-header">
+              <div>
+                <h2 className="card-title">{t('Anwendungen')}</h2>
+                <p className="card-subtitle">
+                  {t('Ausnahmen gegen bekannte Fehlsperren einzelner Anwendungen, für WordPress auch virtuelle Patches.')}
+                </p>
+              </div>
+            </div>
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>{t('Anwendung')}</th>
+                    <th>{t('Wirkt auf')}</th>
+                    <th>{t('Aktiv')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...data.apps].sort((a, b) => t(a.label).localeCompare(t(b.label), locale)).map((app) => (
+                    <tr key={app.id}>
+                      <td data-label="primary">
+                        <span className="form-label-row">
+                          <strong>{t(app.label)}</strong>
+                          <InfoHint text={t(app.hint)} />
+                        </span>
+                        <div className="detail-sub mono">{app.items.join(', ')}</div>
+                      </td>
+                      <td data-label={t('Wirkt auf')}>
+                        <span className="cs-kinds">
+                          {app.kinds.map((kind) => {
+                            const idle = kind === 'owasp' && data.crs === 'off';
+                            return (
+                              <span
+                                key={kind}
+                                className={`badge-status ${idle ? 'badge-warning' : 'badge-neutral'}`}
+                                data-tooltip={idle ? t('Wirkt erst, wenn die OWASP-Regeln an sind.') : t(KIND_LABELS[kind].hint)}
+                              >
+                                {t(KIND_LABELS[kind].label)}
+                              </span>
+                            );
+                          })}
+                        </span>
+                      </td>
+                      <td data-label={t('Aktiv')}>
+                        <span className="cs-kinds">
+                          <label className="toggle-switch">
+                            <input
+                              type="checkbox"
+                              checked={app.installed}
+                              disabled={busy !== null}
+                              onChange={(e) =>
+                                change(
+                                  `app:${app.id}`,
+                                  { app: app.id, installed: e.target.checked },
+                                  e.target.checked
+                                    ? t('Die Regeln für {name} sind an.', { name: t(app.label) })
+                                    : t('Die Regeln für {name} sind aus.', { name: t(app.label) })
+                                )
+                              }
+                              aria-label={t(app.label)}
+                            />
+                            <span className="toggle-slider" />
+                          </label>
+                          {busy === `app:${app.id}` && <Loader2 size={14} className="spin" />}
+                          {app.partial && busy !== `app:${app.id}` && (
+                            <span className="badge-status badge-warning" data-tooltip={t('Nur ein Teil ist installiert. Einschalten holt den Rest.')}>
+                              {t('Teilweise')}
+                            </span>
+                          )}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
 

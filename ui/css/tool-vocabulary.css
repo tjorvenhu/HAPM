@@ -448,6 +448,12 @@ a:hover { color: var(--accent-hover); }
  * zwischen den Blöcken. */
 .card-body { display: flex; flex-direction: column; gap: 16px; }
 
+/* Zwei Bausteine einer Karte stehen nie aneinander (Filter über einer Tabelle,
+ * eine Meldung über einem Leerzustand). Der Kopf hat seinen eigenen Abstand.
+ * Gilt für jede Karte, damit keine Seite ihn einzeln setzen muss; ein eigener,
+ * größerer Rand bleibt, weil sich die Ränder im Fluss nicht addieren. */
+.card > :not(.card-header) + :not(.card-header) { margin-top: 16px; }
+
 /* ── Entity Cards ──
  * The card look for entity lists (server, repository, plan, key ...). Driven by
  * components/EntityCard.tsx — the classes are not meant to be hand-assembled per
