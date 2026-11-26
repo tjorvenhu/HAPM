@@ -1736,6 +1736,11 @@ a.kpi { color: inherit; }
   animation: shell-pop-in var(--shell-base) var(--shell-ease);
 }
 
+/* Die Liste von `Select` hängt im body und liegt über allen Ebenen, aus denen
+   sie geöffnet wird: Dialoge (100), Einrichtung des zweiten Faktors (200).
+   Unter den Tooltips (1100). Lage und Höhe setzt Select.tsx. */
+.custom-select-dropdown.is-floating { right: auto; z-index: 1050; }
+
 /* Schließen: die Liste blendet kurz aus, bevor sie aus dem Baum fällt
    (usePresence in Select.tsx). */
 .custom-select-dropdown.is-closing {

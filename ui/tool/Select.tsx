@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useRef, useEffect, type ReactNode } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, type CSSProperties, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { useT } from '@/lib/i18n/react';
 import { ChevronDown } from 'lucide-react';
 import { usePresence } from '../shell/usePresence';
@@ -11,7 +12,37 @@ import { usePresence } from '../shell/usePresence';
  * CSS alone is not enough: with the classes but no component, one page uses
  * them and every other one falls back to a raw <select>. A primitive that has
  * to be hand-assembled per page does not survive contact with the second page.
+ *
+ * The list floats in `document.body` (portal, `position: fixed`) and not
+ * below the trigger in the DOM: inside a dialog the body scrolls
+ * (`overflow-y: auto`), and an absolutely placed list was cut off at its
+ * bottom edge, so one had to scroll inside the dialog to reach it. Where there
+ * is not enough room below, it opens upwards.
  */
+
+/** Gap between trigger and list, and minimum distance to the window edge. */
+const GAP = 6;
+/** Height the list wants at most (the 240 px from the stylesheet), plus the search field. */
+const LIST_MAX = 240;
+const SEARCH_EXTRA = 52;
+
+/** Where the floating list goes: below or above the trigger, as wide as it. */
+function placement(trigger: HTMLElement, searchable: boolean): CSSProperties {
+  const rect = trigger.getBoundingClientRect();
+  const wanted = LIST_MAX + (searchable ? SEARCH_EXTRA : 0);
+  const below = window.innerHeight - rect.bottom - GAP * 2;
+  const above = rect.top - GAP * 2;
+  const up = below < Math.min(wanted, 180) && above > below;
+  const room = Math.max(120, Math.min(wanted, up ? above : below));
+  return {
+    position: 'fixed',
+    left: rect.left,
+    width: rect.width,
+    maxHeight: room,
+    ...(up ? { bottom: window.innerHeight - rect.top + GAP, top: 'auto' } : { top: rect.bottom + GAP }),
+    transformOrigin: up ? 'bottom center' : 'top center',
+  };
+}
 
 export interface SelectOption<T extends string> {
   value: T;
@@ -56,11 +87,32 @@ export default function Select<T extends string>({
   // Die Liste bleibt beim Schließen noch so lange im Baum, wie sie ausblendet.
   const { mounted, closing } = usePresence(open);
   const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState<CSSProperties | null>(null);
+
+  // Folgt dem Auslöser, wenn der Dialog oder die Seite scrollt oder das Fenster
+  // seine Größe ändert. `capture`: auch das Scrollen eines inneren Kastens.
+  useLayoutEffect(() => {
+    if (!mounted) return;
+    const place = () => {
+      if (triggerRef.current) setPosition(placement(triggerRef.current, searchable));
+    };
+    place();
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
+    return () => {
+      window.removeEventListener('scroll', place, true);
+      window.removeEventListener('resize', place);
+    };
+  }, [mounted, searchable]);
 
   useEffect(() => {
     if (!open) return;
     const onClickOutside = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (ref.current?.contains(target) || listRef.current?.contains(target)) return;
+      setOpen(false);
     };
     const onEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false);
@@ -90,6 +142,7 @@ export default function Select<T extends string>({
   return (
     <div className="custom-select" ref={ref}>
       <button
+        ref={triggerRef}
         type="button"
         id={id}
         className={`custom-select-trigger ${open ? 'open' : ''}`}
@@ -111,9 +164,11 @@ export default function Select<T extends string>({
         <ChevronDown size={16} className="chevron" />
       </button>
 
-      {mounted && (
+      {mounted && position && createPortal(
         <div
-          className={closing ? 'custom-select-dropdown is-closing' : 'custom-select-dropdown'}
+          ref={listRef}
+          className={closing ? 'custom-select-dropdown is-floating is-closing' : 'custom-select-dropdown is-floating'}
+          style={position}
           role="listbox"
           inert={closing}
         >
@@ -190,7 +245,8 @@ export default function Select<T extends string>({
               </div>
             ))
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
