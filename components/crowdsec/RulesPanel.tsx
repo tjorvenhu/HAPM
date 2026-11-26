@@ -3,10 +3,9 @@
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import ErrorNote from '@/components/ErrorNote';
-import { AppWindow, Check, ChevronDown, ChevronUp, Download, Loader2, Search, X } from 'lucide-react';
+import { AlertTriangle, AppWindow, Check, ChevronDown, ChevronUp, Download, Loader2, Search, X } from 'lucide-react';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/ConfirmDialog';
-import Select from '@/components/Select';
 import { SkeletonRows } from '@/components/Skeleton';
 import { usePolling } from '@/components/usePolling';
 import { subscribeRunFinished, watchRun } from '@/components/runs/runs';
@@ -16,10 +15,16 @@ import { useT } from '@/lib/i18n/react';
 import { useCrowdsecData, useCrowdsecSend } from './useCrowdsecData';
 import type { CrowdsecAppRules, CrowdsecRules, CrsMode } from './types';
 
-const CRS_OPTIONS: { value: CrsMode; label: string; hint: string }[] = [
-  { value: 'off', label: msgid('Aus'), hint: msgid('Nur virtuelle Patches und allgemeine Regeln.') },
-  { value: 'detect', label: msgid('Nur melden'), hint: msgid('Treffer erscheinen als Ereignis, die Anfrage geht durch.') },
-  { value: 'block', label: msgid('Treffer sperren'), hint: msgid('Treffer werden mit 403 abgelehnt.') },
+/** Was man vor dem Einschalten wissen muss. Sichtbar und nicht hinter dem „i": es sind die Folgen. */
+const CRS_PROS: string[] = [
+  msgid('Erkennt auch Angriffe, für die es noch keinen Patch gibt.'),
+  msgid('Prüft auf SQL-Injection, XSS, eingeschleuste Befehle und Zugriffe auf Dateien.'),
+  msgid('Ein Angriff wird abgewiesen, bevor er die Anwendung erreicht.'),
+];
+const CRS_CONS: string[] = [
+  msgid('Weist auch harmlose Anfragen ab, etwa aus Editoren, Formularen mit Code oder GraphQL.'),
+  msgid('Wen das trifft, sieht nur eine Fehlerseite (403) und kann die Anwendung nicht benutzen.'),
+  msgid('Fehltreffer zeigen erst die Ereignisse. Abhilfe: Ausnahmen für Anwendungen oder Freigaben.'),
 ];
 
 const BASE_LABELS: Record<string, string> = {
@@ -106,14 +111,15 @@ export default function RulesPanel() {
     return key in pending ? pending[key] === true : installed;
   }
 
-  function setCrs(mode: CrsMode) {
-    if (mode === 'block') {
+  function setCrs(on: boolean) {
+    const mode: CrsMode = on ? 'block' : 'off';
+    if (on) {
       void confirm({
-        title: t('OWASP-Regeln sperren lassen?'),
+        title: t('OWASP-Regeln einschalten?'),
         message: t(
-          'Das OWASP Core Rule Set ist streng und sperrt auch harmlose Anfragen, etwa Formulare mit Code oder SQL im Text. Besser erst einige Tage „Nur melden“ und die Ereignisse ansehen.'
+          'Ab dann weist HAProxy jede Anfrage mit einem Treffer sofort ab, auch harmlose. Danach unter Ereignisse nachsehen, ob eigene Anwendungen betroffen sind.'
         ),
-        confirmLabel: t('Sperren lassen'),
+        confirmLabel: t('Einschalten'),
         variant: 'warning',
         onConfirm: () => change('crs', { crs: mode }, mode),
       });
@@ -161,26 +167,55 @@ export default function RulesPanel() {
                   {t('OWASP Core Rule Set')}
                   <InfoHint
                     text={t(
-                      'Eine freie Regelsammlung für Web Application Firewalls, gepflegt vom OWASP-Projekt. Sie prüft jede Anfrage auf typische Angriffsmuster: SQL-Injection, Cross-Site-Scripting (XSS), Zugriffe auf Systemdateien, Befehle im Text. Die virtuellen Patches, die immer an sind, fangen nur bekannte Lücken bestimmter Programme ab. Das Rule Set erkennt auch Angriffe, für die es noch keinen Patch gibt, trifft dafür aber manchmal harmlose Anfragen, etwa ein Formular mit Code im Text. Deshalb ist es aus, bis Sie es einschalten. Empfehlung: einige Tage „Nur melden“ und unter Ereignisse ansehen, was es fände. Dann für Anwendungen mit Fehltreffern die Ausnahmen unten einschalten und erst danach „Treffer sperren“.'
+                      'Eine freie Regelsammlung für Web Application Firewalls, gepflegt vom OWASP-Projekt. Sie prüft jede Anfrage auf typische Angriffsmuster. Die virtuellen Patches, die immer an sind, fangen nur bekannte Lücken bestimmter Programme ab. Die OWASP-Regeln erkennen auch Unbekanntes, treffen dafür aber manchmal harmlose Anfragen. Deshalb sind sie aus, bis Sie sie einschalten.'
                     )}
                   />
                 </h2>
                 <p className="card-subtitle">{t('Zusätzliche, strengere Prüfung jeder Anfrage auf typische Angriffe.')}</p>
               </div>
-            </div>
-            <div className="card-body cs-form">
-              <div className="form-group cs-form-wide">
-                <label className="form-label form-label-row" htmlFor="cs-crs">
-                  {t('Modus')}
-                  {'crs' in pending && <Loader2 size={14} className="spin" />}
+              <div className="cs-all-switch">
+                <span className="cs-all-switch-label">{t('OWASP-Regeln')}</span>
+                <label className="toggle-switch">
+                  <input
+                    type="checkbox"
+                    checked={(pending.crs ?? data.crs) === 'block'}
+                    disabled={'crs' in pending}
+                    onChange={(e) => setCrs(e.target.checked)}
+                    aria-label={t('OWASP-Regeln')}
+                  />
+                  <span className="toggle-slider" />
                 </label>
-                <Select<CrsMode>
-                  id="cs-crs"
-                  value={CRS_OPTIONS.find((o) => o.value === pending.crs)?.value ?? data.crs}
-                  onChange={setCrs}
-                  disabled={'crs' in pending}
-                  options={CRS_OPTIONS.map((o) => ({ value: o.value, label: t(o.label), hint: t(o.hint) }))}
-                />
+              </div>
+            </div>
+            <div className="card-body">
+              <p className="cs-state-line">
+                {data.crs === 'block'
+                  ? t('An. Eine Anfrage mit Treffer weist HAProxy sofort mit 403 ab.')
+                  : t('Aus. Es gelten nur die virtuellen Patches und die allgemeinen Regeln.')}
+              </p>
+              <div className="cs-crs-facts">
+                <div>
+                  <h3 className="cs-crs-facts-title">{t('Vorteile')}</h3>
+                  <ul className="cs-crs-list">
+                    {CRS_PROS.map((text) => (
+                      <li key={text}>
+                        <Check size={15} className="cs-crs-pro" />
+                        <span>{t(text)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <h3 className="cs-crs-facts-title">{t('Nachteile')}</h3>
+                  <ul className="cs-crs-list">
+                    {CRS_CONS.map((text) => (
+                      <li key={text}>
+                        <AlertTriangle size={15} className="cs-crs-con" />
+                        <span>{t(text)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </div>
             </div>
           </div>

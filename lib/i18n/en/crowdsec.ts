@@ -28,7 +28,6 @@ export const crowdsec: Readonly<Record<string, string>> = {
   // Reiter im Dialog eines Ziels
   'Zugriff und Schutz': 'Access and protection',
   Erweitert: 'Advanced',
-  'Treffer sperren': 'Block hits',
   'WAF, Sperren und Freigaben': 'WAF, bans and allowlist',
   'CrowdSec ist nicht erreichbar.': 'CrowdSec is not reachable.',
   'CrowdSec für alle Ziele': 'CrowdSec for all targets',
@@ -136,26 +135,15 @@ export const crowdsec: Readonly<Record<string, string>> = {
 
   // Regeln
   Aus: 'Off',
-  'Nur melden': 'Report only',
-  'Nur virtuelle Patches und allgemeine Regeln.': 'Only virtual patches and generic rules.',
-  'Treffer erscheinen als Ereignis, die Anfrage geht durch.': 'Hits show up as events, the request goes through.',
-  'Treffer werden mit 403 abgelehnt.': 'Hits are rejected with 403.',
   'Log von HAProxy: Scanner, Raten von Passwörtern, bekannte Lücken': 'HAProxy log: scanners, password guessing, known vulnerabilities',
   'WAF: virtuelle Patches für bekannte Lücken': 'WAF: virtual patches for known vulnerabilities',
   'WAF: allgemeine Angriffsmuster': 'WAF: generic attack patterns',
-  'OWASP-Regeln sperren lassen?': 'Let the OWASP rules block?',
-  'Das OWASP Core Rule Set ist streng und sperrt auch harmlose Anfragen, etwa Formulare mit Code oder SQL im Text. Besser erst einige Tage „Nur melden“ und die Ereignisse ansehen.':
-    'The OWASP Core Rule Set is strict and also blocks harmless requests, such as forms with code or SQL in the text. Better run "Report only" for a few days first and look at the events.',
-  'Sperren lassen': 'Let it block',
   'OWASP Core Rule Set': 'OWASP Core Rule Set',
   'Zusätzliche, strengere Prüfung jeder Anfrage auf typische Angriffe.': 'Additional, stricter check of every request for typical attacks.',
-  'Eine freie Regelsammlung für Web Application Firewalls, gepflegt vom OWASP-Projekt. Sie prüft jede Anfrage auf typische Angriffsmuster: SQL-Injection, Cross-Site-Scripting (XSS), Zugriffe auf Systemdateien, Befehle im Text. Die virtuellen Patches, die immer an sind, fangen nur bekannte Lücken bestimmter Programme ab. Das Rule Set erkennt auch Angriffe, für die es noch keinen Patch gibt, trifft dafür aber manchmal harmlose Anfragen, etwa ein Formular mit Code im Text. Deshalb ist es aus, bis Sie es einschalten. Empfehlung: einige Tage „Nur melden“ und unter Ereignisse ansehen, was es fände. Dann für Anwendungen mit Fehltreffern die Ausnahmen unten einschalten und erst danach „Treffer sperren“.':
-    'A free rule set for web application firewalls, maintained by the OWASP project. It checks every request for typical attack patterns: SQL injection, cross-site scripting (XSS), access to system files, commands in the body. The virtual patches, which are always on, only catch known vulnerabilities of specific programs. The rule set also detects attacks for which no patch exists yet, but in return it sometimes hits harmless requests, such as a form with code in its text. That is why it stays off until you switch it on. Recommendation: use "Report only" for a few days and check under Events what it would catch. Then switch on the exclusions below for applications with false hits, and only after that "Block hits".',
   'Weniger anzeigen': 'Show less',
   'Alle {count} Anwendungen anzeigen': 'Show all {count} applications',
   'Anwendung suchen…': 'Search applications…',
   'Anwendung suchen': 'Search applications',
-  Modus: 'Mode',
   Regelsammlungen: 'Rule collections',
   'Aus dem Hub von CrowdSec.': 'From the CrowdSec hub.',
   'Regeln aktualisieren': 'Update rules',
@@ -263,8 +251,6 @@ export const crowdsec: Readonly<Record<string, string>> = {
   'CrowdSec-Regeln: Änderung fehlgeschlagen': 'CrowdSec rules: change failed',
   'CrowdSec hat die Regeln neu geladen.': 'CrowdSec has reloaded the rules.',
   'OWASP-Regeln: aus': 'OWASP rules: off',
-  'OWASP-Regeln: nur melden': 'OWASP rules: report only',
-  'OWASP-Regeln: Treffer sperren': 'OWASP rules: block hits',
   '{name} einschalten': 'Switch on {name}',
   '{name} ausschalten': 'Switch off {name}',
   'CrowdSec neu laden': 'Reload CrowdSec',
@@ -388,7 +374,6 @@ export const crowdsec: Readonly<Record<string, string>> = {
   '{value} ist schon freigegeben.': '{value} is already allowed.',
   '{value} steht nicht in der Freigabeliste.': '{value} is not on the allowlist.',
   'Das Ziel {id} gibt es nicht.': 'The target {id} does not exist.',
-  'Diesen Modus gibt es nicht.': 'This mode does not exist.',
   'Diese Regelsammlung lässt sich hier nicht schalten.': 'This rule collection cannot be switched here.',
   'Was soll sich ändern? Erwartet wird crs, app oder name mit installed, oder upgrade.':
     'What should change? Expected crs, app or name with installed, or upgrade.',
@@ -519,4 +504,32 @@ export const crowdsec: Readonly<Record<string, string>> = {
   'Überlastungsversuch': 'Overload attempt',
   'Die Adresse hat so viele oder so ungewöhnliche Anfragen geschickt, dass sie den Dienst lahmlegen könnten.':
     'The address sent so many or such unusual requests that they could take the service down.',
+
+  // OWASP an oder aus (RulesPanel, Übersicht, Warteschlange)
+  'An': 'On',
+  'Erkennt auch Angriffe, für die es noch keinen Patch gibt.': 'Also detects attacks that have no patch yet.',
+  'Prüft auf SQL-Injection, XSS, eingeschleuste Befehle und Zugriffe auf Dateien.':
+    'Checks for SQL injection, XSS, injected commands and file access.',
+  'Ein Angriff wird abgewiesen, bevor er die Anwendung erreicht.':
+    'An attack is rejected before it reaches the application.',
+  'Weist auch harmlose Anfragen ab, etwa aus Editoren, Formularen mit Code oder GraphQL.':
+    'Also rejects harmless requests, for example from editors, forms with code or GraphQL.',
+  'Wen das trifft, sieht nur eine Fehlerseite (403) und kann die Anwendung nicht benutzen.':
+    'Anyone affected only sees an error page (403) and cannot use the application.',
+  'Fehltreffer zeigen erst die Ereignisse. Abhilfe: Ausnahmen für Anwendungen oder Freigaben.':
+    'False positives only show up under Events. Remedy: exclusions for applications or the allowlist.',
+  'OWASP-Regeln einschalten?': 'Turn on the OWASP rules?',
+  'Ab dann weist HAProxy jede Anfrage mit einem Treffer sofort ab, auch harmlose. Danach unter Ereignisse nachsehen, ob eigene Anwendungen betroffen sind.':
+    'From then on HAProxy rejects every request with a hit right away, harmless ones too. Afterwards check under Events whether your own applications are affected.',
+  'Eine freie Regelsammlung für Web Application Firewalls, gepflegt vom OWASP-Projekt. Sie prüft jede Anfrage auf typische Angriffsmuster. Die virtuellen Patches, die immer an sind, fangen nur bekannte Lücken bestimmter Programme ab. Die OWASP-Regeln erkennen auch Unbekanntes, treffen dafür aber manchmal harmlose Anfragen. Deshalb sind sie aus, bis Sie sie einschalten.':
+    'A free rule set for web application firewalls, maintained by the OWASP project. It checks every request for typical attack patterns. The virtual patches, which are always on, only catch known vulnerabilities of specific programs. The OWASP rules also detect the unknown, but sometimes hit harmless requests. That is why they are off until you turn them on.',
+  'An. Eine Anfrage mit Treffer weist HAProxy sofort mit 403 ab.':
+    'On. HAProxy rejects a request with a hit right away with 403.',
+  'Aus. Es gelten nur die virtuellen Patches und die allgemeinen Regeln.':
+    'Off. Only the virtual patches and the generic rules apply.',
+  'Vorteile': 'Advantages',
+  'Nachteile': 'Disadvantages',
+  'Erwartet wird crs: off oder block.': 'Expected crs: off or block.',
+  'OWASP-Regeln: an': 'OWASP rules: on',
+  'Die Anfrage wurde mit 403 abgewiesen.': 'The request was rejected with 403.',
 };

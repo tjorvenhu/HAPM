@@ -104,8 +104,7 @@ in eine eigene Datei daneben in `acquis.d/`.
 | `crowdsecurity/haproxy` | immer | Parser für das Log von HAProxy und die Szenarien für HTTP |
 | `crowdsecurity/appsec-virtual-patching` | immer | Virtuelle Patches gegen bekannte Lücken |
 | `crowdsecurity/appsec-generic-rules` | immer | Allgemeine Regeln der WAF |
-| `crowdsecurity/appsec-crs` | OWASP „nur melden" | OWASP Core Rule Set, außerhalb der Anfrage geprüft |
-| `crowdsecurity/appsec-crs-inband` | OWASP „sperren" | OWASP Core Rule Set, lehnt die Anfrage ab |
+| `crowdsecurity/appsec-crs-inband` | OWASP an | OWASP Core Rule Set, weist eine Anfrage mit Treffer mit 403 ab |
 | `crowdsecurity/http-dos` | Schalter | Erkennt HTTP-Fluten |
 | je Anwendung | Schalter | siehe „Anwendungen“ |
 
@@ -183,8 +182,21 @@ Stolperfallen beim Schreiben eigener Ausnahmen:
 
 **OWASP hat einen eigenen Schalter**, weil es nicht nur eine Sammlung ist: die
 Konfiguration der WAF (`appsec_configs` in `acquis.d/hapm.yaml`) nennt
-`crowdsecurity/crs` oder `crowdsecurity/crs-inband`. Den Modus liest HAPM aus
-dieser Datei zurück (`readCrsMode`), es gibt keine Kopie in der Datenbank.
+`crowdsecurity/crs-inband`. Den Zustand liest HAPM aus dieser Datei zurück
+(`readCrsMode`), es gibt keine Kopie in der Datenbank. API und MCP nehmen
+`crs: off` oder `crs: block`.
+
+**OWASP ist an oder aus, ein „Nur melden“ gibt es nicht mehr.** Es lief als
+`crowdsecurity/crs` außerhalb der Anfrage und meldete nicht nur: das Szenario
+`crowdsec-appsec-outofband` sperrte eine Adresse nach einigen Treffern (auf
+einem Server im Betrieb gesehen), bei Fehltreffern also auch die eigene. Die
+Seite zeigt deshalb beim Schalter sichtbar Vorteile und Nachteile, und das
+Einschalten fragt nach. Eine Installation mit dem alten Modus liest sich als
+aus (`readCrsMode`) und schreibt die Quellen beim nächsten Start ohne die
+Regeln: als „an“ wiese sie nach dem Update ohne Vorwarnung Anfragen ab. Die
+Sammlung `crowdsecurity/appsec-crs` bleibt dann installiert und wirkt nicht.
+Ein Treffer heißt bei „an“ `anomaly score block: lfi: 40, …` (geprüft mit
+1.8.2), die Seite beschreibt ihn wie die übrigen (`lib/crowdsec/describe.ts`).
 
 „Regeln aktualisieren" ist `cscli hub update` und `cscli hub upgrade`.
 
@@ -279,7 +291,7 @@ einer fehlenden Datei. Die Namen der Nachrichten (`crowdsec-http-body`,
 
 **HTTP/3 geht als HTTP/2 an die WAF** (`version=req.ver,regsub(^3,2)`). Das
 OWASP Core Rule Set in CrowdSec 1.8 kennt HTTP/3 nicht als erlaubte Version:
-Regel 920430 gab jeder Anfrage eines Browsers über QUIC 5 Punkte, „Nur melden“
+Regel 920430 gab jeder Anfrage eines Browsers über QUIC 5 Punkte, das frühere „Nur melden“
 meldete die eigene Oberfläche hundertfach, „sperren“ hätte sie gesperrt. Die
 Regel in CrowdSec abzuschalten geht nicht: `RemoveOutBandRuleByID(920430)` und
 `RemoveInBandRuleByID` wirken bei den CRS-Regeln weder in `on_load` noch in
@@ -564,8 +576,9 @@ laufen.
 - **Rümpfe über 8 KB** prüft die WAF nicht, nur Methode, Pfad, Abfrage und
   Kopfzeilen.
 - **OWASP CRS kann Falsches sperren.** Die Regeln sind allgemein und kennen die
-  Anwendung nicht. Erst „nur melden", die Ereignisse ansehen, dann „sperren".
-  Für Nextcloud und WordPress gibt es Ausnahmen als Schalter.
+  Anwendung nicht. Nach dem Einschalten die Ereignisse ansehen; für viele
+  Anwendungen gibt es Ausnahmen als Schalter, eigene Adressen gehören in die
+  Freigaben (dort fragt HAProxy CrowdSec nicht).
 - **Freigaben gelten für HAProxy, nicht für jede Quelle.** Eine freigegebene
   Adresse geht an CrowdSec vorbei. Was CrowdSec über sie aus dem Log erfährt,
   führt nicht zu einer Sperre.

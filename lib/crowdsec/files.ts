@@ -11,20 +11,20 @@
 
 import { msgid } from '../i18n/translate';
 
-/** Die OWASP-Regeln: aus, nur melden (außerhalb der Anfrage) oder sperren. */
-export type CrsMode = 'off' | 'detect' | 'block';
-export const CRS_MODES: readonly CrsMode[] = ['off', 'detect', 'block'];
+/**
+ * Die OWASP-Regeln: aus oder an (`block`, ein Treffer wird mit 403 abgewiesen).
+ *
+ * Ein „Nur melden" (`detect`, `crowdsecurity/crs` außerhalb der Anfrage) gibt
+ * es nicht mehr: es meldete nicht nur. Das Szenario
+ * `crowdsec-appsec-outofband` sperrte eine Adresse nach einigen Treffern, auch
+ * die eigene bei Fehltreffern. Ein Schalter mit ehrlicher Folge ist klarer.
+ */
+export type CrsMode = 'off' | 'block';
+export const CRS_MODES: readonly CrsMode[] = ['off', 'block'];
 
-/** Die Sammlung je Modus. Ohne sie fehlt die Regel, die die Konfiguration nennt. */
-export const CRS_COLLECTIONS: Record<Exclude<CrsMode, 'off'>, string> = {
-  detect: 'crowdsecurity/appsec-crs',
-  block: 'crowdsecurity/appsec-crs-inband',
-};
-
-const CRS_CONFIGS: Record<Exclude<CrsMode, 'off'>, string> = {
-  detect: 'crowdsecurity/crs',
-  block: 'crowdsecurity/crs-inband',
-};
+/** Ohne die Sammlung fehlt die Regel, die die Konfiguration nennt. */
+export const CRS_COLLECTION = 'crowdsecurity/appsec-crs-inband';
+const CRS_CONFIG = 'crowdsecurity/crs-inband';
 
 /** Immer da: das Log von HAProxy und die WAF mit virtuellen Patches und
  *  allgemeinen Regeln. Compose installiert sie (`COLLECTIONS`). */
@@ -63,7 +63,7 @@ export const SPOA_LISTEN = '0.0.0.0:7423';
  * Quelle über den Namen folgt.
  */
 export function renderAcquis(crs: CrsMode): string {
-  const configs = ['crowdsecurity/appsec-default', ...(crs === 'off' ? [] : [CRS_CONFIGS[crs]])];
+  const configs = ['crowdsecurity/appsec-default', ...(crs === 'off' ? [] : [CRS_CONFIG])];
   return [
     '# Von HAPM geschrieben. Wird bei jedem Start von HAPM neu geschrieben.',
     'source: file',
@@ -82,11 +82,15 @@ export function renderAcquis(crs: CrsMode): string {
   ].join('\n');
 }
 
-/** Liest den Modus der OWASP-Regeln aus den Quellen zurück. Unbekannt heißt aus. */
+/**
+ * Liest den Modus der OWASP-Regeln aus den Quellen zurück. Unbekannt heißt aus.
+ * Das frühere „Nur melden" (`crowdsecurity/crs`) liest sich als aus: als „an"
+ * wiese es nach dem Update ohne Vorwarnung Anfragen ab. `writeCrowdsecFiles`
+ * schreibt die Quellen beim Start dann ohne die Regeln neu.
+ */
 export function readCrsMode(acquis: string | null): CrsMode {
   if (!acquis) return 'off';
   if (/^\s*-\s*crowdsecurity\/crs-inband\s*$/m.test(acquis)) return 'block';
-  if (/^\s*-\s*crowdsecurity\/crs\s*$/m.test(acquis)) return 'detect';
   return 'off';
 }
 

@@ -95,6 +95,7 @@ const CRS_GENERIC: Entry = {
 const OUT_OF_BAND = msgid(
   'Nur gemeldet, die Anfrage ging durch. Schickt eine Adresse mehrere solcher Anfragen, sperrt CrowdSec sie.'
 );
+const BLOCKED = msgid('Die Anfrage wurde mit 403 abgewiesen.');
 
 /** Regeln und Szenarien nach Namen, ohne den Autor davor (`crowdsecurity/`). */
 const NAMED: Record<string, Entry> = {
@@ -176,9 +177,12 @@ function one(entry: Entry): ReasonDescription {
   return { labels: [entry.label], hints: [entry.hint] };
 }
 
-/** `anomaly score out-of-band: lfi: 5, anomaly: 10, ` (auch `in-band`). */
+/**
+ * `anomaly score out-of-band: lfi: 5, anomaly: 10, ` (das frühere „Nur
+ * melden") oder `anomaly score block: …` (OWASP an, geprüft mit CrowdSec 1.8.2).
+ */
 function describeAnomaly(name: string): ReasonDescription | null {
-  const match = /^anomaly score(?: (out-of-band|in-band))?:(.*)$/i.exec(name.trim());
+  const match = /^anomaly score(?: (out-of-band|in-band|block))?:(.*)$/i.exec(name.trim());
   if (!match) return null;
   const entries: Entry[] = [];
   for (const part of match[2].split(',')) {
@@ -189,10 +193,11 @@ function describeAnomaly(name: string): ReasonDescription | null {
   }
   // Eine Kategorie, die hier fehlt, ist trotzdem ein Treffer: dann wenigstens „auffällig".
   if (entries.length === 0) entries.push(CRS_GENERIC);
-  const outOfBand = match[1]?.toLowerCase() === 'out-of-band';
+  const how = match[1]?.toLowerCase();
+  const outcome = how === 'out-of-band' ? [OUT_OF_BAND] : how === 'block' ? [BLOCKED] : [];
   return {
     labels: entries.map((entry) => entry.label),
-    hints: [...entries.map((entry) => entry.hint), ...(outOfBand ? [OUT_OF_BAND] : [])],
+    hints: [...entries.map((entry) => entry.hint), ...outcome],
   };
 }
 

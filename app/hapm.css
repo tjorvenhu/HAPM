@@ -590,6 +590,13 @@
 .cs-form .cs-form-end { margin-left: auto; }
 @media (max-width: 640px) { .cs-form .cs-form-end { margin-left: 0; } }
 .cs-card-alert { margin: 16px 0 0; }
+.cs-crs-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 12px 24px; margin-top: 12px; }
+.cs-crs-facts-title { font-size: 0.8125rem; font-weight: 600; color: var(--text); margin: 0 0 6px; }
+.cs-crs-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.cs-crs-list li { display: flex; align-items: flex-start; gap: 8px; font-size: 0.875rem; color: var(--text-secondary); }
+.cs-crs-list svg { flex-shrink: 0; margin-top: 2px; }
+.cs-crs-pro { color: var(--success); }
+.cs-crs-con { color: var(--warning); }
 /* Reiter im Dialog eines Ziels (ServiceFormModal). */
 .form-tabs { flex-wrap: wrap; margin-bottom: 16px; }
 

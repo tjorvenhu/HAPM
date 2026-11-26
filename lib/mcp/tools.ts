@@ -929,7 +929,7 @@ export const TOOLS: ToolDefinition[] = [
     name: 'get_crowdsec_rules',
     title: 'CrowdSec rules',
     description:
-      'The OWASP CRS mode (off, detect, block), the base collections, rules per application (apps: exclusions against known false bans, ' +
+      'The OWASP CRS mode (off or block), the base collections, rules per application (apps: exclusions against known false bans, ' +
       'for WordPress also virtual patches; partial = only some parts installed) and further optional collections.',
     input: {},
     annotations: READ_ONLY,
@@ -940,7 +940,7 @@ export const TOOLS: ToolDefinition[] = [
     name: 'update_crowdsec_rules',
     title: 'Change CrowdSec rules',
     description:
-      'One change per call: {"crs":"off"|"detect"|"block"} for the OWASP Core Rule Set (block can reject harmless requests; start with detect), ' +
+      'One change per call: {"crs":"off"|"block"} for the OWASP Core Rule Set (block rejects every request with a hit with 403, harmless ones too: check the alerts afterwards), ' +
       '{"app":"<id>","installed":true|false} for the rules of an application from get_crowdsec_rules (apps), ' +
       '{"name":"<collection>","installed":true|false} for an optional collection, or {"upgrade":true} to update all rules from the hub.',
     input: {

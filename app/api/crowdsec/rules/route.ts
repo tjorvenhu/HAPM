@@ -14,7 +14,7 @@ export async function GET() {
 }
 
 /**
- * `{ crs: off|detect|block }`, `{ app, installed }` für eine Anwendung,
+ * `{ crs: off|block }`, `{ app, installed }` für eine Anwendung,
  * `{ name, installed }` für eine Sammlung oder `{ upgrade: true }` für den Hub.
  *
  * Antwortet sofort mit `{ runId, key }`: die Änderung läuft als Lauf im

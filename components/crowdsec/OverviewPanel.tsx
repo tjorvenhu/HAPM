@@ -28,8 +28,7 @@ import type { CrowdsecOverview, CrsMode } from './types';
 
 const CRS_LABELS: Record<CrsMode, string> = {
   off: msgid('Aus'),
-  detect: msgid('Nur melden'),
-  block: msgid('Treffer sperren'),
+  block: msgid('An'),
 };
 
 function ContainerBadge({ info, label }: { info: CrowdsecOverview['status']['crowdsec']; label: string }) {

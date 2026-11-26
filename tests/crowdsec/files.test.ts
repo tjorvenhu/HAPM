@@ -30,10 +30,16 @@ describe('renderAcquis', () => {
     for (const mode of CRS_MODES) {
       expect(readCrsMode(renderAcquis(mode)), mode).toBe(mode);
     }
-    expect(renderAcquis('detect')).toContain('  - crowdsecurity/crs\n');
+    expect(CRS_MODES).toEqual(['off', 'block']);
     expect(renderAcquis('block')).toContain('  - crowdsecurity/crs-inband\n');
     expect(readCrsMode(null)).toBe('off');
     expect(readCrsMode('irgendwas')).toBe('off');
+  });
+
+  it('liest das frühere „Nur melden“ als aus, damit ein Update nicht ohne Vorwarnung sperrt', () => {
+    const old = renderAcquis('off').replace('  - crowdsecurity/appsec-default\n', '  - crowdsecurity/appsec-default\n  - crowdsecurity/crs\n');
+    expect(old).toContain('  - crowdsecurity/crs\n');
+    expect(readCrsMode(old)).toBe('off');
   });
 });
 

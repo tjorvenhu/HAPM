@@ -27,10 +27,12 @@ describe('describeReason', () => {
     expect(describeReason('anomaly score out-of-band: rce: 15, anomaly: 15, ')?.labels).toEqual(['Eingeschleuste Befehle']);
   });
 
-  it('ein in-band-Treffer sagt nicht, die Anfrage sei durchgegangen', () => {
-    const result = describeReason('anomaly score in-band: lfi: 5, anomaly: 5, ');
-    expect(result?.labels).toEqual(['Zugriff auf Dateien des Servers']);
+  it('OWASP an: der Treffer wurde abgewiesen, nicht nur gemeldet', () => {
+    const result = describeReason('anomaly score block: lfi: 40, rce: 10, anomaly: 55, ');
+    expect(result?.labels).toEqual(['Zugriff auf Dateien des Servers', 'Eingeschleuste Befehle']);
+    expect(result?.hints.at(-1)).toBe('Die Anfrage wurde mit 403 abgewiesen.');
     expect(result?.hints.some((hint) => hint.startsWith('Nur gemeldet'))).toBe(false);
+    expect(describeReason('anomaly score block: anomaly: 5, ')?.labels).toEqual(['Auffällige Anfrage']);
   });
 
   it('Regeln und Szenarien nach Namen, mit und ohne Autor', () => {

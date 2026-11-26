@@ -13,7 +13,7 @@ export async function GET(request: Request) {
   }
 }
 
-/** `{ crs: off|detect|block }`, `{ name, installed }` für eine Sammlung oder `{ upgrade: true }` für den Hub. */
+/** `{ crs: off|block }`, `{ name, installed }` für eine Sammlung oder `{ upgrade: true }` für den Hub. */
 export async function PATCH(request: Request) {
   try {
     const service = await requireServiceToken(request);

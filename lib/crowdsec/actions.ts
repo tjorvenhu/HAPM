@@ -28,7 +28,7 @@ import {
 import { cscli, cscliJson, cscliOk, CrowdsecUnavailable } from './cscli';
 import {
   BASE_COLLECTIONS,
-  CRS_COLLECTIONS,
+  CRS_COLLECTION,
   CRS_MODES,
   OPTIONAL_COLLECTIONS,
   type CrsMode,
@@ -725,7 +725,7 @@ export interface RuleChangeOptions {
 function wantedCrs(body: unknown): CrsMode {
   const mode = (body as Record<string, unknown> | null)?.crs;
   if (typeof mode !== 'string' || !CRS_MODES.includes(mode as CrsMode)) {
-    throw new ApiError(msg('Diesen Modus gibt es nicht.'));
+    throw new ApiError(msg('Erwartet wird crs: off oder block.'));
   }
   return mode as CrsMode;
 }
@@ -749,13 +749,14 @@ function wantedApp(body: unknown): { app: AppRules; on: boolean } {
 
 /**
  * Die OWASP-Regeln schalten: Sammlung holen, Quellen umschreiben, CrowdSec neu
- * laden. Die Sammlung des anderen Modus bleibt liegen: sie wirkt nur, wenn die
- * Quellen sie nennen.
+ * laden. Beim Ausschalten bleibt die Sammlung liegen: sie wirkt nur, wenn die
+ * Quellen sie nennen. Ebenso `crowdsecurity/appsec-crs` vom früheren „Nur
+ * melden".
  */
 export async function setCrsMode(body: unknown, actor: CrowdsecActor, options: RuleChangeOptions = {}) {
   const crs = wantedCrs(body);
   if (crs !== 'off') {
-    await cscliOk(['collections', 'install', CRS_COLLECTIONS[crs]], 180_000);
+    await cscliOk(['collections', 'install', CRS_COLLECTION], 180_000);
   }
   const files = writeCrowdsecFiles(crs);
   if (!files.mounted) throw new CrowdsecUnavailable();
@@ -1038,8 +1039,7 @@ type RuleChangeResult =
 
 const CRS_STEPS: Record<CrsMode, string> = {
   off: msgid('OWASP-Regeln: aus'),
-  detect: msgid('OWASP-Regeln: nur melden'),
-  block: msgid('OWASP-Regeln: Treffer sperren'),
+  block: msgid('OWASP-Regeln: an'),
 };
 
 /**

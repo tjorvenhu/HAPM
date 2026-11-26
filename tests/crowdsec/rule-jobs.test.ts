@@ -148,7 +148,7 @@ describe('Warteschlange der Regeln', () => {
     world.cscliGate = held;
     const first = queueRuleChange({ app: 'drupal', installed: true }, actor);
     const second = queueRuleChange({ name: HTTP_DOS, installed: true }, actor);
-    const third = queueRuleChange({ crs: 'detect' }, actor);
+    const third = queueRuleChange({ crs: 'block' }, actor);
 
     expect(first.key).toBe('app:drupal');
     expect(second).toEqual({ runId: first.runId, key: HTTP_DOS });
@@ -161,7 +161,7 @@ describe('Warteschlange der Regeln', () => {
     expect(world.calls).toEqual([
       `collections install ${DRUPAL}`,
       `collections install ${HTTP_DOS}`,
-      'collections install crowdsecurity/appsec-crs',
+      'collections install crowdsecurity/appsec-crs-inband',
       'RELOAD',
     ]);
     expect(world.maxRunning).toBe(1);
@@ -171,7 +171,7 @@ describe('Warteschlange der Regeln', () => {
     expect(run.steps).toEqual([
       { label: 'Drupal einschalten', ok: true },
       { label: 'HTTP-Flut einschalten', ok: true },
-      { label: 'OWASP-Regeln: nur melden', ok: true },
+      { label: 'OWASP-Regeln: an', ok: true },
       { label: 'CrowdSec neu laden', ok: true },
     ]);
     expect(run.pending).toEqual([]);
@@ -179,7 +179,7 @@ describe('Warteschlange der Regeln', () => {
     expect(world.audits).toEqual([
       { action: 'crowdsec_rules_updated', resourceId: 'app:drupal', details: 'Drupal: an' },
       { action: 'crowdsec_rules_updated', resourceId: HTTP_DOS, details: `${HTTP_DOS}: an` },
-      { action: 'crowdsec_rules_updated', resourceId: 'crs', details: 'OWASP-Regeln: detect' },
+      { action: 'crowdsec_rules_updated', resourceId: 'crs', details: 'OWASP-Regeln: block' },
     ]);
     expect(ruleRunActive()).toBe(false);
     expect(pendingRuleChanges()).toEqual({});
@@ -218,7 +218,7 @@ describe('Warteschlange der Regeln', () => {
     expect(later.runId).toBe(first.runId);
     await expect(replaced).rejects.toMatchObject({ status: 409, message: expect.stringContaining('ersetzt') });
     expect(pendingRuleChanges()).toEqual({ crs: 'block', [HTTP_DOS]: false });
-    expect(view(first.runId).pending).toEqual(['OWASP-Regeln: Treffer sperren', 'HTTP-Flut ausschalten', 'CrowdSec neu laden']);
+    expect(view(first.runId).pending).toEqual(['OWASP-Regeln: an', 'HTTP-Flut ausschalten', 'CrowdSec neu laden']);
 
     held.open();
     await finished(first.runId);
@@ -316,13 +316,13 @@ describe('changeRules', () => {
     expect(await pending).toEqual({ name: HTTP_DOS, installed: true });
 
     world.reloadGate = null;
-    expect(await changeRules({ crs: 'detect' }, actor)).toEqual({ crs: 'detect' });
+    expect(await changeRules({ crs: 'block' }, actor)).toEqual({ crs: 'block' });
     expect(await changeRules({ app: 'drupal', installed: false }, actor)).toEqual({ app: 'drupal', installed: false });
     expect(await changeRules({ upgrade: true }, actor)).toEqual({ output: 'fertig' });
     expect(world.calls).toEqual([
       `collections install ${HTTP_DOS}`,
       'RELOAD',
-      'collections install crowdsecurity/appsec-crs',
+      'collections install crowdsecurity/appsec-crs-inband',
       'RELOAD',
       `collections remove ${DRUPAL}`,
       'RELOAD',
@@ -374,7 +374,9 @@ describe('changeRules', () => {
     expect(() => queueRuleChange({ name: 'crowdsecurity/irgendwas', installed: true }, actor)).toThrow(
       expect.objectContaining({ status: 404 })
     );
-    expect(() => queueRuleChange({ crs: 'laut' }, actor)).toThrow('Diesen Modus gibt es nicht.');
+    expect(() => queueRuleChange({ crs: 'laut' }, actor)).toThrow('Erwartet wird crs: off oder block.');
+    // Das frühere „Nur melden“ gibt es nicht mehr.
+    expect(() => queueRuleChange({ crs: 'detect' }, actor)).toThrow('Erwartet wird crs: off oder block.');
     await expect(changeRules({}, actor)).rejects.toThrow('Was soll sich ändern?');
 
     process.env.HAPM_CROWDSEC_OFF = '1';
