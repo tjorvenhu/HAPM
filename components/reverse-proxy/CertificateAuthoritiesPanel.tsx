@@ -153,9 +153,10 @@ export default function CertificateAuthoritiesPanel({ ref }: { ref?: Ref<Authori
   const usersCell = (ca: CaRow): ReactNode =>
     ca.usedBy.length > 0 ? (
       ca.usedBy.map((user, index) => (
+        // Das Komma hängt am Namen davor: so beginnt nach einem Umbruch keine Zeile mit ihm.
         <span key={user.id}>
-          {index > 0 && ', '}
           {user.slug ? <Link href={`/reverse-proxy/${user.slug}?dienst=${encodeURIComponent(user.id)}`}>{user.id}</Link> : user.id}
+          {index < ca.usedBy.length - 1 && ', '}
         </span>
       ))
     ) : (

@@ -356,9 +356,10 @@
 
 .hapm-choices-row .hapm-choice { align-items: center; flex: 1 1 11rem; width: auto; }
 
-/* Ein Anbieter ohne eigenes Zeichen trägt ein Symbol. Es steht mittig wie das
- * Zeichen daneben, nicht an der ersten Zeile ausgerichtet. */
-.hapm-choices-row .hapm-choice > svg { margin-top: 0; }
+/* Ein Anbieter ohne eigenes Zeichen trägt ein Symbol. Es ist kleiner als ein
+ * Zeichen (18 statt 28 px, `ProviderLogo`): der Rand füllt den Unterschied,
+ * damit Karten und Namen aller Anbieter gleich hoch und gleich eingerückt sind. */
+.hapm-choices-row .hapm-choice > svg { margin: 5px; }
 
 /* In einem Fließtext (Kopf einer Zone) sitzt das Zeichen auf der Zeile. */
 .page-subtitle .hapm-provider { gap: 6px; vertical-align: bottom; color: var(--text); }
