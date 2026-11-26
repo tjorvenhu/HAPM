@@ -259,6 +259,8 @@ export const audit: Dictionary = {
   'Zurückspielen gestartet': 'Restore started',
   'Zurückspielen abgeschlossen': 'Restore completed',
   'Zurückspielen gescheitert': 'Restore failed',
+  'Sicherungsschlüssel gesetzt': 'Backup passphrase set',
+  'Sicherungsschlüssel entfernt': 'Backup passphrase removed',
   'Update gestartet': 'Update started',
   'Update abgeschlossen': 'Update completed',
   'Einrichtung abgeschlossen': 'Setup completed',

@@ -7,7 +7,8 @@
 import type { Translator } from '../i18n';
 import { getBackupSettings } from '../backup/settings';
 import { listBackupRuns } from '../backup/run';
-import { judge, type BackupHealthInput, type HealthReport } from './health';
+import { forwardingStatus } from '../audit-log/forward';
+import { judge, type BackupHealthInput, type ForwardHealthInput, type HealthReport } from './health';
 import { renderMetrics } from './metrics';
 import { listCertificateExpiries, systemOverview } from './overview';
 
@@ -30,9 +31,23 @@ export async function readBackupHealth(): Promise<BackupHealthInput | null> {
   }
 }
 
+/** Die Ziele der Weiterleitung des Protokolls. `null`: nicht zu lesen. */
+export async function readForwardHealth(): Promise<ForwardHealthInput[] | null> {
+  try {
+    return (await forwardingStatus()).map(({ destination, enabled, failingSince, backlog }) => ({
+      destination,
+      enabled,
+      failingSince,
+      backlog,
+    }));
+  } catch {
+    return null;
+  }
+}
+
 export async function readHealth(translator: Translator): Promise<HealthReport> {
-  const [overview, backup] = await Promise.all([systemOverview(), readBackupHealth()]);
-  return judge(overview, backup, translator);
+  const [overview, backup, forwarding] = await Promise.all([systemOverview(), readBackupHealth(), readForwardHealth()]);
+  return judge(overview, { backup, forwarding }, translator);
 }
 
 /**
@@ -40,10 +55,17 @@ export async function readHealth(translator: Translator): Promise<HealthReport> 
  * die Sprache ist deshalb gleich.
  */
 export async function readMetrics(translator: Translator): Promise<string> {
-  const [overview, backup, certificates] = await Promise.all([
+  const [overview, backup, forwarding, certificates] = await Promise.all([
     systemOverview(),
     readBackupHealth(),
+    readForwardHealth(),
     listCertificateExpiries(),
   ]);
-  return renderMetrics({ overview, health: judge(overview, backup, translator), certificates, backup });
+  return renderMetrics({
+    overview,
+    health: judge(overview, { backup, forwarding }, translator),
+    certificates,
+    backup,
+    forwarding,
+  });
 }

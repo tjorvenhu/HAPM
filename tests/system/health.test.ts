@@ -71,12 +71,12 @@ function due(patch: Partial<CertificateDue>): CertificateDue {
 const NO_BACKUP: BackupHealthInput = { enabled: false, lastRun: null, lastSuccessAt: null };
 
 function statusOf(overview: SystemOverview, id: string, backup: BackupHealthInput | null = NO_BACKUP) {
-  return judge(overview, backup, de, NOW).checks.find((entry) => entry.id === id)?.status;
+  return judge(overview, { backup }, de, NOW).checks.find((entry) => entry.id === id)?.status;
 }
 
 describe('judge', () => {
   it('ist ok, wenn alles läuft, und sagt dann nichts', () => {
-    const report = judge(healthy(), NO_BACKUP, de, NOW);
+    const report = judge(healthy(), { backup: NO_BACKUP }, de, NOW);
     expect(report.status).toBe('ok');
     expect(report.version).toBe('0.7.0');
     expect(report.checks.every((entry) => entry.status === 'ok' && entry.message === null)).toBe(true);
@@ -87,14 +87,14 @@ describe('judge', () => {
     expect(
       statusOf(healthy({ haproxy: container('hapm-haproxy', { exists: false, running: false }) }), 'haproxy')
     ).toBe('fail');
-    expect(judge(healthy({ haproxy: container('x', { running: false }) }), NO_BACKUP, de, NOW).status).toBe('fail');
+    expect(judge(healthy({ haproxy: container('x', { running: false }) }), { backup: NO_BACKUP }, de, NOW).status).toBe('fail');
   });
 
   it('nennt einen unbekannten Zustand von HAProxy unbekannt, nicht ausgefallen', () => {
     const overview = healthy({ haproxy: container('hapm-haproxy', { exists: null, running: null }) });
     expect(statusOf(overview, 'haproxy')).toBe('unknown');
     // Unbekannt ist nicht ok: das Gesamturteil wird warn, aber nicht fail.
-    expect(judge(overview, NO_BACKUP, de, NOW).status).toBe('warn');
+    expect(judge(overview, { backup: NO_BACKUP }, de, NOW).status).toBe('warn');
   });
 
   it('ist fail ohne Docker-Engine', () => {
@@ -103,7 +103,7 @@ describe('judge', () => {
 
   it('warnt bei einem Ziel ohne Backend, schlägt aber nicht fehl: das Backend ist kaputt, nicht der Proxy', () => {
     const overview = healthy({ proxy: { ...healthy().proxy, down: 2 } });
-    const report = judge(overview, NO_BACKUP, de, NOW);
+    const report = judge(overview, { backup: NO_BACKUP }, de, NOW);
     expect(report.status).toBe('warn');
     expect(report.checks.find((entry) => entry.id === 'targets')?.message).toBe(
       '2 Ziele haben kein erreichbares Backend.'
@@ -166,10 +166,25 @@ describe('judge', () => {
     expect(statusOf(healthy(), 'backup', { enabled: true, lastRun: null, lastSuccessAt: null })).toBe('warn');
   });
 
+  it('prüft die Weiterleitung des Protokolls nur, wenn ein Ziel eingeschaltet ist', () => {
+    const forward = (patch: object) => [
+      { destination: 'syslog', enabled: true, failingSince: null as string | null, backlog: 0 as number | null, ...patch },
+      { destination: 'http', enabled: false, failingSince: null, backlog: null },
+    ];
+    const status = (forwarding: ReturnType<typeof forward> | null | undefined) =>
+      judge(healthy(), { backup: NO_BACKUP, forwarding }, de, NOW).checks.find((entry) => entry.id === 'audit_forwarding')
+        ?.status;
+    expect(status(undefined)).toBeUndefined();
+    expect(status(forward({ enabled: false }))).toBeUndefined();
+    expect(status(null)).toBe('unknown');
+    expect(status(forward({}))).toBe('ok');
+    expect(status(forward({ failingSince: '2026-11-26T11:00:00.000Z', backlog: 12 }))).toBe('warn');
+  });
+
   it('übersetzt die Meldungen', () => {
     const report = judge(
       healthy({ haproxy: container('hapm-haproxy', { running: false }) }),
-      NO_BACKUP,
+      { backup: NO_BACKUP },
       createTranslator('en'),
       NOW
     );
@@ -199,7 +214,7 @@ describe('renderMetrics', () => {
     const backup = extra.backup === undefined ? NO_BACKUP : extra.backup;
     return renderMetrics({
       overview,
-      health: judge(overview, backup, de, NOW),
+      health: judge(overview, { backup }, de, NOW),
       certificates: extra.certificates === undefined ? [] : extra.certificates,
       backup,
     });
@@ -277,6 +292,24 @@ describe('renderMetrics', () => {
     expect(text).toContain('hapm_backup_enabled 1');
     expect(text).toContain('hapm_backup_last_run_ok 0');
     expect(text).toContain('hapm_backup_last_success_timestamp_seconds ' + Math.floor((NOW - HOUR) / 1000));
+  });
+
+  it('führt Störung und Rückstand je eingeschaltetem Ziel der Weiterleitung', () => {
+    const overview = healthy();
+    const forwarding = [
+      { destination: 'syslog', enabled: true, failingSince: '2026-11-26T11:00:00.000Z', backlog: 12 },
+      { destination: 'http', enabled: false, failingSince: null, backlog: null },
+    ];
+    const text = renderMetrics({
+      overview,
+      health: judge(overview, { backup: NO_BACKUP, forwarding }, de, NOW),
+      certificates: [],
+      backup: NO_BACKUP,
+      forwarding,
+    });
+    expect(text).toContain('hapm_audit_forward_failing{destination="syslog"} 1');
+    expect(text).toContain('hapm_audit_forward_backlog{destination="syslog"} 12');
+    expect(text).not.toContain('destination="http"');
   });
 
   it('maskiert Labels', () => {

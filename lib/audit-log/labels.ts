@@ -131,6 +131,8 @@ export const AUDIT_ACTIONS: Record<AuditAction, ActionInfo> = {
   backup_restore_started: info('backup', msgid('Zurückspielen gestartet')),
   backup_restore_completed: info('backup', msgid('Zurückspielen abgeschlossen')),
   backup_restore_failed: info('backup', msgid('Zurückspielen gescheitert')),
+  backup_encryption_set: info('backup', msgid('Sicherungsschlüssel gesetzt')),
+  backup_encryption_removed: info('backup', msgid('Sicherungsschlüssel entfernt')),
 
   update_started: info('updates', msgid('Update gestartet')),
   update_completed: info('updates', msgid('Update abgeschlossen')),

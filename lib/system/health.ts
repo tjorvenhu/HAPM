@@ -52,6 +52,23 @@ export interface BackupHealthInput {
   lastSuccessAt: string | null;
 }
 
+/** Ein Ziel der Weiterleitung des Protokolls (`lib/audit-log/forward.ts`). */
+export interface ForwardHealthInput {
+  destination: string;
+  enabled: boolean;
+  /** Seit wann jede Abgabe scheitert. `null`: die letzte gelang. */
+  failingSince: string | null;
+  /** Einträge, die noch nicht abgegeben sind. `null`: nicht eingeschaltet. */
+  backlog: number | null;
+}
+
+/** Was `judge` neben der Übersicht liest. `null` heißt je Feld: nicht zu lesen. */
+export interface HealthExtras {
+  backup: BackupHealthInput | null;
+  /** Fehlt das Feld, wird die Weiterleitung nicht geprüft. */
+  forwarding?: ForwardHealthInput[] | null;
+}
+
 /** Eine tägliche Sicherung, die so lange nicht gelang, ist ausgefallen. */
 export const BACKUP_STALE_HOURS = 50;
 
@@ -76,7 +93,7 @@ function containerCheck(
 
 export function judge(
   overview: SystemOverview,
-  backup: BackupHealthInput | null,
+  { backup, forwarding }: HealthExtras,
   { t, plural }: Translator,
   now = Date.now()
 ): HealthReport {
@@ -239,6 +256,17 @@ export function judge(
     } else {
       checks.push(check('backup', 'ok'));
     }
+  }
+
+  // Ohne eingeschaltetes Ziel gibt es nichts, was ausfallen kann.
+  if (forwarding === null) {
+    checks.push(check('audit_forwarding', 'unknown', t('Der Stand der Weiterleitung des Protokolls ist nicht zu lesen.')));
+  } else if (forwarding?.some((target) => target.enabled)) {
+    checks.push(
+      forwarding.some((target) => target.enabled && target.failingSince)
+        ? check('audit_forwarding', 'warn', t('Die Weiterleitung des Protokolls an das SIEM scheitert.'))
+        : check('audit_forwarding', 'ok')
+    );
   }
 
   return {

@@ -193,6 +193,8 @@ export const system: Dictionary = {
   "CrowdSec läuft nicht, obwohl Ziele es benutzen.": "CrowdSec is not running although targets use it.",
   "Der Bouncer von CrowdSec läuft nicht, obwohl Ziele ihn benutzen.": "The CrowdSec bouncer is not running although targets use it.",
   "Der Stand der Sicherung ist nicht zu lesen.": "The state of the backup cannot be read.",
+  "Der Stand der Weiterleitung des Protokolls ist nicht zu lesen.": "The state of audit log forwarding cannot be read.",
+  "Die Weiterleitung des Protokolls an das SIEM scheitert.": "Forwarding the audit log to the SIEM is failing.",
   "Die letzte Sicherung ist gescheitert.": "The last backup failed.",
   "Es gibt noch keine gelungene Sicherung.": "There is no successful backup yet.",
   "Die letzte gelungene Sicherung ist älter als {hours} Stunden.": "The last successful backup is older than {hours} hours.",

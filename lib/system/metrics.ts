@@ -23,7 +23,7 @@
  */
 
 import type { CertificateDue } from './certificates';
-import type { BackupHealthInput, CheckStatus, HealthReport } from './health';
+import type { BackupHealthInput, CheckStatus, ForwardHealthInput, HealthReport } from './health';
 import type { SystemContainer, SystemOverview } from './overview';
 
 type Labels = Readonly<Record<string, string>>;
@@ -80,9 +80,12 @@ export interface MetricsInput {
   /** Alle Zertifikate mit Ablaufdatum. `null`: nicht zu lesen. */
   certificates: CertificateDue[] | null;
   backup: BackupHealthInput | null;
+  /** Die Ziele der Weiterleitung des Protokolls. `null` oder fehlend: nicht zu lesen. */
+  forwarding?: ForwardHealthInput[] | null;
 }
 
-export function renderMetrics({ overview, health, certificates, backup }: MetricsInput): string {
+export function renderMetrics({ overview, health, certificates, backup, forwarding }: MetricsInput): string {
+  const forwards = (forwarding ?? []).filter((target) => target.enabled);
   const containers: { role: string; container: SystemContainer }[] = [
     { role: 'haproxy', container: overview.haproxy },
   ];
@@ -279,6 +282,23 @@ export function renderMetrics({ overview, health, certificates, backup }: Metric
       type: 'gauge',
       samples: single(
         backup?.lastRun && backup.lastRun.status !== 'running' ? bool(backup.lastRun.status !== 'error') : null
+      ),
+    },
+    {
+      name: 'hapm_audit_forward_failing',
+      help: 'Whether forwarding the audit log to a destination (syslog, http) currently fails. Only for enabled destinations.',
+      type: 'gauge',
+      samples: forwards.map((target) => ({
+        labels: { destination: target.destination },
+        value: bool(target.failingSince !== null),
+      })),
+    },
+    {
+      name: 'hapm_audit_forward_backlog',
+      help: 'Audit entries not yet delivered to a destination, counted up to 5000.',
+      type: 'gauge',
+      samples: forwards.flatMap((target) =>
+        target.backlog === null ? [] : [{ labels: { destination: target.destination }, value: target.backlog }]
       ),
     },
     {
