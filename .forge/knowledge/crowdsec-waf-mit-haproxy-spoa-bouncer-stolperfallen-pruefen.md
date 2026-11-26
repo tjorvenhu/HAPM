@@ -1,8 +1,8 @@
 ---
 title: "CrowdSec (WAF) mit HAProxy: SPOA-Bouncer, Stolperfallen, Prüfen mit Docker"
-summary: "Was bei CrowdSec (SPOA-Bouncer, AppSec/OWASP, HTTP/3, erlaubte Methoden, Parser, Freigaben, Compose-Profil, Ausnahmen je Anwendung, Container-Log) erst gegen echte Container auffiel und wie man eine CRS-Regel im Dev-Stack prüft. Vor Änderungen an lib/crowdsec lesen."
+summary: "Was bei CrowdSec (SPOA-Bouncer, AppSec/OWASP, HTTP/3, erlaubte Methoden, Parser, Freigaben, Compose-Profil, Anwendungen je Ziel, Container-Log) erst gegen echte Container auffiel und wie man WAF-Regeln und Whitelists mit einem Wegwerf-Container prüft. Vor Änderungen an lib/crowdsec lesen."
 tags: ["crowdsec","stolperfalle","haproxy","docker","tests"]
-updated: "2026-11-26T16:26:59.692Z"
+updated: "2026-11-26T17:03:13.519Z"
 ---
 
 # CrowdSec (WAF) mit HAProxy: Stolperfallen
@@ -13,73 +13,85 @@ Aufbau und Entscheidungen stehen in `docs/crowdsec.md`. Hier nur, was erst gegen
 
 `pnpm crowdsec:verify` (`scripts/verify-crowdsec.ts`) startet HAProxy, CrowdSec, Bouncer und ein Ziel in einem Docker-Netz und prüft WAF, Sperre, Freigabe, Log-Szenario und Ausfall des Bouncers. Dauert 2 bis 4 Minuten (CrowdSec lädt beim ersten Start den Hub). Unter Windows aus Git Bash, Docker Desktop muss laufen.
 
-**Eine Whitelist (Ausnahme je Anwendung) gegen echtes CrowdSec prüfen:** Datei in den Container nach `/etc/crowdsec/parsers/s02-enrich/` legen, `docker restart`, dann `cscli explain --type haproxy --log '<Zeile im Format von haproxy.log>'`. Eine passende Zeile zeigt „whitelisted". Unter Git Bash `export MSYS_NO_PATHCONV=1`, sonst schreibt `docker cp`/`docker exec` aus `/etc/…` einen Windows-Pfad. So sind alle Fälle aus `tests/crowdsec/apps.test.ts` bestätigt.
+**Wegwerf-CrowdSec für schnelle Proben (ohne HAProxy, ohne Dev-Stack):**
+```
+docker run -d --name hapm-csprobe -p 17422:7422 -e CROWDSEC_BYPASS_DB_VOLUME_CHECK=true \
+  -e BOUNCER_KEY_probe=<schlüssel> \
+  -e COLLECTIONS="crowdsecurity/appsec-virtual-patching crowdsecurity/appsec-generic-rules crowdsecurity/appsec-crs-inband crowdsecurity/haproxy …" \
+  crowdsecurity/crowdsec:latest
+```
+- Ohne `CROWDSEC_BYPASS_DB_VOLUME_CHECK` beendet sich das Abbild sofort (kein Volume für `/var/lib/crowdsec/data`).
+- Sammlungen über `COLLECTIONS` beim Start, nicht nachträglich per `cscli`: eine `acquis.d`-Datei, die `crowdsecurity/appsec-default` nennt, bevor die Sammlung da ist, lässt CrowdSec in einer Neustart-Schleife hängen (`fatal … no appsec-config found`), und `docker exec` geht dann nicht mehr.
+- Dateien per `docker cp "$(cygpath -w <datei>)" hapm-csprobe:/pfad` (Git Bash mit `MSYS_NO_PATHCONV=1`: der Quellpfad muss ein Windows-Pfad sein, sonst „GetFileAttributesEx C:\tmp… nicht gefunden").
+- AppSec-Quelle: `acquis.d/appsec.yaml` mit `source: appsec`, `listen_addr: 0.0.0.0:7422`, `appsec_configs: [crowdsecurity/appsec-default, crowdsecurity/crs-inband]`, `labels: {type: appsec}`, dann `docker restart`. Anfragen per curl an `127.0.0.1:17422` mit `X-Crowdsec-Appsec-Ip/-Uri/-Host/-Verb/-Api-Key`; inband antwortet 403 bei Treffer. **`REQUEST_HEADERS:Host` kommt aus `X-Crowdsec-Appsec-Host`**, ein eigener `Host`-Header ist nicht nötig.
+- Gute WAF-Probe für OWASP-Ausnahmen: `POST /wp-admin/post.php` mit `action=editpost&content=<script>alert(document.cookie)</script>` (WordPress-Plugin nimmt `ARGS:content` aus; anderer Pfad gibt 403).
+- Whitelist prüfen: Datei nach `/etc/crowdsec/parsers/s02-enrich/`, `docker restart`, dann `cscli explain --type haproxy --log 'Nov 26 16:00:00 proxy haproxy[123]: 192.0.2.10:51234 [26/Nov/2026:16:00:00.000] https~ <backend>/<server> 0/0/1/2/3 404 120 - - ---- 1/1/0/0/0 0/0 "GET /pfad HTTP/1.1"'`. Treffer: „ignored by whitelist".
+- Danach `docker rm -f hapm-csprobe`.
 
-**Eine CRS-Regel im Dev-Stack prüfen (ohne HAProxy, ohne die Quellen von HAPM zu ändern):**
-1. Im Dev-CrowdSec ist CRS meist aus. Zweiten AppSec-Listener anlegen: `/etc/crowdsec/acquis.d/zz-test-crs.yaml` mit `source: appsec`, `listen_addr: 0.0.0.0:7424`, `name: hapmtest`, `appsec_configs: [crowdsecurity/appsec-default, crowdsecurity/crs]`, `labels: {type: appsec}`; `docker restart hapm-dev-crowdsec` (~25 s). Die Datei übersteht den Neustart (der Start kopiert nur `hapm.yaml`).
-2. Im CrowdSec-Container gibt es **kein curl**: aus `hapm-dev` schicken, `curl http://crowdsec:7424/` mit `X-Crowdsec-Appsec-Ip`, `-Uri`, `-Host`, `-Verb`, `-Api-Key` (Schlüssel: `docker exec hapm-dev-crowdsec cat /run/secrets/bouncer_key_hapm`), `-User-Agent`, `-Http-Version: 20`. Out-of-band antwortet immer 200.
-3. Treffer: `cscli alerts list` (nicht mit `-i` filtern, das zeigte trotz Treffern „No active alerts"), Regel und Methode mit `cscli alerts inspect <id> -d` (`msg`, `matched_zones`, `method`). Jede Testreihe mit neuer Quell-IP (198.51.100.x).
-4. Aufräumen: Testdatei entfernen, neu starten.
+**Eine CRS-Regel im Dev-Stack prüfen:** zweiten AppSec-Listener in `hapm-dev-crowdsec` anlegen (`acquis.d/zz-test-crs.yaml`, Port 7424), aus `hapm-dev` per curl schicken (im CrowdSec-Container gibt es kein curl), Schlüssel aus `/run/secrets/bouncer_key_hapm`. Treffer mit `cscli alerts list` (nicht mit `-i` filtern) und `cscli alerts inspect <id> -d`. Danach Testdatei entfernen.
 
 ## OWASP CRS
 
-- **Regel 920430** („HTTP protocol version is not allowed by policy") greift bei jeder Anfrage über HTTP/3: das CRS in CrowdSec 1.8 erlaubt nur 1.0, 1.1, 2. Lösung in `spoe.cfg`: `version=req.ver,regsub(^3,2)`.
-- **Regel 911100** („Method is not allowed by policy"): ab Werk nur GET HEAD POST OPTIONS. Jedes PATCH/PUT/DELETE (also die Oberfläche von HAPM) gab `anomaly score out-of-band: anomaly: 5`. Lösung: CRS-Plugin-Datei `crowdsec/data/crs-plugins/hapm/hapm-config.conf` (`renderCrsMethods`), denn `crowdsecurity/crs` lädt `crs-plugins/*/*-config.conf` **aus dem Datenordner** (`/var/lib/crowdsec/data`, relativ zu dem auch `crs-setup.conf` liegt) vor REQUEST-901. Bestätigt: danach nur noch TRACE als Treffer.
-- `anomaly: N` ohne Kategorie im Namen heißt: eine Regel ohne eigene Kategorie (Protokoll, Methode, Dateiendung); `lfi`, `rce`, `xss` usw. sind die CRS-Punkte je Kategorie. Die Beschreibungen für die Oberfläche: `lib/crowdsec/describe.ts`.
-- **CRS-Regeln lassen sich in CrowdSec 1.8.2 nicht per Hook abschalten:** `RemoveOutBandRuleByID`/`RemoveInBandRuleByID` wirkten weder in `on_load` noch in `pre_eval`. Einstellungen gehen über Plugin-Dateien (siehe oben).
-- **Nennt `acquis.d` eine appsec-config, die es nicht gibt, beendet sich CrowdSec beim Start** (`fatal … no appsec-config found`).
-- Das Docker-Abbild verlinkt beim Start nur Dateien aus `/staging/var/lib/crowdsec/data`, die im Datenordner fehlen: eine vorher angelegte Datei von HAPM stört nicht.
-- Der Bouncer gibt das SPOE-Argument `url` als `X-Crowdsec-Appsec-Uri` weiter; bei HTTP/2 und HTTP/3 ist das die volle Form `https://host/pfad`. Löst keine Regel aus.
-- HAProxy liest `spoe.cfg` nur beim Laden: ändert sie sich mit einem Update, lädt `lib/bootstrap.ts` neu (`reloadForCrowdsec`).
+- **Regel 920430** greift bei jeder Anfrage über HTTP/3: Lösung in `spoe.cfg`: `version=req.ver,regsub(^3,2)`.
+- **Regel 911100**: ab Werk nur GET HEAD POST OPTIONS. Lösung: `crs-plugins/hapm/hapm-config.conf` (`renderCrsMethods`, `CRS_METHODS_FILE`), geladen aus dem Datenordner vor REQUEST-901. Muss für alle Hosts gelten, sonst weist OWASP die Oberfläche von HAPM ab.
+- `crowdsecurity/crs` lädt `crs-plugins/*/*-config.conf`, dann `*-before.conf`, dann die Regeln, dann `*-after.conf`.
+- **CRS-Regeln lassen sich per Hook nicht abschalten** (`RemoveOutBandRuleByID`/`RemoveInBandRuleByID` wirkungslos in 1.8.2). Einstellungen gehen über Plugin-Dateien.
+- Nennt `acquis.d` eine appsec-config, die es nicht gibt, beendet sich CrowdSec beim Start.
+- Der Bouncer gibt `url` als `X-Crowdsec-Appsec-Uri` weiter, bei HTTP/2 und 3 in voller Form. Löst keine Regel aus.
 
-## Ausnahmen je Anwendung (`lib/crowdsec/apps.ts`)
+## Anwendungen je Ziel (`lib/crowdsec/apps.ts`, seit 2026-11-26)
 
-- **CRS-Ausnahmen (`appsec-crs-exclusion-plugin-*`) laden nur Datendateien**, die die CRS-Regel selbst einbindet. Ohne OWASP-Modus tun sie nichts. Das Nextcloud-Plugin hängt seine WebDAV-Methoden an `tx.allowed_methods` an.
-- **`http_path` ist bei HAProxy die ganze Anfrage samt Query.** `$` im Muster braucht `(\?.*)?`. `Parsed.request` ist ohne Query.
-- **Whitelist als Parser in s02-enrich, nicht postoverflow:** `http-crawl-non_statics` behält nur 5 Ereignisse.
-- **Backslashes zweimal escapen** (expr-String, dann YAML); `localRuleExpression`/`renderAppWhitelist` machen das.
-- `cscli hub list -o json` (ohne `-a`) liefert alle installierten Arten auf einmal.
-- Hub-Parser für die Logs einer App nützen HAPM nichts: es gibt nur das Log von HAProxy.
+Die Anwendung steht als `# hapm-app: <id>` im Backend des Ziels; `queueAppSync` gleicht nach jedem Lauf am Ziel und einmal je Start ab. Was dabei gegen 1.8.2 geprüft ist:
+- **OWASP-Ausnahmen je Host:** jedes Plugin aus dem Hub prüft in `-before.conf` `TX:<name>-rule-exclusions-plugin_enabled "@eq 0"` (`ctl:ruleRemoveById` auf seinen Bereich); ohne gesetzte Variable gilt es überall. Kein Plugin setzt sie selbst (alle acht geprüft; phpMyAdmin setzt nur `_url_format`). HAPM schreibt `crs-plugins/hapm/hapm-apps-config.conf`: `SecAction … setvar:'tx.<name>-…_enabled=0'` und `SecRule REQUEST_HEADERS:Host "@rx ^(?:…)(?::[0-9]+)?$" "…,t:lowercase,setvar:…=1"`. Ergebnis: 200 auf dem Host des Ziels, 403 auf anderen; ohne Datei 200 überall.
+- **Eigene Whitelists je Backend:** `evt.Parsed.backend_name in [...]` im `filter` geht schon in `s02-enrich` (kommt aus dem HAProxy-Parser in s01). Der eigene Parser `hapm-backend.yaml` (Meta `target_backend`) läuft in derselben Stufe, die Reihenfolge dort ist nicht verlässlich: nicht `evt.Meta.target_backend` nehmen.
+- Whitelists aus dem Hub bleiben global (Parser ohne Bedingung je Ziel).
+- Jeder Abgleich startet CrowdSec neu: `queueAppSync` reiht nur ein, wenn sich Dateien oder Hub-Stand ändern.
+
+Weiter gilt:
+- CRS-Ausnahmen laden nur Datendateien, die die CRS-Regel einbindet: ohne OWASP wirkungslos.
+- **`http_path` ist bei HAProxy die ganze Anfrage samt Query.** `$` braucht `(\?.*)?`.
+- **Whitelist als Parser in s02-enrich, nicht postoverflow** (`http-crawl-non_statics` behält nur 5 Ereignisse).
+- **Backslashes zweimal escapen** (expr, dann YAML).
+- `cscli hub list -o json` liefert alle installierten Arten auf einmal.
 
 ## Container-Log (`lib/crowdsec/log-lines.ts`)
 
-- logrus-Textformat. Die Zugriffszeilen der lokalen API enden bei 1.8 mit `"UA" "` (Referer ohne schließendes Anführungszeichen): das Muster darf den Rest der Zeile nicht verlangen.
+- Zugriffszeilen der lokalen API enden bei 1.8 mit `"UA" "`: das Muster darf den Rest nicht verlangen.
 
 ## Abwählen und Abschalten
 
-- **`scale: 0` reicht nicht** (Abbilder werden trotzdem geholt). Lösung: `profiles: ["${HAPM_CROWDSEC_OFF:+ohne-crowdsec}"]`.
-- **Ein laufender Container eines abgewählten Dienstes bleibt stehen**, auch bei `--remove-orphans`. `docker compose rm -sf crowdsec crowdsec-bouncer`; `install.sh` tut das.
-- **Abschalten in der Oberfläche** ist die Datei `hapm-disabled` im Ordner von CrowdSec (`DISABLED_FILE` in `lib/crowdsec/paths.ts`; kein DB-Feld, weil `crowdsecInstalled()` synchron gefragt wird). Erst Lauf am Reverse-Proxy (CrowdSec aus `haproxy.cfg`), dann Container anhalten; der Scheduler hält sie angehalten.
+- `scale: 0` reicht nicht; `profiles: ["${HAPM_CROWDSEC_OFF:+ohne-crowdsec}"]`.
+- Ein laufender Container eines abgewählten Dienstes bleibt stehen: `docker compose rm -sf crowdsec crowdsec-bouncer` (tut `install.sh`).
+- Abschalten in der Oberfläche ist die Datei `hapm-disabled` im Ordner von CrowdSec.
 
 ## Stolperfallen
 
-- **Nachrichtennamen sind fest:** `crowdsec-http-body`, `crowdsec-http-no-body`. Eine eigene heißt im Bouncer-Log nur „Unknown message type", die Anfrage geht ungeprüft durch.
-- **Das Docker-Abbild des Bouncers hat AppSec auskommentiert.** HAPM schreibt eine eigene `crowdsec-spoa-bouncer.yaml`. Ein `hosts`-Eintrag ohne Captcha erzeugt beim Start einmal „empty captcha provider".
-- **Freigaben (`cscli allowlists`) schützen nur vor Sperren, nicht vor der WAF.** HAPM spiegelt sie nach `allow.lst` (`hapm_crowdsec_allow`).
-- **Eigener Parser in `s02-enrich` ohne `onsuccess: next_stage`**, sonst springt `http-logs` nicht an.
-- **Die Log-Quelle muss beim Start existieren.**
-- **Hub-Sammlungen per SIGHUP neu laden ist unzuverlässig**: `reloadCrowdsec` startet den Container neu.
-- **Unter Docker Desktop meldet inotify Änderungen an eingebundenen Windows-Dateien nicht:** `poll_without_inotify: true` im Prüfskript.
-- **CrowdSec verlangt ein Volume für `/var/lib/crowdsec/data`.**
-- **Bouncer-Schlüssel** aus `/run/secrets/bouncer_key_<name>`.
-- **Der Bouncer beendet sich, wenn die lokale API beim Start nicht antwortet**; `restart: unless-stopped` holt das nach.
-- **`filter spoe` gilt je Proxy**: die Zeilen stehen in jedem Backend des Ziels.
-- **Das Backend `hapm_crowdsec_spoa`** (TCP zum Bouncer) erscheint in der Statistik mit sehr vielen „Anfragen": bei TCP zählt die Sitzung, und jede geprüfte HTTP-Anfrage ist ein SPOE-Austausch. Es ist kein Ziel und steht in keiner Gruppe.
-- **Kein Kommando hinter `withStdin`**, das Heredoc immer ans Ende. **`withStdin` hängt an leeren Inhalt `\n` an**: beim Vergleich trimmen.
-- **Ältere HAProxy-Abbilder (2.4 bis 3.0) scheitern an der Grundkonfiguration (QUIC).** Das Prüfskript entfernt diese Zeilen.
-- **WAF-Alarme tragen die Domain** (`target_fqdn`), Log-Szenarien das Backend nur über den eigenen Parser (`target_backend`).
-- **i18n-Schlüssel „Sperren" ist schon „Lock".**
+- Nachrichtennamen fest: `crowdsec-http-body`, `crowdsec-http-no-body`.
+- Das Abbild des Bouncers hat AppSec auskommentiert: HAPM schreibt eine eigene Konfiguration.
+- Freigaben schützen nur vor Sperren, nicht vor der WAF: HAPM spiegelt sie nach `allow.lst`.
+- Eigener Parser in `s02-enrich` ohne `onsuccess: next_stage`.
+- Die Log-Quelle muss beim Start existieren.
+- SIGHUP lädt Sammlungen unzuverlässig: `reloadCrowdsec` startet den Container neu.
+- Docker Desktop: inotify meldet Änderungen an Windows-Dateien nicht (`poll_without_inotify: true` im Prüfskript).
+- Der Bouncer beendet sich, wenn die lokale API beim Start nicht antwortet; `restart: unless-stopped`.
+- `filter spoe` gilt je Proxy: die Zeilen stehen in jedem Backend.
+- Backend `hapm_crowdsec_spoa` zählt in der Statistik nicht als Ziel.
+- Kein Kommando hinter `withStdin`; `withStdin` hängt an leeren Inhalt `\n` an.
+- Ältere HAProxy-Abbilder scheitern an QUIC-Zeilen der Grundkonfiguration.
+- WAF-Alarme tragen die Domain (`target_fqdn`), Log-Szenarien das Backend (`target_backend`).
 
 ## Dev-Stack (`docker-compose.dev.yml`)
 
-- Wird `hapm` neu gebaut, hängen HAProxy und Bouncer im Netz des alten Containers: `up -d --force-recreate haproxy crowdsec-bouncer`.
-- Der Dev-CrowdSec kopiert beim Start aus dem Volume (`/crowdsec` im HAPM-Container, `/hapm-crowdsec` im CrowdSec-Container): Quellen, `parsers/s02-enrich/hapm-*.yaml`, `appsec-configs/hapm-*.yaml`, Schlüssel. Sein Datenordner ist ein eigenes Volume: was HAPM nach `crowdsec/data/` schreibt (CRS-Plugin), kommt im Dev-Stack nicht an. Im Betrieb ist `HAPM_STORAGE/crowdsec/config` selbst `/etc/crowdsec` und `crowdsec/data` selbst `/var/lib/crowdsec/data`.
+- Wird `hapm` neu gebaut: `up -d --force-recreate haproxy crowdsec-bouncer`.
+- Der Dev-CrowdSec kopiert beim Start Quellen, `parsers/s02-enrich/hapm-*.yaml`, `appsec-configs/hapm-*.yaml` und Schlüssel aus dem Volume. Sein Datenordner ist ein eigenes Volume: was HAPM nach `crowdsec/data/` schreibt (CRS-Plugins), kommt im Dev-Stack nicht an.
 - Anfragen durch HAProxy: `docker exec hapm-dev curl -sk --resolve hapm.invalid:443:127.0.0.1 https://hapm.invalid/.env`.
 
 ## MCP der Produktion abfragen, wenn die Werkzeugliste der Session alt ist
 
-Die MCP-Werkzeuge einer Claude-Session stehen ab ihrem Start fest. Neue Werkzeuge nach einem Update von HAPM erreicht man per JSON-RPC an dieselbe URL mit den Kopfzeilen aus `~/.claude.json` (`mcpServers.hapm`): `initialize`, die Benachrichtigung `initialized`, dann `tools/call`, Antwort ggf. als SSE (`data:`-Zeile). Token nicht ausgeben. `list_crowdsec_alerts` für 7 Tage ist oft zu groß für eine Antwort: die Ausgabe landet in einer Datei, dort mit grep zählen.
+Per JSON-RPC an dieselbe URL mit den Kopfzeilen aus `~/.claude.json` (`mcpServers.hapm`): `initialize`, `initialized`, dann `tools/call`. Token nicht ausgeben.
 
 ## Lokal ansehen
 
-Der FORGE-Dev-Server erreicht Docker Desktop über `//./pipe/docker_engine`. Mit `HAPM_CROWDSEC_CONTAINER=hapm-dev-crowdsec`, `HAPM_CROWDSEC_BOUNCER_CONTAINER=hapm-dev-crowdsec-bouncer` und `HAPM_CROWDSEC_DIR=<Temp-Ordner>` in einer vorübergehenden `.env.local` zeigt die Seite CrowdSec echte Daten aus dem Dev-Stack. `.env.local` danach löschen. `haproxy.cfg` gibt es lokal nicht. Für einzelne Panels mit festen Daten: Wegwerf-Seite `app/(app)/zz-preview/page.tsx` mit gemocktem `window.fetch` für `/api/crowdsec/alerts`, `/decisions`, `/stats` (Form siehe `lib/crowdsec/data.ts`, `CrowdsecStats` braucht alle Felder samt `paths` und `bucketMs`).
+- Mit `HAPM_CROWDSEC_CONTAINER=hapm-dev-crowdsec`, `HAPM_CROWDSEC_BOUNCER_CONTAINER=hapm-dev-crowdsec-bouncer`, `HAPM_CROWDSEC_DIR=<Temp>` in einer vorübergehenden `.env.local` zeigt die Seite echte Daten aus dem Dev-Stack.
+- Für feste Daten eine Wegwerf-Seite unter `app/(app)/zz-…/page.tsx` mit gemocktem `window.fetch` (für `/api/crowdsec/rules` braucht jede App `services`). Ein Formular eines Ziels lässt sich dort mit einem von Hand gebauten `ProxyRow` (`parseHaproxyConfig`/`parseScopes` auf `addService(renderBaseConfig(…))`, `crowdsecInStack: true`) öffnen. Nie committen.
+- **Zweiter Dev-Server aus einem Git-Worktree:** `HAPM_DATA_DIR=<Hauptordner>\.data` und `DATABASE_URL` der Test-DB setzen, dann gilt die Anmeldung des Haupt-Dev-Servers auch dort (gleiche Geheimnisse, Cookies hängen nicht am Port). Next legt dabei `AGENTS.md` an: löschen. Beim Beenden per TaskStop bleibt `next dev` am Port hängen, den Prozess über den Port beenden.
