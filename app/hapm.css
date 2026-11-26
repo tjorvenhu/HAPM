@@ -679,6 +679,20 @@
   /* Die Namen im Hub sind Beiwerk: schmal fehlt der Platz dafür. */
   .cs-rules .detail-sub.mono { display: none; }
 }
+/* Anwendungen: Logo vor dem Namen, Suche im Kopf der Karte. */
+.cs-app { display: flex; align-items: center; gap: 12px; }
+.cs-app-text { min-width: 0; }
+.cs-app-logo { flex-shrink: 0; width: 28px; height: 28px; object-fit: contain; }
+.cs-app-logo-none {
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--radius); background: var(--surface-muted); color: var(--text-tertiary);
+}
+.cs-app-search { flex: 0 1 16rem; min-width: 12rem; }
+.cs-app-empty { text-align: center; color: var(--text-secondary); }
+@media (max-width: 640px) {
+  .cs-app-search { flex-basis: 100%; }
+  .cs-app { gap: 10px; }
+}
 .cs-alerts td:first-child { white-space: nowrap; }
 .cs-more { display: flex; justify-content: center; }
 .cs-kinds { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }

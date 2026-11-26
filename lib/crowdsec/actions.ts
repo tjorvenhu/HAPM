@@ -73,7 +73,7 @@ import {
 } from './setup';
 import { localServer } from '../helpers';
 import { startHaproxyRun, waitForRun } from '../haproxy/runner';
-import { APP_RULES, type AppRules } from './apps';
+import { APP_RULES, appLogo, type AppRules } from './apps';
 import { syncAllowFile } from './allow-file';
 import { enqueueRuleChange, pendingRuleChanges, ruleRunActive, type RuleJob } from './rule-jobs';
 
@@ -693,6 +693,7 @@ export async function crowdsecRules() {
       id: app.id,
       label: app.label,
       hint: app.hint,
+      logo: appLogo(app),
       kinds: app.kinds,
       items: [...app.hub.map((item) => item.name), ...(app.local ? [`hapm/${app.id}-allowlist`] : [])],
       installed: count === parts.length,

@@ -1,5 +1,8 @@
+import { readdirSync } from 'node:fs';
+import path from 'node:path';
+import sharp from 'sharp';
 import { describe, it, expect } from 'vitest';
-import { APP_RULES, localRuleExpression, renderAppWhitelist, type LocalRule } from '@/lib/crowdsec/apps';
+import { APP_RULES, appLogo, localRuleExpression, renderAppWhitelist, type LocalRule } from '@/lib/crowdsec/apps';
 
 /**
  * Die eigenen Ausnahmen gegen die Fälle aus den Quellen. Dieselben Zeilen hat
@@ -103,5 +106,23 @@ describe('renderAppWhitelist', () => {
     expect(localRuleExpression({ verbs: ['GET'], statuses: ['404'], path: String.raw`^/a\.b`, source: 'x' })).toBe(
       String.raw`evt.Meta.http_verb in ['GET'] && evt.Meta.http_status in ['404'] && !(evt.Meta.http_path contains '..') && evt.Meta.http_path matches '^/a\\.b'`
     );
+  });
+});
+
+describe('Logos der Anwendungen', () => {
+  const dir = path.join(process.cwd(), 'public', 'apps');
+
+  it('jede Anwendung mit Logo hat ihre Datei, 64 px', async () => {
+    for (const app of APP_RULES) {
+      const logo = appLogo(app);
+      if (!logo) continue;
+      const meta = await sharp(path.join(process.cwd(), 'public', logo)).metadata();
+      expect([app.id, meta.width, meta.height]).toEqual([app.id, 64, 64]);
+    }
+  });
+
+  it('keine Datei ohne Anwendung', () => {
+    const ids = new Set(APP_RULES.filter((app) => appLogo(app)).map((app) => `${app.id}.png`));
+    expect(readdirSync(dir).filter((file) => !ids.has(file))).toEqual([]);
   });
 });

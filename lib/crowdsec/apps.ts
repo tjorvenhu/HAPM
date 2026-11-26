@@ -38,6 +38,8 @@ export interface AppRules {
   hub: readonly { type: 'parsers' | 'collections'; name: string }[];
   /** Eigene Ausnahmen im Log, jede für sich. */
   local?: readonly LocalRule[];
+  /** `false`, wenn es kein freies Logo gibt. Sonst liegt es unter `public/apps/<id>.png`. */
+  logo?: false;
 }
 
 /** Eine Ausnahme: Methode, Status und Pfad (RE2, gegen die ganze Anfrage). */
@@ -163,6 +165,7 @@ export const APP_RULES: readonly AppRules[] = [
       'Beiträge mit BBCode, Code-Schnipseln oder Links lösen die OWASP-Regeln aus, ebenso Teile der Verwaltung. Die Ausnahmen nehmen Beitragstext, Vorschau und Verwaltung aus. Wirkt nur, wenn die OWASP-Regeln an sind.'
     ),
     hub: [{ type: 'collections', name: 'crowdsecurity/appsec-crs-exclusion-plugin-xenforo' }],
+    logo: false,
   },
   {
     id: 'cpanel',
@@ -408,6 +411,15 @@ export const APP_RULES: readonly AppRules[] = [
     hub: [{ type: 'parsers', name: 'crowdsecurity/music-assistant-allowlist' }],
   },
 ];
+
+/**
+ * Das Logo neben dem Namen, 64 px, aus dem eigenen Server: die CSP lässt
+ * Bilder nur von dort zu, und ein Abruf bei einem fremden Dienst verriete,
+ * welche Anwendungen hinter HAPM laufen.
+ */
+export function appLogo(app: AppRules): string | null {
+  return app.logo === false ? null : `/apps/${app.id}.png`;
+}
 
 /** Relativ zum Ordner von CrowdSec in HAPM (`crowdsecDir()`). */
 export function appWhitelistFile(id: string): string {

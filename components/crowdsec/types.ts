@@ -28,6 +28,8 @@ export interface CrowdsecAppRules {
   id: string;
   label: string;
   hint: string;
+  /** Adresse des Logos unter `public/apps/`, `null` ohne Logo. */
+  logo: string | null;
   kinds: ('log' | 'waf' | 'owasp')[];
   items: string[];
   installed: boolean;

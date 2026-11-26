@@ -153,6 +153,8 @@ export const crowdsec: Readonly<Record<string, string>> = {
     'A free rule set for web application firewalls, maintained by the OWASP project. It checks every request for typical attack patterns: SQL injection, cross-site scripting (XSS), access to system files, commands in the body. The virtual patches, which are always on, only catch known vulnerabilities of specific programs. The rule set also detects attacks for which no patch exists yet, but in return it sometimes hits harmless requests, such as a form with code in its text. That is why it stays off until you switch it on. Recommendation: use "Report only" for a few days and check under Events what it would catch. Then switch on the exclusions below for applications with false hits, and only after that "Block hits".',
   'Weniger anzeigen': 'Show less',
   'Alle {count} Anwendungen anzeigen': 'Show all {count} applications',
+  'Anwendung suchen…': 'Search applications…',
+  'Anwendung suchen': 'Search applications',
   Modus: 'Mode',
   Regelsammlungen: 'Rule collections',
   'Aus dem Hub von CrowdSec.': 'From the CrowdSec hub.',

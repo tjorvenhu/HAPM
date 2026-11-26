@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Image from 'next/image';
 import ErrorNote from '@/components/ErrorNote';
-import { Check, ChevronDown, ChevronUp, Download, Loader2 } from 'lucide-react';
+import { AppWindow, Check, ChevronDown, ChevronUp, Download, Loader2, Search, X } from 'lucide-react';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/ConfirmDialog';
 import Select from '@/components/Select';
@@ -62,6 +63,7 @@ export default function RulesPanel() {
   // Eben geklickt, die Route hat noch nicht geantwortet: der Schalter zeigt den Wunsch schon.
   const [sent, setSent] = useState<Record<string, boolean | string>>({});
   const [allApps, setAllApps] = useState(false);
+  const [search, setSearch] = useState('');
   // Was hier geschaltet wurde, bleibt sichtbar, auch wenn es wieder aus ist:
   // sonst verschwindet die Zeile unter dem Mauszeiger.
   const [touched, setTouched] = useState<ReadonlySet<string>>(new Set());
@@ -139,7 +141,13 @@ export default function RulesPanel() {
     if (pinned.size >= COLLAPSED_APPS) break;
     pinned.add(id);
   }
-  const shownApps = allApps ? sortedApps : sortedApps.filter((app) => pinned.has(app.id));
+  // Eine Suche geht über alle, auch die zugeklappten.
+  const query = search.trim().toLocaleLowerCase(locale);
+  const shownApps = query
+    ? sortedApps.filter((app) => [t(app.label), app.id, ...app.items].some((text) => text.toLocaleLowerCase(locale).includes(query)))
+    : allApps
+      ? sortedApps
+      : sortedApps.filter((app) => pinned.has(app.id));
 
   return (
     <>
@@ -190,6 +198,28 @@ export default function RulesPanel() {
                 </h2>
                 <p className="card-subtitle">{t('Ausnahmen gegen bekannte Fehlsperren einzelner Anwendungen.')}</p>
               </div>
+              <div className="page-search cs-app-search">
+                <Search size={15} />
+                <input
+                  className="form-input"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder={t('Anwendung suchen…')}
+                  aria-label={t('Anwendung suchen')}
+                  autoComplete="off"
+                />
+                {search && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-icon btn-sm"
+                    data-tooltip={t('Suche leeren')}
+                    aria-label={t('Suche leeren')}
+                    onClick={() => setSearch('')}
+                  >
+                    <X size={15} />
+                  </button>
+                )}
+              </div>
             </div>
             <div className="table-wrap">
               <table className="table cs-rules">
@@ -204,11 +234,22 @@ export default function RulesPanel() {
                   {shownApps.map((app) => (
                     <tr key={app.id}>
                       <td data-label="primary">
-                        <span className="form-label-row">
-                          <strong>{t(app.label)}</strong>
-                          <InfoHint text={t(app.hint)} />
-                        </span>
-                        <div className="detail-sub mono">{app.items.join(', ')}</div>
+                        <div className="cs-app">
+                          {app.logo ? (
+                            <Image src={app.logo} alt="" width={28} height={28} className="cs-app-logo" unoptimized />
+                          ) : (
+                            <span className="cs-app-logo cs-app-logo-none">
+                              <AppWindow size={16} />
+                            </span>
+                          )}
+                          <div className="cs-app-text">
+                            <span className="form-label-row">
+                              <strong>{t(app.label)}</strong>
+                              <InfoHint text={t(app.hint)} />
+                            </span>
+                            <div className="detail-sub mono">{app.items.join(', ')}</div>
+                          </div>
+                        </div>
                       </td>
                       <td data-label={t('Wirkt auf')}>
                         <span className="cs-kinds">
@@ -247,10 +288,17 @@ export default function RulesPanel() {
                       </td>
                     </tr>
                   ))}
+                  {query && shownApps.length === 0 && (
+                    <tr>
+                      <td colSpan={3} data-label="primary" className="cs-app-empty">
+                        {t('Keine Treffer für „{query}“.', { query: search.trim() })}
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
-            {sortedApps.length > COLLAPSED_APPS && (
+            {!query && sortedApps.length > COLLAPSED_APPS && (
               <div className="cs-more">
                 <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAllApps((open) => !open)} aria-expanded={allApps}>
                   {allApps ? <ChevronUp size={14} /> : <ChevronDown size={14} />}

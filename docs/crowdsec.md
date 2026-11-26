@@ -154,6 +154,15 @@ installiert oder entfernt alles, was dazugehört. Drei Arten:
   (Kavita, Outline, Vaultwarden) oder mit einem Szenario, das HAPM nicht
   installiert (Home Assistant, `http-generic-403-bf`), fehlen bewusst.
 
+**Logos** liegen als PNG mit 64 px unter `public/apps/<id>.png` (`appLogo`).
+Sie kommen vom eigenen Server, nicht von einem CDN: die CSP erlaubt Bilder nur
+von dort, und ein fremder Abruf verriete, welche Anwendungen hinter HAPM laufen.
+Quelle: `homarr-labs/dashboard-icons`, phpBB aus `simple-icons`. Für XenForo
+gibt es kein freies Logo (`logo: false`), dort steht ein neutrales Zeichen.
+Eine neue Anwendung bringt ihre Datei mit, `tests/crowdsec/apps.test.ts` prüft
+Größe und verwaiste Dateien. Die Suche über der Liste geht über Name, Kennung
+und die Namen der Regeln und schließt die zugeklappten ein.
+
 Stolperfallen beim Schreiben eigener Ausnahmen:
 
 - **`http_path` ist bei HAProxy die ganze Anfrage samt `?…`.** `http-logs`
