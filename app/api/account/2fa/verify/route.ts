@@ -1,6 +1,6 @@
 import { requireCsrf, requireSession, revokeOtherSessions, currentSessionToken } from '@/lib/session';
 import { get2FAConfig, enable2FA, set2FACookie } from '@/lib/two-factor';
-import { verifyTOTPCode, decryptTOTPSecret } from '@/lib/totp';
+import { matchTOTPStep, decryptTOTPSecret } from '@/lib/totp';
 import { logAudit, getClientIP } from '@/lib/audit';
 import { rateLimit } from '@/lib/rate-limit';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
@@ -31,14 +31,15 @@ export async function POST(request: Request) {
     if (config?.enabled) throw new ApiError(msg('Der zweite Faktor ist schon eingerichtet.'));
     if (!config) throw new ApiError(msg('Die Einrichtung wurde noch nicht gestartet.'));
 
-    if (!verifyTOTPCode(decryptTOTPSecret(config.secret), code)) {
+    const step = matchTOTPStep(decryptTOTPSecret(config.secret), code);
+    if (step === null) {
       throw new ApiError(msg('Der Code stimmt nicht. Bitte versuchen Sie es erneut.'));
     }
 
     // Erst der Nachweis für diese Sitzung, dann der Schalter: andersherum wäre
     // die eigene Sitzung für einen Augenblick unbestätigt.
     await set2FACookie(session.userId, await currentSessionToken());
-    const recoveryCodes = await enable2FA(config);
+    const recoveryCodes = await enable2FA(config, step);
     // Die anderen Sitzungen sind nur mit dem Passwort entstanden. Sie müssten
     // den Code ohnehin zeigen, sollen aber gar nicht erst offen bleiben.
     await revokeOtherSessions();

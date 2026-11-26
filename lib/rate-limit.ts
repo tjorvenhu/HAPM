@@ -97,8 +97,8 @@ function cleanup(now: number) {
   lastCleanup = now;
 
   for (const [key, entry] of store.entries()) {
-    // Remove entries where all timestamps are older than the largest reasonable window (1 hour)
-    const maxWindow = 60 * 60 * 1000;
+    // Das längste Fenster ist ein Tag (Fehlversuche je Konto, `failuresBlocked`).
+    const maxWindow = 24 * 60 * 60 * 1000;
     entry.timestamps = entry.timestamps.filter((t) => now - t < maxWindow);
     if (entry.timestamps.length === 0) {
       store.delete(key);
@@ -159,4 +159,36 @@ export function rateLimit(
     success: true,
     remaining: limit - entry.timestamps.length,
   };
+}
+
+/**
+ * Eine Grenze nur für Fehlversuche: vor dem Versuch fragen (`failuresBlocked`),
+ * nach einem Fehlschlag eintragen (`recordFailure`), nach einem Erfolg leeren
+ * (`clearFailures`). Anders als `rateLimit` zählt eine gelungene Anmeldung
+ * hier nicht mit, deshalb verträgt die Grenze ein langes Fenster: wer sich
+ * richtig anmeldet, stößt nie daran, wer rät, hat am Tag nur wenige Versuche.
+ */
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export function failuresBlocked(key: string, limit: number, windowMs: number): { blocked: boolean; retryAfter?: number } {
+  const now = Date.now();
+  cleanup(now);
+  const entry = store.get(key);
+  if (!entry) return { blocked: false };
+  const recent = entry.timestamps.filter((t) => now - t < windowMs);
+  if (recent.length < limit) return { blocked: false };
+  return { blocked: true, retryAfter: Math.ceil((recent[recent.length - limit] + windowMs - now) / 1000) };
+}
+
+export function recordFailure(key: string): void {
+  const now = Date.now();
+  const entry = store.get(key) ?? { timestamps: [] };
+  // Mehr als die Grenze muss niemand wissen: die Liste wächst nicht mit jedem Versuch.
+  entry.timestamps = [...entry.timestamps.filter((t) => now - t < DAY_MS), now].slice(-200);
+  store.set(key, entry);
+  schedulePersist();
+}
+
+export function clearFailures(key: string): void {
+  if (store.delete(key)) schedulePersist();
 }

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ArrowLeft, Mail } from 'lucide-react';
 import { AuthCard } from '@/ui/auth/AuthCard';
 import AuthFormSkeleton from '@/ui/auth/AuthFormSkeleton';
+import { useToast } from '@/components/Toast';
 import { useT } from '@/lib/i18n/react';
 
 /** `null`, solange die Seite noch nicht weiß, ob diese Installation Mails verschicken kann. */
@@ -18,7 +19,7 @@ export default function ForgotPasswordPage() {
   const { t } = useT();
   const [available, setAvailable] = useState<Availability>(null);
   const [email, setEmail] = useState('');
-  const [error, setError] = useState('');
+  const { notify } = useToast();
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
 
@@ -31,7 +32,6 @@ export default function ForgotPasswordPage() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    setError('');
     setLoading(true);
     try {
       const res = await fetch('/api/auth/forgot-password', {
@@ -43,7 +43,11 @@ export default function ForgotPasswordPage() {
       if (!res.ok) throw new Error(data.error || t('Die Anfrage ist fehlgeschlagen.'));
       setSent(true);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : t('Die Anfrage ist fehlgeschlagen.'));
+      notify({
+        variant: 'error',
+        title: t('Fehlgeschlagen'),
+        message: err instanceof Error ? err.message : t('Die Anfrage ist fehlgeschlagen.'),
+      });
     } finally {
       setLoading(false);
     }
@@ -87,7 +91,6 @@ export default function ForgotPasswordPage() {
               autoFocus
             />
           </div>
-          {error && <div className="auth-error" role="alert">{error}</div>}
           <button className="auth-submit" type="submit" disabled={loading}>
             {loading ? <span className="btn-spinner" aria-hidden="true" /> : <Mail size={15} />}
             {loading ? t('Senden…') : t('Link senden')}

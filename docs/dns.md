@@ -273,6 +273,11 @@ Namens beim Anbieter gepflegt werden und nicht hier.
 | TXT | in Anführungszeichen, ab 255 Zeichen in Stücke geteilt | der Text, ohne Anführungszeichen |
 | A, AAAA, alles andere | wie es dasteht | wie es dasteht |
 
+Der Name eines Satzes ist bei Hetzner immer relativ, auch wenn er wie ein voller
+aussieht: `app.example.org` in der Zone `example.org` ist
+`app.example.org.example.org` (`rrsetFqdn`). Als voller Name gelesen stünde er als
+Eintrag des Ziels `app.example.org` da, und HAPM hielte ihn für seinen eigenen.
+
 Ein Ziel OHNE Punkt am Ende wird beim Lesen relativ zur Zone verstanden (`www` ist
 `www.example.org`, `@` die Zone), wie in einer Zonendatei. HAPM schreibt Ziele immer mit
 Punkt, der Fall kommt also nur von Einträgen, die jemand anderes gesetzt hat.

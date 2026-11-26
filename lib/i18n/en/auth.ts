@@ -122,4 +122,8 @@ export const auth: Dictionary = {
   '2FA erfolgreich aktiviert': '2FA activated',
   'Einrichtung fehlgeschlagen': 'Setup failed',
   'Verifizierung fehlgeschlagen': 'Verification failed',
+  'Zu viele falsche Codes. Der zweite Faktor ist für dieses Konto bis zu 24 Stunden gesperrt.': 'Too many wrong codes. The second factor is locked for this account for up to 24 hours.',
+  'Dieser Code wurde schon benutzt. Bitte warten Sie auf den nächsten.': 'This code has already been used. Please wait for the next one.',
+  'Zu viele Fehlversuche für dieses Konto. Die Anmeldung mit Passwort ist bis zu 24 Stunden gesperrt.': 'Too many failed attempts for this account. Signing in with a password is locked for up to 24 hours.',
+  'Anmeldung fehlgeschlagen': 'Sign-in failed',
 };

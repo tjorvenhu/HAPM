@@ -33,6 +33,7 @@ import Select from '@/components/Select';
 import { LONG_TEXT } from '@/ui/primitives/hint-text';
 import { usePolling } from '@/components/usePolling';
 import CertificateUploadDialog, { type UploadBody } from '@/components/reverse-proxy/CertificateUploadDialog';
+import { useToast } from '@/components/Toast';
 import { useT } from '@/lib/i18n/react';
 import { msgid, type Translatable } from '@/lib/i18n/translate';
 import { formatDate } from '@/lib/i18n/format';
@@ -373,6 +374,7 @@ function AccountStep({
   // Folgt der Konto-Adresse, bis jemand das Feld selbst anfasst.
   const [acmeEmail, setAcmeEmail] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const { notify } = useToast();
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
@@ -392,7 +394,7 @@ function AccountStep({
       if (data.csrfToken) onCreated(data.csrfToken);
       else onNoSession();
     } catch (err: unknown) {
-      setError(message(err, msgid('Die Einrichtung ist fehlgeschlagen.'), t));
+      notify({ variant: 'error', title: t('Fehlgeschlagen'), message: message(err, msgid('Die Einrichtung ist fehlgeschlagen.'), t) });
       setLoading(false);
     }
   }
@@ -517,6 +519,7 @@ function ExposureStep({
   /** Aus dem Internet schlägt der Assistent CrowdSec für alle Ziele vor. */
   const [crowdsec, setCrowdsec] = useState(setup.crowdsec ?? true);
   const [error, setError] = useState('');
+  const { notify } = useToast();
   const [saving, setSaving] = useState(false);
 
   async function save() {
@@ -533,7 +536,7 @@ function ExposureStep({
       });
       onSaved(data.setup);
     } catch (err: unknown) {
-      setError(message(err, msgid('Die Auswahl ließ sich nicht speichern.'), t));
+      notify({ variant: 'error', title: t('Fehlgeschlagen'), message: message(err, msgid('Die Auswahl ließ sich nicht speichern.'), t) });
       setSaving(false);
     }
   }
@@ -620,6 +623,7 @@ function DnsStep({
   );
   const [values, setValues] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
+  const { notify } = useToast();
   const [saving, setSaving] = useState(false);
 
   const provider = hook ? findDnsProvider(hook) : null;
@@ -634,7 +638,7 @@ function DnsStep({
       });
       onSaved(data.setup);
     } catch (err: unknown) {
-      setError(message(err, fallback, t));
+      notify({ variant: 'error', title: t('Fehlgeschlagen'), message: message(err, fallback, t) });
       setSaving(false);
     }
   }
@@ -853,6 +857,7 @@ function CertificatesStep({
     setup.acmeDirectory ? setup.acmeHttpReachable : internal && !dnsReady
   );
   const [error, setError] = useState('');
+  const { notify } = useToast();
   const [saving, setSaving] = useState(false);
 
   const custom = choice === 'custom';
@@ -918,7 +923,7 @@ function CertificatesStep({
       });
       onSaved(data.setup);
     } catch (err: unknown) {
-      setError(message(err, msgid('Die Auswahl ließ sich nicht speichern.'), t));
+      notify({ variant: 'error', title: t('Fehlgeschlagen'), message: message(err, msgid('Die Auswahl ließ sich nicht speichern.'), t) });
       setSaving(false);
     }
   }
@@ -1084,6 +1089,7 @@ function MailStep({
   const [pass, setPass] = useState('');
   const [from, setFrom] = useState(account.mailFrom ?? '');
   const [error, setError] = useState('');
+  const { notify } = useToast();
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<TestMailResult | null>(null);
@@ -1127,7 +1133,7 @@ function MailStep({
       });
       onSaved(data.setup);
     } catch (err: unknown) {
-      setError(message(err, msgid('Das SMTP-Konto ließ sich nicht speichern.'), t));
+      notify({ variant: 'error', title: t('Fehlgeschlagen'), message: message(err, msgid('Das SMTP-Konto ließ sich nicht speichern.'), t) });
       setSaving(false);
     }
   }
@@ -1150,7 +1156,7 @@ function MailStep({
         await call<TestMailResult>(csrf, '/api/mail/test', { method: 'POST', body: JSON.stringify({ to: null }) })
       );
     } catch (err: unknown) {
-      setError(message(err, msgid('Die Testmail ließ sich nicht verschicken.'), t));
+      notify({ variant: 'error', title: t('Fehlgeschlagen'), message: message(err, msgid('Die Testmail ließ sich nicht verschicken.'), t) });
     } finally {
       setTesting(false);
     }
@@ -1352,6 +1358,7 @@ function AddressStep({
   const [check, setCheck] = useState<AddressCheck | null>(null);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState('');
+  const { notify } = useToast();
   const [saving, setSaving] = useState(false);
   /** Nur was getippt wurde. Sonst gilt die erste Adresse des Servers. */
   const [addressDraft, setAddressDraft] = useState<string | null>(null);
@@ -1412,7 +1419,7 @@ function AddressStep({
       );
       setCheck(null);
     } catch (err: unknown) {
-      setError(message(err, msgid('Der Eintrag ließ sich nicht anlegen.'), t));
+      notify({ variant: 'error', title: t('Fehlgeschlagen'), message: message(err, msgid('Der Eintrag ließ sich nicht anlegen.'), t) });
     } finally {
       setSettingRecord(false);
     }
@@ -1429,7 +1436,7 @@ function AddressStep({
     try {
       setCheck(await call<AddressCheck>(csrf, `/api/setup/address?domain=${encodeURIComponent(domain)}`));
     } catch (err: unknown) {
-      setError(message(err, msgid('Die Prüfung ist fehlgeschlagen.'), t));
+      notify({ variant: 'error', title: t('Fehlgeschlagen'), message: message(err, msgid('Die Prüfung ist fehlgeschlagen.'), t) });
     } finally {
       setChecking(false);
     }
@@ -1445,7 +1452,7 @@ function AddressStep({
       });
       onSaved(data.setup);
     } catch (err: unknown) {
-      setError(message(err, msgid('Die Adresse ließ sich nicht speichern.'), t));
+      notify({ variant: 'error', title: t('Fehlgeschlagen'), message: message(err, msgid('Die Adresse ließ sich nicht speichern.'), t) });
       setSaving(false);
     }
   }
@@ -1658,6 +1665,7 @@ function RunStep({
 }) {
   const { t, locale } = useT();
   const [error, setError] = useState('');
+  const { notify } = useToast();
   const [starting, setStarting] = useState(false);
   const [check, setCheck] = useState<AddressCheck | null>(null);
 
@@ -1700,7 +1708,7 @@ function RunStep({
       const data = await call<{ setup: SetupView }>(csrf, '/api/setup/run', { method: 'POST' });
       onChanged(data.setup);
     } catch (err: unknown) {
-      setError(message(err, msgid('Die Einrichtung ließ sich nicht starten.'), t));
+      notify({ variant: 'error', title: t('Fehlgeschlagen'), message: message(err, msgid('Die Einrichtung ließ sich nicht starten.'), t) });
     } finally {
       setStarting(false);
     }

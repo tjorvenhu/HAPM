@@ -1,10 +1,9 @@
 import { recordLogin } from '@/lib/auth/users';
 import { requireCsrf, requirePartialSession, currentSessionToken, type Session } from '@/lib/session';
-import { has2FAEnabled, get2FASecret, set2FACookie, consumeRecoveryCode } from '@/lib/two-factor';
+import { consumeTOTPCode, set2FACookie, consumeRecoveryCode } from '@/lib/two-factor';
 import { normaliseRecoveryCode } from '@/lib/recovery-codes';
-import { verifyTOTPCode } from '@/lib/totp';
 import { logAudit, getClientIP } from '@/lib/audit';
-import { rateLimit } from '@/lib/rate-limit';
+import { clearFailures, failuresBlocked, rateLimit, recordFailure } from '@/lib/rate-limit';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
 import { msg } from '@/lib/i18n';
 
@@ -18,7 +17,17 @@ import { msg } from '@/lib/i18n';
  *
  * Beide Wege zählen gegen dieselbe Grenze: sonst hätte, wer raten will, mit
  * dem zweiten Feld doppelt so viele Versuche.
+ *
+ * Zwei Grenzen. Fünf Versuche in fünf Minuten bremsen. Fünfzehn Fehlversuche
+ * am Tag sperren: wer hier steht, kennt das Passwort schon, und sechs Ziffern
+ * sind bei 1440 Versuchen am Tag in Monaten geraten. Ein gültiger Code leert
+ * den Zähler.
+ *
+ * Ein Code aus der App gilt einmal (`consumeTOTPCode`): wer ihn mitliest,
+ * meldet sich damit nicht in denselben 90 Sekunden noch einmal an.
  */
+const DAY_MS = 24 * 60 * 60 * 1000;
+const FAILURES_PER_DAY = 15;
 export async function POST(request: Request) {
   try {
     await requireCsrf(request);
@@ -26,6 +35,10 @@ export async function POST(request: Request) {
 
     const rl = rateLimit(`2fa:${session.userId}`, 5, 5 * 60 * 1000);
     if (!rl.success) throw new ApiError(msg('Zu viele Versuche. Bitte warten Sie 5 Minuten.'), 429);
+    const failureKey = `2fa-failures:${session.userId}`;
+    if (failuresBlocked(failureKey, FAILURES_PER_DAY, DAY_MS).blocked) {
+      throw new ApiError(msg('Zu viele falsche Codes. Der zweite Faktor ist für dieses Konto bis zu 24 Stunden gesperrt.'), 429);
+    }
 
     if (session.twoFactorVerified) throw new ApiError(msg('Der zweite Faktor ist in dieser Sitzung schon bestätigt.'));
 
@@ -39,6 +52,7 @@ export async function POST(request: Request) {
       }
       const used = await consumeRecoveryCode(session.userId, recoveryCode);
       if (!used) {
+        recordFailure(failureKey);
         await auditFailure(session, ip, 'Ungültiger Wiederherstellungscode');
         throw new ApiError(msg('Der Wiederherstellungscode stimmt nicht oder ist schon benutzt.'));
       }
@@ -47,13 +61,20 @@ export async function POST(request: Request) {
       if (typeof code !== 'string' || !/^\d{6}$/.test(code)) {
         throw new ApiError(msg('Bitte geben Sie den 6-stelligen Code ein.'));
       }
-      const secret = (await has2FAEnabled(session.userId)) ? await get2FASecret(session.userId) : null;
-      if (!secret || !verifyTOTPCode(secret, code)) {
-        await auditFailure(session, ip, secret ? 'Ungültiger Code' : 'Geheimnis nicht lesbar');
+      const outcome = await consumeTOTPCode(session.userId, code);
+      if (outcome === 'used') {
+        // Kein Fehlversuch: der Code war richtig, nur schon gezeigt (Doppelklick, zweites Gerät).
+        await auditFailure(session, ip, 'Code schon benutzt');
+        throw new ApiError(msg('Dieser Code wurde schon benutzt. Bitte warten Sie auf den nächsten.'));
+      }
+      if (outcome !== 'ok') {
+        recordFailure(failureKey);
+        await auditFailure(session, ip, outcome === 'unreadable' ? 'Geheimnis nicht lesbar' : 'Ungültiger Code');
         throw new ApiError(msg('Der Code stimmt nicht. Bitte versuchen Sie es erneut.'));
       }
     }
 
+    clearFailures(failureKey);
     await set2FACookie(session.userId, await currentSessionToken());
     await recordLogin(session.userId);
 

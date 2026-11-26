@@ -113,7 +113,18 @@ export function useToast(): ToastContextValue {
  *  eine Wand — und die unterste sieht ohnehin niemand. */
 const MAX_VISIBLE = 4;
 
-export function ToastProvider({ children }: { children: ReactNode }) {
+export function ToastProvider({
+  children,
+  errorDetails = true,
+}: {
+  children: ReactNode;
+  /**
+   * `false` auf den Seiten vor der Anmeldung: das Fenster mit den Einzelheiten
+   * zu einer Kennung (`components/ErrorDetails.tsx`) hängt am Rahmen und
+   * verlangt eine Sitzung. Die Kennung steht dort trotzdem in der Meldung.
+   */
+  errorDetails?: boolean;
+}) {
   const { t } = useT();
   const [toasts, setToasts] = useState<Toast[]>([]);
   const nextId = useRef(1);
@@ -128,7 +139,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       // Ein unbekannter Fehler nennt nur seine Kennung (`lib/error-log.ts`). Die
       // Einzelheiten dazu öffnet jede solche Meldung mit „Anzeigen", ohne dass
       // jeder Aufrufer daran denken muss.
-      const code = given.action ? null : errorCodeIn(`${given.title ?? ''} ${given.message}`);
+      const code = given.action || !errorDetails ? null : errorCodeIn(`${given.title ?? ''} ${given.message}`);
       const input: ToastInput = code
         ? { ...given, action: { label: t('Anzeigen'), onClick: () => openErrorDetail(code) } }
         : given;
@@ -140,7 +151,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       );
       return id;
     },
-    [t]
+    [t, errorDetails]
   );
 
   return (

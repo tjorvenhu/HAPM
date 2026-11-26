@@ -8,6 +8,7 @@ import {
   planDelete,
   planUpdate,
   readValue,
+  rrsetFqdn,
   rrsetName,
   rrsetToRecords,
   rrsetsToRecords,
@@ -58,6 +59,20 @@ describe('rrsetToRecords', () => {
     expect(records[1].comment).toBe('zweiter');
     // Jeder Wert hat seine eigene Kennung, sonst träfe Löschen beide.
     expect(records[0].id).not.toBe(records[1].id);
+  });
+
+  it('versteht den Namen eines Satzes immer relativ, auch wenn er wie ein voller aussieht', () => {
+    // Jemand hat bei Hetzner den vollen Namen ins Feld getippt: der Eintrag
+    // heißt dann doppelt, und er ist NICHT der Eintrag von app.example.org.
+    expect(rrsetFqdn('app.example.org', ZONE)).toBe('app.example.org.example.org');
+    expect(rrsetFqdn('example.org', ZONE)).toBe('example.org.example.org');
+    expect(rrsetFqdn('@', ZONE)).toBe('example.org');
+    expect(rrsetFqdn('*', ZONE)).toBe('*.example.org');
+    expect(rrsetToRecords(rrset({ name: 'app.example.org' }), ZONE)[0].name).toBe('app.example.org.example.org');
+    // Hin und zurück: der Name, unter dem Hetzner den Satz führt, kommt wieder heraus.
+    for (const name of ['@', 'www', 'a.b', '*', 'app.example.org', 'example.org']) {
+      expect(rrsetName(rrsetFqdn(name, ZONE), ZONE)).toBe(name);
+    }
   });
 
   it('schreibt die Zone selbst als ihren Namen und nicht als `@`', () => {

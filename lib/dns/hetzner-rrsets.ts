@@ -42,7 +42,7 @@
  */
 
 import { msg, type Message } from '../i18n';
-import { recordFqdn, recordName } from './zones';
+import { normalizeDomain, recordName } from './zones';
 import type { DnsRecord } from './records';
 
 export interface HetznerRecord {
@@ -213,6 +213,25 @@ export function rrsetName(fqdn: string, zoneName: string): string {
 }
 
 /**
+ * Der volle Name eines Satzes. Hetzner führt den Namen IMMER relativ zur Zone:
+ * `@` ist die Zone, alles andere bekommt sie angehängt, auch ein Name, der
+ * selbst wie ein voller aussieht. `app.example.org` in der Zone `example.org`
+ * ist `app.example.org.example.org` (so entsteht er, wenn jemand bei Hetzner
+ * den vollen Namen ins Feld tippt).
+ *
+ * Nicht `recordFqdn`: das hält einen Namen, der auf die Zone endet, für schon
+ * vollständig. Der vertippte Eintrag stünde dann als `app.example.org` in der
+ * Liste, und HAPM hielte ihn für den Eintrag des Ziels: mit dem Ziel ginge
+ * der falsche weg. Die Gegenrichtung (`rrsetName`) nimmt genau eine Zone weg und
+ * passt damit dazu.
+ */
+export function rrsetFqdn(name: string, zoneName: string): string {
+  const value = normalizeDomain(name);
+  const zone = normalizeDomain(zoneName);
+  return value === '' || value === '@' ? zone : `${value}.${zone}`;
+}
+
+/**
  * Ein Satz als einzelne Einträge.
  *
  * `locked` trägt, was hier nicht angefasst wird: ein Satz, den jemand bei
@@ -230,7 +249,7 @@ export function rrsetToRecords(rrset: HetznerRRSet, zoneName: string): DnsRecord
     return {
       id: encodeRecordId({ name: rrset.name, type: rrset.type, value: record.value }),
       type: rrset.type,
-      name: recordFqdn(rrset.name, zoneName),
+      name: rrsetFqdn(rrset.name, zoneName),
       content,
       ttl: rrset.ttl ?? null,
       proxied: false,

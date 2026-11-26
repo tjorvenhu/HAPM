@@ -7,6 +7,7 @@ import { LogIn, ShieldCheck, ArrowLeft, LifeBuoy, Smartphone } from 'lucide-reac
 import { AuthCard } from '@/ui/auth/AuthCard';
 import AuthFormSkeleton from '@/ui/auth/AuthFormSkeleton';
 import PasskeyLoginButton from '@/components/PasskeyLoginButton';
+import { useToast } from '@/components/Toast';
 import { msgid } from '@/lib/i18n/translate';
 import { useT } from '@/lib/i18n/react';
 
@@ -22,6 +23,7 @@ const HEADING: Record<LoginStep, { title: string; subtitle: string }> = {
 export default function LoginPage() {
   const router = useRouter();
   const { t } = useT();
+  const { notify } = useToast();
   const [step, setStep] = useState<LoginStep>('checking');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -29,7 +31,6 @@ export default function LoginPage() {
   // Statt des Codes aus der App ein Wiederherstellungscode (`lib/recovery-codes.ts`).
   const [useRecovery, setUseRecovery] = useState(false);
   const [recoveryCode, setRecoveryCode] = useState('');
-  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [csrfToken, setCsrfToken] = useState('');
   // Passkeys gibt es nur, wenn die Adresse von HAPM und ein SMTP-Konto eingerichtet sind.
@@ -84,7 +85,6 @@ export default function LoginPage() {
 
   async function handleCredentials(e: FormEvent) {
     e.preventDefault();
-    setError('');
     setLoading(true);
     try {
       const res = await fetch('/api/auth/login', {
@@ -103,7 +103,11 @@ export default function LoginPage() {
         router.push('/dashboard');
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : t('Die Anmeldung ist fehlgeschlagen.'));
+      notify({
+        variant: 'error',
+        title: t('Anmeldung fehlgeschlagen'),
+        message: err instanceof Error ? err.message : t('Die Anmeldung ist fehlgeschlagen.'),
+      });
     } finally {
       setLoading(false);
     }
@@ -111,7 +115,6 @@ export default function LoginPage() {
 
   async function handleTwoFactor(e: FormEvent) {
     e.preventDefault();
-    setError('');
     setLoading(true);
     try {
       const res = await fetch('/api/auth/2fa/validate', {
@@ -125,7 +128,11 @@ export default function LoginPage() {
       // viele noch übrig sind, und dort entstehen neue.
       router.push(useRecovery ? '/konto?bereich=zweiter-faktor' : '/dashboard');
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : t('Der Code ließ sich nicht prüfen.'));
+      notify({
+        variant: 'error',
+        title: t('Verifizierung fehlgeschlagen'),
+        message: err instanceof Error ? err.message : t('Der Code ließ sich nicht prüfen.'),
+      });
       setCode('');
     } finally {
       setLoading(false);
@@ -143,7 +150,6 @@ export default function LoginPage() {
     setCode('');
     setRecoveryCode('');
     setUseRecovery(false);
-    setError('');
     setStep('credentials');
   }
 
@@ -192,14 +198,16 @@ export default function LoginPage() {
             <div className="auth-forgot">
               <Link href="/forgot-password">{t('Passwort vergessen?')}</Link>
             </div>
-            {error && <div className="auth-error" role="alert">{error}</div>}
             <button className="auth-submit" type="submit" disabled={loading}>
               {loading ? <span className="btn-spinner" aria-hidden="true" /> : <LogIn size={15} />}
               {loading ? t('Anmelden…') : t('Anmelden')}
             </button>
           </form>
           {/* Ersetzt Passwort und Code in einem Schritt. */}
-          {passkeys && <PasskeyLoginButton onSuccess={() => router.push('/dashboard')} onError={setError} />}
+          {passkeys && <PasskeyLoginButton onSuccess={() => router.push('/dashboard')} onError={(message) => {
+                if (message) notify({ variant: 'error', title: t('Anmeldung fehlgeschlagen'), message });
+              }}
+            />}
         </>
       )}
 
@@ -251,7 +259,6 @@ export default function LoginPage() {
                 />
               </div>
             )}
-            {error && <div className="auth-error" role="alert">{error}</div>}
             <button
               className="auth-submit"
               type="submit"
@@ -265,10 +272,7 @@ export default function LoginPage() {
             <button
               type="button"
               className="two-factor-btn two-factor-btn--ghost auth-link"
-              onClick={() => {
-                setUseRecovery(!useRecovery);
-                setError('');
-              }}
+              onClick={() => setUseRecovery(!useRecovery)}
               disabled={loading}
             >
               {useRecovery ? <Smartphone size={15} /> : <LifeBuoy size={15} />}{' '}

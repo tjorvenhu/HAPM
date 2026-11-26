@@ -43,6 +43,11 @@ export interface TwoFactorConfig extends DbDoc {
   recoveryCodes?: string[];
   /** Wann die gültigen Codes erzeugt wurden (ISO). */
   recoveryCodesCreatedAt?: string | null;
+  /**
+   * Der Zeitschritt des zuletzt angenommenen Codes aus der App. Ein Code, der
+   * nicht neuer ist, gilt nicht noch einmal (`consumeTOTPCode`).
+   */
+  lastTotpStep?: number | null;
 }
 
 /** Eine Zeile je Konto, Kennung ist die des Kontos. */

@@ -31,6 +31,17 @@
  * Wer App und Codes verliert, braucht den Zugang zum Server
  * (`hapm-admin reset-password`).
  *
+ * ── Ein Code aus der App gilt einmal ──
+ *
+ * Ein Code stimmt 30 Sekunden, mit der Toleranz für ungleiche Uhren bis zu 90.
+ * Wer ihn in dieser Zeit mitliest, käme mit dem Passwort dazu noch einmal
+ * herein. Die Zeile des Kontos führt deshalb den Zeitschritt des zuletzt
+ * angenommenen Codes (`lastTotpStep`), und `consumeTOTPCode` nimmt nur einen
+ * neueren an. Auch der Code, mit dem die Einrichtung bestätigt wurde, zählt.
+ *
+ * Gegen Raten stehen die Grenzen in `app/api/auth/2fa/validate/route.ts`:
+ * fünf Versuche in fünf Minuten, fünfzehn Fehlversuche am Tag.
+ *
  * ── Warum das Verbrauchen eine Sperre im Speicher hat ──
  *
  * `lib/db` kennt keine bedingte Änderung („nur wenn die Liste noch so
@@ -47,7 +58,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { createDocument, deleteDocument, listDocuments, updateDocument, Query, type WithMeta } from './db';
 import { isSecureRequest } from './auth/config';
 import { secrets } from './secrets';
-import { decryptTOTPSecret, encryptTOTPSecret } from './totp';
+import { decryptTOTPSecret, encryptTOTPSecret, matchTOTPStep } from './totp';
 import { findRecoveryCode, generateRecoveryCodes, hashRecoveryCode } from './recovery-codes';
 import { COLLECTIONS, type TwoFactorConfig } from './types';
 
@@ -113,7 +124,13 @@ export async function get2FASecret(userId: string): Promise<string | null> {
 /** Ein neues Geheimnis ablegen. Es gilt erst nach `enable2FA`. */
 export async function store2FASecret(userId: string, secret: string): Promise<void> {
   const existing = await get2FAConfig(userId);
-  const data = { secret: encryptTOTPSecret(secret), enabled: false, recoveryCodes: [], recoveryCodesCreatedAt: null };
+  const data = {
+    secret: encryptTOTPSecret(secret),
+    enabled: false,
+    recoveryCodes: [],
+    recoveryCodesCreatedAt: null,
+    lastTotpStep: null,
+  };
   if (existing) await updateDocument<TwoFactorConfig>(COLLECTIONS.TWO_FACTOR, existing.$id, data);
   else await createDocument<TwoFactorConfig>(COLLECTIONS.TWO_FACTOR, { userId, ...data });
 }
@@ -128,13 +145,55 @@ function freshRecoveryCodes(): { codes: string[]; data: Partial<TwoFactorConfig>
 
 /**
  * Den zweiten Faktor einschalten. Liefert die Wiederherstellungscodes im
- * Klartext: das einzige Mal, dass es sie so gibt.
+ * Klartext: das einzige Mal, dass es sie so gibt. `usedStep` ist der Schritt
+ * des Codes, mit dem die Einrichtung bestätigt wurde: derselbe Code meldet
+ * danach nicht noch an.
  */
-export async function enable2FA(config: WithMeta<TwoFactorConfig>): Promise<string[]> {
+export async function enable2FA(config: WithMeta<TwoFactorConfig>, usedStep: number | null = null): Promise<string[]> {
   return exclusive(config.userId, async () => {
     const { codes, data } = freshRecoveryCodes();
-    await updateDocument<TwoFactorConfig>(COLLECTIONS.TWO_FACTOR, config.$id, { ...data, enabled: true });
+    await updateDocument<TwoFactorConfig>(COLLECTIONS.TWO_FACTOR, config.$id, {
+      ...data,
+      enabled: true,
+      lastTotpStep: usedStep,
+    });
     return codes;
+  });
+}
+
+export type TotpOutcome = 'ok' | 'wrong' | 'used' | 'unreadable';
+
+/** Ob ein Code mit diesem Schritt nach dem zuletzt angenommenen noch gilt. Rein, für den Test. */
+export function totpStepIsFresh(step: number, lastStep: number | null | undefined): boolean {
+  return typeof lastStep !== 'number' || step > lastStep;
+}
+
+/**
+ * Einen Code aus der App bei der Anmeldung einlösen. Jeder Code gilt einmal:
+ * der Schritt des angenommenen Codes steht danach in der Zeile, und ein Code
+ * desselben oder eines älteren Schritts ist `used`. In der Schlange je Konto
+ * wie die Wiederherstellungscodes, sonst kämen zwei gleichzeitige Anmeldungen
+ * mit demselben Code beide durch.
+ *
+ * `unreadable`: der zweite Faktor gilt, sein Geheimnis lässt sich aber nicht
+ * öffnen. Das ist ein abgelehnter Code, kein offenes Tor (siehe `has2FAEnabled`).
+ */
+export async function consumeTOTPCode(userId: string, code: string, now = Date.now()): Promise<TotpOutcome> {
+  return exclusive(userId, async () => {
+    const config = await get2FAConfig(userId);
+    if (!config?.enabled) return 'wrong';
+    let secret: string;
+    try {
+      secret = decryptTOTPSecret(config.secret);
+    } catch (err) {
+      console.error('[two-factor] TOTP-Geheimnis nicht entschlüsselbar:', err);
+      return 'unreadable';
+    }
+    const step = matchTOTPStep(secret, code, now);
+    if (step === null) return 'wrong';
+    if (!totpStepIsFresh(step, config.lastTotpStep)) return 'used';
+    await updateDocument<TwoFactorConfig>(COLLECTIONS.TWO_FACTOR, config.$id, { lastTotpStep: step });
+    return 'ok';
   });
 }
 

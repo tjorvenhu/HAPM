@@ -60,6 +60,11 @@ Das Glossar steht in [`i18n.md`](i18n.md). Für die Oberfläche zusätzlich:
 - **Als Text auf der Seite steht nur ein Zustand:** das Laden ist gescheitert
   (`alert alert-danger sys-block`, Text über `ErrorNote`), eine Warnung zum
   System, die Prüfung einer Eingabe VOR dem Absenden am Feld.
+- **Auch vor der Anmeldung:** Anmeldung, „Passwort vergessen", „Passwort
+  setzen" und der Assistent haben ihren eigenen `ToastProvider` im Layout
+  (`errorDetails={false}`, das Fenster zu einer Kennung verlangt eine
+  Sitzung). Die Absage des Servers ist dort ein Toast, am Feld steht nur die
+  Prüfung vor dem Absenden („Die Passwörter stimmen nicht überein").
 - Eine Rückfrage, deren `onConfirm` wirft, meldet das selbst
   (`ConfirmDialog`, Option `failedTitle`): im Callback werfen, nicht selbst
   einen Toast absetzen.

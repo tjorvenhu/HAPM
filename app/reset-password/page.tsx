@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { ArrowLeft, KeyRound, LogIn } from 'lucide-react';
 import { AuthCard } from '@/ui/auth/AuthCard';
 import { msgid } from '@/lib/i18n/translate';
+import { useToast } from '@/components/Toast';
 import { useT } from '@/lib/i18n/react';
 
 const TITLE = msgid('Passwort festlegen');
@@ -27,6 +28,7 @@ function ResetPasswordContent() {
   const [password, setPassword] = useState('');
   const [repeat, setRepeat] = useState('');
   const [error, setError] = useState('');
+  const { notify } = useToast();
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
 
@@ -49,7 +51,11 @@ function ResetPasswordContent() {
       if (!res.ok) throw new Error(data.error || t('Das Passwort ließ sich nicht speichern.'));
       setDone(true);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : t('Das Passwort ließ sich nicht speichern.'));
+      notify({
+        variant: 'error',
+        title: t('Speichern fehlgeschlagen'),
+        message: err instanceof Error ? err.message : t('Das Passwort ließ sich nicht speichern.'),
+      });
     } finally {
       setLoading(false);
     }

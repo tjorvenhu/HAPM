@@ -5,7 +5,7 @@ import { getUserLocale, recordLogin } from '@/lib/auth/users';
 import { csrfFor } from '@/lib/session';
 import { has2FAEnabled, clear2FACookie } from '@/lib/two-factor';
 import { logAudit, getClientIP } from '@/lib/audit';
-import { rateLimit } from '@/lib/rate-limit';
+import { clearFailures, failuresBlocked, rateLimit, recordFailure } from '@/lib/rate-limit';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
 import { msg } from '@/lib/i18n';
 import { setLocaleCookie } from '@/lib/i18n/server';
@@ -31,6 +31,18 @@ const WINDOW_MS = 15 * 60 * 1000;
 const TOO_MANY = msg('Zu viele Anmeldeversuche. Bitte warten Sie 15 Minuten.');
 
 /**
+ * Fehlversuche je Konto und Tag. Die Grenzen oben bremsen nur: zehn Versuche je
+ * Viertelstunde sind am Tag fast tausend. Wer über viele Adressen ein Passwort
+ * rät, hat mit dieser Grenze am Tag dreißig Versuche. Gezählt wird, was als
+ * E-Mail eingegeben wurde, ob es das Konto gibt oder nicht: die Antwort verrät
+ * so nichts. Eine gelungene Anmeldung leert den Zähler. Passkeys und
+ * `hapm-admin reset-password` gehen an der Sperre vorbei.
+ */
+const DAY_MS = 24 * 60 * 60 * 1000;
+const FAILURES_PER_DAY = 30;
+const LOCKED = msg('Zu viele Fehlversuche für dieses Konto. Die Anmeldung mit Passwort ist bis zu 24 Stunden gesperrt.');
+
+/**
  * Die Fehlercodes, die „Anmeldedaten stimmen nicht" heißen, und nur die. Eine
  * nicht erreichbare Datenbank ist kein falsches Passwort und fliegt weiter.
  */
@@ -54,7 +66,10 @@ export async function POST(request: Request) {
 
     // Zusätzlich je Konto: wer über viele Adressen kommt, hat je Adresse fünf
     // Versuche, auf dasselbe Konto aber zusammen nur zehn.
-    const perAccount = rateLimit(`login-account:${email.trim().toLowerCase().slice(0, 254)}`, 10, WINDOW_MS);
+    const account = email.trim().toLowerCase().slice(0, 254);
+    const failureKey = `login-failures:${account}`;
+    if (failuresBlocked(failureKey, FAILURES_PER_DAY, DAY_MS).blocked) throw new ApiError(LOCKED, 429);
+    const perAccount = rateLimit(`login-account:${account}`, 10, WINDOW_MS);
     if (!perAccount.success) throw new ApiError(TOO_MANY, 429);
 
     const signIn = await (await auth())
@@ -69,6 +84,7 @@ export async function POST(request: Request) {
       });
 
     if (!signIn) {
+      recordFailure(failureKey);
       await logAudit({
         userId: '',
         userEmail: email.slice(0, 254),
@@ -79,6 +95,7 @@ export async function POST(request: Request) {
       throw new ApiError(msg('Ungültige Anmeldedaten.'), 401);
     }
 
+    clearFailures(failureKey);
     const { token, user } = signIn.response;
     const has2FA = await has2FAEnabled(user.id);
 
