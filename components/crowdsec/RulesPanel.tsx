@@ -120,7 +120,10 @@ export default function RulesPanel() {
             </div>
             <div className="card-body cs-form">
               <div className="form-group cs-form-wide">
-                <label className="form-label" htmlFor="cs-crs">{t('Modus')}</label>
+                <label className="form-label form-label-row" htmlFor="cs-crs">
+                  {t('Modus')}
+                  {busy === 'crs' && <Loader2 size={14} className="spin" />}
+                </label>
                 <Select<CrsMode>
                   id="cs-crs"
                   value={data.crs}
@@ -129,7 +132,6 @@ export default function RulesPanel() {
                   options={CRS_OPTIONS.map((o) => ({ value: o.value, label: t(o.label), hint: t(o.hint) }))}
                 />
               </div>
-              {busy === 'crs' && <Loader2 size={16} className="spin" />}
             </div>
           </div>
 
