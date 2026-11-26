@@ -49,6 +49,8 @@ export type AuditAction =
   | 'haproxy_certificate_failed'
   | 'haproxy_certificate_uploaded'
   | 'haproxy_certificate_removed'
+  | 'haproxy_ca_uploaded'
+  | 'haproxy_ca_removed'
   | 'haproxy_import_started'
   | 'haproxy_import_completed'
   | 'haproxy_import_failed'

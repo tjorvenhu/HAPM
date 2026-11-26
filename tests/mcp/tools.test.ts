@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { z } from 'zod';
 import { createTranslator } from '@/lib/i18n';
 
 /**
@@ -65,6 +66,9 @@ const more = vi.hoisted(() => ({
   checkAddressMove: vi.fn(),
   removeCertificate: vi.fn(async () => ({ mainDomain: 'x', reloaded: true })),
   reissueCertificate: vi.fn(async () => ({ runId: 'c1' })),
+  listCertificateAuthorities: vi.fn(async () => ({ warnDays: 30, authorities: [], error: null })),
+  saveCertificateAuthority: vi.fn(async () => ({ name: 'intern-root', reloaded: false })),
+  removeCertificateAuthority: vi.fn(async () => ({ name: 'intern-root' })),
   readBaseConfigRows: vi.fn(async () => [{ $id: 'local', diff: null }]),
   applyBaseConfig: vi.fn(async () => ({ steps: [] })),
   readErrorPageRows: vi.fn(async () => [{ $id: 'local', entries: [] }]),
@@ -115,6 +119,11 @@ vi.mock('@/lib/address-move', () => ({ checkAddressMove: more.checkAddressMove }
 vi.mock('@/lib/haproxy/certificate-actions', () => ({
   removeCertificate: more.removeCertificate,
   reissueCertificate: more.reissueCertificate,
+}));
+vi.mock('@/lib/haproxy/ca-actions', () => ({
+  listCertificateAuthorities: more.listCertificateAuthorities,
+  saveCertificateAuthority: more.saveCertificateAuthority,
+  removeCertificateAuthority: more.removeCertificateAuthority,
 }));
 vi.mock('@/lib/haproxy/maintenance-actions', () => ({
   readBaseConfigRows: more.readBaseConfigRows,
@@ -192,6 +201,9 @@ const OTHER_WRITING = [
   'restart_haproxy',
   'delete_certificate',
   'reissue_certificate',
+  // Zertifizierungsstellen sind kein Geheimnis: hochladen geht, anders als bei den Zertifikaten der Domains.
+  'upload_certificate_authority',
+  'delete_certificate_authority',
   'apply_base_config',
   'redeploy_error_pages',
   'refresh_geoip',
@@ -236,6 +248,26 @@ describe('die Werkzeugliste', () => {
       expect(entry.description).not.toMatch(/ [–—] /);
     }
   );
+
+  it('nimmt im Schema eine hinterlegte Zertifizierungsstelle und den Namen im Zertifikat an', () => {
+    for (const name of ['create_service', 'update_service']) {
+      const schema = z.object(tool(name).input);
+      const base = { id: 's', scope: 'K', domains: ['a.example'] };
+      const accepted = schema.safeParse({
+        ...base,
+        backendTls: 'ca:intern-root',
+        backendVerifyHost: 'app01.intern.example',
+        routes: [{ name: 'api', paths: ['/api'], servers: [], backendTls: 'verify', backendVerifyHost: null }],
+      });
+      expect(accepted.success, name).toBe(true);
+      // Ohne das Feld wie bisher.
+      expect(schema.safeParse({ ...base, backendTls: 'verify' }).success, name).toBe(true);
+      // Die Allow-Liste sagt es früher als `validateCreateInput`.
+      for (const backendTls of ['yes', 'ca:', 'ca:../x', 'ca:Intern']) {
+        expect(schema.safeParse({ ...base, backendTls }).success, `${name} ${backendTls}`).toBe(false);
+      }
+    }
+  });
 
   it('nennt bei jedem Löschen und Ersetzen die Nebenwirkung', () => {
     for (const name of ['delete_service', 'delete_stream', 'update_service', 'update_stream', 'delete_scope']) {
@@ -350,6 +382,9 @@ describe('Rechte: die übrigen schreibenden Werkzeuge schreiben unter dem Namen 
     ['restart_haproxy', {}, 'restartHaproxy', auditActor],
     ['delete_certificate', { mainDomain: 'old.example.com' }, 'removeCertificate', { allowUploaded: false }],
     ['reissue_certificate', { mainDomain: '*.example.com' }, 'reissueCertificate', actor],
+    // Das letzte Argument ist die Sprache des Aufrufers, für die Hinweise der Antwort.
+    ['upload_certificate_authority', { name: 'intern-root', certificate: 'PEM' }, 'saveCertificateAuthority', ctx.t],
+    ['delete_certificate_authority', { name: 'intern-root' }, 'removeCertificateAuthority', auditActor],
     ['apply_base_config', { ids: ['global|missing|x'] }, 'applyBaseConfig', auditActor],
     ['redeploy_error_pages', {}, 'redeployErrorPages', auditActor],
     ['refresh_geoip', {}, 'refreshGeoipNow', auditActor],

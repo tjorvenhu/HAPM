@@ -439,6 +439,41 @@ export const proxyPages: Dictionary = {
   "Die Datei {file} wird entfernt und HAProxy neu geladen. Für {domains} liefert HAProxy danach ein anderes passendes Zertifikat oder den Platzhalter.": "The file {file} is removed and HAProxy reloaded. For {domains}, HAProxy then serves another matching certificate or the placeholder.",
   "Das Zertifikat {file} ist entfernt.": "The certificate {file} is removed.",
   "Das Zertifikat ließ sich nicht entfernen.": "The certificate could not be removed.",
+  // Zertifizierungsstellen für die Prüfung der Ziele (CertificateAuthoritiesPanel, CertificateAuthorityDialog)
+  'Zertifizierungsstellen': 'Certificate authorities',
+  'Die Zertifizierungsstellen konnten nicht geladen werden.': 'The certificate authorities could not be loaded.',
+  'Die Zertifizierungsstelle ließ sich nicht hinterlegen.': 'The certificate authority could not be added.',
+  'Die Zertifizierungsstelle {name} ist hinterlegt. Sie lässt sich jetzt an einem Ziel auswählen.':
+    'The certificate authority {name} is added. You can now pick it on a target.',
+  'Die Zertifizierungsstelle {name} ist ersetzt. HAProxy ist neu geladen.': 'The certificate authority {name} is replaced. HAProxy is reloaded.',
+  'Die Zertifizierungsstelle {name} ist ersetzt.': 'The certificate authority {name} is replaced.',
+  'Zertifizierungsstelle entfernen?': 'Remove certificate authority?',
+  'Die Datei von {name} wird entfernt. Danach lässt sie sich an keinem Ziel mehr auswählen.':
+    'The file of {name} is removed. After that it can no longer be picked on any target.',
+  'Die Zertifizierungsstelle {name} ist entfernt.': 'The certificate authority {name} is removed.',
+  'Die Zertifizierungsstelle ließ sich nicht entfernen.': 'The certificate authority could not be removed.',
+  'Für Ziele, die HTTPS sprechen und deren Zertifikat aus einer eigenen CA kommt. Hinterlegen Sie hier das Zertifikat der CA und wählen Sie sie am Ziel unter „HTTPS, Zertifikat prüfen“ aus. HAProxy nimmt das Zertifikat des Ziels dann nur an, wenn diese Stelle es ausgestellt hat und es für die aufgerufene Domain gilt oder für den Namen, der am Ziel unter „Name im Zertifikat“ steht.':
+    'For targets that speak HTTPS and whose certificate comes from your own CA. Add the CA certificate here and pick it on the target under "HTTPS, verify certificate". HAProxy then accepts the target certificate only if this authority issued it and it is valid for the requested domain or for the name set on the target under "Name in the certificate".',
+  '{count} Stelle': '{count} authority',
+  '{count} Stellen': '{count} authorities',
+  'Hinterlegen': 'Add',
+  'Keine Zertifizierungsstelle hinterlegt': 'No certificate authority added',
+  'Gebraucht wird sie für Ziele, deren Zertifikat aus einer eigenen CA kommt.': 'It is needed for targets whose certificate comes from your own CA.',
+  'Zertifikate der Stelle': 'Certificates of the authority',
+  '(ausgestellt von {issuer})': '(issued by {issuer})',
+  'Fingerabdruck SHA-256': 'SHA-256 fingerprint',
+  'Die Datei ist größer als 300 KB. Eine Zertifizierungsstelle mit Zwischenstellen ist kleiner.':
+    'The file is larger than 300 KB. A certificate authority with intermediates is smaller.',
+  'Bitte geben Sie der Zertifizierungsstelle einen Namen.': 'Please give the certificate authority a name.',
+  'Bitte fügen Sie das Zertifikat der Zertifizierungsstelle ein.': 'Please paste the certificate of the certificate authority.',
+  'Zertifizierungsstelle ersetzen': 'Replace certificate authority',
+  'HAProxy lädt danach neu. Ziele, deren Zertifikat die neue Datei nicht bestätigt, sind dann nicht mehr erreichbar (503): {list}.':
+    'HAProxy reloads afterwards. Targets whose certificate the new file does not confirm are then no longer reachable (503): {list}.',
+  'Unter diesem Namen wählen Sie die Stelle am Ziel aus. Kleinbuchstaben, Ziffern und Bindestriche, höchstens 40 Zeichen. Er wird zum Dateinamen, steht in haproxy.cfg und lässt sich danach nicht ändern.':
+    'You pick the authority on a target by this name. Lowercase letters, digits and hyphens, up to 40 characters. It becomes the file name, is written to haproxy.cfg and cannot be changed afterwards.',
+  'Zertifikat der Zertifizierungsstelle (PEM)': 'Certificate of the certificate authority (PEM)',
+  'Das Zertifikat der Stelle, die die Zertifikate Ihrer Ziele ausstellt. Stellt eine Zwischenstelle aus, fügen Sie Root und Zwischenstelle hintereinander ein. Kein privater Schlüssel: der gehört nicht auf diesen Server. Ein selbst signiertes Zertifikat eines Ziels geht auch, dann nimmt HAProxy genau dieses an.':
+    'The certificate of the authority that issues the certificates of your targets. If an intermediate issues them, paste root and intermediate one after the other. No private key: it does not belong on this server. A self-signed certificate of a target works too, HAProxy then accepts exactly that one.',
   // Zertifikate von acme.sh löschen, die niemand hält
   "acme.sh entfernt den Antrag für {domains}. Ein Zertifikat gibt es dafür nicht, HAProxy bleibt unverändert.": "acme.sh removes the request for {domains}. No certificate exists for it, HAProxy stays unchanged.",
   "acme.sh entfernt das Zertifikat für {domains} samt Schlüssel. Ausgerollt ist es nicht, HAProxy bleibt unverändert.": "acme.sh removes the certificate for {domains} along with its key. It is not deployed, HAProxy stays unchanged.",

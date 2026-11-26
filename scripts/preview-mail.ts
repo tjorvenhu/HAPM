@@ -59,6 +59,10 @@ const EVENTS: NotificationEvent[] = [
     ],
   },
   {
+    type: 'backend_ca_expiring',
+    authorities: [{ name: 'intern-root', expiresAt: ahead(12), daysLeft: 12, usedBy: ['kunde_shop', 'intern_wiki'] }],
+  },
+  {
     type: 'backend_down',
     kind: 'service',
     id: 'kunde_shop',

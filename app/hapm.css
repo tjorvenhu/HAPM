@@ -505,6 +505,12 @@
 /* PEM im Dialog „Zertifikat hochladen": Spalten wie in der Datei. */
 .form-textarea.mono { font-family: var(--font-mono); font-size: 0.8125rem; }
 
+/* Zertifizierungsstellen: je Zertifikat der Inhaber, darunter der Fingerabdruck
+   in voller Länge. Er bricht um, statt die Tabelle breit zu ziehen. */
+.ca-cert { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ca-cert + .ca-cert { margin-top: 8px; }
+.ca-fingerprint { font-family: var(--font-mono); font-size: 0.6875rem; color: var(--text-tertiary); overflow-wrap: anywhere; }
+
 /* Ein gesperrtes Land als Chip mit eigenem Entfernen-Knopf (Zugriffsschutz). */
 .hapm-country-chip { padding-right: 4px; }
 

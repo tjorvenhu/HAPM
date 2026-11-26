@@ -44,9 +44,14 @@
  */
 
 import {
+  BACKEND_CA_DIR,
   HAPROXY_BALANCE,
   STICKY_COOKIE,
   assignServiceId,
+  backendCaName,
+  backendCaTls,
+  caNameFromFile,
+  isValidVerifyHost,
   domainCovers,
   findDomainConflict,
   healthcheckPossible,
@@ -691,6 +696,8 @@ interface ServerRead {
   weight: number | null;
   cookie: string | null;
   tls: BackendTls;
+  /** Der feste Name, gegen den geprüft wird (`sni str(…)` oder `verifyhost`). */
+  verifyHost: string | null;
   notes: string[];
 }
 
@@ -706,34 +713,51 @@ const NO_GLOBAL: GlobalRead = { serverVerifyNone: false };
  *  gleichwertig (ohne Port, kleingeschrieben). */
 const HOST_SNI = /^(?:req\.)?hdr\(host\)(?:,field\(1,:\))?(?:,lower)?$/i;
 
+/** Ein fester SNI: `str(app01.intern.example)`. */
+const STR_SNI = /^str\(([^()]+)\)$/i;
+
 /**
  * Die HTTPS-Wörter einer server-Zeile als `BackendTls`, oder ein Grund.
  *
- * HAPM schreibt genau zwei Formen (`backendTlsParams`). Übernommen wird, was
- * sich danach so verhält wie vorher: `verify none` mit beliebigem SNI (das
- * Zertifikat wird nicht geprüft, der SNI wählt nur aus, welches das Ziel
- * zeigt), `verify required` nur gegen die CAs des Systems und mit der Domain
- * der Anfrage als SNI. Mit einem festen SNI oder ohne prüfte HAProxy den
- * Namen anders als HAPM danach, und ein Ziel, das heute durchkommt, fiele
- * durch.
+ * Übernommen wird, was sich danach so verhält wie vorher: `verify none` mit
+ * beliebigem SNI (das Zertifikat wird nicht geprüft, der SNI wählt nur aus,
+ * welches das Ziel zeigt), `verify required` gegen die CAs des Systems oder
+ * eine hinterlegte Zertifizierungsstelle, mit der Domain der Anfrage als SNI
+ * oder mit einem festen Namen (`sni str(<name>)`, `verifyhost <name>`): der
+ * wird `backendVerifyHost`. Wo HAProxy den Namen anders prüfte als HAPM
+ * danach (ein anderer SNI-Ausdruck, zwei verschiedene Namen, gar keiner),
+ * fiele ein Ziel, das heute durchkommt, womöglich durch: ein Grund.
  */
 function readServerTls(
   name: string,
-  params: { ssl: boolean; verify: string | null; caFile: string | null; sni: string | null; tlsWords: string[] },
+  params: {
+    ssl: boolean;
+    verify: string | null;
+    caFile: string | null;
+    sni: string | null;
+    verifyHost: string | null;
+    tlsWords: string[];
+  },
   global: GlobalRead,
   notes: string[]
-): BackendTls | { problem: string } {
+): { tls: BackendTls; verifyHost: string | null } | { problem: string } {
+  const plain = (tls: BackendTls) => ({ tls, verifyHost: null });
   if (!params.ssl) {
-    if (params.tlsWords.length === 0) return 'off';
+    if (params.tlsWords.length === 0) return plain('off');
     return { problem: t('server {name}: {options} ohne ssl kennt HAPM nicht.', { name, options: params.tlsWords.join(' ') }) };
   }
   const verify = params.verify ?? (global.serverVerifyNone ? 'none' : 'required');
   if (verify === 'none') {
     if (params.caFile) return { problem: t('server {name}: ca-file mit verify none kennt HAPM nicht.', { name }) };
+    // Ohne Prüfung prüft auch `verifyhost` nichts. Stillschweigend wegzulassen
+    // hieße, eine Zeile umzuschreiben, die jemand für geprüft hält.
+    if (params.verifyHost !== null) {
+      return { problem: t('server {name}: verifyhost wirkt nur mit verify required. Hier wird das Zertifikat nicht geprüft.', { name }) };
+    }
     if (!params.sni || !HOST_SNI.test(params.sni)) {
       notes.push(t('server {name}: HAPM schickt dem Ziel die Domain der Anfrage als SNI.', { name }));
     }
-    return 'insecure';
+    return plain('insecure');
   }
   if (verify !== 'required') {
     return { problem: t('server {name}: verify {verify} kennt HAProxy nicht.', { name, verify }) };
@@ -743,23 +767,64 @@ function readServerTls(
       problem: t('server {name}: ssl prüft das Zertifikat, aber ohne ca-file. So lädt HAProxy die Zeile nicht.', { name }),
     };
   }
-  if (params.caFile !== '@system-ca') {
-    return {
-      problem: t('server {name}: Eine eigene CA-Datei ({file}) kennt HAPM nicht, nur die CAs des Systems (@system-ca).', {
-        name,
-        file: params.caFile,
-      }),
-    };
-  }
-  if (!params.sni || !HOST_SNI.test(params.sni)) {
+  // Eine Datei im Ordner der hinterlegten Zertifizierungsstellen ist eine von
+  // HAPM (`backend-ca.ts`). Ob sie auf dieser Maschine liegt, prüft die
+  // Vorabprüfung beim Anlegen (`assertCasPresent`).
+  const ca = caNameFromFile(params.caFile);
+  if (params.caFile !== '@system-ca' && ca === null) {
     return {
       problem: t(
-        'server {name}: HAPM prüft das Zertifikat gegen die Domain der Anfrage (sni req.hdr(host)). Hier wird es anders geprüft, das Ziel könnte danach durchfallen.',
-        { name }
+        'server {name}: Die CA-Datei {file} liegt nicht bei den hinterlegten Zertifizierungsstellen ({dir}). Hinterlegen Sie sie unter Zertifikate und wählen Sie sie danach am Ziel aus.',
+        { name, file: params.caFile, dir: BACKEND_CA_DIR }
       ),
     };
   }
-  return 'verify';
+  const tls = ca === null ? 'verify' : backendCaTls(ca);
+  const differently = {
+    problem: t(
+      'server {name}: HAPM prüft das Zertifikat gegen die Domain der Anfrage (sni req.hdr(host)) oder gegen einen festen Namen (sni str(name)). Hier wird es anders geprüft, das Ziel könnte danach durchfallen.',
+      { name }
+    ),
+  };
+  const fromHost = params.sni !== null && HOST_SNI.test(params.sni);
+  const fixedSni = params.sni === null ? null : (STR_SNI.exec(params.sni)?.[1].toLowerCase() ?? null);
+  const verifyHost = params.verifyHost?.toLowerCase() ?? null;
+
+  if (fromHost) {
+    // Anfragen prüft HAProxy dann gegen den SNI, nur den Healthcheck gegen
+    // `verifyhost`: zwei Namen, HAPM kennt einen.
+    if (verifyHost !== null) {
+      return {
+        problem: t(
+          'server {name}: verifyhost {host} neben einem SNI aus der Domain der Anfrage. HAPM prüft gegen einen Namen, nicht gegen zwei.',
+          { name, host: verifyHost }
+        ),
+      };
+    }
+    return plain(tls);
+  }
+  if (params.sni !== null && fixedSni === null) return differently;
+  const host = fixedSni ?? verifyHost;
+  if (host === null) return differently;
+  if (fixedSni !== null && verifyHost !== null && fixedSni !== verifyHost) {
+    return {
+      problem: t('server {name}: SNI {sni} und verifyhost {host} nennen verschiedene Namen. HAPM prüft gegen einen.', {
+        name,
+        sni: fixedSni,
+        host: verifyHost,
+      }),
+    };
+  }
+  if (!isValidVerifyHost(host)) {
+    return { problem: t('server {name}: {host} ist kein Name, gegen den HAPM ein Zertifikat prüft.', { name, host }) };
+  }
+  // Nur `verifyhost`: bis HAProxy 3.2 ging die Verbindung ohne SNI hinaus. HAPM
+  // schickt den Namen als SNI, sonst prüfte HAProxy ab 3.3 gegen die Domain
+  // der Anfrage (`sni-auto`) und nicht gegen ihn.
+  if (fixedSni === null) {
+    notes.push(t('server {name}: HAPM schickt dem Ziel {host} als SNI und prüft das Zertifikat dagegen.', { name, host }));
+  }
+  return { tls, verifyHost: host };
 }
 
 function readServer(words: string[], problems: string[], global: GlobalRead = NO_GLOBAL): ServerRead | null {
@@ -794,7 +859,14 @@ function readServer(words: string[], problems: string[], global: GlobalRead = NO
   let check = false;
   let weight: number | null = null;
   let cookie: string | null = null;
-  const tls = { ssl: false, verify: null as string | null, caFile: null as string | null, sni: null as string | null, tlsWords: [] as string[] };
+  const tls = {
+    ssl: false,
+    verify: null as string | null,
+    caFile: null as string | null,
+    sni: null as string | null,
+    verifyHost: null as string | null,
+    tlsWords: [] as string[],
+  };
   const rest: string[] = [];
   for (let i = 0; i < params.length; i++) {
     const param = params[i];
@@ -815,6 +887,7 @@ function readServer(words: string[], problems: string[], global: GlobalRead = NO
     else if (param === 'verify') tls.tlsWords.push(param, (tls.verify = (params[++i] ?? '').toLowerCase()));
     else if (param === 'ca-file') tls.tlsWords.push(param, (tls.caFile = params[++i] ?? ''));
     else if (param === 'sni') tls.tlsWords.push(param, (tls.sni = params[++i] ?? ''));
+    else if (param === 'verifyhost') tls.tlsWords.push(param, (tls.verifyHost = params[++i] ?? ''));
     else rest.push(param);
   }
   if (rest.length > 0) {
@@ -823,11 +896,11 @@ function readServer(words: string[], problems: string[], global: GlobalRead = NO
   }
   const notes: string[] = [];
   const mode = readServerTls(name, tls, global, notes);
-  if (typeof mode !== 'string') {
+  if ('problem' in mode) {
     problems.push(mode.problem);
     return null;
   }
-  return { name, target: addr, check, weight, cookie, tls: mode, notes };
+  return { name, target: addr, check, weight, cookie, tls: mode.tls, verifyHost: mode.verifyHost, notes };
 }
 
 /* ── Was ein Backend- oder listen-Abschnitt hergibt ── */
@@ -1603,10 +1676,27 @@ function backendTlsOf(read: ProxyRead, problems: string[], where?: string): Back
   return modes[0] ?? 'off';
 }
 
-const TLS_LABELS: Record<Exclude<BackendTls, 'off'>, string> = {
+/** Ein Name für alle Ziele eines Backends: HAPM schreibt ihn auf jede Zeile. */
+function verifyHostOf(read: ProxyRead, problems: string[], where?: string): string | null {
+  const hosts = unique(read.servers.map((s) => s.verifyHost ?? ''));
+  if (hosts.length > 1) {
+    const reason = t('Die Zertifikate der Ziele werden gegen verschiedene Namen geprüft. HAPM kennt einen Namen je Backend.');
+    problems.push(where ? `${where}: ${reason}` : reason);
+  }
+  return hosts[0] || null;
+}
+
+const TLS_LABELS: Record<'insecure' | 'verify', string> = {
   insecure: msgid('HTTPS zum Ziel'),
   verify: msgid('HTTPS zum Ziel, Zertifikat geprüft'),
 };
+
+/** Was die Vorschau zu einer Art sagt. Eine hinterlegte Zertifizierungsstelle nennt sie beim Namen. */
+function tlsLabel(tls: Exclude<BackendTls, 'off'>): string {
+  const ca = backendCaName(tls);
+  if (ca !== null) return t('HTTPS zum Ziel, Zertifikat geprüft gegen {name}', { name: ca });
+  return t(TLS_LABELS[tls as 'insecure' | 'verify']);
+}
 
 function emptyService(domains: string[]): CreateServiceInput {
   return {
@@ -1682,6 +1772,8 @@ function httpEntry(
         service.responseHeaders = read.responseHeaders;
         service.tunnel = read.tunnel;
         service.backendTls = backendTlsOf(read, problems);
+        const verifyHost = verifyHostOf(read, problems);
+        if (verifyHost !== null) service.backendVerifyHost = verifyHost;
       }
     }
   }
@@ -1732,12 +1824,14 @@ function httpEntry(
       path.backend.startsWith(main)
         ? path.backend.slice(main.length + 1)
         : path.backend;
+    const routeHost = verifyHostOf(read, problems, where);
     const routeInput: RouteInput = {
       name: routeName(short, names),
       paths: path.paths,
       servers: read.servers.map((s) => ({ name: s.name, target: s.target })),
       check: checks > 0 && checks === read.servers.length,
       backendTls: backendTlsOf(read, problems, where),
+      ...(routeHost !== null ? { backendVerifyHost: routeHost } : {}),
     };
     service.routes.push(routeInput);
   }
@@ -1779,8 +1873,11 @@ function httpEntry(
       ...service.requestHeaders.map((h) => t('Header an das Ziel: {name}', { name: h.name })),
       ...service.responseHeaders.map((h) => t('Header an den Besucher: {name}', { name: h.name })),
       ...(service.tunnel ? [t('Lange Verbindungen')] : []),
-      ...(service.backendTls !== 'off' ? [t(TLS_LABELS[service.backendTls])] : []),
-      ...unique(service.routes.filter((r) => r.backendTls !== 'off').map((r) => t(TLS_LABELS[r.backendTls as Exclude<BackendTls, 'off'>]))).map(
+      ...(service.backendTls !== 'off' ? [tlsLabel(service.backendTls)] : []),
+      ...unique([service.backendVerifyHost, ...service.routes.map((r) => r.backendVerifyHost)].filter((host): host is string => !!host)).map(
+        (host) => t('Name im Zertifikat: {host}', { host })
+      ),
+      ...unique(service.routes.filter((r) => r.backendTls !== 'off').map((r) => tlsLabel(r.backendTls as Exclude<BackendTls, 'off'>))).map(
         (label) => t('Pfad-Regel: {what}', { what: label })
       ),
     ],

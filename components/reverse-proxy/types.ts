@@ -36,6 +36,8 @@ export interface ProxyRow {
   httpChallenge: boolean;
   /** Die Domains jeder gültigen PEM-Datei auf der Maschine. */
   presentCertificates: string[][];
+  /** Die Namen der hinterlegten Zertifizierungsstellen. Fehlt das Feld (andere Routen), ist keine bekannt. */
+  backendCas?: string[];
   services: HaproxyService[];
   /** Das Ziel, über das die Adresse von HAPM läuft. Es und seine Gruppe lassen
    *  sich nicht entfernen (`lib/haproxy/protected.ts`). `null`: es gibt keins. */

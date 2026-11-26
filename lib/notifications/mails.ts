@@ -28,8 +28,9 @@ import {
   type MailInstallation,
 } from '../mail/layout';
 import { CERT_WARN_DAYS, UPLOAD_WARN_DAYS } from '../system/certificates';
+import { CA_WARN_DAYS } from '../haproxy/backend-ca';
 import type { HaproxyAction, UpdateComponent } from '../types';
-import type { ExpiringCertificate, NotificationEvent, TargetKind } from './events';
+import type { ExpiringAuthority, ExpiringCertificate, NotificationEvent, TargetKind } from './events';
 
 export interface NotificationMailContext extends MailInstallation {
   now: Date;
@@ -135,7 +136,7 @@ interface Draft {
   action?: { label: string; path: string };
 }
 
-function certificateState(cert: ExpiringCertificate, w: Writer): string {
+function certificateState(cert: Pick<ExpiringCertificate, 'expiresAt' | 'daysLeft'>, w: Writer): string {
   const date = w.day(cert.expiresAt);
   if (cert.daysLeft < 0) return w.t('seit dem {date} abgelaufen', { date });
   if (cert.daysLeft === 0) return w.t('läuft am {date} ab, in weniger als 24 Stunden', { date });
@@ -168,6 +169,21 @@ function certificateSubject(certificates: ExpiringCertificate[], w: Writer): str
     count: certificates.length,
     days: certificates.some((cert) => cert.uploaded) ? UPLOAD_WARN_DAYS : CERT_WARN_DAYS,
   });
+}
+
+function authoritySubject(authorities: ExpiringAuthority[], w: Writer): string {
+  if (authorities.length === 1) {
+    const [ca] = authorities;
+    const name = ca.name;
+    if (ca.daysLeft < 0) return w.t('Zertifizierungsstelle {name} ist abgelaufen', { name });
+    if (ca.daysLeft === 0) return w.t('Zertifizierungsstelle {name} läuft in weniger als 24 Stunden ab', { name });
+    return w.plural(
+      ca.daysLeft,
+      { one: 'Zertifizierungsstelle {name} läuft in einem Tag ab', other: 'Zertifizierungsstelle {name} läuft in {count} Tagen ab' },
+      { name }
+    );
+  }
+  return w.t('{count} Zertifizierungsstellen laufen ab', { count: authorities.length });
 }
 
 function targetName(kind: TargetKind, id: string, addresses: string[], w: Writer): string {
@@ -258,6 +274,36 @@ function draft(event: NotificationEvent, ctx: NotificationMailContext, w: Writer
                   )
           ),
         action: { label: t('Zertifikate ansehen'), path: '/reverse-proxy/zertifikate' },
+      };
+    }
+
+    case 'backend_ca_expiring': {
+      const authorities = [...event.authorities].sort((a, b) => a.daysLeft - b.daysLeft);
+      const subject = authoritySubject(authorities, w);
+      return {
+        subject,
+        eyebrow: t('Zertifikate'),
+        heading: authorities.length === 1 ? subject : t('Zertifizierungsstellen laufen ab'),
+        body:
+          mailText(
+            t(
+              'Auf {node} prüft HAProxy das Zertifikat von Zielen gegen eine hinterlegte Zertifizierungsstelle, die weniger als {days} Tage gültig oder schon abgelaufen ist.',
+              { node, days: CA_WARN_DAYS }
+            )
+          ) +
+          mailFacts(
+            authorities.map((ca) => ({
+              label: ca.name,
+              value: `${certificateState(ca, w)}, ${t('benutzt von {list}', { list: ca.usedBy.join(', ') })}`,
+            })),
+            { stacked: true }
+          ) +
+          mailText(
+            t(
+              'Was zu tun ist: eine hinterlegte Zertifizierungsstelle erneuert niemand von selbst. Holen Sie das neue Zertifikat der CA und ersetzen Sie die Datei unter Reverse-Proxy, Zertifikate, Reiter Zertifizierungsstellen. Nach dem Ablauf lehnt HAProxy die Ziele ab, die dagegen prüfen, und Besucher bekommen dort einen Fehler 503.'
+            )
+          ),
+        action: { label: t('Zertifizierungsstellen ansehen'), path: '/reverse-proxy/zertifikate?bereich=zertifizierungsstellen' },
       };
     }
 

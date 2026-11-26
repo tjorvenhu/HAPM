@@ -46,6 +46,9 @@ hier, die Tabelle dort sagt, welche.
 | `POST /haproxy/error-pages` | im gespeicherten Design neu schreiben, synchron |
 | `DELETE /haproxy/certificates?domain=` | ein Zertifikat von acme.sh entfernen, das kein Ziel hält |
 | `POST /haproxy/certificates/issue` | `{ "mainDomain": "…" }`: nie ausgestellten Antrag erneut stellen → `{ runId }` |
+| `GET /haproxy/certificate-authorities` | hinterlegte Zertifizierungsstellen für die Prüfung der Ziele, samt „benutzt von" |
+| `POST /haproxy/certificate-authorities` | `{ "name": "…", "certificate": "PEM", "replace"?: true }`: hinterlegen oder ersetzen, synchron |
+| `DELETE /haproxy/certificate-authorities?name=` | eine Stelle entfernen, die kein Ziel benutzt |
 
 Die Antworten sind Feld für Feld die der Routen hinter der Oberfläche
 (`/api/updates`, `/api/backup`, `/api/settings`, …). Wer die Form eines Feldes
@@ -212,7 +215,7 @@ Die Gründe stehen in [`mcp.md`](mcp.md), „Was es bewusst nicht gibt". Kurz:
 - **Jede Route ruft eine Funktion, die die Oberfläche auch ruft**, und die
   schreibende Funktion schreibt ihr Protokoll selbst. Sie stehen in
   `lib/updates/actions.ts`, `lib/backup/actions.ts`, `lib/settings-actions.ts`,
-  `lib/haproxy/certificate-actions.ts`, `lib/haproxy/maintenance-actions.ts`,
+  `lib/haproxy/certificate-actions.ts`, `lib/haproxy/ca-actions.ts`, `lib/haproxy/maintenance-actions.ts`,
   `lib/haproxy/log-read.ts`, `lib/system/haproxy-container.ts`,
   `lib/geoip/actions.ts` und `lib/audit-log/read.ts`. Vorher stand die Logik in den Routen unter
   `app/api/`; dort steht jetzt nur noch Anmeldung, Rumpf und Aufruf.

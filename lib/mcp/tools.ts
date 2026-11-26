@@ -38,7 +38,7 @@ import { z } from 'zod';
 import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import type { Locale } from '../i18n';
 import type { HaproxyActor } from '../haproxy/runner';
-import { BACKEND_TLS, HAPROXY_BALANCE } from '../haproxy/config';
+import { HAPROXY_BALANCE, isBackendTls } from '../haproxy/config';
 import { STREAM_BALANCE } from '../haproxy/streams';
 import {
   RUN_ACTIONS,
@@ -96,6 +96,11 @@ import { ALLOW_DURATIONS, BAN_DURATIONS } from '../crowdsec/data';
 import { CRS_MODES } from '../crowdsec/files';
 import { checkAddressMove } from '../address-move';
 import { reissueCertificate, removeCertificate } from '../haproxy/certificate-actions';
+import {
+  listCertificateAuthorities,
+  removeCertificateAuthority,
+  saveCertificateAuthority,
+} from '../haproxy/ca-actions';
 import {
   applyBaseConfig,
   readBaseConfigRows,
@@ -194,12 +199,29 @@ const serverEntry = z.object({
 
 /** Dieselbe Allow-Liste wie `validateCreateInput`; das Schema sagt es nur früher. */
 const backendTls = z
-  .enum(BACKEND_TLS)
+  .string()
+  .refine(isBackendTls, {
+    message: 'Expected "off", "insecure", "verify" or "ca:<name>" (name from list_certificate_authorities).',
+  })
   .optional()
   .describe(
     'How HAProxy talks to the upstream. Omit or "off": plain HTTP. "insecure": HTTPS without checking the certificate ' +
       '(self-signed, e.g. Proxmox on 8006, TrueNAS). "verify": HTTPS, certificate checked against the system CAs ' +
-      '(needs HAProxy 2.6+). Both HTTPS modes send the request Host as SNI.'
+      '(needs HAProxy 2.6+). "ca:<name>": HTTPS, certificate checked against a stored certificate authority, ' +
+      'for upstreams with a certificate from an internal CA (names from list_certificate_authorities, e.g. "ca:intern-root"). ' +
+      'All HTTPS modes send the request Host as SNI; when checking, the upstream certificate must be valid for the requested domain.'
+  );
+
+const backendVerifyHost = z
+  .string()
+  .nullable()
+  .optional()
+  .describe(
+    'Name the upstream certificate is checked against instead of the requested domain, e.g. "app01.intern.example". ' +
+      'For upstreams whose certificate only names their internal hostname (typical with an internal CA). ' +
+      'HAProxy then sends this name as SNI (also for the health check) and verifies the certificate against it; ' +
+      'the Host header sent to the upstream stays the requested domain. Lowercase hostname, no wildcard, no port, no IP address. ' +
+      'Only with backendTls "verify" or "ca:<name>"; ignored and not stored with "off" and "insecure". Omit or null: the requested domain.'
   );
 
 const routeEntry = z.object({
@@ -215,7 +237,10 @@ const routeEntry = z.object({
     .optional()
     .describe('Plain TCP check on these upstreams (no HTTP check: a WebSocket endpoint does not answer GET / with 200).'),
   backendTls: backendTls.describe(
-    'Own setting per rule, not inherited from the target: off, insecure or verify (see backendTls of the target).'
+    'Own setting per rule, not inherited from the target: off, insecure, verify or ca:<name> (see backendTls of the target).'
+  ),
+  backendVerifyHost: backendVerifyHost.describe(
+    'Own setting per rule, not inherited from the target (see backendVerifyHost of the target).'
   ),
 });
 
@@ -303,6 +328,7 @@ const serviceFields = {
     .optional()
     .describe('HTTP health check against domains[0]. Default false. Ignored when domains[0] is a wildcard or redirect is set.'),
   backendTls,
+  backendVerifyHost,
   dnsDomains: z
     .union([z.literal('auto'), z.array(z.string())])
     .optional()
@@ -453,7 +479,7 @@ export const TOOLS: ToolDefinition[] = [
     title: 'Update target',
     description:
       'Replaces a target with a COMPLETE new definition. This is not a partial patch: every field you omit is reset ' +
-      '(servers, routes, headers, tunnel, healthcheck, backendTls, lockedDomains). Always call get_service first, modify its result, and send all fields. ' +
+      '(servers, routes, headers, tunnel, healthcheck, backendTls, backendVerifyHost, lockedDomains). Always call get_service first, modify its result, and send all fields. ' +
       'Exception: omitting passwordLock keeps the current lock type and password. ' +
       'Domains removed from the list lose their DNS record if HAPM created it. ' +
       'Refused when editable=false, and for the surface target when the HAPM domain would be removed. ' +
@@ -1220,6 +1246,48 @@ export const TOOLS: ToolDefinition[] = [
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     run: async (args, ctx) => started(await reissueCertificate(args, ctx.actor)),
+  }),
+
+  defineTool({
+    name: 'list_certificate_authorities',
+    title: 'List certificate authorities',
+    description:
+      'Certificate authorities stored for checking upstream certificates (backendTls "ca:<name>"): name, file, their certificates ' +
+      '(subject, issuer, notAfter, SHA-256 fingerprint), daysLeft until the earliest expiry and usedBy (target IDs). ' +
+      'These are trust anchors for upstreams with a certificate from an internal CA, not certificates served to visitors (see list_certificates).',
+    input: {},
+    annotations: READ_ONLY,
+    run: (_args, ctx) => listCertificateAuthorities(ctx.t),
+  }),
+
+  defineTool({
+    name: 'upload_certificate_authority',
+    title: 'Store certificate authority',
+    description:
+      'Stores the certificate of a certificate authority (PEM, one certificate or a bundle of root and intermediates) under a name, ' +
+      'so targets can check their upstream certificate against it with backendTls "ca:<name>". Only certificates: a private key is rejected. ' +
+      'Rejected as well: expired certificates and a server certificate that is neither a CA nor self-signed. ' +
+      'Without replace an existing name is not overwritten (409). With replace=true the file of an existing authority is exchanged; ' +
+      'if a target uses it, HAProxy is checked and reloaded (reloaded=true) and upstreams whose certificate the new file no longer confirms answer 503. ' +
+      'Synchronous, no run. Returns name, certificates, notAfter, reloaded, usedBy, warnings.',
+    input: {
+      name: z.string().describe('Lowercase letters, digits and hyphens, up to 40 characters, e.g. "intern-root". It becomes the file name and stays.'),
+      certificate: z.string().describe('PEM text starting with -----BEGIN CERTIFICATE-----. Several certificates one after another are a bundle.'),
+      replace: z.boolean().optional().describe('true: exchange the file of an authority that already exists under this name.'),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    run: (args, ctx) => saveCertificateAuthority(args, auditActor(ctx.actor), ctx.t),
+  }),
+
+  defineTool({
+    name: 'delete_certificate_authority',
+    title: 'Remove certificate authority',
+    description:
+      'Removes a stored certificate authority by name. Refused (409) while a target still checks against it (usedBy in list_certificate_authorities) ' +
+      'or haproxy.cfg mentions its file anywhere: switch those targets to another backendTls first.',
+    input: { name: z.string().describe('Name from list_certificate_authorities.') },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    run: (args, ctx) => removeCertificateAuthority(args.name, auditActor(ctx.actor)),
   }),
 
   defineTool({

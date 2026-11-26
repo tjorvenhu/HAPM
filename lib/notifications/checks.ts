@@ -11,7 +11,8 @@
 import fs from 'node:fs';
 import { localServer } from '../helpers';
 import { containerInfo, haproxyContainerName } from '../docker';
-import { probeProxy, readCertificateInventory } from '../haproxy/provision';
+import { probeProxy, readBackendCas, readCertificateInventory } from '../haproxy/provision';
+import { CA_WARN_DAYS, caDaysLeft, caUsers } from '../haproxy/backend-ca';
 import { HAPROXY_CERT_DIR, serviceHealth, type BackendServerState, type HaproxyRoute } from '../haproxy/config';
 import { pemFileName } from '../haproxy/certs';
 import { CERT_WARN_DAYS, UPLOAD_WARN_DAYS, certificateDue, pemExpiry, uploadedDue } from '../system/certificates';
@@ -20,7 +21,7 @@ import { bouncerContainerName, crowdsecContainerName, crowdsecInstalled } from '
 import { notify } from './index';
 import { pruneStates, resolveState } from './state';
 import { advanceStreaks, type Observed, type Streak } from './streaks';
-import type { ExpiringCertificate, TargetKind } from './events';
+import type { ExpiringAuthority, ExpiringCertificate, TargetKind } from './events';
 
 /** Der Takt der Prüfung von HAProxy und seinen Zielen. Gemeldet wird nach zwei Runden. */
 export const HEALTH_CHECK_INTERVAL_MS = 2 * 60 * 1000;
@@ -275,6 +276,26 @@ async function expiringCertificates(now: number): Promise<ExpiringCertificate[]>
   return out;
 }
 
+/**
+ * Die hinterlegten Zertifizierungsstellen, die bald ablaufen. Nur, was ein
+ * Ziel benutzt: eine Datei, gegen die niemand prüft, lässt nichts ausfallen.
+ */
+async function expiringAuthorities(now: number): Promise<ExpiringAuthority[]> {
+  const server = localServer();
+  const authorities = await readBackendCas(server);
+  if (!authorities || authorities.length === 0) return [];
+  const { services } = await probeProxy(server);
+  const out: ExpiringAuthority[] = [];
+  for (const ca of authorities) {
+    const daysLeft = caDaysLeft(ca, now);
+    // Nicht lesbar heißt unbekannt, nicht abgelaufen.
+    if (ca.notAfter === null || daysLeft === null || daysLeft >= CA_WARN_DAYS) continue;
+    const usedBy = caUsers(ca.name, services).map((service) => service.id);
+    if (usedBy.length > 0) out.push({ name: ca.name, expiresAt: ca.notAfter, daysLeft, usedBy });
+  }
+  return out;
+}
+
 /** Einmal am Tag, nach der Erneuerung der Zertifikate: ihr Ergebnis melden und nach dem Ablauf sehen. */
 export async function runDailyChecks(renewal: { ok: boolean; output: string }): Promise<void> {
   try {
@@ -282,6 +303,12 @@ export async function runDailyChecks(renewal: { ok: boolean; output: string }): 
 
     const certificates = await expiringCertificates(Date.now());
     if (certificates.length > 0) await notify({ type: 'certificate_expiring', certificates });
+
+    const authorities = await expiringAuthorities(Date.now()).catch((err) => {
+      log('Prüfung der Zertifizierungsstellen gescheitert', err);
+      return [];
+    });
+    if (authorities.length > 0) await notify({ type: 'backend_ca_expiring', authorities });
 
     // CrowdSec antwortet nicht: dann gibt es heute keinen Bericht, die Prüfung oben meldet den Ausfall.
     await crowdsecReport().catch((err) => log('Tagesbericht von CrowdSec gescheitert', err));

@@ -223,14 +223,29 @@ export const proxyServer: Dictionary = {
   'server {name}: verify {verify} kennt HAProxy nicht.': 'server {name}: HAProxy does not know verify {verify}.',
   'server {name}: ssl prüft das Zertifikat, aber ohne ca-file. So lädt HAProxy die Zeile nicht.':
     'server {name}: ssl verifies the certificate, but there is no ca-file. HAProxy does not load the line like this.',
-  'server {name}: Eine eigene CA-Datei ({file}) kennt HAPM nicht, nur die CAs des Systems (@system-ca).':
-    'server {name}: HAPM does not support a custom CA file ({file}), only the system CAs (@system-ca).',
-  'server {name}: HAPM prüft das Zertifikat gegen die Domain der Anfrage (sni req.hdr(host)). Hier wird es anders geprüft, das Ziel könnte danach durchfallen.':
-    'server {name}: HAPM verifies the certificate against the domain of the request (sni req.hdr(host)). It is verified differently here, so the target could fail afterwards.',
   'Die Ziele sprechen teils HTTP, teils HTTPS. HAPM kennt eine Art je Backend.':
     'Some targets speak HTTP, others HTTPS. HAPM supports one kind per backend.',
   'HTTPS zum Ziel': 'HTTPS to the target',
   'HTTPS zum Ziel, Zertifikat geprüft': 'HTTPS to the target, certificate verified',
+  'HTTPS zum Ziel, Zertifikat geprüft gegen {name}': 'HTTPS to the target, certificate verified against {name}',
+  'server {name}: verifyhost wirkt nur mit verify required. Hier wird das Zertifikat nicht geprüft.':
+    'server {name}: verifyhost only takes effect with verify required. Here the certificate is not verified.',
+  'server {name}: HAPM prüft das Zertifikat gegen die Domain der Anfrage (sni req.hdr(host)) oder gegen einen festen Namen (sni str(name)). Hier wird es anders geprüft, das Ziel könnte danach durchfallen.':
+    'server {name}: HAPM verifies the certificate against the domain of the request (sni req.hdr(host)) or against a fixed name (sni str(name)). Here it is verified differently, the target could fail afterwards.',
+  'server {name}: verifyhost {host} neben einem SNI aus der Domain der Anfrage. HAPM prüft gegen einen Namen, nicht gegen zwei.':
+    'server {name}: verifyhost {host} next to an SNI from the domain of the request. HAPM verifies against one name, not two.',
+  'server {name}: SNI {sni} und verifyhost {host} nennen verschiedene Namen. HAPM prüft gegen einen.':
+    'server {name}: SNI {sni} and verifyhost {host} name different names. HAPM verifies against one.',
+  'server {name}: {host} ist kein Name, gegen den HAPM ein Zertifikat prüft.':
+    'server {name}: {host} is not a name HAPM verifies a certificate against.',
+  'server {name}: HAPM schickt dem Ziel {host} als SNI und prüft das Zertifikat dagegen.':
+    'server {name}: HAPM sends {host} to the target as SNI and verifies the certificate against it.',
+  'Die Zertifikate der Ziele werden gegen verschiedene Namen geprüft. HAPM kennt einen Namen je Backend.':
+    'The certificates of the targets are verified against different names. HAPM knows one name per backend.',
+  '„{name}" ist kein Name, gegen den sich ein Zertifikat prüfen lässt. Erwartet wird ein Hostname wie app01.intern.example: kleingeschrieben, ohne Stern, ohne Port, keine IP-Adresse.':
+    '"{name}" is not a name a certificate can be verified against. Expected is a hostname such as app01.intern.example: lowercase, no wildcard, no port, no IP address.',
+  'server {name}: Die CA-Datei {file} liegt nicht bei den hinterlegten Zertifizierungsstellen ({dir}). Hinterlegen Sie sie unter Zertifikate und wählen Sie sie danach am Ziel aus.':
+    'server {name}: The CA file {file} is not among the added certificate authorities ({dir}). Add it under Certificates and then pick it on the target.',
   'Pfad-Regel: {what}': 'Path rule: {what}',
   'ssl an einer server-Zeile kennt HAPM bei einer TCP-Weiterleitung nicht: sie reicht durch, was kommt.':
     'HAPM does not support ssl on a server line of a TCP forward: it passes through whatever arrives.',
@@ -563,6 +578,37 @@ export const proxyServer: Dictionary = {
   "{file} ist kein hochgeladenes Zertifikat. Zertifikate von acme.sh vergehen mit ihrem Ziel.": "{file} is not an uploaded certificate. Certificates from acme.sh are removed with their target.",
   "Das Zertifikat wird noch gebraucht: {list}. Entfernen Sie zuerst die Ziele oder laden Sie ein anderes Zertifikat für sie hoch.": "The certificate is still needed: {list}. Remove the targets first or upload another certificate for them.",
   "Das Zertifikat ließ sich nicht entfernen: {detail}": "The certificate could not be removed: {detail}",
+  // Zertifizierungsstellen für die Prüfung der Ziele (lib/haproxy/backend-ca.ts, ca-actions.ts, provision.ts)
+  'Der Name darf nur Kleinbuchstaben, Ziffern und Bindestriche enthalten, höchstens 40 Zeichen, und beginnt und endet mit einem Buchstaben oder einer Ziffer.':
+    'The name may only contain lowercase letters, digits and hyphens, up to 40 characters, and starts and ends with a letter or digit.',
+  'Die Datei ist größer als 300 KB. Hinterlegen Sie nur die Zertifizierungsstelle, die Ihre Ziele ausstellt, mit ihren Zwischenstellen.':
+    'The file is larger than 300 KB. Add only the certificate authority that issues your targets, with its intermediates.',
+  'Hier steht ein privater Schlüssel. Hinterlegt wird nur das Zertifikat der Zertifizierungsstelle, ihr Schlüssel gehört nicht auf diesen Server.':
+    'This contains a private key. Only the certificate of the certificate authority is added, its key does not belong on this server.',
+  'Hier steht kein PEM-Zertifikat. Erwartet wird ein Text, der mit -----BEGIN CERTIFICATE----- beginnt.':
+    'This contains no PEM certificate. Expected is a text that starts with -----BEGIN CERTIFICATE-----.',
+  '„{subject}" ist das Zertifikat eines Servers und keine Zertifizierungsstelle. Hinterlegen Sie das Zertifikat der Stelle, die es ausgestellt hat ({issuer}).':
+    '"{subject}" is the certificate of a server and not a certificate authority. Add the certificate of the authority that issued it ({issuer}).',
+  'Das Zertifikat ist seit dem {date} abgelaufen. HAProxy lehnte damit jedes Ziel ab.':
+    'The certificate expired on {date}. HAProxy would reject every target with it.',
+  '„{subject}" in der Datei ist seit dem {date} abgelaufen. Nehmen Sie es heraus: HAProxy bestätigt damit kein Ziel.':
+    '"{subject}" in the file expired on {date}. Take it out: HAProxy confirms no target with it.',
+  '„{subject}" ist ein selbst signiertes Zertifikat eines Servers. HAProxy nimmt damit genau dieses Zertifikat an, kein anderes.':
+    '"{subject}" is a self-signed certificate of a server. With it HAProxy accepts exactly this certificate, no other.',
+  'Der Ordner der Zertifizierungsstellen ist nicht lesbar.': 'The folder of the certificate authorities is not readable.',
+  'Der Ordner der Zertifizierungsstellen ({dir}) ist nicht lesbar.': 'The folder of the certificate authorities ({dir}) is not readable.',
+  'Unter dem Namen {name} ist schon eine Zertifizierungsstelle hinterlegt. Ersetzen Sie sie über ihre Zeile.':
+    'A certificate authority is already added under the name {name}. Replace it from its row.',
+  'Eine Zertifizierungsstelle mit dem Namen {name} ist nicht hinterlegt.': 'No certificate authority is added under the name {name}.',
+  'Die Zertifizierungsstelle ließ sich nicht ablegen: {detail}': 'The certificate authority could not be stored: {detail}',
+  'Die bisherige Datei ließ sich nicht sichern. Es wurde nichts geändert: {detail}':
+    'The previous file could not be saved. Nothing was changed: {detail}',
+  'Die Zertifizierungsstelle ließ sich nicht einsetzen: {detail}': 'The certificate authority could not be installed: {detail}',
+  'Die Zertifizierungsstelle {name} wird noch benutzt: {list}. Stellen Sie diese Ziele zuerst auf eine andere Prüfung um.':
+    'The certificate authority {name} is still in use: {list}. Switch these targets to another verification first.',
+  'Die Zertifizierungsstelle {name} steht noch in {file}, in einer Zeile, die HAPM nicht geschrieben hat.':
+    'The certificate authority {name} is still referenced in {file}, in a line HAPM did not write.',
+  'Die Zertifizierungsstelle ließ sich nicht entfernen: {detail}': 'The certificate authority could not be removed: {detail}',
   "Das Zertifikat für {domain} wird noch gebraucht: {list}. Es bleibt stehen, solange ein Ziel darunter liegt.": "The certificate for {domain} is still needed: {list}. It stays as long as a target lies beneath it.",
   "Die Datei ist entfernt, aber acme.sh hat den Eintrag für {domain} nicht gelöscht. Die nächste Erneuerung legt die Datei wieder an: {detail}": "The file is removed, but acme.sh did not delete the entry for {domain}. The next renewal creates the file again: {detail}",
   "acme.sh hat den Eintrag für {domain} nicht gelöscht: {detail}": "acme.sh did not delete the entry for {domain}: {detail}",
@@ -604,8 +650,10 @@ export const proxyServer: Dictionary = {
   'Die Gruppe {scope} gehört der Oberfläche von HAPM. Weitere Ziele und Weiterleitungen kommen in eine andere Gruppe.':
     'The group {scope} belongs to the HAPM web interface. Put other targets and forwards into another group.',
   // HTTPS zum Ziel
-  'Unbekannte Angabe, wie das Ziel angesprochen wird. Erlaubt sind off, insecure und verify.':
-    'Unknown setting for how the target is addressed. Allowed are off, insecure and verify.',
+  'Unbekannte Angabe, wie das Ziel angesprochen wird. Erlaubt sind off, insecure, verify und ca: mit dem Namen einer hinterlegten Zertifizierungsstelle.':
+    'Unknown setting for how the target is addressed. Allowed are off, insecure, verify and ca: with the name of an added certificate authority.',
+  'Die Zertifizierungsstelle {name} ist nicht hinterlegt. Hinterlegen Sie sie unter Zertifikate, Reiter Zertifizierungsstellen, oder wählen Sie eine andere.':
+    'The certificate authority {name} is not added. Add it under Certificates, tab Certificate authorities, or pick another one.',
   'HTTPS zum Ziel gehört zu einem Backend mit Zielen. Eine Weiterleitung hat keine.':
     'HTTPS to the target belongs to a backend with targets. A redirect has none.',
   'Unbekannte Angabe, wie die Ziele der Pfad-Regel „{name}" angesprochen werden.':

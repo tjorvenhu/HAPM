@@ -644,6 +644,7 @@ bekommt eine eigene Mail.
 |---|---|---|
 | `certificate_renewal_failed` | `acme.sh --cron` endet mit einem Fehler | täglicher Lauf |
 | `certificate_expiring` | ein Zertifikat ist weniger als 14 Tage gültig, eine Mail für alle | täglicher Lauf |
+| `backend_ca_expiring` | eine hinterlegte Zertifizierungsstelle, die ein Ziel benutzt, ist weniger als 30 Tage gültig, eine Mail für alle | täglicher Lauf |
 | `haproxy_down` | der Container läuft bei zwei Prüfungen in Folge nicht | alle zwei Minuten |
 | `backend_down` | kein Ziel eines Eintrags antwortet, bei zwei Prüfungen in Folge | alle zwei Minuten |
 | `backend_recovered` | ein Eintrag, dessen Ausfall gemeldet wurde, antwortet zweimal in Folge wieder | alle zwei Minuten |

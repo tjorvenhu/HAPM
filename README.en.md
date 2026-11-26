@@ -102,6 +102,7 @@ has HAProxy check it, reloads and fetches the certificates.
 - Servers on a private network only: every certificate via DNS-01
 - Your own ACME server, for example step-ca on your network
 - Upload certificates if HAPM should not request any
+- Add your own certificate authorities: targets with a certificate from an internal CA are verified instead of connected unverified
 - Your own DNS server: HAPM tells you the records instead of creating them
 
 </td>

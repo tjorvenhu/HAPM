@@ -398,6 +398,7 @@ export type SmtpSecurity = 'starttls' | 'tls' | 'none';
 export const NOTIFICATION_EVENT_TYPES = [
   'certificate_renewal_failed',
   'certificate_expiring',
+  'backend_ca_expiring',
   'backend_down',
   'backend_recovered',
   'haproxy_down',

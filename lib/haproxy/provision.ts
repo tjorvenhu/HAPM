@@ -60,6 +60,9 @@ import {
   supportsPasswordLock,
   supportsSystemCa,
   usesSystemCa,
+  usedBackendCas,
+  backendCaFile,
+  BACKEND_CA_DIR,
   LOCK_PAGE_DIR,
   INHERIT_LOCK,
   HaproxyConfigError,
@@ -133,6 +136,15 @@ import {
   type InspectedUpload,
   type UploadedCertificate,
 } from './cert-upload';
+import {
+  caListingCommand,
+  caReferenced,
+  caUsers,
+  listedCas,
+  parseCaListing,
+  type BackendCa,
+  type InspectedCa,
+} from './backend-ca';
 import {
   findDnsProvider,
   credentialLines,
@@ -1030,6 +1042,40 @@ function assertTlsSupported(probe: ProxyProbe, input: CreateServiceInput): void 
  * Kommandozeile stünde in `ps`, für jeden Benutzer sichtbar.
  * Siehe `withStdin` in lib/shell.ts.
  */
+/**
+ * Ein Ziel, das gegen eine Zertifizierungsstelle prüfen soll, die nicht
+ * hinterlegt ist. `haproxy -c` lehnte die Datei ab („unable to load CA file"),
+ * aber erst im Vorgang und ohne zu sagen, wo sie hinterlegt wird. Geprüft wird
+ * vor dem Lauf und noch einmal im Lauf unter dem Lock: dazwischen kann sie
+ * jemand entfernt haben.
+ */
+async function assertCasPresent(
+  ssh: Awaited<ReturnType<typeof getSSHConfig>>,
+  input: Pick<CreateServiceInput, 'backendTls' | 'routes'>
+): Promise<void> {
+  const wanted = usedBackendCas(input);
+  if (wanted.length === 0) return;
+  const res = await sshExec(
+    ssh,
+    wanted.map((name) => `test -f ${shellEscape(backendCaFile(name))} && echo ja || echo nein`).join('; '),
+    SHORT_MS
+  );
+  const present = res.stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const missing = wanted.filter((_, index) => present[index] !== 'ja');
+  if (missing.length > 0) {
+    throw new ApiError(
+      msg(
+        'Die Zertifizierungsstelle {name} ist nicht hinterlegt. Hinterlegen Sie sie unter Zertifikate, Reiter Zertifizierungsstellen, oder wählen Sie eine andere.',
+        { name: missing.join(', ') }
+      ),
+      409
+    );
+  }
+}
+
 async function stageAndCheck(
   ssh: Awaited<ReturnType<typeof getSSHConfig>>,
   text: string
@@ -1489,6 +1535,7 @@ export async function createService(
     const plan = await assertIssuable(ssh, probe, input.domains, challenge);
     assertLockSupported(server, probe, input);
     assertTlsSupported(probe, input);
+    await assertCasPresent(ssh, input);
     assertCrowdsecAvailable(input.crowdsec, false);
 
     // Wirft bei doppelter ID oder belegter Domain — bevor irgendetwas passiert,
@@ -1706,6 +1753,7 @@ export async function updateService(
 
     assertLockSupported(server, probe, input);
     assertTlsSupported(probe, input);
+    await assertCasPresent(ssh, input);
     assertCrowdsecAvailable(input.crowdsec, current.crowdsec);
 
     // Wirft bei einer Domain, die inzwischen woanders geroutet wird — bevor ein
@@ -1883,6 +1931,7 @@ export async function precheckCreate(
   await assertIssuable(await getSSHConfig(server), probe, input.domains, challenge);
   assertLockSupported(server, probe, input);
   assertTlsSupported(probe, input);
+  await assertCasPresent(await getSSHConfig(server), input);
   assertCrowdsecAvailable(input.crowdsec, false);
 
   // Vergeben und vormerken ohne ein `await` dazwischen: sonst läse ein zweiter
@@ -1929,6 +1978,7 @@ export async function precheckUpdate(
   }
   assertLockSupported(server, probe, input);
   assertTlsSupported(probe, input);
+  await assertCasPresent(await getSSHConfig(server), input);
   assertCrowdsecAvailable(input.crowdsec, current.crowdsec);
   assertNothingShadowed(probe.raw, replaceService(probe.raw, oldId, input), input.id, oldId);
   return current;
@@ -2215,6 +2265,160 @@ export async function removeUploadedCertificate(server: Server, file: string): P
     });
     await sshExec(ssh, buildCommand(['rm', '-f', '--', UPLOAD_OLD]), SHORT_MS).catch(() => null);
     return cert;
+  });
+}
+
+/* ── Hinterlegte Zertifizierungsstellen (`backend-ca.ts`) ──
+ *
+ * Synchron und ohne Lauf, wie die hochgeladenen Zertifikate: es wird nichts
+ * beantragt, der Vorgang dauert Sekunden. Dieselben Riegel wie dort: der Lock,
+ * die bisherige Datei als Rückweg, `haproxy -c` vor dem Neuladen.
+ *
+ * Neu geladen wird nur, wenn `haproxy.cfg` die Datei nennt. HAProxy liest eine
+ * `ca-file` beim Laden der Konfiguration: eine neue, die noch kein Ziel
+ * benutzt, ändert nichts an dem, was läuft.
+ */
+
+/** Neben dem Ordner, nicht darin: was im Ordner liegt und `.pem` heißt, ist eine Zertifizierungsstelle. */
+const CA_STAGING = '/etc/haproxy/hapm-ca.pem.hapm-new';
+const CA_PREVIOUS = '/etc/haproxy/hapm-ca.pem.hapm-previous';
+
+async function probeCas(ssh: Awaited<ReturnType<typeof getSSHConfig>>): Promise<BackendCa[] | null> {
+  const res = await sshExec(ssh, caListingCommand(BACKEND_CA_DIR), SHORT_MS).catch(() => null);
+  return res && res.code === 0 ? listedCas(parseCaListing(res.stdout)) : null;
+}
+
+/** Die hinterlegten Zertifizierungsstellen. `null` heißt: nicht lesbar, nicht „keine". */
+export async function readBackendCas(server: Server): Promise<BackendCa[] | null> {
+  return probeCas(await getSSHConfig(server));
+}
+
+/**
+ * Eine geprüfte Zertifizierungsstelle (`inspectCaUpload`) hinterlegen oder eine
+ * hinterlegte ersetzen.
+ *
+ * Ersetzt wird nur ausdrücklich: ohne `replace` wird eine vorhandene Datei
+ * gleichen Namens nicht überschrieben. Der Name ist das, was die Ziele nennen,
+ * und wer unter einem vergebenen Namen eine andere CA ablegt, ändert, wem
+ * diese Ziele vertrauen.
+ */
+export async function uploadBackendCa(
+  server: Server,
+  upload: InspectedCa,
+  replace: boolean
+): Promise<{ reloaded: boolean; usedBy: string[] }> {
+  return withProxyLock(server.$id, async () => {
+    const ssh = await getSSHConfig(server);
+    const probe = await readableProbe(server);
+    const existing = await probeCas(ssh);
+    if (existing === null) {
+      throw new ApiError(msg('Der Ordner der Zertifizierungsstellen ({dir}) ist nicht lesbar.', { dir: BACKEND_CA_DIR }));
+    }
+    const present = existing.some((ca) => ca.name === upload.name);
+    if (present && !replace) {
+      throw new ApiError(
+        msg('Unter dem Namen {name} ist schon eine Zertifizierungsstelle hinterlegt. Ersetzen Sie sie über ihre Zeile.', {
+          name: upload.name,
+        }),
+        409
+      );
+    }
+    if (!present && replace) {
+      throw new ApiError(msg('Eine Zertifizierungsstelle mit dem Namen {name} ist nicht hinterlegt.', { name: upload.name }), 404);
+    }
+
+    const target = upload.file;
+    const write = await sshExec(
+      ssh,
+      withStdin(['sh', '-c', 'mkdir -p "$2" && umask 022 && cat > "$1"', 'sh', CA_STAGING, BACKEND_CA_DIR], upload.pem),
+      SHORT_MS
+    );
+    if (write.code !== 0) {
+      throw new ApiError(
+        msg('Die Zertifizierungsstelle ließ sich nicht ablegen: {detail}', { detail: tail(write.stderr || write.stdout) })
+      );
+    }
+
+    if (present) {
+      const keep = await sshExec(ssh, buildCommand(['cp', '-a', '--', target, CA_PREVIOUS]), SHORT_MS);
+      if (keep.code !== 0) {
+        await sshExec(ssh, buildCommand(['rm', '-f', '--', CA_STAGING]), SHORT_MS).catch(() => null);
+        throw new ApiError(
+          msg('Die bisherige Datei ließ sich nicht sichern. Es wurde nichts geändert: {detail}', {
+            detail: tail(keep.stderr || keep.stdout),
+          })
+        );
+      }
+    }
+    const restore = async () => {
+      await sshExec(
+        ssh,
+        present ? `cat ${shellEscape(CA_PREVIOUS)} > ${shellEscape(target)}` : buildCommand(['rm', '-f', '--', target]),
+        SHORT_MS
+      ).catch(() => null);
+    };
+
+    // 644: in der Datei stehen nur Zertifikate, und HAProxy liest sie als der Benutzer, als der es startet.
+    const install = await sshExec(
+      ssh,
+      `cat ${shellEscape(CA_STAGING)} > ${shellEscape(target)} && chmod 644 ${shellEscape(target)}`,
+      SHORT_MS
+    );
+    await sshExec(ssh, buildCommand(['rm', '-f', '--', CA_STAGING]), SHORT_MS).catch(() => null);
+    if (install.code !== 0) {
+      await restore();
+      throw new ApiError(
+        msg('Die Zertifizierungsstelle ließ sich nicht einsetzen: {detail}', { detail: tail(install.stderr || install.stdout) })
+      );
+    }
+
+    const referenced = caReferenced(upload.name, probe.raw);
+    // Scheitert es, bleibt die Sicherung liegen: sie ist dann der einzige Rückweg von Hand.
+    if (referenced) await checkAndReload(ssh, restore);
+    await sshExec(ssh, buildCommand(['rm', '-f', '--', CA_PREVIOUS]), SHORT_MS).catch(() => null);
+    return { reloaded: referenced, usedBy: caUsers(upload.name, probe.services).map((service) => service.id) };
+  });
+}
+
+/**
+ * Eine hinterlegte Zertifizierungsstelle entfernen. Nur, wenn `haproxy.cfg`
+ * sie nirgends nennt: mit einer `ca-file`, die fehlt, lädt HAProxy die
+ * Konfiguration nicht mehr, und das fiele beim nächsten Neuladen auf, nicht
+ * heute. Geprüft wird im Lock und an der Datei, nicht an der Liste der Seite.
+ */
+export async function removeBackendCa(server: Server, name: string): Promise<BackendCa> {
+  return withProxyLock(server.$id, async () => {
+    const ssh = await getSSHConfig(server);
+    const probe = await readableProbe(server);
+    const existing = await probeCas(ssh);
+    const ca = existing?.find((entry) => entry.name === name);
+    if (!ca) {
+      throw new ApiError(msg('Eine Zertifizierungsstelle mit dem Namen {name} ist nicht hinterlegt.', { name }), 404);
+    }
+
+    if (caReferenced(name, probe.raw)) {
+      const users = caUsers(name, probe.services).map((service) => service.id);
+      throw new ApiError(
+        users.length > 0
+          ? msg(
+              'Die Zertifizierungsstelle {name} wird noch benutzt: {list}. Stellen Sie diese Ziele zuerst auf eine andere Prüfung um.',
+              { name, list: users.join(', ') }
+            )
+          : msg('Die Zertifizierungsstelle {name} steht noch in {file}, in einer Zeile, die HAPM nicht geschrieben hat.', {
+              name,
+              file: HAPROXY_CFG,
+            }),
+        409
+      );
+    }
+
+    const remove = await sshExec(ssh, buildCommand(['rm', '-f', '--', ca.file]), SHORT_MS);
+    if (remove.code !== 0) {
+      throw new ApiError(
+        msg('Die Zertifizierungsstelle ließ sich nicht entfernen: {detail}', { detail: tail(remove.stderr || remove.stdout) })
+      );
+    }
+    return ca;
   });
 }
 
