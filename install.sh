@@ -135,7 +135,7 @@ Entfernen:
   --yes              ohne Rückfrage entfernen
 
 Dieselben Angaben über die Umgebung: HAPM_DIR, HAPM_STORAGE, HAPM_PORT,
-HAPM_IMAGE, HAPM_CROWDSEC=0 oder 1, HAPM_FORCE=1, HAPM_YES=1. HAPM_SOURCE nennt, woher
+HAPM_IMAGE, HAPM_CROWDSEC=0 (wie --no-crowdsec), HAPM_FORCE=1, HAPM_YES=1. HAPM_SOURCE nennt, woher
 docker-compose.yml kommt (Vorgabe das Repository auf GitHub).
 EOF
 }
@@ -682,7 +682,7 @@ if [ ! -f .env ]; then
     printf 'HAPM_STORAGE=%s\n' "$STORAGE"
     [ -z "$ZONE" ] || printf 'TZ=%s\n' "$ZONE"
     [ -z "$IMAGE" ] || printf 'HAPM_IMAGE=%s\n' "$IMAGE"
-    printf 'HAPM_CROWDSEC=%s\n' "${CROWDSEC:-1}"
+    [ "$CROWDSEC" != 0 ] || printf 'HAPM_CROWDSEC_OFF=1\n'
   } >.env
   note ".env angelegt."
 else
@@ -699,22 +699,28 @@ else
   fi
 fi
 
-# CrowdSec an- oder abwählen, wenn es angegeben ist. Eine vorhandene Zeile wird
-# ersetzt, sonst angehängt. Ohne Angabe bleibt .env, wie sie ist.
-if [ -n "$CROWDSEC" ]; then
-  case "$CROWDSEC" in
-    0 | 1) ;;
-    *) fail "HAPM_CROWDSEC ist 0 oder 1, nicht $CROWDSEC." ;;
-  esac
-  if grep -q '^HAPM_CROWDSEC=' .env; then
-    sed -i "s/^HAPM_CROWDSEC=.*/HAPM_CROWDSEC=$CROWDSEC/" .env
-  else
-    printf 'HAPM_CROWDSEC=%s\n' "$CROWDSEC" >>.env
-  fi
+# CrowdSec an- oder abwählen. Abgewählt steht HAPM_CROWDSEC_OFF=1 in .env: dann
+# sieht Compose die beiden Dienste gar nicht, holt ihre Abbilder nicht und legt
+# keine Container an. Ohne Angabe bleibt .env, wie sie ist.
+case "$CROWDSEC" in
+  "" | 0 | 1) ;;
+  *) fail "HAPM_CROWDSEC ist 0 oder 1, nicht $CROWDSEC." ;;
+esac
+# Eine Zeile HAPM_CROWDSEC=… aus einer früheren Fassung dieses Skripts.
+if grep -q '^HAPM_CROWDSEC=' .env; then
+  [ -n "$CROWDSEC" ] || CROWDSEC="$(env_value HAPM_CROWDSEC .env)"
+  sed -i '/^HAPM_CROWDSEC=/d' .env
 fi
-if [ "$(env_value HAPM_CROWDSEC .env)" = 0 ]; then
-  note "CrowdSec (WAF) ist abgewählt. Dazunehmen: sh install.sh --crowdsec"
+if [ "$CROWDSEC" = 0 ] && ! grep -q '^HAPM_CROWDSEC_OFF=' .env; then
+  printf 'HAPM_CROWDSEC_OFF=1\n' >>.env
+elif [ "$CROWDSEC" = 1 ]; then
+  sed -i '/^HAPM_CROWDSEC_OFF=/d' .env
+fi
+if [ -n "$(env_value HAPM_CROWDSEC_OFF .env)" ]; then
+  CROWDSEC_OFF=1
+  note "CrowdSec (WAF) ist abgewählt: weder Abbilder noch Container. Dazunehmen: sh install.sh --crowdsec"
 else
+  CROWDSEC_OFF=0
   note "CrowdSec (WAF) gehört dazu. Es prüft nichts, bis es in der Oberfläche eingeschaltet wird."
 fi
 
@@ -771,6 +777,13 @@ step "HAPM starten"
 if ! progress "Abbilder werden geholt" docker compose pull; then
   # Ein lokal gebautes Abbild (--image) liegt in keiner Registry.
   warn "Nicht alle Abbilder ließen sich holen. Es geht mit den vorhandenen weiter."
+fi
+
+# Abgewählt, aber von früher noch da: Compose sieht die Dienste nicht mehr und
+# räumt ihre Container deshalb auch nicht weg. Nennt man sie ausdrücklich, geht es.
+if [ "$CROWDSEC_OFF" = 1 ] && { docker inspect hapm-crowdsec >/dev/null 2>&1 || docker inspect hapm-crowdsec-bouncer >/dev/null 2>&1; }; then
+  progress "CrowdSec wird entfernt" docker compose rm -sf crowdsec crowdsec-bouncer \
+    || warn "Die Container von CrowdSec ließen sich nicht entfernen."
 fi
 
 if ! progress "Container werden gestartet" docker compose up -d --remove-orphans; then

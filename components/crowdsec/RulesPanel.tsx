@@ -15,7 +15,7 @@ import type { CrowdsecRules, CrsMode } from './types';
 const CRS_OPTIONS: { value: CrsMode; label: string; hint: string }[] = [
   { value: 'off', label: msgid('Aus'), hint: msgid('Nur virtuelle Patches und allgemeine Regeln.') },
   { value: 'detect', label: msgid('Nur melden'), hint: msgid('Treffer erscheinen als Ereignis, die Anfrage geht durch.') },
-  { value: 'block', label: msgid('Sperren'), hint: msgid('Treffer werden mit 403 abgelehnt.') },
+  { value: 'block', label: msgid('Treffer sperren'), hint: msgid('Treffer werden mit 403 abgelehnt.') },
 ];
 
 const BASE_LABELS: Record<string, string> = {

@@ -40,7 +40,7 @@ import Skeleton, { SkeletonRows } from '@/components/Skeleton';
 import GeoipReminder from '@/components/GeoipReminder';
 import LiveTraffic from '@/components/reverse-proxy/LiveTraffic';
 import SetupReminder from '@/components/SetupReminder';
-import BrandLogo, { BrandName } from '@/components/BrandLogo';
+import BrandLogo from '@/components/BrandLogo';
 import { DashSection, LayoutDialog, useDashboardLayout } from '@/components/dashboard/DashboardLayout';
 import {
   COMPONENT_LABELS,
@@ -581,7 +581,7 @@ function CrowdsecKpis({ crowdsec }: { crowdsec: SystemCrowdsec }) {
           down
             ? t('CrowdSec läuft nicht')
             : summary.global === true
-              ? t('alle, über den Schalter für alle')
+              ? undefined
               : t('von {count}', { count: formatNumber(locale, summary.totalServices) })
         }
         tone={down ? 'danger' : undefined}
@@ -1052,12 +1052,10 @@ export default function DashboardPage() {
                               <td data-label="primary">
                                 <div className="hapm-part">
                                   <span className="kpi-icon">
-                                    <Network size={16} strokeWidth={1.5} />
+                                    <BrandLogo brand="haproxy" size={16} />
                                   </span>
                                   <div>
-                                    <strong>
-                                      <BrandName brand="haproxy">HAProxy</BrandName>
-                                    </strong>
+                                    <strong>HAProxy</strong>
                                     <div className="detail-sub mono">{haproxy.image ?? haproxy.name}</div>
                                   </div>
                                 </div>
@@ -1150,7 +1148,7 @@ export default function DashboardPage() {
                               <td data-label="primary">
                                 <div className="hapm-part">
                                   <span className="kpi-icon">
-                                    <ShieldCheck size={16} strokeWidth={1.5} />
+                                    <BrandLogo brand="acme" size={16} />
                                   </span>
                                   <div>
                                     <strong>acme.sh</strong>

@@ -17,7 +17,7 @@ import type { CrowdsecOverview, CrsMode } from './types';
 const CRS_LABELS: Record<CrsMode, string> = {
   off: msgid('Aus'),
   detect: msgid('Nur melden'),
-  block: msgid('Sperren'),
+  block: msgid('Treffer sperren'),
 };
 
 function ContainerBadge({ info, label }: { info: CrowdsecOverview['status']['crowdsec']; label: string }) {
@@ -136,7 +136,7 @@ export default function OverviewPanel({ data, onChanged }: { data: CrowdsecOverv
         <h3>{t('CrowdSec ist bei dieser Installation abgeschaltet')}</h3>
         <p>
           {t(
-            'Bei der Installation wurde CrowdSec abgewählt. Einschalten: HAPM_CROWDSEC=1 in der Datei .env neben docker-compose.yml setzen und docker compose up -d ausführen, oder install.sh mit --crowdsec erneut starten.'
+            'Bei der Installation wurde CrowdSec abgewählt. Einschalten: die Zeile HAPM_CROWDSEC_OFF in der Datei .env neben docker-compose.yml entfernen und docker compose up -d ausführen, oder install.sh mit --crowdsec erneut starten.'
           )}
         </p>
       </div>

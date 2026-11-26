@@ -10,7 +10,6 @@ import {
   LayoutDashboard,
   Loader2,
   RefreshCw,
-  ShieldCheck,
 } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
 import { InfoHint } from '@/ui/primitives/InfoHint';
@@ -61,7 +60,7 @@ const OPTIONAL: UpdateComponent[] = ['crowdsec', 'crowdsec-bouncer'];
 const COMPONENT_ICONS: Record<UpdateComponent, ReactNode> = {
   haproxy: <BrandLogo brand="haproxy" size={17} />,
   hapm: <LayoutDashboard size={17} strokeWidth={1.5} />,
-  acme: <ShieldCheck size={17} strokeWidth={1.5} />,
+  acme: <BrandLogo brand="acme" size={17} />,
   crowdsec: <BrandLogo brand="crowdsec" size={17} />,
   'crowdsec-bouncer': <BrandLogo brand="crowdsec" size={17} />,
 };

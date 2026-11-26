@@ -29,25 +29,36 @@ belegt. Nach außen geht nur der Port des Bouncers, und der nur auf
 `127.0.0.1:${HAPM_SPOA_PORT:-7423}`: HAProxy im Netz des Hosts erreicht ihn
 dort, von außen niemand.
 
-**Ein- und abschalten über `scale`.** Beide Dienste tragen
-`scale: ${HAPM_CROWDSEC:-1}`. Mit `HAPM_CROWDSEC=0` in `.env` legt Compose die
-beiden Container nicht an, und HAPM weiß über dieselbe Variable, dass es sie
-nicht gibt (`crowdsecInStack()` in `lib/crowdsec/paths.ts`). Eine zweite
-Compose-Datei oder ein Profil wäre die Alternative gewesen. Dagegen sprach: wer
-nur `docker-compose.yml` herunterlädt (Weg 1 im README) oder den Inhalt in
-Portainer einfügt, hätte CrowdSec nie bekommen, und Profile muss jeder Aufruf
-von `docker compose` kennen. `scale` braucht Docker Compose v2 mit Unterstützung
-für das Attribut, 2.20 oder neuer ist sicher.
+**Abwählen über ein Profil, das sich selbst setzt.** Beide Dienste tragen
+`profiles: ["${HAPM_CROWDSEC_OFF:+ohne-crowdsec}"]`. Ohne die Variable ist das
+Profil leer, und ein leeres Profil ist für Compose immer dabei: wer nur
+`docker-compose.yml` herunterlädt (Weg 1 im README) oder den Inhalt in
+Portainer einfügt, bekommt CrowdSec ohne weitere Angabe. Mit
+`HAPM_CROWDSEC_OFF=1` heißt das Profil `ohne-crowdsec`, das niemand einschaltet:
+Compose sieht die beiden Dienste dann gar nicht, holt ihre Abbilder nicht und
+legt keine Container an. HAPM liest dieselbe Variable (`crowdsecInStack()` in
+`lib/crowdsec/paths.ts`).
 
-`install.sh` kennt dafür `--no-crowdsec` (oder `HAPM_CROWDSEC=0` in der
-Umgebung): es schreibt `HAPM_CROWDSEC=0` in `.env`. `--crowdsec` schaltet es
-wieder ein.
+Zuerst stand dort `scale: ${HAPM_CROWDSEC:-1}`. Mit `0` legte Compose zwar
+keine Container an, holte die Abbilder aber bei `pull` und `up` trotzdem, und
+ein nicht erreichbares Abbild (Firmennetz) ließ `docker compose up -d` ganz
+scheitern. Ein gewöhnliches Profil (`profiles: [crowdsec]`) hätte die Vorgabe
+umgedreht: ohne `COMPOSE_PROFILES` in `.env` gäbe es CrowdSec nie.
+
+Ein Container aus der Zeit davor bleibt beim Abwählen stehen: Compose räumt
+Dienste, die es nicht sieht, nicht weg. `install.sh` entfernt ihn dann
+ausdrücklich (`docker compose rm -sf crowdsec crowdsec-bouncer`).
+
+`install.sh --no-crowdsec` (oder `HAPM_CROWDSEC=0` in der Umgebung) schreibt
+`HAPM_CROWDSEC_OFF=1` in `.env`, `--crowdsec` nimmt die Zeile wieder heraus.
+Eine Zeile `HAPM_CROWDSEC=…` aus der ersten Fassung des Skripts wird dabei
+übernommen und entfernt.
 
 **Variablen**, alle mit Vorgabe:
 
 | Variable | Vorgabe | Wofür |
 |---|---|---|
-| `HAPM_CROWDSEC` | `1` | `0`: der Stack bringt CrowdSec nicht mit. Compose (`scale`) und HAPM lesen sie |
+| `HAPM_CROWDSEC_OFF` | leer | `1`: der Stack bringt CrowdSec nicht mit. Compose (Profil) und HAPM lesen sie |
 | `HAPM_SPOA_PORT` | `7423` | Port des Bouncers auf `127.0.0.1` des Servers. Compose veröffentlicht ihn dort, HAPM schreibt ihn in `backend hapm_crowdsec_spoa` |
 | `HAPM_CROWDSEC_CONTAINER` | `hapm-crowdsec` | Name des Containers, in dem `cscli` läuft |
 | `HAPM_CROWDSEC_BOUNCER_CONTAINER` | `hapm-crowdsec-bouncer` | Name des Bouncers, für Log und Updates |
@@ -276,15 +287,16 @@ CrowdSec, und `backend hapm_crowdsec_spoa` verschwindet mit.
 
 ```bash
 cd /opt/hapm
-echo "HAPM_CROWDSEC=0" >> .env
-docker compose up -d --remove-orphans
+echo "HAPM_CROWDSEC_OFF=1" >> .env
+docker compose rm -sf crowdsec crowdsec-bouncer
+docker compose up -d
 ```
 
-Oder bei der Installation `install.sh --no-crowdsec`. Schalten Sie CrowdSec
+Oder `sh install.sh --no-crowdsec`, das erledigt beides. Schalten Sie CrowdSec
 vorher in der Oberfläche überall aus: steht der Block noch in `haproxy.cfg`,
 läuft HAProxy weiter (fail-open), wartet aber bei jeder Anfrage auf einen
 Bouncer, den es nicht gibt. Der Ordner `crowdsec/` bleibt liegen. Wieder
-einschalten: `HAPM_CROWDSEC=0` aus `.env` entfernen (oder `--crowdsec`) und
+einschalten: `HAPM_CROWDSEC_OFF` aus `.env` entfernen (oder `--crowdsec`) und
 `docker compose up -d`.
 
 ## Prüfen

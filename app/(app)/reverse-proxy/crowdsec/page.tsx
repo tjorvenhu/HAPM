@@ -31,7 +31,7 @@ type Key = 'uebersicht' | 'sperren' | 'freigaben' | 'ereignisse' | 'regeln';
 
 const AREAS: Area<Key>[] = [
   { key: 'uebersicht', label: msgid('Übersicht'), icon: LayoutDashboard },
-  { key: 'sperren', label: msgid('Sperren'), icon: Ban },
+  { key: 'sperren', label: msgid('Sperrliste'), icon: Ban },
   { key: 'freigaben', label: msgid('Freigaben'), icon: CheckCircle2 },
   { key: 'ereignisse', label: msgid('Ereignisse'), icon: ScrollText },
   { key: 'regeln', label: msgid('Regeln'), icon: ListChecks },

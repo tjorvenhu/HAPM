@@ -8,7 +8,7 @@
 ### HAProxy with a web interface. One server, one command, done.
 
 Create domains, certificates and redirects in your browser.<br>
-HAPM sets up HAProxy, Let's Encrypt and the base configuration by itself.
+HAPM sets up HAProxy, Let's Encrypt, the base configuration and CrowdSec as a WAF by itself.
 
 [![Build](https://github.com/tjorvenhu/HAPM/actions/workflows/image.yml/badge.svg?branch=main)](https://github.com/tjorvenhu/HAPM/actions/workflows/image.yml)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
@@ -22,6 +22,10 @@ HAPM sets up HAProxy, Let's Encrypt and the base configuration by itself.
 
 ---
 
+<p align="center">
+  <img src="docs/images/overview.en.jpg" alt="The HAPM overview in sections, with figures for targets, CrowdSec and certificates" width="49%">
+  <img src="docs/images/crowdsec.en.jpg" alt="The CrowdSec page with WAF events" width="49%">
+</p>
 <p align="center">
   <img src="docs/images/setup-certificates.en.jpg" alt="The HAPM setup wizard, step certificates" width="49%">
   <img src="docs/images/error-pages.en.jpg" alt="Error pages in HAPM with preview" width="49%">
@@ -105,9 +109,11 @@ has HAProxy check it, reloads and fetches the certificates.
 <td valign="top">
 
 **Protection and appearance**
+- WAF with CrowdSec: for all targets or single ones, attacks are rejected with 403
+- Ban and allow addresses, events per target, OWASP rules if you want them
+- Block addresses, countries and too many requests (access protection)
 - Allow domains only for specific IP addresses
 - Password prompt in front of a domain, served by HAProxy itself
-- WAF and blocking with CrowdSec, for all targets or single ones
 - Error pages: standard, custom design, or your own HTML file
 - Accounts with password, second factor and passkeys
 
@@ -115,10 +121,11 @@ has HAProxy check it, reloads and fetches the certificates.
 <td valign="top">
 
 **Operations**
-- Statistics: requests, status codes, response times, countries
+- Overview in sections you can reorder, collapse and hide
+- Statistics: requests, status codes, response times, countries, plus CrowdSec
 - History of every operation with its steps
-- The HAProxy log in your browser, with search and status code filters
-- One-click updates for HAPM, HAProxy and acme.sh
+- The HAProxy and CrowdSec logs in your browser, with search and filters
+- One-click updates for HAPM, HAProxy, acme.sh and CrowdSec
 - Daily backups and restore from the web interface
 - Email alerts on outages, expiring certificates and errors
 - API with tokens for scripts and other services
@@ -154,7 +161,7 @@ the rest.
 | What | Why |
 |---|---|
 | A **Linux** server, `amd64` or `arm64` | HAPM and HAProxy use the host network. That only works on Linux, not with Docker Desktop on Mac or Windows |
-| **Docker** with the **Compose plugin**, version 2.20 or newer | `docker compose version` shows whether it is installed. Older versions do not know the `scale` attribute that switches CrowdSec off |
+| **Docker** with the **Compose plugin** (Compose v2) | `docker compose version` shows whether it is installed. 2.20 or newer is recommended |
 | Ports **80** and **443** free | HAProxy listens there. For HTTP/3, also 443 over UDP |
 | Port **7080** reachable | For the setup. You can close it afterwards, see [Security](#security) |
 | For Let's Encrypt certificates: port 80 reachable from the internet | Let's Encrypt validates every domain over port 80. On a private network, certificates use DNS-01 instead |
@@ -204,7 +211,7 @@ services:
       HOSTNAME: ${HAPM_BIND:-0.0.0.0}
       TZ: ${TZ:-Europe/Berlin}
       HAPM_ACME_SERVER: ${HAPM_ACME_SERVER:-letsencrypt}
-      HAPM_CROWDSEC: ${HAPM_CROWDSEC:-1}
+      HAPM_CROWDSEC_OFF: ${HAPM_CROWDSEC_OFF:-}
       HAPM_SPOA_PORT: ${HAPM_SPOA_PORT:-7423}
     depends_on:
       postgres:
@@ -268,7 +275,7 @@ services:
     image: ${CROWDSEC_IMAGE:-crowdsecurity/crowdsec:latest}
     container_name: hapm-crowdsec
     restart: unless-stopped
-    scale: ${HAPM_CROWDSEC:-1}
+    profiles: ["${HAPM_CROWDSEC_OFF:+ohne-crowdsec}"]
     environment:
       TZ: ${TZ:-Europe/Berlin}
       COLLECTIONS: crowdsecurity/haproxy crowdsecurity/appsec-virtual-patching crowdsecurity/appsec-generic-rules
@@ -290,7 +297,7 @@ services:
     image: ${CROWDSEC_BOUNCER_IMAGE:-crowdsecurity/spoa-bouncer:latest}
     container_name: hapm-crowdsec-bouncer
     restart: unless-stopped
-    scale: ${HAPM_CROWDSEC:-1}
+    profiles: ["${HAPM_CROWDSEC_OFF:+ohne-crowdsec}"]
     depends_on:
       - crowdsec
     ports:
@@ -362,7 +369,7 @@ updates HAPM without touching data or settings.
 | `--image IMAGE` | `HAPM_IMAGE` | `ghcr.io/tjorvenhu/hapm:latest` | A different HAPM image |
 | `--force` | `HAPM_FORCE=1` | | Start even if port 80 or 443 is in use |
 | `--yes` | `HAPM_YES=1` | | Do not ask, use the defaults |
-| `--no-crowdsec` | `HAPM_CROWDSEC=0` | | Install without CrowdSec, see [CrowdSec (WAF)](#crowdsec-waf) |
+| `--no-crowdsec` | `HAPM_CROWDSEC=0` | | Install without CrowdSec: no images, no containers, see [CrowdSec (WAF)](#crowdsec-waf) |
 | `--crowdsec` | | | Add CrowdSec back to the stack |
 | `--uninstall` | | | Remove HAPM again, see [Uninstall](#uninstall) |
 
@@ -460,7 +467,7 @@ After a change: `docker compose up -d`.
 | `HAPM_ACME_SERVER` | `letsencrypt` | Default certificate authority: `letsencrypt`, `letsencrypt_test`, `zerossl` or the URL of an ACME directory. An ACME server set under "General" takes precedence |
 | `HAPROXY_IMAGE` | `haproxy:lts` | HAProxy image. `haproxy:latest` follows the newest branch |
 | `HAPM_IMAGE` | `ghcr.io/tjorvenhu/hapm:latest` | HAPM image |
-| `HAPM_CROWDSEC` | `1` | `0`: CrowdSec is not part of the stack, see [CrowdSec (WAF)](#crowdsec-waf) |
+| `HAPM_CROWDSEC_OFF` | empty | `1`: CrowdSec is not part of the stack, Compose neither pulls its images nor creates containers. See [CrowdSec (WAF)](#crowdsec-waf) |
 | `HAPM_SPOA_PORT` | `7423` | Port on which HAProxy reaches the CrowdSec bouncer. Only on `127.0.0.1` |
 
 Everything else is configured in the web interface, under "General" and
@@ -487,11 +494,10 @@ or allow addresses by hand and add rule sets, for example for WordPress.
 
 | What | Why |
 |---|---|
-| Docker Compose 2.20 or newer | Both services depend on the `scale` attribute |
 | The images `crowdsecurity/crowdsec` and `crowdsecurity/spoa-bouncer` | Docker pulls them on the first start |
 | Outbound HTTPS to the CrowdSec hub | The rules come from `cdn-hub.crowdsec.net` and `hub-data.crowdsec.net`, see [Corporate networks](#corporate-networks-firewall-and-proxy) |
 | Port `127.0.0.1:7423` free | HAProxy reaches the bouncer there. A different port: `HAPM_SPOA_PORT` |
-| Roughly 100 to 200 MB of additional memory | More with the OWASP rules |
+| Roughly 100 MB of additional memory | Measured at idle: CrowdSec about 75 MB, the bouncer about 10 MB. More with the OWASP rules |
 | HAProxy 2.4 or newer | The `haproxy:lts` image meets this |
 
 > [!NOTE]
@@ -506,18 +512,23 @@ or allow addresses by hand and add rule sets, for example for WordPress.
 curl -fsSL https://raw.githubusercontent.com/tjorvenhu/HAPM/main/install.sh | sh -s -- --no-crowdsec
 ```
 
-With options 1 and 3: `HAPM_CROWDSEC=0` in `.env` or in the variables of the
-stack.
+The script writes `HAPM_CROWDSEC_OFF=1` to `.env`. Docker Compose then does not
+see the two services at all: it neither pulls their images nor starts
+containers. With options 1 and 3: `HAPM_CROWDSEC_OFF=1` in `.env` or in the
+variables of the stack, before the first start.
 
 **Remove it later:** switch it off everywhere in the web interface, then
 
 ```bash
 cd /opt/hapm
-echo "HAPM_CROWDSEC=0" >> .env
-docker compose up -d --remove-orphans
+echo "HAPM_CROWDSEC_OFF=1" >> .env
+docker compose rm -sf crowdsec crowdsec-bouncer
+docker compose up -d
 ```
 
-To add it back: delete the line from `.env` and run `docker compose up -d`.
+Or `sh install.sh --no-crowdsec`, which does both. To add it back:
+`sh install.sh --crowdsec`, or delete the line from `.env` and run
+`docker compose up -d`.
 Details on architecture, limits and troubleshooting are in
 [`docs/crowdsec.md`](docs/crowdsec.md) (German).
 

@@ -31,8 +31,8 @@ services:
       TZ: ${TZ:-Europe/Berlin}
       # Zertifizierungsstelle. `letsencrypt_test` zum Ausprobieren ohne Kontingent.
       HAPM_ACME_SERVER: ${HAPM_ACME_SERVER:-letsencrypt}
-      # Ob CrowdSec zum Stack gehört (1) oder bei der Installation abgewählt wurde (0).
-      HAPM_CROWDSEC: ${HAPM_CROWDSEC:-1}
+      # Gesetzt (1), wenn CrowdSec bei der Installation abgewählt wurde.
+      HAPM_CROWDSEC_OFF: ${HAPM_CROWDSEC_OFF:-}
       # Wo HAProxy den Bouncer von CrowdSec erreicht: 127.0.0.1 und dieser Port.
       HAPM_SPOA_PORT: ${HAPM_SPOA_PORT:-7423}
     depends_on:
@@ -113,8 +113,8 @@ services:
 
   # ── CrowdSec (WAF) ───────────────────────────────────────────────────────
   # Gehört zum Stack, prüft aber nichts, bis es in der Oberfläche eingeschaltet
-  # wird (für alle Ziele oder je Ziel). Abwählen: HAPM_CROWDSEC=0 in .env, dann
-  # `docker compose up -d --remove-orphans`. Beide Container hängen nur im Netz
+  # wird (für alle Ziele oder je Ziel). Abwählen: HAPM_CROWDSEC_OFF=1 in .env,
+  # dann `docker compose rm -sf crowdsec crowdsec-bouncer` und `docker compose up -d`. Beide Container hängen nur im Netz
   # des Stacks; nach außen ist nur der Bouncer offen, und nur auf 127.0.0.1.
   # Siehe docs/crowdsec.md.
 
@@ -122,7 +122,10 @@ services:
     image: ${CROWDSEC_IMAGE:-crowdsecurity/crowdsec:latest}
     container_name: hapm-crowdsec
     restart: unless-stopped
-    scale: ${HAPM_CROWDSEC:-1}
+    # Ohne HAPM_CROWDSEC_OFF ein leeres Profil, also immer dabei. Mit
+    # HAPM_CROWDSEC_OFF=1 ein Profil, das niemand einschaltet: Compose holt
+    # dann weder das Abbild noch legt es den Container an.
+    profiles: ["${HAPM_CROWDSEC_OFF:+ohne-crowdsec}"]
     environment:
       TZ: ${TZ:-Europe/Berlin}
       # Das Log von HAProxy und die WAF. Weitere Regeln schaltet die Oberfläche dazu.
@@ -149,7 +152,7 @@ services:
     image: ${CROWDSEC_BOUNCER_IMAGE:-crowdsecurity/spoa-bouncer:latest}
     container_name: hapm-crowdsec-bouncer
     restart: unless-stopped
-    scale: ${HAPM_CROWDSEC:-1}
+    profiles: ["${HAPM_CROWDSEC_OFF:+ohne-crowdsec}"]
     depends_on:
       - crowdsec
     ports:

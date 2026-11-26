@@ -4,7 +4,8 @@
  * Zwei Container gehören dazu (docs/crowdsec.md): `hapm-crowdsec` (die
  * Erkennung, die lokale API und die WAF) und `hapm-crowdsec-bouncer` (der
  * SPOE-Agent, den HAProxy je Anfrage fragt). Beide laufen nur, wenn der Stack
- * sie nicht abgeschaltet hat (`HAPM_CROWDSEC=0` in `.env`).
+ * sie nicht abgewählt hat (`HAPM_CROWDSEC_OFF=1` in `.env`, dann sind beide
+ * Dienste für Compose nicht da).
  *
  * Rein bis auf `process.env`, damit Seiten und Tests die Namen kennen.
  */
@@ -17,9 +18,9 @@ export function bouncerContainerName(): string {
   return process.env.HAPM_CROWDSEC_BOUNCER_CONTAINER || 'hapm-crowdsec-bouncer';
 }
 
-/** Ob der Stack CrowdSec mitbringt. `0` heißt: bei der Installation abgewählt. */
+/** Ob der Stack CrowdSec mitbringt. Gesetzt heißt: bei der Installation abgewählt. */
 export function crowdsecInStack(): boolean {
-  return process.env.HAPM_CROWDSEC !== '0';
+  return !process.env.HAPM_CROWDSEC_OFF;
 }
 
 /** Der Ordner im HAPM-Container, in dem die Dateien für beide Container liegen

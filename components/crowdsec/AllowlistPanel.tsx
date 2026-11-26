@@ -155,6 +155,8 @@ export default function AllowlistPanel({ client }: { client: string | null }) {
         </div>
         {loading && !data ? (
           <SkeletonRows />
+        ) : !data ? (
+          <p className="form-hint">{t('Ohne Verbindung zu CrowdSec sind die Freigaben unbekannt.')}</p>
         ) : entries.length === 0 ? (
           <div className="empty-state">
             <CheckCircle2 size={36} />

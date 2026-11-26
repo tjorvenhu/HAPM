@@ -105,7 +105,7 @@ export function protection(text: string | null = readConfig()) {
 /* ── Zustand ── */
 
 export interface CrowdsecStatus {
-  /** Ob der Stack CrowdSec mitbringt (`HAPM_CROWDSEC`). */
+  /** Ob der Stack CrowdSec mitbringt (nicht `HAPM_CROWDSEC_OFF`). */
   inStack: boolean;
   crowdsec: ContainerInfo | null;
   bouncer: ContainerInfo | null;

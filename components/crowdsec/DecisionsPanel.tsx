@@ -150,7 +150,7 @@ export default function DecisionsPanel({ onFreed }: { onFreed?: () => void }) {
           </div>
           <button type="submit" className="btn btn-primary" disabled={busy || !value.trim() || !valid}>
             {busy ? <Loader2 size={16} className="spin" /> : <Plus size={16} />}
-            {t('Sperren')}
+            {t('Adresse sperren')}
           </button>
         </form>
         {!valid && <p className="form-hint is-error">{t('Das ist keine Adresse und kein Netz.')}</p>}
@@ -170,6 +170,8 @@ export default function DecisionsPanel({ onFreed }: { onFreed?: () => void }) {
         </div>
         {loading && !data ? (
           <SkeletonRows />
+        ) : !data ? (
+          <p className="form-hint">{t('Ohne Verbindung zu CrowdSec sind die Sperren unbekannt.')}</p>
         ) : decisions.length === 0 ? (
           <div className="empty-state">
             <CheckCircle2 size={36} />

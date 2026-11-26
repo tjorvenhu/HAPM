@@ -7,7 +7,6 @@ export const crowdsec: Readonly<Record<string, string>> = {
   'Letzte Vorgänge und Zertifikate': 'Recent tasks and certificates',
   'Geprüfte Ziele': 'Checked targets',
   'CrowdSec läuft nicht': 'CrowdSec is not running',
-  'alle, über den Schalter für alle': 'all, through the switch for all',
   'von {count}': 'of {count}',
   'Aktive Sperren': 'Active bans',
   'WAF-Treffer in 24 Stunden': 'WAF hits in 24 hours',
@@ -25,6 +24,8 @@ export const crowdsec: Readonly<Record<string, string>> = {
   'CrowdSec (WAF)': 'CrowdSec (WAF)',
   Freigaben: 'Allowlist',
   Regeln: 'Rules',
+  Sperrliste: 'Bans',
+  'Treffer sperren': 'Block hits',
   'WAF, Sperren und Freigaben': 'WAF, bans and allowlist',
   'CrowdSec ist nicht erreichbar.': 'CrowdSec is not reachable.',
   'CrowdSec für alle Ziele': 'CrowdSec for all targets',
@@ -37,8 +38,8 @@ export const crowdsec: Readonly<Record<string, string>> = {
   Einschalten: 'Turn on',
   Ausschalten: 'Turn off',
   'CrowdSec ist bei dieser Installation abgeschaltet': 'CrowdSec is turned off for this installation',
-  'Bei der Installation wurde CrowdSec abgewählt. Einschalten: HAPM_CROWDSEC=1 in der Datei .env neben docker-compose.yml setzen und docker compose up -d ausführen, oder install.sh mit --crowdsec erneut starten.':
-    'CrowdSec was deselected at installation. To turn it on, set HAPM_CROWDSEC=1 in the .env file next to docker-compose.yml and run docker compose up -d, or run install.sh again with --crowdsec.',
+  'Bei der Installation wurde CrowdSec abgewählt. Einschalten: die Zeile HAPM_CROWDSEC_OFF in der Datei .env neben docker-compose.yml entfernen und docker compose up -d ausführen, oder install.sh mit --crowdsec erneut starten.':
+    'CrowdSec was deselected at installation. To turn it on, remove the HAPM_CROWDSEC_OFF line from the .env file next to docker-compose.yml and run docker compose up -d, or run install.sh again with --crowdsec.',
   'CrowdSec läuft nicht vollständig.': 'CrowdSec is not fully running.',
   'Solange CrowdSec oder der Bouncer fehlt, gehen alle Anfragen ungeprüft durch. Mehr sagt der Reiter „CrowdSec“ unter Reverse-Proxy, Logs.':
     'While CrowdSec or the bouncer is missing, all requests pass unchecked. More in the "CrowdSec" tab under Reverse proxy, Logs.',
@@ -100,6 +101,8 @@ export const crowdsec: Readonly<Record<string, string>> = {
   'Gesperrt in HAPM': 'Banned in HAPM',
   'Gesperrte Adressen bekommen von jedem geprüften Ziel eine 403.': 'Banned addresses get a 403 from every checked target.',
   'Keine Sperre': 'No ban',
+  'Ohne Verbindung zu CrowdSec sind die Sperren unbekannt.': 'Without a connection to CrowdSec the bans are unknown.',
+  'Ohne Verbindung zu CrowdSec sind die Freigaben unbekannt.': 'Without a connection to CrowdSec the allowlist is unknown.',
   'Gerade ist keine Adresse von CrowdSec oder von Hand gesperrt.': 'No address is currently banned by CrowdSec or by hand.',
   Endet: 'Ends',
   'Sperre aufheben': 'Lift ban',

@@ -102,11 +102,11 @@ export default function AlertsPanel({
         )}
       </div>
 
-      {error && <div className="alert alert-danger">{error}</div>}
+      {error && <div className="alert alert-danger cs-card-alert">{error}</div>}
 
       {loading && !data ? (
         <SkeletonRows />
-      ) : alerts.length === 0 ? (
+      ) : !data ? null : alerts.length === 0 ? (
         <div className="empty-state">
           <CheckCircle2 size={36} />
           <h3>{t('Keine Ereignisse')}</h3>
@@ -146,7 +146,8 @@ export default function AlertsPanel({
                     <strong className="mono">{alert.scenario}</strong>
                     {(alert.method || alert.paths.length > 0) && (
                       <div className="detail-sub mono">
-                        {[alert.method, alert.paths.join(' ')].filter(Boolean).join(' ')}
+                        {[alert.method, alert.paths[0]].filter(Boolean).join(' ')}
+                        {alert.paths.length > 1 ? ' …' : ''}
                       </div>
                     )}
                     {alert.eventsCount > 1 && (

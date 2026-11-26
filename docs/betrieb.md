@@ -89,18 +89,19 @@ unter dem Namen `crowdsec` (lokale API auf 8080, WAF auf 7422). Im Netz des
 Hosts lägen beide Ports auf jeder Adresse des Servers, und 8080 ist oft schon
 belegt. Veröffentlicht wird nur der Port des Bouncers, und der nur auf
 `127.0.0.1:${HAPM_SPOA_PORT:-7423}`: dort erreicht ihn HAProxy aus dem Netz des
-Hosts, von außen niemand. Beide Dienste tragen `scale: ${HAPM_CROWDSEC:-1}`;
-mit `HAPM_CROWDSEC=0` in `.env` (oder `install.sh --no-crowdsec`) legt Compose
-sie nicht an. Das braucht Docker Compose v2 mit dem Attribut `scale`, 2.20 oder
-neuer. Abschalten im laufenden Stack: Variable setzen, dann
-`docker compose up -d --remove-orphans`. Warum `scale` und kein Profil, steht in
-[`crowdsec.md`](crowdsec.md).
+Hosts, von außen niemand. Beide Dienste tragen
+`profiles: ["${HAPM_CROWDSEC_OFF:+ohne-crowdsec}"]`: ohne die Variable sind sie
+dabei, mit `HAPM_CROWDSEC_OFF=1` in `.env` (oder `install.sh --no-crowdsec`)
+sieht Compose sie nicht, holt keine Abbilder und legt keine Container an.
+Abschalten im laufenden Stack: Variable setzen,
+`docker compose rm -sf crowdsec crowdsec-bouncer`, dann `docker compose up -d`.
+Warum so, steht in [`crowdsec.md`](crowdsec.md).
 
 **Was HAPM zu CrowdSec wissen muss**, alles mit Vorgabe:
 
 | Variable | Vorgabe | Wofür |
 |---|---|---|
-| `HAPM_CROWDSEC` | `1` | `0`: der Stack bringt CrowdSec nicht mit. Compose (`scale`) und HAPM (`crowdsecInStack`) lesen sie |
+| `HAPM_CROWDSEC_OFF` | leer | `1`: der Stack bringt CrowdSec nicht mit. Compose (Profil) und HAPM (`crowdsecInStack`) lesen sie |
 | `HAPM_SPOA_PORT` | `7423` | Port des Bouncers auf `127.0.0.1` des Servers, für Compose und `backend hapm_crowdsec_spoa` |
 | `HAPM_CROWDSEC_CONTAINER` | `hapm-crowdsec` | Name des Containers, in dem `cscli` läuft |
 | `HAPM_CROWDSEC_BOUNCER_CONTAINER` | `hapm-crowdsec-bouncer` | Name des Bouncers, für Log und Updates |
@@ -479,7 +480,7 @@ steht. Für acme.sh fragt es die neueste Veröffentlichung bei GitHub.
   Abbild als vorher, ist es gelungen.
 - **acme.sh:** `acme.sh --upgrade`.
 - **CrowdSec und der Bouncer:** ihre Abbilder meldet und tauscht die Seite
-  ebenso, sofern der Stack sie mitbringt (`HAPM_CROWDSEC`). Solange der
+  ebenso, sofern der Stack sie mitbringt (ohne `HAPM_CROWDSEC_OFF`). Solange der
   Bouncer getauscht wird, gehen Anfragen ungeprüft durch (fail-open, siehe
   [`crowdsec.md`](crowdsec.md)).
 
