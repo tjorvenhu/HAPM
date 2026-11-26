@@ -281,9 +281,19 @@ function HaproxyDown({
             <Skeleton height={96} radius="var(--radius)" />
           </div>
         ) : (
-          <pre className="run-log hapm-flag-detail">
-            {logs.trim() || t('Der Container hat nichts ausgegeben.')}
-          </pre>
+          <>
+            {/* Der häufigste Grund nach einem Neustart des Servers, in Worten statt nur im Log. */}
+            {logs.includes('cannot bind socket (Address already in use)') && (
+              <div className="alert alert-warning hapm-flag-detail">
+                {t(
+                  'Ein anderes Programm belegt Port 80 oder 443 dieses Servers. Meist ist es ein zweiter Webserver (Caddy, nginx, Apache), der mit dem Server startet. Auf dem Server zeigt ihn der Befehl ss -ltnp. Ist er abgeschaltet, startet HAProxy von selbst.'
+                )}
+              </div>
+            )}
+            <pre className="run-log hapm-flag-detail">
+              {logs.trim() || t('Der Container hat nichts ausgegeben.')}
+            </pre>
+          </>
         ))}
     </div>
   );

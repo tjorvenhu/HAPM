@@ -59,6 +59,15 @@ Abbild entfernt `--uninstall` nur, wenn kein anderer Container daraus läuft,
 und fragt das vorher ab: trägt ein Abbild zwei Namen, löst `docker image rm`
 den einen auch dann, wenn ein fremder Container unter ihm läuft.
 
+**Ein zweiter Webserver, der mit dem Server startet,** fällt erst nach dem
+nächsten Neustart auf: wer Caddy, nginx oder Apache nur anhält (`systemctl
+stop`), hat die Ports jetzt frei, und nach dem Neustart nimmt der Dienst sie
+wieder, bevor Docker HAProxy startet. HAProxy meldet dann `cannot bind socket
+(Address already in use)` und startet in einer Schleife neu. `install.sh` fragt
+deshalb `systemctl is-enabled` für die üblichen Dienste ab (`boot_web_servers`)
+und bietet an, sie abzuschalten. Die Übersicht sagt denselben Grund in Worten,
+wenn er in der Ausgabe des Containers steht.
+
 **Wer beim Entfernen im Ordner der Installation steht**, steht danach in einem
 Ordner, den es nicht mehr gibt. Das Skript sagt das am Ende („bitte mit `cd`
 herauswechseln"): herausholen kann es die Shell des Aufrufers nicht. Wird es

@@ -647,6 +647,48 @@ fi
 
 docker info >/dev/null 2>&1 || fail "Der Docker-Dienst ist nicht erreichbar."
 
+# ── Webserver, die mit dem Server starten ─────────────────────────────────────
+# Ein angehaltener, aber aktivierter Dienst (`systemctl stop` ohne `disable`)
+# lässt die Ports jetzt frei und nimmt sie nach dem nächsten Neustart des
+# Servers wieder, bevor Docker HAProxy startet. HAProxy meldet dann
+# "cannot bind socket (Address already in use)" und startet in einer Schleife
+# neu. Die Prüfung der Ports unten sieht das nicht: sie sieht nur, was gerade
+# lauscht.
+boot_web_servers() {
+  command -v systemctl >/dev/null 2>&1 || return 0
+  for unit in caddy nginx apache2 httpd lighttpd haproxy; do
+    if systemctl is-enabled --quiet "$unit" 2>/dev/null; then
+      printf '%s ' "$unit"
+    fi
+  done
+}
+
+BOOT_UNITS="$(boot_web_servers)"
+BOOT_UNITS="${BOOT_UNITS% }"
+if [ -n "$BOOT_UNITS" ]; then
+  step "Andere Webserver"
+  warn "Mit dem Server startet auch: $BOOT_UNITS"
+  note "Das belegt nach jedem Neustart Port 80 und 443, und HAProxy käme nicht mehr hoch."
+  DISABLE=0
+  if can_ask; then
+    ask "Jetzt abschalten und anhalten? (ja/nein)" "ja"
+    case "$ANSWER" in
+      ja | j | Ja | JA | y | yes) DISABLE=1 ;;
+    esac
+  fi
+  if [ "$DISABLE" = 1 ]; then
+    for unit in $BOOT_UNITS; do
+      if systemctl disable --now "$unit" >/dev/null 2>&1; then
+        note "$unit abgeschaltet."
+      else
+        warn "$unit ließ sich nicht abschalten: systemctl disable --now $unit"
+      fi
+    done
+  else
+    note "Abschalten: systemctl disable --now $BOOT_UNITS"
+  fi
+fi
+
 # ── Ports 80 und 443 ──────────────────────────────────────────────────────────
 # HAProxy läuft im Netz des Servers und braucht beide. Lauscht dort schon ein
 # anderer Webserver, startet HAProxy nicht, und das sähe aus wie ein Fehler von

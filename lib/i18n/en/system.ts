@@ -128,6 +128,8 @@ export const system: Dictionary = {
   "Neu starten": "Restart",
   "Starten": "Start",
   "Der Container hat nichts ausgegeben.": "The container produced no output.",
+  'Ein anderes Programm belegt Port 80 oder 443 dieses Servers. Meist ist es ein zweiter Webserver (Caddy, nginx, Apache), der mit dem Server startet. Auf dem Server zeigt ihn der Befehl ss -ltnp. Ist er abgeschaltet, startet HAProxy von selbst.':
+    'Another program is using port 80 or 443 of this server. Usually it is a second web server (Caddy, nginx, Apache) that starts with the server. On the server the command ss -ltnp shows it. Once it is switched off, HAProxy starts by itself.',
   "Die letzte Erneuerung der Zertifikate meldet einen Fehler.": "The last certificate renewal reported an error.",
   "Lauf vom {date}. acme.sh versucht es beim nächsten täglichen Lauf erneut.": "Run of {date}. acme.sh tries again on the next daily run.",
   "Ein Ziel erreicht sein Backend nicht.": "One target cannot reach its backend.",
