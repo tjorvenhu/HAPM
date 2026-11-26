@@ -358,7 +358,7 @@ describe('Rechte: die übrigen schreibenden Werkzeuge schreiben unter dem Namen 
     ['remove_crowdsec_decision', { id: 3 }, 'removeDecision', auditActor],
     ['add_crowdsec_allowlist', { value: '203.0.113.7' }, 'addAllowlist', auditActor],
     ['remove_crowdsec_allowlist', { value: '203.0.113.7' }, 'removeAllowlist', auditActor],
-    ['update_crowdsec_rules', { crs: 'detect' }, 'changeRules', auditActor],
+    ['update_crowdsec_rules', { crs: 'block' }, 'changeRules', auditActor],
     ['clear_crowdsec', {}, 'clearCrowdsec', auditActor],
     ['set_crowdsec_enabled', { enabled: false }, 'setCrowdsecEnabled', auditActor],
   ];
