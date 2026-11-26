@@ -7,6 +7,7 @@ import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/ConfirmDialog';
 import Select from '@/components/Select';
 import CountryFlag from '@/components/CountryFlag';
+import AlertReason from './AlertReason';
 import { SkeletonRows } from '@/components/Skeleton';
 import { BAN_DURATIONS, parseAddress, type BanDuration } from '@/lib/crowdsec/data';
 import { formatDateTime, formatRelative, msgid } from '@/lib/i18n';
@@ -203,7 +204,7 @@ export default function DecisionsPanel({ onFreed }: { onFreed?: () => void }) {
                       {decision.asName && <div className="detail-sub">{decision.asName}</div>}
                     </td>
                     <td data-label={t('Grund')}>
-                      <span className="mono">{decision.reason}</span>
+                      {decision.origin === 'cscli' ? <span className="mono">{decision.reason}</span> : <AlertReason name={decision.reason} />}
                       {decision.type !== 'ban' && <div className="detail-sub">{decision.type}</div>}
                     </td>
                     <td data-label={t('Herkunft')}>

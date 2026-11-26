@@ -238,7 +238,6 @@ export default function RulesPanel() {
                             />
                             <span className="toggle-slider" />
                           </label>
-                          {`app:${app.id}` in pending && <Loader2 size={14} className="spin" />}
                           {app.partial && !(`app:${app.id}` in pending) && (
                             <span className="badge-status badge-warning" data-tooltip={t('Nur ein Teil ist installiert. Einschalten holt den Rest.')}>
                               {t('Teilweise')}
@@ -330,7 +329,6 @@ export default function RulesPanel() {
                             />
                             <span className="toggle-slider" />
                           </label>
-                          {entry.name in pending && <Loader2 size={14} className="spin" />}
                         </span>
                       </td>
                     </tr>

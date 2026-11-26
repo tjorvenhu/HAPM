@@ -343,6 +343,15 @@ anspringt.
   Regeln. Woher der Schutz eines Ziels kommt, steht einmal über der Liste
   („Alle Ziele prüfen ist an"), nicht in jeder Zeile. Prüft CrowdSec kein
   Ziel, steht das mittig in der Karte.
+- **Gründe in Worten:** Ereignisse, Sperren und die Rangliste der Statistik
+  nennen statt `anomaly score out-of-band: lfi: 5, …` oder
+  `crowdsecurity/http-probing` eine Beschreibung („Zugriff auf Dateien des
+  Servers"), Erklärung und Name bei CrowdSec stehen hinter dem „i"
+  (`lib/crowdsec/describe.ts`, `components/crowdsec/AlertReason.tsx`). Ein
+  unbekannter Name erscheint, wie er ist, statt geraten zu werden; Gründe von
+  Hand bleiben immer wörtlich. Die API und MCP liefern weiter die Namen von
+  CrowdSec. Bei OWASP ergibt dieselbe Kategorie mit anderer Punktzahl einen
+  anderen Namen, die Rangliste fasst sie in Worten zu einer Zeile zusammen.
 - **Je Ziel** der Schalter „CrowdSec (WAF)" im Dialog des Ziels, eine Marke auf
   der Karte und die Ereignisse des Ziels.
 - **Logs:** dritter Reiter „CrowdSec", das Log des Containers von CrowdSec oder

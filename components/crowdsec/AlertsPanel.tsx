@@ -7,6 +7,7 @@ import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/ConfirmDialog';
 import Select from '@/components/Select';
 import CountryFlag from '@/components/CountryFlag';
+import AlertReason from './AlertReason';
 import { SkeletonRows } from '@/components/Skeleton';
 import { MISSING, formatDateTime, formatNumber, formatRelative, msgid } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
@@ -204,7 +205,7 @@ export default function AlertsPanel({
                     {alert.decisions > 0 && <div className="detail-sub">{t('mit Sperre')}</div>}
                   </td>
                   <td data-label="primary">
-                    <strong className="mono">{alert.scenario}</strong>
+                    {alert.kind === 'manual' ? <strong className="mono">{alert.scenario}</strong> : <AlertReason name={alert.scenario} strong />}
                     {(alert.method || alert.paths.length > 0) && (
                       <div className="detail-sub mono">
                         {[alert.method, alert.paths[0]].filter(Boolean).join(' ')}

@@ -438,4 +438,83 @@ export const crowdsec: Readonly<Record<string, string>> = {
   '{count} weitere Ziele prüft CrowdSec nicht.': 'CrowdSec does not check {count} other targets.',
   'Adressen, die bei vielen CrowdSec-Installationen aufgefallen sind. CrowdSec bezieht sie von seiner Zentrale und sperrt sie vorab. Eine neue Installation bekommt die Liste erst nach einiger Zeit: 0 ist am Anfang normal.':
     'Addresses that many CrowdSec installations have noticed. CrowdSec gets them from its central service and bans them in advance. A new installation only receives the list after some time: 0 is normal at the start.',
+
+  // Gründe von Ereignissen und Sperren in Worten (lib/crowdsec/describe.ts)
+  'Bei CrowdSec: {name}': 'In CrowdSec: {name}',
+  'Zugriff auf Dateien des Servers': 'Access to server files',
+  'Die Anfrage nennt einen Pfad zu Dateien auf dem Server, etwa ../, /etc/passwd oder .env. So suchen Angreifer nach Passwörtern und Schlüsseln. Fachbegriff: Local File Inclusion (LFI).':
+    'The request names a path to files on the server, such as ../, /etc/passwd or .env. Attackers use this to look for passwords and keys. Technical term: Local File Inclusion (LFI).',
+  'Eingeschleuste Datenbankabfrage': 'Injected database query',
+  "Die Anfrage enthält SQL, etwa ' OR 1=1 oder UNION SELECT. Ziel ist, Daten aus der Datenbank der Anwendung zu lesen oder zu ändern. Fachbegriff: SQL-Injection.":
+    "The request contains SQL, such as ' OR 1=1 or UNION SELECT. The goal is to read or change data in the application's database. Technical term: SQL injection.",
+  'Eingeschleustes Skript': 'Injected script',
+  'Die Anfrage enthält JavaScript oder HTML, etwa <script>. Eine verwundbare Seite würde es anderen Besuchern ausliefern. Fachbegriff: Cross-Site-Scripting (XSS).':
+    'The request contains JavaScript or HTML, such as <script>. A vulnerable page would serve it to other visitors. Technical term: cross-site scripting (XSS).',
+  'Angriff auf eine bekannte Lücke': 'Attack on a known vulnerability',
+  'Die Anfrage passt zu einem veröffentlichten Angriff auf eine bestimmte Software. Steht im Namen der Regel eine CVE-Nummer, ist das die Kennung der Lücke.':
+    'The request matches a published attack on a specific piece of software. If the rule name contains a CVE number, that is the ID of the vulnerability.',
+  'Einbinden fremder Dateien': 'Inclusion of remote files',
+  'Die Anfrage übergibt eine Adresse im Internet als Parameter. Eine verwundbare Anwendung würde Code von dort laden und ausführen. Fachbegriff: Remote File Inclusion (RFI).':
+    'The request passes an internet address as a parameter. A vulnerable application would load code from there and run it. Technical term: Remote File Inclusion (RFI).',
+  'Eingeschleuste Befehle': 'Injected commands',
+  'Die Anfrage enthält Befehle für die Kommandozeile des Servers, etwa ; cat oder | sh. Ziel ist, auf dem Server Programme auszuführen. Fachbegriff: Remote Code Execution (RCE). Bei Anwendungen, die Abfragen oder Code als Text schicken (GraphQL, Editoren), oft ein Fehlalarm.':
+    "The request contains commands for the server's command line, such as ; cat or | sh. The goal is to run programs on the server. Technical term: Remote Code Execution (RCE). Often a false positive for applications that send queries or code as text (GraphQL, editors).",
+  'Eingeschleuster PHP-Code': 'Injected PHP code',
+  'Die Anfrage enthält PHP-Code oder Aufrufe wie eval( oder system(. Ziel ist, ihn auf dem Server auszuführen.':
+    'The request contains PHP code or calls such as eval( or system(. The goal is to run it on the server.',
+  'Fehlerhafte Anfrage': 'Malformed request',
+  'Die Anfrage verstößt gegen die Regeln von HTTP, etwa mit doppelten oder widersprüchlichen Kopfzeilen. Damit versuchen Angreifer, Prüfungen zu umgehen.':
+    'The request breaks the rules of HTTP, for example with duplicate or contradictory headers. Attackers use this to get around checks.',
+  'Untergeschobene Sitzung': 'Planted session',
+  'Die Anfrage setzt eine Sitzungskennung von außen. Ziel ist, später die Anmeldung eines anderen Nutzers zu übernehmen.':
+    "The request sets a session ID from outside. The goal is to take over another user's sign-in later.",
+  'Auffällige Anfrage': 'Suspicious request',
+  'Eine allgemeine Regel des OWASP-Regelwerks hat angeschlagen, etwa für eine gesperrte Dateiendung (.asax, .ini, .bak), eine unübliche HTTP-Version oder fehlende Kopfzeilen.':
+    'A general rule of the OWASP rule set matched, for example a blocked file extension (.asax, .ini, .bak), an unusual HTTP version or missing headers.',
+  'Nur gemeldet, die Anfrage ging durch. Schickt eine Adresse mehrere solcher Anfragen, sperrt CrowdSec sie.':
+    'Only reported, the request went through. If an address sends several such requests, CrowdSec bans it.',
+  'Viele Abrufe von Seiten, die es nicht gibt': 'Many requests for pages that do not exist',
+  'Die Adresse hat in kurzer Zeit viele Seiten abgerufen, die mit 404 antworteten. So suchen Scanner nach bekannten Dateien und Programmen.':
+    'The address requested many pages in a short time that answered with 404. Scanners do this to look for known files and programs.',
+  'Suche nach vertraulichen Dateien': 'Search for confidential files',
+  'Die Adresse hat Dateien abgerufen, die nicht öffentlich sein sollten, etwa Sicherungen, Konfiguration oder .env.':
+    'The address requested files that should not be public, such as backups, configuration or .env.',
+  'Sehr viele Seitenabrufe': 'Very many page requests',
+  'Die Adresse hat in kurzer Zeit sehr viele Seiten abgerufen, die keine Bilder, Skripte oder Stylesheets sind. Typisch für Scanner und aggressive Crawler.':
+    'The address requested a very large number of pages in a short time that are not images, scripts or stylesheets. Typical for scanners and aggressive crawlers.',
+  'Suche nach Verwaltungsoberflächen': 'Search for admin interfaces',
+  'Die Adresse hat Anmeldeseiten und Verwaltungen bekannter Programme abgerufen, etwa /wp-admin oder /phpmyadmin.':
+    'The address requested sign-in pages and admin areas of well-known programs, such as /wp-admin or /phpmyadmin.',
+  'Erkundung der eingesetzten Software': 'Probing for the software in use',
+  'Die Adresse hat Dateien abgerufen, an denen man erkennt, welche Software ein Server einsetzt. Das geht einem gezielten Angriff oft voraus.':
+    'The address requested files that reveal which software a server runs. This often comes before a targeted attack.',
+  'Bekanntes Angriffswerkzeug': 'Known attack tool',
+  'Die Anfragen tragen die Kennung eines Scanners oder Angriffswerkzeugs (User-Agent).':
+    'The requests carry the identifier of a scanner or attack tool (user agent).',
+  'Suche nach Hintertüren': 'Search for backdoors',
+  'Die Adresse hat Dateien abgerufen, die Angreifer auf übernommenen Servern hinterlassen (Web-Shells).':
+    'The address requested files that attackers leave behind on compromised servers (web shells).',
+  'Missbrauch als Proxy': 'Abuse as a proxy',
+  'Die Adresse hat versucht, über den Server fremde Seiten abzurufen.': 'The address tried to fetch other websites through the server.',
+  'Abruf einer .env-Datei': 'Request for a .env file',
+  'In einer .env-Datei stehen oft Passwörter und Schlüssel für Datenbanken und andere Dienste.':
+    'A .env file often holds passwords and keys for databases and other services.',
+  'Abruf von Git-Daten': 'Request for Git data',
+  'Im Ordner .git liegt der Quelltext einer Website samt Verlauf. Ist er erreichbar, lässt sich der ganze Code herunterladen.':
+    "The .git folder holds a website's source code and its history. If it is reachable, the whole code can be downloaded.",
+  'Wiederholte Angriffe auf bekannte Lücken': 'Repeated attacks on known vulnerabilities',
+  'Die Adresse hat mehrere Anfragen geschickt, die eine Regel gegen bekannte Lücken erkannt hat.':
+    'The address sent several requests that a rule against known vulnerabilities detected.',
+  'Wiederholt auffällige Anfragen': 'Repeated suspicious requests',
+  'Die Adresse hat in kurzer Zeit mehrere Anfragen geschickt, die gegen das OWASP-Regelwerk verstoßen. Einzeln gehen solche Anfragen durch, gehäuft führen sie zu einer Sperre.':
+    'The address sent several requests in a short time that break the OWASP rule set. Individually such requests go through, but many of them lead to a ban.',
+  'Passwörter durchprobiert': 'Password guessing',
+  'Die Adresse hat sich in kurzer Zeit oft mit falschem Passwort angemeldet.':
+    'The address tried to sign in with a wrong password many times in a short period.',
+  'Angriff auf WordPress': 'Attack on WordPress',
+  'Die Adresse hat WordPress nach Nutzern, Konfiguration oder bekannten Lücken abgesucht.':
+    'The address probed WordPress for users, configuration or known vulnerabilities.',
+  'Überlastungsversuch': 'Overload attempt',
+  'Die Adresse hat so viele oder so ungewöhnliche Anfragen geschickt, dass sie den Dienst lahmlegen könnten.':
+    'The address sent so many or such unusual requests that they could take the service down.',
 };

@@ -14,6 +14,7 @@ import { countryName } from '@/lib/country-flags';
 import { MISSING, formatNumber } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
 import { useCrowdsecData } from './useCrowdsecData';
+import { reasonLabel } from './AlertReason';
 import { WINDOWS, WINDOW_LABELS, type AlertWindow } from './AlertsPanel';
 import type { CrowdsecStatsResponse } from './types';
 
@@ -43,6 +44,30 @@ export default function CrowdsecStats() {
     () => (stats?.series ?? []).map((row) => ({ t: Date.parse(row.at), waf: row.waf, scenario: row.scenario, manual: row.manual })),
     [stats]
   );
+  // Dieselbe Art Treffer heißt bei OWASP je nach Punktzahl anders
+  // (`lfi: 5, anomaly: 5` und `lfi: 5, anomaly: 10`): in Worten ist es eine Zeile.
+  const reasons = useMemo(() => {
+    const merged = new Map<string, { names: string[]; count: number }>();
+    for (const row of stats?.scenarios ?? []) {
+      const label = reasonLabel(row.key, t);
+      const entry = merged.get(label) ?? { names: [], count: 0 };
+      entry.names.push(row.key);
+      entry.count += row.count;
+      merged.set(label, entry);
+    }
+    return [...merged]
+      .sort((a, b) => b[1].count - a[1].count)
+      .map(([label, entry]) => ({
+        key: label,
+        label:
+          label === entry.names[0] ? (
+            <span className="ranking-mono">{label}</span>
+          ) : (
+            <span data-tooltip={entry.names.join('\n')}>{label}</span>
+          ),
+        value: entry.count,
+      }));
+  }, [stats, t]);
   const format = useMemo(() => (value: number) => formatNumber(locale, value), [locale]);
   const number = (value: number | null | undefined) => (value === null || value === undefined ? MISSING : formatNumber(locale, value));
 
@@ -138,7 +163,7 @@ export default function CrowdsecStats() {
                 <h3 className="card-title">{t('Szenarien')}</h3>
               </div>
               <BarList
-                items={stats.scenarios.map((row) => ({ key: row.key, label: <span className="ranking-mono">{row.key}</span>, value: row.count }))}
+                items={reasons}
                 emptyText={t('Keine Daten')}
               />
             </div>
