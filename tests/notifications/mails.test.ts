@@ -120,6 +120,17 @@ const SAMPLES: { event: NotificationEvent; subject: string; text: string[]; path
   },
   {
     event: {
+      type: 'sync_failed',
+      peer: 'proxy02',
+      url: 'http://10.0.0.2:7080',
+      error: 'proxy02 hat den Stand nicht übernommen: Konfiguration prüfen: unknown keyword',
+    },
+    subject: 'Abgleich mit proxy02 gescheitert',
+    text: ['proxy02', 'proxy01', 'http://10.0.0.2:7080', 'unknown keyword', 'Was zu tun ist'],
+    path: '/abgleich',
+  },
+  {
+    event: {
       type: 'crowdsec_down',
       role: 'bouncer',
       container: 'hapm-crowdsec-bouncer',

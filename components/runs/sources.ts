@@ -36,6 +36,8 @@ export interface RunView {
   toVersion: string | null;
   fromVersion: string | null;
   fileName: string | null;
+  /** Nur Abgleich: der Stand kam von einem Hauptknoten hier an. */
+  incoming: boolean;
 }
 
 type ApiFetch = (url: string, init?: RequestInit) => Promise<Response>;
@@ -55,6 +57,7 @@ const ENDPOINTS: Record<RunKind, string> = {
   backup: '/api/backup/runs',
   restore: '/api/backup/restore/runs',
   crowdsec: '/api/crowdsec/rules/runs',
+  sync: '/api/sync/runs',
 };
 
 interface RawRun {
@@ -74,6 +77,9 @@ interface RawRun {
   fileName?: string | null;
   /** Nur Regeln von CrowdSec: was noch wartet, vom Server schon übersetzt. */
   pending?: string[];
+  /** Nur Abgleich: die Gegenstellen, und ob der Stand von hier ging oder hier ankam. */
+  peers?: string;
+  direction?: 'send' | 'receive';
 }
 
 function toView(kind: RunKind, raw: RawRun): RunView {
@@ -98,6 +104,9 @@ function toView(kind: RunKind, raw: RawRun): RunView {
   } else if (kind === 'crowdsec') {
     // Die Schlange wächst, während der Lauf arbeitet: es gibt keinen festen Plan.
     if (running) pending = raw.pending ?? [];
+  } else if (kind === 'sync') {
+    // Je Folgeknoten andere Schritte, und wie viele es werden, hängt an dessen Antwort.
+    subject = raw.peers ?? null;
   }
   return {
     kind,
@@ -115,6 +124,7 @@ function toView(kind: RunKind, raw: RawRun): RunView {
     fromVersion: raw.fromVersion ?? null,
     toVersion: raw.toVersion ?? null,
     fileName: raw.fileName ?? null,
+    incoming: kind === 'sync' && raw.direction === 'receive',
   };
 }
 
@@ -173,6 +183,8 @@ export function runTitle(view: RunView | null, ref: RunRef, t: Translator['t']):
         : failed
           ? t('CrowdSec-Regeln: Änderung fehlgeschlagen')
           : t('CrowdSec-Regeln geändert');
+    case 'sync':
+      return running ? t('Abgleich läuft') : failed ? t('Abgleich fehlgeschlagen') : t('Abgleich abgeschlossen');
     default: {
       const noun = ref.label ?? (view?.action === 'settings' ? t('Globale Einstellungen') : t('Reverse-Proxy'));
       const head = running
@@ -188,7 +200,7 @@ export function runTitle(view: RunView | null, ref: RunRef, t: Translator['t']):
 /** Eine Zeile unter der Überschrift: wohin, von welcher Fassung auf welche. */
 export function runContext(view: RunView | null): string | null {
   if (!view) return null;
-  if (view.kind === 'backup') return view.subject;
+  if (view.kind === 'backup' || view.kind === 'sync') return view.subject;
   if (view.kind === 'update' && view.fromVersion && view.toVersion && view.fromVersion !== view.toVersion) {
     return `${view.fromVersion} → ${view.toVersion}`;
   }
@@ -256,6 +268,16 @@ export function finishedToast(view: RunView, ref: RunRef, t: Translator['t']): F
             variant: 'success',
             title: t('CrowdSec-Regeln geändert'),
             message: t('CrowdSec hat die Regeln neu geladen.'),
+          };
+    case 'sync':
+      return failed
+        ? { variant: 'error', title: t('Abgleich fehlgeschlagen'), message: failure }
+        : {
+            variant: 'success',
+            title: t('Abgleich abgeschlossen'),
+            message: view.incoming
+              ? t('Der Stand von {name} ist übernommen.', { name: view.subject ?? '' })
+              : t('Übernommen von: {names}', { names: view.subject ?? '' }),
           };
     default:
       return failed

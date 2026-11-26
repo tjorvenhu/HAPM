@@ -77,6 +77,7 @@ import { localServer } from '../helpers';
 import { startHaproxyRun, waitForRun } from '../haproxy/runner';
 import { APP_RULES, appLogo, hubItemsOf, type AppUse } from './apps';
 import { syncAllowFile } from './allow-file';
+import { isReplica } from '../sync/role';
 import { enqueueRuleChange, pendingRuleChanges, ruleRunActive, type RuleJob } from './rule-jobs';
 
 export interface CrowdsecActor {
@@ -299,8 +300,23 @@ export async function listAllowlist() {
   return parseAllowlist(json);
 }
 
+/**
+ * Auf einem Folgeknoten kommt die Datei, aus der HAProxy die Freigaben liest,
+ * vom Hauptknoten (`refreshCrowdsecAllowFile`). Eine Freigabe nur in der Liste
+ * von CrowdSec hier stünde dann in der Oberfläche, käme aber nicht durch.
+ */
+async function assertAllowlistWritable(): Promise<void> {
+  if (await isReplica()) {
+    throw new ApiError(
+      msg('Dieser Knoten ist ein Folgeknoten. Freigaben kommen vom Hauptknoten und werden dort geändert.'),
+      409
+    );
+  }
+}
+
 /** Freigeben. CrowdSec hebt dabei bestehende Sperren der Adresse auf. */
 export async function addAllowlist(body: unknown, actor: CrowdsecActor) {
+  await assertAllowlistWritable();
   const raw = (body ?? {}) as Record<string, unknown>;
   const address = parseAddress(String(raw.value ?? ''));
   if (!address) throw new ApiError(msg('Bitte eine Adresse oder ein Netz angeben, etwa 203.0.113.7 oder 198.51.100.0/24.'));
@@ -336,6 +352,7 @@ export async function addAllowlist(body: unknown, actor: CrowdsecActor) {
 }
 
 export async function removeAllowlist(body: unknown, actor: CrowdsecActor) {
+  await assertAllowlistWritable();
   const raw = (body ?? {}) as Record<string, unknown>;
   const address = parseAddress(String(raw.value ?? ''));
   if (!address) throw new ApiError(msg('Bitte eine Adresse oder ein Netz angeben, etwa 203.0.113.7 oder 198.51.100.0/24.'));

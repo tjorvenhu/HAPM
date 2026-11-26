@@ -44,6 +44,7 @@ export const INDEXES: Record<string, string[]> = {
   [COLLECTIONS.HAPROXY_METRICS]: ['collectedAt', 'scope'],
   [COLLECTIONS.SERVICE_TOKENS]: ['tokenHash'],
   [COLLECTIONS.UPDATE_RUNS]: ['startedAt', 'status'],
+  [COLLECTIONS.SYNC_RUNS]: ['startedAt', 'status'],
 };
 
 const META_COLUMNS: Record<string, { column: string; cast: string }> = {

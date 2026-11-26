@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   addPendingRun,
   applyRunSnapshot,
@@ -8,6 +8,10 @@ import {
   runForEntry,
   type PendingRun,
 } from '@/components/reverse-proxy/pendingRuns';
+// Die Sperre fragt die Rolle des Knotens aus der Datenbank (`tests/sync/guard.test.ts`).
+// Hier geht es nur um die Reihenfolge der Vorgänge.
+vi.mock('@/lib/sync/role', () => ({ assertProxyWritable: async () => undefined, isReplica: async () => false }));
+
 import { withProxyLock } from '@/lib/haproxy/provision';
 import type { HaproxyPhase } from '@/lib/types';
 

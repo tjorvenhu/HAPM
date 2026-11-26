@@ -160,6 +160,8 @@ function followPagesAfterStart(): void {
           import('./audit'),
           import('./helpers'),
         ]);
+        // Auf einem Folgeknoten kommen die Fehlerseiten mit dem Abgleich.
+        if (await (await import('./sync/role')).isReplica()) return;
         await loadPageDesign();
         await followPageChanges(await getProxyServer(LOCAL_SERVER_ID), systemActor(), 'Start');
       } catch (err) {

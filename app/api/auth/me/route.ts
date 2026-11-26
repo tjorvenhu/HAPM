@@ -3,6 +3,7 @@ import { getUserLocale } from '@/lib/auth/users';
 import { ok, handleError, ApiError } from '@/lib/api';
 import { msg } from '@/lib/i18n';
 import { crowdsecInstalled, crowdsecPresent } from '@/lib/crowdsec/paths';
+import { isReplica } from '@/lib/sync/role';
 
 /**
  * Die Sitzung, in der Form, die `ToolShell` (`ui/tool/ToolShell.tsx`) liest: ohne
@@ -23,7 +24,7 @@ export async function GET() {
       csrfToken: session.csrfToken,
       locale: await getUserLocale(session.userId),
       // Abgewählt oder von vor CrowdSec: dann blendet die Oberfläche es aus.
-      features: { crowdsec: crowdsecInstalled(), crowdsecPresent: crowdsecPresent() },
+      features: { crowdsec: crowdsecInstalled(), crowdsecPresent: crowdsecPresent(), replica: await isReplica() },
     });
   } catch (err) {
     return handleError(err);

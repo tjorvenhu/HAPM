@@ -156,6 +156,7 @@ import {
   type SurfaceProtection,
 } from './protected';
 import type { Server, HaproxyPhase } from '../types';
+import { assertProxyWritable, isReplica } from '../sync/role';
 import { explainAcmeFailure } from './acme-errors';
 
 /**
@@ -261,6 +262,18 @@ locks.queued ??= new Map();
  * Konfiguration liest: dieselbe Phase, keine Schritte, minutenlang, solange
  * der vor ihm sein Zertifikat holt. Den nächsten Stand meldet `fn` selbst
  * (`steps.phase('preflight')` als erste Zeile).
+ *
+ * Zwei Dinge hängen für den Abgleich zwischen Knoten daran
+ * (docs/hochverfuegbarkeit.md), und beide an dieser einen Stelle, weil jeder
+ * Schreibweg sie nimmt:
+ *
+ *  - **Ein Folgeknoten ändert nichts** an dem, was der Abgleich überschreibt.
+ *    Geprüft wird unter der Sperre: zwischen Anfrage und Lauf kann die Rolle
+ *    gewechselt haben.
+ *  - **Nach jedem Vorgang ein Anstoß** (`onProxyChange`). Ob sich der Stand
+ *    geändert hat, entscheidet dort der Fingerabdruck, nicht der Aufrufer.
+ *
+ * Was ein Folgeknoten selbst tun darf, nimmt `withProxyLockLocal`.
  */
 export function withProxyLock<T>(serverId: string, fn: () => Promise<T>): Promise<T>;
 export function withProxyLock<T>(
@@ -273,6 +286,47 @@ export async function withProxyLock<T>(
   ...args: [() => Promise<T>] | [ProvisionReporter | undefined, () => Promise<T>]
 ): Promise<T> {
   const [reporter, fn] = args.length === 1 ? [undefined, args[0]] : args;
+  try {
+    return await lockChain(serverId, reporter, async () => {
+      await assertProxyWritable();
+      return fn();
+    });
+  } finally {
+    try {
+      changeHook.__hapm_proxy_change?.();
+    } catch {
+      // Der Anstoß darf den Vorgang nicht scheitern lassen.
+    }
+  }
+}
+
+/**
+ * Dieselbe Sperre ohne die Regel für Folgeknoten und ohne Anstoß. Für das, was
+ * jeder Knoten an sich selbst tut: den Stand des Hauptknotens einsetzen
+ * (`lib/sync/apply.ts`), ihn zum Senden lesen (`lib/sync/send.ts`), HAProxy
+ * nach einer neuen SPOE-Datei neu laden, CrowdSec aus der eigenen Datei nehmen,
+ * wenn es hier nicht eingeschaltet ist.
+ */
+export function withProxyLockLocal<T>(serverId: string, fn: () => Promise<T>, reporter?: ProvisionReporter): Promise<T> {
+  return lockChain(serverId, reporter, fn);
+}
+
+const changeHook = globalThis as typeof globalThis & { __hapm_proxy_change?: (() => void) | null };
+
+/**
+ * Wer nach jedem Vorgang am Proxy Bescheid bekommen will (der Abgleich, über
+ * den Scheduler). Von außen gesetzt, damit diese Datei `lib/sync/send.ts`
+ * nicht kennen muss: das importiert sie selbst.
+ */
+export function onProxyChange(hook: (() => void) | null): void {
+  changeHook.__hapm_proxy_change = hook;
+}
+
+async function lockChain<T>(
+  serverId: string,
+  reporter: ProvisionReporter | undefined,
+  fn: () => Promise<T>
+): Promise<T> {
   const previous = locks.chains.get(serverId) ?? Promise.resolve();
   let release!: () => void;
   const held = new Promise<void>((resolve) => {
@@ -870,6 +924,8 @@ async function ensureGeoBlockFiles(
  * Geprüft wird trotzdem vor dem Neuladen.
  */
 export async function refreshGeoBlockFiles(server: Server): Promise<'none' | 'unchanged' | 'reloaded'> {
+  // Auf einem Folgeknoten kommen die Länderlisten mit dem Abgleich.
+  if (await isReplica()) return 'none';
   return withProxyLock(server.$id, async () => {
     const ssh = await getSSHConfig(server);
     const probe = await probeProxy(server);
@@ -896,6 +952,9 @@ export async function refreshGeoBlockFiles(server: Server): Promise<'none' | 'un
  * sich nichts, geprüft wird trotzdem vor dem Neuladen.
  */
 export async function refreshCrowdsecAllowFile(server: Server, content: string): Promise<'unchanged' | 'written' | 'reloaded'> {
+  // Auf einem Folgeknoten kommt die Datei mit dem Abgleich. Aus der eigenen
+  // Freigabeliste geschrieben, nähme sie dem Hauptknoten seine Freigaben.
+  if (await isReplica()) return 'unchanged';
   return withProxyLock(server.$id, async () => {
     const ssh = await getSSHConfig(server);
     const current = await sshExec(ssh, buildCommand(['sh', '-c', 'cat "$1" 2>/dev/null || true', 'sh', CROWDSEC_ALLOW_FILE]), SHORT_MS);
@@ -926,7 +985,8 @@ export async function refreshCrowdsecAllowFile(server: Server, content: string):
  * Geprüft wird vor dem Neuladen.
  */
 export async function reloadForCrowdsec(server: Server): Promise<'none' | 'reloaded'> {
-  return withProxyLock(server.$id, async () => {
+  // Nur neu laden, nichts schreiben: das tut auch ein Folgeknoten für sich.
+  return withProxyLockLocal(server.$id, async () => {
     const probe = await probeProxy(server);
     if (!probe.configReadable || !usesCrowdsec(probe.raw)) return 'none';
     const ssh = await getSSHConfig(server);
@@ -2619,12 +2679,33 @@ export async function precheckSettings(
   }
 }
 
+/**
+ * Der Lauf, mit dem ein Knoten CrowdSec aus seiner eigenen `haproxy.cfg` nimmt
+ * (`startRemovalRun` in `lib/crowdsec/actions.ts`): alles andere bleibt, wie es
+ * in der Datei steht. Nur dieser darf auf einem Folgeknoten laufen.
+ */
+export function isLocalCrowdsecRemoval(settings: GlobalSettingsInput | undefined): boolean {
+  return (
+    settings?.fromFile === true &&
+    settings.crowdsec === false &&
+    settings.crowdsecRemoveAll === true &&
+    settings.patch === undefined &&
+    settings.protection === undefined
+  );
+}
+
 export async function updateGlobalSettings(
   server: Server,
   given: GlobalSettingsInput,
   reporter?: ProvisionReporter
 ): Promise<ProvisionResult> {
-  return withProxyLock(server.$id, reporter, async () => {
+  // CrowdSec ganz aus der Datei zu nehmen ist die eine Änderung, die auch ein
+  // Folgeknoten an sich selbst vornimmt: der Bouncer gehört zum Knoten, und
+  // ohne ihn wartete HAProxy bei jeder Anfrage (`isLocalCrowdsecRemoval`).
+  const lock = isLocalCrowdsecRemoval(given)
+    ? <T>(fn: () => Promise<T>) => withProxyLockLocal(server.$id, fn, reporter)
+    : <T>(fn: () => Promise<T>) => withProxyLock(server.$id, reporter, fn);
+  return lock(async () => {
     const steps = new StepLog(reporter);
     await steps.phase('preflight');
 

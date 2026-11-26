@@ -57,6 +57,9 @@ const more = vi.hoisted(() => ({
   changeBackupSettings: vi.fn(async () => ({})),
   startBackupRun: vi.fn(async () => ({ runId: 'b1' })),
   getBackupRun: vi.fn(),
+  syncOverview: vi.fn(async () => ({ role: 'primary', peers: [], runs: [{ $id: 's1', steps: [{ label: 'x' }] }] })),
+  startSyncRun: vi.fn(async () => ({ runId: 's1' })),
+  getSyncRun: vi.fn(),
   settingsOverview: vi.fn(),
   changeSettings: vi.fn(async () => ({})),
   readServiceSettingsInput: vi.fn((body: Record<string, unknown>) => ({ ...body })),
@@ -102,6 +105,11 @@ vi.mock('@/lib/backup/actions', () => ({
   changeBackupSettings: more.changeBackupSettings,
   startBackupRun: more.startBackupRun,
   getBackupRun: more.getBackupRun,
+}));
+vi.mock('@/lib/sync/actions', () => ({
+  syncOverview: more.syncOverview,
+  startSyncRun: more.startSyncRun,
+  getSyncRun: more.getSyncRun,
 }));
 vi.mock('@/lib/settings-actions', () => ({
   settingsOverview: more.settingsOverview,
@@ -186,6 +194,8 @@ const OTHER_WRITING = [
   'set_crowdsec_enabled',
   'update_backup_settings',
   'start_backup',
+  // Nur der Anstoß. Rolle, Kopplungsschlüssel und Gegenstellen gibt es über einen Key nicht.
+  'start_sync',
   'update_settings',
   'update_certificate_settings',
   'send_test_mail',
@@ -344,6 +354,7 @@ describe('Rechte: die übrigen schreibenden Werkzeuge schreiben unter dem Namen 
     ['start_update', { component: 'hapm' }, 'startComponentUpdate', auditActor],
     ['update_backup_settings', { keep: 7 }, 'changeBackupSettings', auditActor],
     ['start_backup', {}, 'startBackupRun', auditActor],
+    ['start_sync', {}, 'startSyncRun', auditActor],
     ['update_settings', { exposure: 'public' }, 'changeSettings', auditActor],
     ['update_certificate_settings', { source: 'acme' }, 'changeCertificateSettings', { allowEab: false }],
     ['send_test_mail', { to: 'ops@example.com' }, 'sendTestMailAs', null],
@@ -425,6 +436,18 @@ describe('Übersichten ohne Schritte', () => {
   it('get_backup gibt die Läufe ohne Schritte zurück', async () => {
     const result = (await tool('get_backup').run({}, ctx)) as { runs: Record<string, unknown>[] };
     expect(result.runs).toEqual([{ $id: 'b1' }]);
+  });
+
+  it('get_sync gibt die Läufe ohne Schritte zurück', async () => {
+    const result = (await tool('get_sync').run({}, ctx)) as { role: string; runs: Record<string, unknown>[] };
+    expect(result.role).toBe('primary');
+    expect(result.runs).toEqual([{ $id: 's1' }]);
+  });
+
+  it('kennt kein Werkzeug für Rolle, Kopplungsschlüssel oder Gegenstellen', () => {
+    // Der Schlüssel ist ein Geheimnis, und die Rolle entscheidet, welcher Knoten den anderen überschreibt.
+    const names = TOOLS.map((entry) => entry.name).filter((name) => name.includes('sync'));
+    expect(names.sort()).toEqual(['get_sync', 'get_sync_run', 'start_sync']);
   });
 });
 

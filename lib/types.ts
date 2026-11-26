@@ -19,7 +19,8 @@ export interface SessionData {
   locale?: 'de' | 'en' | null;
   /** Was diese Installation mitbringt. Nur in `/api/auth/me`. */
   /** `crowdsec`: da und eingeschaltet. `crowdsecPresent`: da, auch wenn abgeschaltet. */
-  features?: { crowdsec: boolean; crowdsecPresent?: boolean };
+  /** `replica`: dieser Knoten ist ein Folgeknoten, der Proxy wird am Hauptknoten geändert (`lib/sync/`). */
+  features?: { crowdsec: boolean; crowdsecPresent?: boolean; replica?: boolean };
 }
 
 /* ── Konten ──
@@ -406,6 +407,7 @@ export const NOTIFICATION_EVENT_TYPES = [
   'update_completed',
   'update_failed',
   'backup_failed',
+  'sync_failed',
   'crowdsec_down',
   'crowdsec_report',
 ] as const;
@@ -493,6 +495,9 @@ export const COLLECTIONS = {
   BACKUP_SETTINGS: 'backup_settings',
   BACKUP_RUNS: 'backup_runs',
   RESTORE_RUNS: 'restore_runs',
+  SYNC_SETTINGS: 'sync_settings',
+  SYNC_PEERS: 'sync_peers',
+  SYNC_RUNS: 'sync_runs',
   SETUP_STATE: 'setup_state',
   SAVED_TARGETS: 'saved_targets',
   BRANDING: 'branding',

@@ -69,6 +69,7 @@ import { readStatsOverview } from '../haproxy/stats-overview';
 import { checkZones } from '../dns/zone-check';
 import { UPDATE_COMPONENTS, checkUpdatesNow, getUpdateRun, startComponentUpdate, updatesOverview } from '../updates/actions';
 import { backupOverview, changeBackupSettings, getBackupRun, startBackupRun } from '../backup/actions';
+import { getSyncRun, startSyncRun, syncOverview } from '../sync/actions';
 import {
   changeCertificateSettings,
   changeSettings,
@@ -1021,6 +1022,53 @@ export const TOOLS: ToolDefinition[] = [
     },
     annotations: READ_ONLY,
     run: (args, ctx) => waitFor(() => getBackupRun(args.runId, ctx.t), args.waitSeconds ?? 0),
+  }),
+
+  /* ── Abgleich zwischen Knoten ── */
+
+  defineTool({
+    name: 'get_sync',
+    title: 'Node sync overview',
+    description:
+      'High availability: the role of this node (single, primary or replica). On a primary: the replicas with their state ' +
+      '(reachable, inSync, lastSyncAt, lastError, warnings). On a replica: the primary it is bound to and when the last state arrived. ' +
+      'Plus the recent sync runs (without steps). A primary pushes haproxy.cfg, certificates and error pages to its replicas after every change. ' +
+      'On a replica every tool that changes targets, certificates or proxy settings is refused: change them on the primary.',
+    input: {},
+    annotations: READ_ONLY,
+    run: async () => {
+      const overview = await syncOverview();
+      return { ...overview, runs: overview.runs.map(runSummary) };
+    },
+  }),
+
+  defineTool({
+    name: 'start_sync',
+    title: 'Sync replicas now',
+    description:
+      'Pushes the current state of this primary node to every replica now, even if a replica already carries it. ' +
+      'Only works on a primary with at least one replica (see get_sync). Role, pairing key and replicas are managed in the web interface only. ' +
+      'Returns { runId }; poll get_sync_run.',
+    input: {},
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    run: async (_args, ctx) => ({
+      ...(await startSyncRun(auditActor(ctx.actor))),
+      next: 'Call get_sync_run with this runId and waitSeconds=50 until status is no longer "running".',
+    }),
+  }),
+
+  defineTool({
+    name: 'get_sync_run',
+    title: 'Get sync run',
+    description:
+      'Status of a sync run: direction (send or receive), peers, status, steps and a text log. ' +
+      `With waitSeconds (max ${MAX_WAIT_SECONDS}) the call waits until the run is finished or the time is up.`,
+    input: {
+      runId: z.string().describe('runId returned by start_sync, or the $id of a run from get_sync.'),
+      waitSeconds: waitSecondsInput,
+    },
+    annotations: READ_ONLY,
+    run: (args, ctx) => waitFor(() => getSyncRun(args.runId, ctx.t), args.waitSeconds ?? 0),
   }),
 
   /* ── Einstellungen ── */

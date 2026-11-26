@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard, Network, BarChart3, ShieldCheck, ScrollText, Globe, SlidersHorizontal,
-  Plug, PackageCheck, DatabaseBackup, Bell, Settings, Users, UserCog, FileWarning, Palette, ShieldAlert, type LucideIcon,
+  Plug, PackageCheck, DatabaseBackup, Bell, Settings, Users, UserCog, FileWarning, Palette, ShieldAlert, ArrowLeftRight, type LucideIcon,
 } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { ShellSidebar, type ShellNavArea, type ShellNavGroup } from '@/ui/shell/ShellSidebar';
@@ -69,6 +69,7 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: msgid('Updates'), href: '/updates', icon: PackageCheck, badge: 'updates' },
       { label: msgid('Sicherung'), href: '/backup', icon: DatabaseBackup },
+      { label: msgid('Abgleich'), href: '/abgleich', icon: ArrowLeftRight },
       { label: msgid('Benachrichtigungen'), href: '/notifications', icon: Bell },
       { label: msgid('Benutzer'), href: '/users', icon: Users },
       { label: msgid('Allgemein'), href: '/system', icon: Settings },

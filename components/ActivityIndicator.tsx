@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Archive, ChevronUp, Loader2, Network, RefreshCw, RotateCcw, ShieldAlert } from 'lucide-react';
+import { Archive, ArrowLeftRight, ChevronUp, Loader2, Network, RefreshCw, RotateCcw, ShieldAlert } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
 import { useNow } from '@/components/useNow';
@@ -31,6 +31,7 @@ const KIND_ICONS: Record<RunKind, ReactNode> = {
   backup: <Archive size={15} />,
   restore: <RotateCcw size={15} />,
   crowdsec: <ShieldAlert size={15} />,
+  sync: <ArrowLeftRight size={15} />,
 };
 
 function elapsedLabel(startedAt: string, now: number): string {
@@ -248,6 +249,8 @@ export default function ActivityIndicator() {
         return t('Zurückspielen');
       case 'crowdsec':
         return job.step ?? t('Regeln');
+      case 'sync':
+        return t('Abgleich');
       default:
         return job.phase && HAPROXY_PHASE_LABELS[job.phase] ? t(HAPROXY_PHASE_LABELS[job.phase]) : t('Reverse-Proxy');
     }

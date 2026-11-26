@@ -46,9 +46,11 @@ import {
   updateGlobalSettings,
   updateScopes,
   issueCertificate,
+  isLocalCrowdsecRemoval,
   type ProvisionStep,
   type ProvisionReporter,
 } from './provision';
+import { assertProxyWritable } from '../sync/role';
 import { runImport, describeImport, importAuditDetails, type ImportPlan } from './import-run';
 import { ensureProxyRecords, removeProxyRecords } from '../dns/sync';
 import { msgid } from '../i18n/translate';
@@ -289,6 +291,10 @@ const APP_SYNC_ACTIONS = new Set<HaproxyAction>(['create', 'update', 'delete', '
 
 export async function startHaproxyRun(opts: RunOptions): Promise<HaproxyRun> {
   const { server, action, serviceId, input, actor } = opts;
+  // Auf einem Folgeknoten entsteht kein Lauf: die Absage geht an Formular, API
+  // und MCP, statt als gescheiterte Zeile in der Historie zu stehen. Unter der
+  // Sperre wird noch einmal geprüft (`withProxyLock`).
+  if (!isLocalCrowdsecRemoval(opts.settings)) await assertProxyWritable();
   const startedAt = new Date();
   const { domains, targets } = describe(opts);
 
