@@ -17,6 +17,8 @@ hier, die Tabelle dort sagt, welche.
 | Endpunkt | Was er tut |
 |---|---|
 | `GET /system` | die Übersicht wie auf der Startseite (`systemOverview`) |
+| `GET /health` | das Urteil für eine Überwachung: 200 oder 503, siehe „Überwachung“ |
+| `GET /metrics` | dasselbe als Metriken im Textformat von Prometheus |
 | `GET /system/haproxy` | der Container von HAProxy; `?logs=1` samt 200 Zeilen Ausgabe |
 | `POST /system/haproxy` | `{ "action": "restart" }`: Neustart, Antwort mit dem Zustand danach |
 | `GET /updates` | Stand je Bestandteil, letzte Läufe, Schalter; `?check=1` prüft vorher |
@@ -47,6 +49,104 @@ hier, die Tabelle dort sagt, welche.
 Die Antworten sind Feld für Feld die der Routen hinter der Oberfläche
 (`/api/updates`, `/api/backup`, `/api/settings`, …). Wer die Form eines Feldes
 sucht, findet sie in der jeweiligen Funktion.
+
+## Überwachung
+
+Zwei lesende Endpunkte für Werkzeuge, die HAPM von außen beobachten. Beide
+rechnen aus derselben Übersicht wie `GET /system` (`lib/system/monitoring.ts`)
+und brauchen ein Token wie jede Route hier. Ohne Token antwortet nur
+`/api/health`: das ist der Healthcheck des Containers und sagt allein, ob der
+Prozess läuft.
+
+### `GET /health`
+
+```bash
+curl -H "Authorization: Bearer hapm_…" https://hapm.example.org/api/internal/health
+```
+
+```json
+{
+  "success": true,
+  "data": {
+    "status": "warn",
+    "generatedAt": "2026-11-26T12:00:00.000Z",
+    "version": "0.7.0",
+    "checks": [
+      { "id": "haproxy", "status": "ok", "message": null },
+      { "id": "targets", "status": "warn", "message": "Ein Ziel hat kein erreichbares Backend." }
+    ]
+  }
+}
+```
+
+**Der Statuscode ist das Urteil:** 200 bei `ok` und `warn`, 503 bei `fail`.
+Mit `?strict=1` ist auch `warn` ein 503. Die Meldungen kommen in der Sprache
+der Anfrage (`Accept-Language`).
+
+| Prüfung | `fail` | `warn` |
+|---|---|---|
+| `bootstrap` | Einrichtung beim Start gescheitert | läuft noch |
+| `docker` | Engine nicht erreichbar | |
+| `haproxy` | Container steht, fehlt oder meldet sich nicht bereit | |
+| `targets` | | Ziel ohne oder mit nur einem Teil der Backends |
+| `certificates` | ein Zertifikat ist abgelaufen | läuft bald ab, Erneuerung überfällig, Ablauf nicht lesbar |
+| `renewal` | | die letzte tägliche Erneuerung meldet einen Fehler |
+| `scheduler` | Zeitplan läuft nicht | Abruf der Statistik gescheitert |
+| `runs` | | gescheiterter Vorgang, den niemand abgehakt hat |
+| `crowdsec` | | CrowdSec oder Bouncer steht, obwohl Ziele ihn benutzen. Fehlt, wenn kein Ziel CrowdSec benutzt |
+| `backup` | | letzte Sicherung gescheitert oder älter als 50 Stunden. Fehlt ohne tägliche Sicherung |
+
+- **`fail` heißt: der Proxy selbst arbeitet nicht.** Ein Ziel ohne Backend ist
+  deshalb nur `warn`: das Backend ist kaputt, nicht der Proxy, und wer daran
+  auf einen zweiten Knoten umschaltete, nähme alle Ziele mit, die laufen.
+- **`unknown` ist nicht `ok`.** Was nicht zu erfahren war (Docker-Socket weg,
+  Konfiguration nicht lesbar), steht als `unknown` da und zieht das
+  Gesamturteil auf `warn`.
+- Die Namen der Prüfungen bleiben, neue können dazukommen.
+
+### `GET /metrics`
+
+Text im Format von Prometheus (`lib/system/metrics.ts`), nicht die Hülle
+`{ success, data }`. Ein Job dafür:
+
+```yaml
+scrape_configs:
+  - job_name: hapm
+    scheme: https
+    metrics_path: /api/internal/metrics
+    authorization:
+      credentials: hapm_…
+    static_configs:
+      - targets: ['hapm.example.org']
+```
+
+| Metrik | Bedeutung |
+|---|---|
+| `hapm_info{version}` | immer 1 |
+| `hapm_health_status` | Gesamturteil: 0 `ok`, 1 `warn`, 2 `fail` |
+| `hapm_check_status{check,status}` | je Prüfung und Zustand, 1 beim aktuellen |
+| `hapm_docker_up`, `hapm_haproxy_up`, `hapm_scheduler_up`, `hapm_log_follower_connected` | 1 oder 0 |
+| `hapm_container_running{container}`, `hapm_container_restarts{container}`, `hapm_container_start_time_seconds{container}` | HAProxy, mit CrowdSec im Stack auch `crowdsec` und `crowdsec-bouncer` |
+| `hapm_targets{kind}`, `hapm_targets_checked`, `hapm_targets_unhealthy{state}` | Ziele (`service`) und TCP-Weiterleitungen (`stream`), davon `down` und `partial` |
+| `hapm_target_unhealthy{target,kind,state}` | je Ziel ohne oder mit einem Teil der Backends, sonst keine Zeile |
+| `hapm_certificates`, `hapm_certificates_due` | Zertifikate, davon fällig |
+| `hapm_certificate_expiry_timestamp_seconds{domain,source}` | Ablauf je Zertifikat, `source` ist `acme` oder `uploaded` |
+| `hapm_certificate_renewal_ok` | Ergebnis des letzten täglichen Laufs |
+| `hapm_runs_failed`, `hapm_runs_running` | Vorgänge am Reverse-Proxy |
+| `hapm_update_available{component}` | 1, wenn es ein neueres Abbild gibt |
+| `hapm_stats_last_run_timestamp_seconds` | wann die Zähler von HAProxy zuletzt gelesen wurden |
+| `hapm_backup_enabled`, `hapm_backup_last_success_timestamp_seconds`, `hapm_backup_last_run_ok` | Sicherung |
+| `hapm_crowdsec_active_decisions`, `hapm_crowdsec_protected_targets` | CrowdSec, nur wenn der Stack es mitbringt |
+
+- **Unbekannt fehlt, statt 0 zu sein.** `hapm_haproxy_up 0` heißt, HAProxy
+  steht. Fehlt die Zeile, war es nicht zu erfahren: dafür `absent(hapm_haproxy_up)`
+  oder `hapm_check_status{status="unknown"} == 1`.
+- Ein Zertifikat, das in 14 Tagen abläuft:
+  `hapm_certificate_expiry_timestamp_seconds - time() < 14 * 86400`.
+- **Die Zahlen des Verkehrs stehen hier nicht.** HAPM führt davon Minutenwerte
+  (`GET /haproxy/stats`). Wer Anfragen und Antwortzeiten in Prometheus will,
+  nimmt den Exporter, den HAProxy mitbringt.
+- Namen und Labels bleiben: fremde Regeln und Tafeln hängen daran.
 
 ## Update von HAPM
 

@@ -130,6 +130,7 @@ has HAProxy check it, reloads and fetches the certificates.
 - Daily backups and restore from the web interface
 - Email alerts on outages, expiring certificates and errors
 - API with tokens for scripts and other services
+- External monitoring: health endpoint with a verdict per check, metrics for Prometheus
 - MCP server: control HAPM from Claude and other AI clients
 - Web interface in German and English
 - Your own logo, name and accent color to present HAPM as your own tool

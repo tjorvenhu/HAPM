@@ -142,6 +142,7 @@ Welche Route zu welchem Werkzeug gehört:
 | Reverse-Proxy | `haproxy/proxies`, `services`, `streams`, `scopes`, `settings`, `runs` | `get_proxy` bis `list_runs` |
 | Zertifikate | `GET`/`DELETE haproxy/certificates`, `POST haproxy/certificates/issue` | `list_certificates`, `delete_certificate`, `reissue_certificate` |
 | Systemstatus | `GET system` | `get_system_status` |
+| Überwachung | `GET health`, `GET metrics` | keins: für Werkzeuge, die Statuscode oder Prometheus-Text lesen. Die Daten dahinter liefert `get_system_status` |
 | Statistik | `GET haproxy/stats` | `get_traffic_stats` |
 | DNS | `GET dns/zones` | `list_dns_zones` |
 | Updates | `GET updates` (`?check=1`), `POST updates/<component>`, `GET updates/runs/<id>` | `get_updates`, `start_update`, `get_update_run` |

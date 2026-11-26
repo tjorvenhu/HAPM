@@ -126,6 +126,7 @@ Konfiguration, prüft sie mit HAProxy, lädt neu und holt die Zertifikate.
 - Tägliche Sicherung und Zurückspielen über die Oberfläche
 - Mails bei Ausfällen, ablaufenden Zertifikaten und Fehlern
 - API mit Token für Skripte und andere Dienste
+- Überwachung von außen: Health-Endpunkt mit Urteil je Prüfung, Metriken für Prometheus
 - MCP-Server: HAPM aus Claude und anderen KI-Clients steuern
 - Oberfläche auf Deutsch und Englisch
 - Eigenes Logo, Name und Akzentfarbe, um HAPM als eigenes Werkzeug zu zeigen

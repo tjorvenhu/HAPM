@@ -358,6 +358,28 @@ async function cachedCertificates(): Promise<CertificateInventory> {
   return list;
 }
 
+/** Jedes Zertifikat mit seinem Ablauf, aus derselben (zwei Minuten alten) Liste wie die Übersicht. */
+async function allCertificates(now = Date.now()): Promise<CertificateDue[]> {
+  const inventory = await cachedCertificates();
+  return [
+    ...inventory.acme.map((cert) => certificateDue(cert, readExpiry(cert.mainDomain), now)),
+    // Hochgeladene haben ihr Ablaufdatum schon aus der Datei.
+    ...inventory.uploaded.map((cert) => uploadedDue(cert, now)),
+  ];
+}
+
+/**
+ * Alle Zertifikate, nicht nur die fälligen: für die Metriken, die den Ablauf
+ * je Zertifikat führen. `null` heißt: nicht zu lesen.
+ */
+export async function listCertificateExpiries(): Promise<CertificateDue[] | null> {
+  try {
+    return await allCertificates();
+  } catch {
+    return null;
+  }
+}
+
 async function readCertificateSummary(probe: Promise<ProxyProbe>): Promise<SystemCertificates> {
   const unknown: SystemCertificates = {
     total: null,
@@ -372,13 +394,7 @@ async function readCertificateSummary(probe: Promise<ProxyProbe>): Promise<Syste
     if (!(await probe).acmeReady) {
       return { ...unknown, error: msgid('acme.sh oder das Zertifikatsverzeichnis fehlt.') };
     }
-    const now = Date.now();
-    const inventory = await cachedCertificates();
-    const all = [
-      ...inventory.acme.map((cert) => certificateDue(cert, readExpiry(cert.mainDomain), now)),
-      // Hochgeladene haben ihr Ablaufdatum schon aus der Datei.
-      ...inventory.uploaded.map((cert) => uploadedDue(cert, now)),
-    ];
+    const all = await allCertificates();
     const readable = all.filter((cert) => cert.daysLeft !== null);
     return {
       total: all.length,
