@@ -1,3 +1,4 @@
+import { crowdsecInStack } from '../crowdsec/paths';
 import { localServer } from '../helpers';
 import { probeProxy, readCertificateInventory } from '../haproxy/provision';
 import { findCertificateFor } from '../haproxy/certs';
@@ -38,6 +39,8 @@ export interface SetupView extends Omit<SetupChoices, 'execution'> {
   publicUrl: string | null;
   listenPort: number;
   serverAddresses: string[];
+  /** Ob der Stack CrowdSec mitbringt: dann schlägt der Assistent es vor. */
+  crowdsecInStack: boolean;
   /**
    * Ob die Einrichtung den Eintrag der Oberfläche beim Anbieter selbst setzen
    * kann: das Token liegt noch vor, und der Anbieter hat eine Anbindung.
@@ -108,6 +111,7 @@ export async function readSetupView(): Promise<SetupView> {
     publicUrl: publicOrigin(settings),
     listenPort: listenPort(process.env.PORT),
     serverAddresses: serverAddresses(),
+    crowdsecInStack: crowdsecInStack(),
     dnsApi: Boolean(access && access.hook === state.dnsHook && dnsProviderForHook(access.hook)),
     dnsZone: zone?.name ?? null,
     certificateSource: settings.certificateSource,

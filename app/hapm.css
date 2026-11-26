@@ -336,6 +336,12 @@
 
 /* Das Zeichen eines DNS-Anbieters, in der Auswahl und neben seinem Namen. */
 .hapm-provider-logo { flex-shrink: 0; border-radius: var(--radius); }
+/* Das Zeichen von HAProxy oder CrowdSec neben dem Namen (components/BrandLogo.tsx). */
+.hapm-brand { display: inline-flex; align-items: center; gap: 6px; }
+.hapm-brand-logo { flex-shrink: 0; border-radius: 3px; vertical-align: -3px; }
+.form-section-title .hapm-brand-logo,
+.hapm-switch-text .hapm-brand-logo,
+.dash-kv-label .hapm-brand-logo { margin-right: 6px; }
 
 .hapm-provider { display: inline-flex; align-items: center; gap: 8px; }
 
@@ -564,3 +570,25 @@
 .hapm-alert-action > span { flex: 1; min-width: 0; }
 
 .hapm-alert-action > .btn { flex-shrink: 0; }
+
+/* CrowdSec (components/crowdsec/): eine Zeile Felder mit Knopf am Ende, die
+   umbricht, wenn der Platz nicht reicht. */
+.cs-form, .card-body.cs-form { display: flex; flex-direction: row; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
+.cs-form .form-group { flex: 0 1 13rem; min-width: 10rem; margin-bottom: 0; }
+.cs-form .cs-form-wide { flex: 1 1 16rem; }
+.cs-form .cs-form-end { margin-left: auto; }
+.form-hint.is-error { color: var(--danger); padding: 0 1.25rem 1rem; }
+.cs-log { margin: 0; padding: 1rem 1.25rem; max-height: 70vh; overflow: auto; font-family: var(--font-mono); font-size: 0.75rem; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-secondary); }
+.cs-log .cs-log-error { color: var(--danger); }
+.cs-log .cs-log-warn { color: var(--warning); }
+
+/* Übersicht: eine Gruppe von Kennzahlen mit Überschrift, aufklappbar und
+   sortierbar (app/(app)/dashboard/page.tsx). */
+.dash-section { margin-bottom: 1.25rem; }
+.dash-section-head { display: flex; align-items: center; gap: 8px; margin-bottom: 0.625rem; }
+.dash-section-title { display: inline-flex; align-items: center; gap: 8px; font-size: 0.8125rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; background: none; border: 0; padding: 0; cursor: pointer; }
+.dash-section-title:hover { color: var(--text); }
+.dash-section-tools { margin-left: auto; display: inline-flex; gap: 2px; }
+.dash-layout-list { display: flex; flex-direction: column; gap: 6px; }
+.dash-layout-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); }
+.dash-layout-row .dash-layout-name { flex: 1; min-width: 0; }

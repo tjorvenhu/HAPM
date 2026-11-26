@@ -31,6 +31,10 @@ services:
       TZ: ${TZ:-Europe/Berlin}
       # Zertifizierungsstelle. `letsencrypt_test` zum Ausprobieren ohne Kontingent.
       HAPM_ACME_SERVER: ${HAPM_ACME_SERVER:-letsencrypt}
+      # Ob CrowdSec zum Stack gehört (1) oder bei der Installation abgewählt wurde (0).
+      HAPM_CROWDSEC: ${HAPM_CROWDSEC:-1}
+      # Wo HAProxy den Bouncer von CrowdSec erreicht: 127.0.0.1 und dieser Port.
+      HAPM_SPOA_PORT: ${HAPM_SPOA_PORT:-7423}
     depends_on:
       postgres:
         condition: service_healthy
@@ -40,6 +44,8 @@ services:
       - ${HAPM_STORAGE:-./data}/run/haproxy:/run/haproxy
       - ${HAPM_STORAGE:-./data}/log:/var/log/haproxy
       - ${HAPM_STORAGE:-./data}/acme:/root/.acme.sh
+      # Quellen, Parser und Bouncer von CrowdSec schreibt HAPM selbst hinein.
+      - ${HAPM_STORAGE:-./data}/crowdsec:/crowdsec
       # Der Unix-Socket von Postgres. Darüber, und nur darüber, spricht HAPM mit der Datenbank.
       - ${HAPM_STORAGE:-./data}/run/postgres:/var/run/postgresql
       # Darüber prüft HAPM die Konfiguration im HAProxy-Container, liest dessen
@@ -103,4 +109,57 @@ services:
       driver: json-file
       options:
         max-size: "50m"
+        max-file: "3"
+
+  # ── CrowdSec (WAF) ───────────────────────────────────────────────────────
+  # Gehört zum Stack, prüft aber nichts, bis es in der Oberfläche eingeschaltet
+  # wird (für alle Ziele oder je Ziel). Abwählen: HAPM_CROWDSEC=0 in .env, dann
+  # `docker compose up -d --remove-orphans`. Beide Container hängen nur im Netz
+  # des Stacks; nach außen ist nur der Bouncer offen, und nur auf 127.0.0.1.
+  # Siehe docs/crowdsec.md.
+
+  crowdsec:
+    image: ${CROWDSEC_IMAGE:-crowdsecurity/crowdsec:latest}
+    container_name: hapm-crowdsec
+    restart: unless-stopped
+    scale: ${HAPM_CROWDSEC:-1}
+    environment:
+      TZ: ${TZ:-Europe/Berlin}
+      # Das Log von HAProxy und die WAF. Weitere Regeln schaltet die Oberfläche dazu.
+      COLLECTIONS: crowdsecurity/haproxy crowdsecurity/appsec-virtual-patching crowdsecurity/appsec-generic-rules
+    depends_on:
+      hapm:
+        condition: service_healthy
+    volumes:
+      - ${HAPM_STORAGE:-./data}/crowdsec/config:/etc/crowdsec
+      - ${HAPM_STORAGE:-./data}/crowdsec/data:/var/lib/crowdsec/data
+      # Der Schlüssel des Bouncers (bouncer_key_hapm). CrowdSec meldet ihn beim Start an.
+      - ${HAPM_STORAGE:-./data}/crowdsec/secrets:/run/secrets:ro
+      # Der Mitschnitt des HAProxy-Logs, den HAPM schreibt.
+      - ${HAPM_STORAGE:-./data}/log:/var/log/haproxy:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  crowdsec-bouncer:
+    # Der SPOE-Agent, den HAProxy je Anfrage fragt. Er fragt CrowdSec nach
+    # Sperren und reicht die Anfrage an die WAF weiter.
+    image: ${CROWDSEC_BOUNCER_IMAGE:-crowdsecurity/spoa-bouncer:latest}
+    container_name: hapm-crowdsec-bouncer
+    restart: unless-stopped
+    scale: ${HAPM_CROWDSEC:-1}
+    depends_on:
+      - crowdsec
+    ports:
+      # HAProxy läuft im Netz des Servers und erreicht den Bouncer hier.
+      - "127.0.0.1:${HAPM_SPOA_PORT:-7423}:7423"
+    volumes:
+      # Die Konfiguration schreibt HAPM (mit dem Schlüssel aus secrets/).
+      - ${HAPM_STORAGE:-./data}/crowdsec/bouncer:/etc/crowdsec/bouncers:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
         max-file: "3"

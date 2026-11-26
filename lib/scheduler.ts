@@ -30,6 +30,18 @@ import { getBackupSettings } from './backup/settings';
 import { onBackupFailure, pruneBackupRuns, reconcileBackupRuns, startBackup } from './backup/run';
 import { reconcileRestore } from './backup/restore';
 import { notify } from './notifications';
+import { reconcileCrowdsec } from './crowdsec/setup';
+import { crowdsecInStack } from './crowdsec/paths';
+
+/** CrowdSec startet nach HAPM. Angemeldet wird der Bouncer danach, und
+ *  nachgesehen wird regelmäßig, falls jemand den Container neu angelegt hat. */
+const CROWDSEC_RECONCILE_MS = 15 * 60_000;
+
+async function tickCrowdsec(): Promise<void> {
+  if (!crowdsecInStack() || process.platform !== 'linux') return;
+  const notes = await reconcileCrowdsec();
+  for (const note of notes) log(note);
+}
 
 const UPDATE_CHECK_MS = 6 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -196,10 +208,13 @@ export async function initializeScheduler(): Promise<void> {
   s.timers.push(setInterval(() => void tickMinute(), 60_000));
   s.timers.push(setInterval(() => void checkUpdates().catch(() => undefined), UPDATE_CHECK_MS));
   s.timers.push(setInterval(() => void runHealthChecks(), HEALTH_CHECK_INTERVAL_MS));
+  s.timers.push(setInterval(() => void tickCrowdsec(), CROWDSEC_RECONCILE_MS));
 
   // Die erste Prüfung kurz nach dem Start, damit die Übersicht nicht sechs Stunden leer ist.
   setTimeout(() => void checkUpdates().catch(() => undefined), 20_000);
   // Eine frische Installation bringt den Stand des Abbilds mit: gleich nachsehen.
   setTimeout(() => void maybeRefreshGeoip(), 30_000);
+  // Compose startet CrowdSec, sobald HAPM gesund ist; eine Minute reicht dafür.
+  setTimeout(() => void tickCrowdsec(), 60_000);
   log('gestartet');
 }

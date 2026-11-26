@@ -217,6 +217,7 @@ describe('readGlobalSettingsPatch', () => {
     adminEditable: true,
     lockedServices: [],
     protection: { blockedIps: ['198.51.100.0/24'], blockedCountries: ['RU'], rateLimit: null },
+    crowdsec: false,
   };
 
   /** Nimmt dem Test die Fallunterscheidung ab: hier wird der gültige Fall geprüft. */

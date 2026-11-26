@@ -222,6 +222,142 @@ export type HeaderDirection = 'request' | 'response';
  */
 export const TUNNEL_LINE = 'timeout tunnel 1h';
 
+/* ── CrowdSec ──
+ *
+ * Ob CrowdSec eine Anfrage prüft, steht in der Datei wie alles andere: als
+ * Block fester Zeilen, entweder im HTTPS-Frontend (für alle Ziele) oder in
+ * jedem Backend eines Ziels (nur dieses). Der Bouncer läuft als eigener
+ * Container und spricht SPOE; HAProxy fragt ihn je Anfrage und verweigert mit
+ * 403, wenn er `ban` oder `captcha` antwortet. Warum so und nicht anders steht
+ * in docs/crowdsec.md.
+ */
+
+export const CROWDSEC_SPOE_DIR = '/etc/haproxy/hapm-crowdsec';
+export const CROWDSEC_SPOE_FILE = `${CROWDSEC_SPOE_DIR}/spoe.cfg`;
+/**
+ * Die freigegebenen Adressen, eine je Zeile, aus der Freigabeliste von
+ * CrowdSec (`lib/crowdsec/allow-file.ts`). CrowdSec selbst nimmt sie nur von
+ * Sperren aus, die WAF prüft ihre Anfragen trotzdem (geprüft mit CrowdSec
+ * 1.8). Deshalb fragt HAProxy für sie gar nicht erst.
+ */
+export const CROWDSEC_ALLOW_FILE = `${CROWDSEC_SPOE_DIR}/allow.lst`;
+/** Das Backend, über das HAProxy den Bouncer erreicht. Der Name steht in der
+ *  SPOE-Datei (`use-backend`) und in `haproxy.cfg`. */
+export const CROWDSEC_SPOA_BACKEND = 'hapm_crowdsec_spoa';
+export const CROWDSEC_MARKER = '# CrowdSec';
+const CROWDSEC_BACKEND_MARKER = '# CrowdSec: Verbindung zum Bouncer (HAPM)';
+/** Bis zu dieser Größe geht der Rumpf einer Anfrage mit an die WAF. Größere
+ *  Rümpfe passen nicht in einen SPOE-Rahmen der Vorgabegröße (16 KB samt
+ *  Kopfzeilen); geprüft werden dann nur Adresse, Pfad und Kopfzeilen. */
+export const CROWDSEC_BODY_MAX = 8192;
+
+/**
+ * Die Zeilen, die eine Anfrage durch CrowdSec schicken, ohne Einrückung.
+ *
+ * `hapm_crowdsec_done`: hat das Frontend schon gefragt (global an), fragt das
+ * Backend nicht noch einmal. Ein zweiter Durchlauf durch die WAF zählte jeden
+ * Treffer doppelt. Die Ablehnung gilt für `ban` und `captcha`: ein Captcha
+ * kann HAPM nicht anzeigen, und durchlassen hieße, eine Sperre zu übergehen.
+ * Antwortet der Bouncer nicht, setzt SPOE nur `txn.crowdsec.error`, und die
+ * Anfrage geht durch.
+ */
+export const CROWDSEC_LINES: readonly string[] = [
+  `filter spoe engine crowdsec config ${CROWDSEC_SPOE_FILE}`,
+  'acl hapm_crowdsec_done var(txn.crowdsec.remediation) -m found',
+  `acl hapm_crowdsec_big req.body_size -m int gt ${CROWDSEC_BODY_MAX}`,
+  `acl hapm_crowdsec_allow src -f ${CROWDSEC_ALLOW_FILE}`,
+  'http-request wait-for-body time 1s at-least 8k unless hapm_crowdsec_done || hapm_crowdsec_allow',
+  'http-request send-spoe-group crowdsec crowdsec-http-body unless hapm_crowdsec_done || hapm_crowdsec_big || hapm_crowdsec_allow',
+  'http-request send-spoe-group crowdsec crowdsec-http-no-body if hapm_crowdsec_big !hapm_crowdsec_done !hapm_crowdsec_allow',
+  'http-request deny deny_status 403 if { var(txn.crowdsec.remediation) -m str ban captcha }',
+];
+
+/** Ob genau die Zeilen von `CROWDSEC_LINES` dastehen, in dieser Reihenfolge. */
+function crowdsecComplete(lines: readonly string[]): boolean {
+  return lines.length === CROWDSEC_LINES.length && lines.every((line, i) => line === CROWDSEC_LINES[i]);
+}
+
+/** Die SPOE-Datei, die `CROWDSEC_LINES` lädt. Die Namen der Nachrichten
+ *  (`crowdsec-http-body`, `crowdsec-http-no-body`) erwartet der Bouncer genau
+ *  so, andere beantwortet er nicht. */
+export function crowdsecSpoeConfig(): string {
+  const args =
+    'remediation=var(txn.crowdsec.remediation) id=unique-id method=method path=path query=query version=req.ver headers=req.hdrs';
+  const tail = 'url=url ssl=ssl_fc src-ip=src src-port=src_port';
+  return [
+    '# Von HAPM geschrieben. Wird beim nächsten Schreiben ersetzt.',
+    '[crowdsec]',
+    'spoe-agent hapm-crowdsec',
+    '    groups crowdsec-http-body crowdsec-http-no-body',
+    '    option var-prefix crowdsec',
+    '    option set-on-error error',
+    '    timeout hello 500ms',
+    '    timeout idle 55s',
+    '    timeout processing 500ms',
+    `    use-backend ${CROWDSEC_SPOA_BACKEND}`,
+    '    log global',
+    '',
+    'spoe-message crowdsec-http-body',
+    `    args ${args} body=req.body ${tail}`,
+    '',
+    'spoe-message crowdsec-http-no-body',
+    `    args ${args} ${tail}`,
+    '',
+    'spoe-group crowdsec-http-body',
+    '    messages crowdsec-http-body',
+    '',
+    'spoe-group crowdsec-http-no-body',
+    '    messages crowdsec-http-no-body',
+    '',
+  ].join('\n');
+}
+
+/** Ob die Konfiguration CrowdSec irgendwo benutzt (Frontend oder ein Backend). */
+export function usesCrowdsec(text: string): boolean {
+  return text.split('\n').some((raw) => clean(raw) === CROWDSEC_LINES[0]);
+}
+
+/**
+ * Das Backend des Bouncers nachziehen: da, sobald eine Zeile CrowdSec benutzt,
+ * weg, sobald keine mehr. HAProxy lehnt eine SPOE-Datei ab, deren
+ * `use-backend` es nicht gibt, und ein Backend ohne Nutzer prüfte nur einen
+ * Bouncer, den vielleicht niemand betreibt (Meldungen im Log).
+ *
+ * Ein vorhandenes Backend bleibt, wie es ist, auch mit anderem Ziel: wer den
+ * Port von Hand geändert hat, meint es so. Entfernt wird nur der Block, den
+ * HAPM selbst geschrieben hat (mit Marker).
+ */
+export function syncCrowdsecBackend(text: string, address: string): string {
+  const lines = text.split('\n');
+  const start = lines.findIndex((raw) => clean(raw) === `backend ${CROWDSEC_SPOA_BACKEND}`);
+  const used = usesCrowdsec(text);
+
+  if (used && start === -1) {
+    const body = text.endsWith('\n') ? text : `${text}\n`;
+    return `${body}\n${CROWDSEC_BACKEND_MARKER}\n${crowdsecBackendLines(address).join('\n')}\n`;
+  }
+  if (!used && start !== -1) {
+    const markerAbove = start > 0 && clean(lines[start - 1]) === CROWDSEC_BACKEND_MARKER;
+    if (!markerAbove) return text;
+    let end = start + 1;
+    while (end < lines.length && clean(lines[end]) !== '' && !SECTION_KEYWORDS.test(clean(lines[end]))) end++;
+    let from = start - 1;
+    if (from > 0 && clean(lines[from - 1]) === '') from--;
+    return [...lines.slice(0, from), ...lines.slice(end)].join('\n');
+  }
+  return text;
+}
+
+export function crowdsecBackendLines(address: string): string[] {
+  return [
+    `backend ${CROWDSEC_SPOA_BACKEND}`,
+    '    mode tcp',
+    '    timeout connect 1s',
+    '    timeout server 30s',
+    `    server bouncer ${address} check inter 5s`,
+  ];
+}
+
 export const HEADER_NAME_MAX = 64;
 export const HEADER_VALUE_MAX = 1024;
 /** Je Richtung. Eine Grenze, damit ein Backend-Block lesbar bleibt. */
@@ -380,6 +516,7 @@ interface ServiceAddons {
   responseHeaders: readonly HeaderRule[];
   requestHeaders: readonly HeaderRule[];
   tunnel: boolean;
+  crowdsec: boolean;
 }
 
 /** In der Reihenfolge, in der eine Anfrage sie durchläuft: erst die
@@ -387,6 +524,7 @@ interface ServiceAddons {
 function addonLines(addons: ServiceAddons): string[] {
   return [
     ...(addons.tunnel ? [TUNNEL_LINE] : []),
+    ...(addons.crowdsec ? CROWDSEC_LINES : []),
     ...addons.requestHeaders.map((rule) => headerLine('request', rule)),
     ...addons.responseHeaders.map((rule) => headerLine('response', rule)),
   ];
@@ -1038,6 +1176,9 @@ export interface HaproxyService {
   requestHeaders: HeaderRule[];
   /** `TUNNEL_LINE` steht da: offene Verbindungen bleiben eine Stunde. */
   tunnel: boolean;
+  /** `CROWDSEC_LINES` stehen im Backend: CrowdSec prüft die Anfragen dieses
+   *  Ziels, auch wenn es global aus ist. */
+  crowdsec: boolean;
   /** Wie die Ziele des eigenen Backends angesprochen werden. Stehen dort
    *  verschiedene Arten nebeneinander, gilt die der ersten Zeile, und der
    *  Eintrag ist nur lesbar. */
@@ -1155,6 +1296,9 @@ export interface CreateServiceInput {
   responseHeaders: HeaderRule[];
   requestHeaders: HeaderRule[];
   tunnel: boolean;
+  /** CrowdSec prüft die Anfragen an dieses Ziel (`CROWDSEC_LINES` in jedem
+   *  Backend). Setzt Ziele voraus wie die übrigen Zusätze. */
+  crowdsec: boolean;
   healthcheck: boolean;
   /** Wie HAProxy die Ziele des eigenen Backends anspricht. Gilt für jede
    *  server-Zeile darin, nicht für die der Pfad-Regeln (die haben ihr eigenes).
@@ -1252,6 +1396,9 @@ function validateService(input: CreateServiceInput, idGiven: boolean): Message |
     // Die Weiterleitung beantwortet HAProxy selbst, und auf eigene Antworten
     // wirken `http-response`-Regeln nicht (geprüft gegen 2.4 und 3.0). Die
     // Zeilen stünden wirkungslos da, also ablehnen, statt sie still wegzulassen.
+    if (input.crowdsec) {
+      return msg('CrowdSec prüft Anfragen an ein Backend mit Zielen. Eine Weiterleitung hat keine.');
+    }
     if (addonLines(input).length > 0) {
       return msg('Header und lange Verbindungen gehören zu einem Backend mit Zielen. Eine Weiterleitung hat keine.');
     }
@@ -1608,6 +1755,10 @@ interface ParsedBackend {
   responseHeaders: HeaderRule[];
   requestHeaders: HeaderRule[];
   tunnel: boolean;
+  /** Die Zeilen aus `CROWDSEC_LINES`, wie sie dastehen. Erst am Ende
+   *  ausgewertet: CrowdSec zählt nur vollständig und in der Reihenfolge. */
+  crowdsecLines: string[];
+  crowdsec: boolean;
   /** Die Weiterleitung, wenn genau eine dasteht. Eine zweite ist ein
    *  `extras`-Eintrag: das Formular kennt eine. */
   redirect: RedirectTarget | null;
@@ -1717,6 +1868,8 @@ export function parseHaproxyConfig(text: string): HaproxyService[] {
           responseHeaders: [],
           requestHeaders: [],
           tunnel: false,
+          crowdsecLines: [],
+          crowdsec: false,
           redirect: null,
           balance: null,
           stickyLine: false,
@@ -1761,6 +1914,11 @@ export function parseHaproxyConfig(text: string): HaproxyService[] {
       if (line === TUNNEL_LINE) {
         if (entry.tunnel) entry.extras.push(line);
         else entry.tunnel = true;
+        return;
+      }
+
+      if (CROWDSEC_LINES.includes(line)) {
+        entry.crowdsecLines.push(line);
         return;
       }
 
@@ -1888,6 +2046,14 @@ export function parseHaproxyConfig(text: string): HaproxyService[] {
       });
     }
   });
+
+  // CrowdSec zählt nur, wenn der ganze Block dasteht. Eine halbe Fassung (der
+  // Filter ohne Ablehnung, eine Zeile doppelt) hat jemand von Hand so gemeint:
+  // gelesen wird sie, neu geschrieben nicht.
+  for (const entry of backends.values()) {
+    entry.crowdsec = crowdsecComplete(entry.crowdsecLines);
+    if (!entry.crowdsec) entry.extras.push(...entry.crowdsecLines);
+  }
 
   const backendUses = new Map<string, number>();
   for (const use of useBackends) {
@@ -2107,6 +2273,7 @@ export function parseHaproxyConfig(text: string): HaproxyService[] {
       responseHeaders: backend?.responseHeaders ?? [],
       requestHeaders: backend?.requestHeaders ?? [],
       tunnel: backend?.tunnel ?? false,
+      crowdsec: backend?.crowdsec ?? false,
       backendTls: backendTls.tls,
       auto: autoIds.has(id),
       extras,
@@ -2916,6 +3083,10 @@ export interface GlobalSettings {
    *  der Block steht da, aber nicht so, wie HAPM ihn schreibt. Dann wird er
    *  nicht angefasst, siehe `parseProtection`. */
   protection: AccessProtection | null;
+  /** Ob CrowdSec jede Anfrage des HTTPS-Frontends prüft (Block unter
+   *  `# CrowdSec`). `null` heißt: der Block steht da, aber nicht so, wie HAPM
+   *  ihn schreibt. Er wirkt dann weiter und wird nicht angefasst. */
+  crowdsec: boolean | null;
 }
 
 export interface GlobalSettingsInput {
@@ -2925,6 +3096,8 @@ export interface GlobalSettingsInput {
    *  wird der Block trotzdem, weil seine Ausnahme für die Admin-IPs an der
    *  Adressliste hängt. */
   protection?: AccessProtection;
+  /** Fehlt das Feld, bleibt CrowdSec im Frontend, wie es ist. */
+  crowdsec?: boolean;
 }
 
 /* ── Zugriffsschutz ──
@@ -3248,6 +3421,61 @@ function applyProtectionBlock(
   return next;
 }
 
+/** Wo der CrowdSec-Block im Frontend steht: Marker und die Zeilen darunter bis
+ *  zur nächsten Leerzeile, dem nächsten Kommentar oder Abschnitt. */
+export function crowdsecBlockRange(lines: string[]): { start: number; end: number } | null {
+  const start = lines.findIndex((line) => clean(line) === CROWDSEC_MARKER);
+  if (start === -1) return null;
+  let end = start + 1;
+  while (end < lines.length) {
+    const line = clean(lines[end]);
+    if (line === '' || line.startsWith('#') || SECTION_KEYWORDS.test(line)) break;
+    end++;
+  }
+  return { start, end };
+}
+
+/** `true`: der Block steht vollständig da. `false`: es gibt keinen. `null`:
+ *  er steht anders da, als HAPM ihn schreibt (dann bleibt er unberührt). */
+export function parseCrowdsecGlobal(text: string): boolean | null {
+  const lines = text.split('\n');
+  const range = crowdsecBlockRange(lines);
+  if (!range) return false;
+  const body = lines.slice(range.start + 1, range.end).map(clean);
+  return crowdsecComplete(body) ? true : null;
+}
+
+/**
+ * Den Block setzen oder entfernen. Er steht hinter dem Zugriffsschutz, sonst
+ * an dessen Stelle (hinter den `bind`-Zeilen und `acl admin_ips`): eine
+ * gesperrte Adresse kostet dann keine Frage an den Bouncer, und vor jeder
+ * Regel der Dienste steht er trotzdem.
+ */
+function applyCrowdsecBlock(lines: string[], on: boolean): string[] {
+  const range = crowdsecBlockRange(lines);
+  if (range) {
+    if (!on) return removeBlock(lines, range);
+    const indent = /^\s*/.exec(lines[range.start])?.[0] ?? '    ';
+    return [...lines.slice(0, range.start + 1), ...CROWDSEC_LINES.map((l) => `${indent}${l}`), ...lines.slice(range.end)];
+  }
+  if (!on) return lines;
+
+  const protection = protectionBlockRange(lines);
+  const anchor = protection ? protection.end - 1 : protectionAnchor(lines);
+  if (anchor === null) {
+    throw new HaproxyConfigError(
+      msg(
+        'In {file} war keine Stelle für CrowdSec zu finden: gesucht wird die letzte bind-Zeile des Frontends mit "{marker}".',
+        { file: HAPROXY_CFG, marker: HTTPS_MARKER }
+      )
+    );
+  }
+  const indent = /^\s*/.exec(lines[anchor])?.[0] ?? '    ';
+  const next = [...lines];
+  next.splice(anchor + 1, 0, '', `${indent}${CROWDSEC_MARKER}`, ...CROWDSEC_LINES.map((l) => `${indent}${l}`));
+  return next;
+}
+
 /** Den Block samt Marker entfernen, mit der Leerzeile davor, die beim
  *  Einfügen dazukam. */
 function removeBlock(lines: string[], range: { start: number; end: number }): string[] {
@@ -3316,6 +3544,7 @@ export function parseGlobalSettings(text: string): GlobalSettings {
       .filter((service) => service.lockedDomains.length > 0 && service.passwordLock === null)
       .map((service) => service.id),
     protection: parseProtection(text),
+    crowdsec: parseCrowdsecGlobal(text),
   };
 
   const block = httpsBlockRange(lines);
@@ -3547,6 +3776,18 @@ export function applyGlobalSettings(text: string, input: GlobalSettingsInput): s
     }
   } else {
     lines = applyProtectionBlock(lines, input.protection ?? current.protection, input.adminIps.length > 0);
+  }
+
+  if (input.crowdsec !== undefined && input.crowdsec !== current.crowdsec) {
+    if (current.crowdsec === null) {
+      throw new HaproxyConfigError(
+        msg(
+          'Der Block "{marker}" in {file} steht nicht so da, wie HAPM ihn schreibt. Er wird deshalb nicht überschrieben. Erst in der Datei auf den Stand von HAPM bringen oder entfernen.',
+          { marker: CROWDSEC_MARKER, file: HAPROXY_CFG }
+        )
+      );
+    }
+    lines = applyCrowdsecBlock(lines, input.crowdsec);
   }
 
   const block = httpsBlockRange(lines)!;
@@ -4254,6 +4495,7 @@ export function toCreateInput(service: HaproxyService): CreateServiceInput {
     responseHeaders: service.responseHeaders.map((rule) => ({ ...rule })),
     requestHeaders: service.requestHeaders.map((rule) => ({ ...rule })),
     tunnel: service.tunnel,
+    crowdsec: service.crowdsec,
     healthcheck: service.healthcheck,
     backendTls: service.backendTls,
   };
@@ -4439,6 +4681,9 @@ export function readServiceInput(body: unknown): CreateServiceInput {
     responseHeaders,
     requestHeaders: readHeaders(raw.requestHeaders),
     tunnel: raw.tunnel === true || legacyPreset === 'coolify',
+    // Wie die übrigen Zusätze nur mit Zielen. Bei einer Weiterleitung
+    // normalisiert statt abgelehnt: ihr Formular zeigt die Frage nicht.
+    crowdsec: raw.crowdsec === true && !redirect,
     // Eine Wildcard als Hauptdomain schließt den Healthcheck aus, siehe
     // `healthcheckPossible`. Normalisiert und nicht abgelehnt: das Formular
     // sperrt den Schalter bereits, und die Route soll dieselbe Eingabe
@@ -4471,6 +4716,7 @@ export function readGlobalSettingsInput(body: unknown): GlobalSettingsInput {
       ? raw.adminIps.map((ip) => String(ip).trim()).filter(Boolean)
       : [],
     protection: readProtectionInput(raw.protection),
+    ...(typeof raw.crowdsec === 'boolean' ? { crowdsec: raw.crowdsec } : {}),
   };
 }
 
@@ -4545,6 +4791,7 @@ export function readGlobalSettingsPatch(
     httpsLines: list(raw.httpsLines) ?? current.httpsLines ?? [],
     adminIps,
     ...(protection ? { protection } : {}),
+    ...(typeof raw.crowdsec === 'boolean' ? { crowdsec: raw.crowdsec } : {}),
   };
 }
 

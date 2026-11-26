@@ -47,6 +47,8 @@ import { msg, msgid } from '../i18n/translate';
 import {
   ADMIN_ACL,
   protectionBlockRange,
+  crowdsecBlockRange,
+  CROWDSEC_SPOA_BACKEND,
   HTTPS_MARKER,
   HaproxyConfigError,
   SECTION_KEYWORDS,
@@ -313,6 +315,14 @@ function managedIndexes(lines: string[]): Set<number> {
   // Der Zugriffsschutz gehört der Einstellungsseite wie die Admin-ACL.
   const protection = protectionBlockRange(lines);
   if (protection) for (let i = protection.start + 1; i < protection.end; i++) managed.add(i);
+  // CrowdSec im Frontend und das Backend des Bouncers schreibt die Seite „CrowdSec“.
+  const crowdsec = crowdsecBlockRange(lines);
+  if (crowdsec) for (let i = crowdsec.start + 1; i < crowdsec.end; i++) managed.add(i);
+  const spoa = lines.findIndex((raw) => clean(raw) === `backend ${CROWDSEC_SPOA_BACKEND}`);
+  if (spoa !== -1) {
+    managed.add(spoa);
+    for (let i = spoa + 1; i < lines.length && !SECTION_KEYWORDS.test(clean(lines[i])); i++) managed.add(i);
+  }
   lines.forEach((raw, index) => {
     if (new RegExp(`^acl\\s+${ADMIN_ACL}\\s`).test(clean(raw))) managed.add(index);
   });

@@ -77,6 +77,21 @@ import {
   settingsOverview,
 } from '../settings-actions';
 import { EXPOSURES, CERTIFICATE_SOURCES } from '../settings';
+import {
+  addAllowlist,
+  addDecision,
+  changeRules,
+  crowdsecOverview,
+  crowdsecRules,
+  crowdsecStatistics,
+  listAlerts,
+  listAllowlist,
+  listDecisions,
+  removeAllowlist,
+  removeDecision,
+} from '../crowdsec/actions';
+import { ALLOW_DURATIONS, BAN_DURATIONS } from '../crowdsec/data';
+import { CRS_MODES } from '../crowdsec/files';
 import { checkAddressMove } from '../address-move';
 import { reissueCertificate, removeCertificate } from '../haproxy/certificate-actions';
 import {
@@ -264,6 +279,13 @@ const serviceFields = {
     .boolean()
     .optional()
     .describe('true writes "timeout tunnel 1h": keeps WebSocket, terminal and live views open. Default false.'),
+  crowdsec: z
+    .boolean()
+    .optional()
+    .describe(
+      'true sends every request of this service through CrowdSec (WAF and IP bans, 403 on a hit). Default false. ' +
+        'Not needed when CrowdSec is on for all services (get_proxy_settings: crowdsec). Ignored with redirect.'
+    ),
   healthcheck: z
     .boolean()
     .optional()
@@ -600,6 +622,10 @@ export const TOOLS: ToolDefinition[] = [
         .nullable()
         .optional()
         .describe('Rate limit per client address; null turns it off.'),
+      crowdsec: z
+        .boolean()
+        .optional()
+        .describe('true sends every request of every service through CrowdSec (WAF and IP bans); false only services with their own crowdsec flag.'),
     },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     run: async (args, ctx) => started(await patchProxySettings(args, ctx.actor)),
@@ -742,7 +768,7 @@ export const TOOLS: ToolDefinition[] = [
       'the new container closes the run when it starts. "acme": upgrades acme.sh inside HAPM. ' +
       'Check get_updates first: an update without a newer image ends with "already the running image". Returns { runId }.',
     input: {
-      component: z.enum(UPDATE_COMPONENTS as [string, ...string[]]).describe('"haproxy", "hapm" or "acme".'),
+      component: z.enum(UPDATE_COMPONENTS as [string, ...string[]]).describe('"haproxy", "hapm", "acme", "crowdsec" or "crowdsec-bouncer".'),
     },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     run: async (args, ctx) => ({
@@ -764,6 +790,137 @@ export const TOOLS: ToolDefinition[] = [
     },
     annotations: READ_ONLY,
     run: (args, ctx) => waitFor(() => getUpdateRun(args.runId, ctx.t), args.waitSeconds ?? 0),
+  }),
+
+  /* ── CrowdSec ── */
+
+  defineTool({
+    name: 'get_crowdsec',
+    title: 'CrowdSec overview',
+    description:
+      'State of the CrowdSec WAF: whether it is part of the stack, both containers (crowdsec, bouncer), version, local API, ' +
+      'which services it checks (global = all services, otherwise services with their own crowdsec flag), OWASP CRS mode, ' +
+      'and counts of the last 24 hours (alerts, WAF hits, active bans, community blocklist size). Null counts mean unknown.',
+    input: {},
+    annotations: READ_ONLY,
+    run: () => crowdsecOverview(),
+  }),
+
+  defineTool({
+    name: 'list_crowdsec_decisions',
+    title: 'List CrowdSec bans',
+    description: 'Active bans (without the community blocklist): id, value (IP or range), reason, origin, until.',
+    input: {},
+    annotations: { ...READ_ONLY, idempotentHint: true },
+    run: async () => ({ decisions: await listDecisions() }),
+  }),
+
+  defineTool({
+    name: 'add_crowdsec_decision',
+    title: 'Ban an address',
+    description:
+      'Bans an IP or CIDR range in CrowdSec for every checked service (403). duration one of 1h, 4h, 24h, 168h, 720h, 8760h. ' +
+      'Takes effect within about 10 seconds.',
+    input: {
+      value: z.string().describe('IP or CIDR range, e.g. "203.0.113.7" or "198.51.100.0/24".'),
+      duration: z.enum(BAN_DURATIONS).optional().describe('Default 4h.'),
+      reason: z.string().max(120).optional(),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    run: (args, ctx) => addDecision(args, auditActor(ctx.actor)),
+  }),
+
+  defineTool({
+    name: 'remove_crowdsec_decision',
+    title: 'Lift a ban',
+    description: 'Lifts one ban by id (from list_crowdsec_decisions) or all bans of a value (IP or range).',
+    input: {
+      id: z.number().int().optional(),
+      value: z.string().optional().describe('IP or CIDR range; removes every ban for it.'),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    run: (args, ctx) => removeDecision(args, auditActor(ctx.actor)),
+  }),
+
+  defineTool({
+    name: 'list_crowdsec_allowlist',
+    title: 'List CrowdSec allowlist',
+    description: 'Addresses HAPM allows: CrowdSec never bans them, and HAProxy does not send their requests to the WAF.',
+    input: {},
+    annotations: READ_ONLY,
+    run: async () => ({ entries: await listAllowlist() }),
+  }),
+
+  defineTool({
+    name: 'add_crowdsec_allowlist',
+    title: 'Allow an address',
+    description:
+      'Adds an IP or CIDR range to the allowlist. Existing bans for it are lifted. duration empty = permanent, or 24h, 168h, 720h. ' +
+      'Side effect: HAProxy reloads to pick up the list.',
+    input: {
+      value: z.string(),
+      description: z.string().max(120).optional(),
+      duration: z.enum(ALLOW_DURATIONS).optional(),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    run: (args, ctx) => addAllowlist(args, auditActor(ctx.actor)),
+  }),
+
+  defineTool({
+    name: 'remove_crowdsec_allowlist',
+    title: 'Remove an allowed address',
+    description: 'Removes an IP or CIDR range from the allowlist; CrowdSec checks it again. Side effect: HAProxy reloads.',
+    input: { value: z.string() },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    run: (args, ctx) => removeAllowlist(args, auditActor(ctx.actor)),
+  }),
+
+  defineTool({
+    name: 'list_crowdsec_alerts',
+    title: 'List CrowdSec alerts',
+    description:
+      'What CrowdSec detected: kind waf (blocked request), scenario (address detected in the HAProxy log, usually banned) or manual. ' +
+      'Each alert has targetId (service id) where it can be assigned. Filter by service id.',
+    input: {
+      window: z.enum(['24h', '7d', '30d']).optional().describe('Default 24h.'),
+      service: z.string().optional().describe('Service id (list_services).'),
+    },
+    annotations: READ_ONLY,
+    run: (args) => listAlerts({ window: args.window, service: args.service, limit: 200 }),
+  }),
+
+  defineTool({
+    name: 'get_crowdsec_stats',
+    title: 'CrowdSec statistics',
+    description: 'Alerts per hour (per day beyond 3 days) by kind, top scenarios, countries, sources, services and paths, active bans.',
+    input: { window: z.enum(['24h', '7d', '30d']).optional() },
+    annotations: READ_ONLY,
+    run: (args) => crowdsecStatistics(args.window),
+  }),
+
+  defineTool({
+    name: 'get_crowdsec_rules',
+    title: 'CrowdSec rules',
+    description: 'Installed rule collections, optional ones that can be switched, and the OWASP CRS mode (off, detect, block).',
+    input: {},
+    annotations: READ_ONLY,
+    run: () => crowdsecRules(),
+  }),
+
+  defineTool({
+    name: 'update_crowdsec_rules',
+    title: 'Change CrowdSec rules',
+    description:
+      'One change per call: {"crs":"off"|"detect"|"block"} for the OWASP Core Rule Set (block can reject harmless requests; start with detect), ' +
+      '{"name":"<collection>","installed":true|false} for an optional collection from get_crowdsec_rules, or {"upgrade":true} to update all rules from the hub.',
+    input: {
+      crs: z.enum(CRS_MODES as unknown as [string, ...string[]]).optional(),
+      name: z.string().optional(),
+      installed: z.boolean().optional(),
+      upgrade: z.boolean().optional(),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    run: (args, ctx) => changeRules(args, auditActor(ctx.actor)),
   }),
 
   /* ── Sicherung ── */

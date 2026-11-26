@@ -25,6 +25,8 @@ export const UPDATE_PLAN: Record<UpdateComponent, readonly string[]> = {
   ],
   hapm: [msgid('Abbild holen'), HANDOVER_STEP, msgid('Neuer Container')],
   acme: [msgid('acme.sh aktualisieren')],
+  crowdsec: [msgid('Abbild holen'), msgid('Container ersetzen'), msgid('Altes Abbild entfernen')],
+  'crowdsec-bouncer': [msgid('Abbild holen'), msgid('Container ersetzen'), msgid('Altes Abbild entfernen')],
 };
 
 /**

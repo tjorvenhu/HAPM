@@ -26,6 +26,9 @@ import {
   ShieldCheck,
   Unplug,
   X,
+  Ban,
+  ShieldAlert,
+  LayoutList,
 } from 'lucide-react';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import { useApp } from '@/components/AppShell';
@@ -37,6 +40,8 @@ import Skeleton, { SkeletonRows } from '@/components/Skeleton';
 import GeoipReminder from '@/components/GeoipReminder';
 import LiveTraffic from '@/components/reverse-proxy/LiveTraffic';
 import SetupReminder from '@/components/SetupReminder';
+import BrandLogo, { BrandName } from '@/components/BrandLogo';
+import { DashSection, LayoutDialog, useDashboardLayout } from '@/components/dashboard/DashboardLayout';
 import {
   COMPONENT_LABELS,
   RUN_STATUS_CLASS,
@@ -57,6 +62,7 @@ import type {
   SystemContainer,
   SystemOverview,
   SystemProxy,
+  SystemCrowdsec,
 } from '@/lib/system/overview';
 
 const POLL_MS = 25_000;
@@ -543,6 +549,117 @@ function DashboardSkeleton() {
   );
 }
 
+/** Die Bereiche der Übersicht, in der Reihenfolge der Vorgabe. */
+const DASH_SECTIONS = ['live', 'proxy', 'security', 'certs', 'ops', 'quick', 'parts', 'recent'] as const;
+type DashKey = (typeof DASH_SECTIONS)[number];
+
+const SECTION_LABELS: Record<DashKey, string> = {
+  live: msgid('Live-Verkehr'),
+  proxy: msgid('Reverse-Proxy'),
+  security: msgid('Sicherheit (CrowdSec)'),
+  certs: msgid('Zertifikate'),
+  ops: msgid('Betrieb'),
+  quick: msgid('Schnellzugriffe'),
+  parts: msgid('Bestandteile und Betrieb'),
+  recent: msgid('Letzte Vorgänge und Zertifikate'),
+};
+
+/** Die Kennzahlen von CrowdSec. Ohne laufenden Container stehen Striche da, keine Nullen. */
+function CrowdsecKpis({ crowdsec }: { crowdsec: SystemCrowdsec }) {
+  const { t, locale } = useT();
+  const summary = crowdsec.summary;
+  if (!summary) return null;
+  const down = !summary.running || !summary.bouncerRunning;
+  return (
+    <div className="kpi-grid">
+      <Kpi
+        href="/reverse-proxy/crowdsec"
+        icon={<ShieldAlert size={16} strokeWidth={1.5} />}
+        label={t('Geprüfte Ziele')}
+        value={summary.global === true ? summary.totalServices : summary.protectedServices}
+        sub={
+          down
+            ? t('CrowdSec läuft nicht')
+            : summary.global === true
+              ? t('alle, über den Schalter für alle')
+              : t('von {count}', { count: formatNumber(locale, summary.totalServices) })
+        }
+        tone={down ? 'danger' : undefined}
+      />
+      <Kpi
+        href="/reverse-proxy/crowdsec?bereich=sperren"
+        icon={<Ban size={16} strokeWidth={1.5} />}
+        label={t('Aktive Sperren')}
+        value={summary.activeDecisions}
+      />
+      <Kpi
+        href="/reverse-proxy/crowdsec?bereich=ereignisse"
+        icon={<ShieldCheck size={16} strokeWidth={1.5} />}
+        label={t('WAF-Treffer in 24 Stunden')}
+        value={summary.waf24h}
+        tone={summary.waf24h ? 'warning' : undefined}
+      />
+      <Kpi
+        href="/reverse-proxy/statistiken?ansicht=crowdsec"
+        icon={<AlertTriangle size={16} strokeWidth={1.5} />}
+        label={t('Ereignisse in 24 Stunden')}
+        value={summary.alerts24h}
+      />
+    </div>
+  );
+}
+
+/** Eine Zeile der Tabelle „Bestandteile" für CrowdSec oder seinen Bouncer. */
+function CrowdsecPartRow({
+  name,
+  container,
+  state,
+  now,
+}: {
+  name: string;
+  container: SystemContainer;
+  state: UpdateState | undefined;
+  now: number;
+}) {
+  const { t, locale } = useT();
+  const badge = containerBadge(container);
+  return (
+    <tr>
+      <td data-label="primary">
+        <div className="hapm-part">
+          <span className="kpi-icon">
+            <BrandLogo brand="crowdsec" size={16} />
+          </span>
+          <div>
+            <strong>{name}</strong>
+            <div className="detail-sub mono">{container.image ?? container.name}</div>
+          </div>
+        </div>
+      </td>
+      <td data-label={t('Version')}>{container.version ?? t('Unbekannt')}</td>
+      <td data-label={t('Zustand')}>
+        <span className={`badge-status ${badge.cls}`} data-tooltip={badge.tooltip ? t(badge.tooltip) : undefined}>
+          <span className="dot" />
+          {t(badge.label)}
+        </span>
+      </td>
+      <td data-label={t('Läuft seit')}>
+        {container.startedAt ? (
+          <span data-tooltip={formatDateTime(container.startedAt, locale)}>{formatUptime(now, container.startedAt, locale)}</span>
+        ) : container.exists === null ? (
+          t('Unbekannt')
+        ) : (
+          t('Läuft nicht')
+        )}
+      </td>
+      <td data-label={t('Update')}>
+        <UpdateBadge state={state} />
+      </td>
+      <td data-label="actions" />
+    </tr>
+  );
+}
+
 export default function DashboardPage() {
   const { apiFetch } = useApp();
   const { notify } = useToast();
@@ -553,6 +670,8 @@ export default function DashboardPage() {
   const [data, setData] = useState<SystemOverview | null>(null);
   const [error, setError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const { layout, setLayout, toggleCollapsed, reset: resetLayout } = useDashboardLayout(DASH_SECTIONS);
+  const [layoutOpen, setLayoutOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -649,6 +768,10 @@ export default function DashboardPage() {
         </p>
       </div>
       <div className="page-actions">
+        <button type="button" className="btn btn-ghost" onClick={() => setLayoutOpen(true)}>
+          <LayoutList size={16} strokeWidth={1.5} />
+          {t('Anpassen')}
+        </button>
         <button type="button" className="btn btn-secondary" onClick={refresh} disabled={refreshing}>
           {refreshing ? (
             <Loader2 size={16} strokeWidth={1.5} className="spin" />
@@ -674,7 +797,7 @@ export default function DashboardPage() {
     );
   }
 
-  const { docker, haproxy, hapm, acme, bootstrap, scheduler, logFollower, proxy, certificates, runs } = data;
+  const { docker, haproxy, hapm, acme, bootstrap, scheduler, logFollower, proxy, certificates, runs, crowdsec } = data;
   const updates = data.updates ?? [];
   const stateOf = (component: UpdateComponent) => updates.find((state) => state.component === component);
 
@@ -783,419 +906,473 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Ohne Ziel läuft nichts über HAProxy: dann stünden sechs Striche da. */}
-      {!empty && <LiveTraffic href="/reverse-proxy/statistiken" />}
-
-      <div className="kpi-grid sys-block">
-        <Kpi
-          href="/reverse-proxy"
-          icon={<Network size={16} strokeWidth={1.5} />}
-          label={t('Ziele')}
-          value={proxy.services}
-        />
-        <Kpi
-          href="/reverse-proxy"
-          icon={<Layers size={16} strokeWidth={1.5} />}
-          label={t('Gruppen')}
-          value={proxy.scopes}
-        />
-        <Kpi
-          href="/reverse-proxy"
-          icon={<Cable size={16} strokeWidth={1.5} />}
-          label={t('TCP-Weiterleitungen')}
-          value={proxy.streams}
-        />
-        <Kpi
-          href="/reverse-proxy"
-          icon={<Unplug size={16} strokeWidth={1.5} />}
-          label={t('Backend nicht erreichbar')}
-          value={unhealthyCount}
-          sub={proxy.checked ? t('von {count} geprüften', { count: formatNumber(locale, proxy.checked) }) : undefined}
-          tone={proxy.down ? 'danger' : proxy.partial ? 'warning' : proxy.checked ? 'ok' : undefined}
-        />
-        <Kpi
-          href="/reverse-proxy/zertifikate"
-          icon={<ShieldCheck size={16} strokeWidth={1.5} />}
-          label={t('Zertifikate')}
-          value={certificates.total}
-        />
-        <Kpi
-          href="/reverse-proxy/zertifikate"
-          icon={<CalendarClock size={16} strokeWidth={1.5} />}
-          label={t('Laufen in {days} Tagen ab', { days: certificates.warnDays })}
-          value={certificates.expiring}
-          tone={expired ? 'danger' : certificates.expiring ? 'warning' : undefined}
-        />
-        <Kpi
-          href="/reverse-proxy/logs"
-          icon={<AlertTriangle size={16} strokeWidth={1.5} />}
-          label={t('Vorgänge fehlgeschlagen')}
-          value={runs.failed}
-          tone={runs.failed ? 'danger' : undefined}
-        />
-        <Kpi
-          href="/updates"
-          icon={<Download size={16} strokeWidth={1.5} />}
-          label={t('Updates verfügbar')}
-          value={pendingUpdates}
-          tone={pendingUpdates ? 'warning' : undefined}
-        />
-      </div>
-
-      <div className="card sys-block">
-        <div className="card-header">
-          <h2 className="card-title">{t('Schnellzugriffe')}</h2>
-        </div>
-        <div className="kind-grid">
-          <Link className="kind-card" href="/reverse-proxy">
-            <span className="kind-card-icon">
-              <Plus size={17} strokeWidth={1.5} />
-            </span>
-            <span className="kind-card-text">
-              <span className="kind-card-title">{t('Ziel anlegen')}</span>
-              <span className="kind-card-sub">{t('Domain, Backend und Zertifikat in einem Vorgang.')}</span>
-            </span>
-          </Link>
-          <Link className="kind-card" href="/reverse-proxy/statistiken">
-            <span className="kind-card-icon">
-              <BarChart3 size={17} strokeWidth={1.5} />
-            </span>
-            <span className="kind-card-text">
-              <span className="kind-card-title">{t('Statistik')}</span>
-              <span className="kind-card-sub">{t('Anfragen, Statuscodes, Antwortzeiten und wer zugreift.')}</span>
-            </span>
-          </Link>
-          <Link className="kind-card" href="/reverse-proxy/logs">
-            <span className="kind-card-icon">
-              <ScrollText size={17} strokeWidth={1.5} />
-            </span>
-            <span className="kind-card-text">
-              <span className="kind-card-title">{t('Protokoll')}</span>
-              <span className="kind-card-sub">{t('Jeder Vorgang am Reverse-Proxy mit seinen Schritten.')}</span>
-            </span>
-          </Link>
-          <Link className="kind-card" href="/reverse-proxy/einstellungen">
-            <span className="kind-card-icon">
-              <Settings2 size={17} strokeWidth={1.5} />
-            </span>
-            <span className="kind-card-text">
-              <span className="kind-card-title">{t('Einstellungen')}</span>
-              <span className="kind-card-sub">{t('Was für alle Ziele gilt.')}</span>
-            </span>
-          </Link>
-          <Link className="kind-card" href="/updates">
-            <span className="kind-card-icon">
-              <Container size={17} strokeWidth={1.5} />
-            </span>
-            <span className="kind-card-text">
-              <span className="kind-card-title">{t('Updates')}</span>
-              <span className="kind-card-sub">{t('Neue Abbilder prüfen und einspielen.')}</span>
-            </span>
-          </Link>
-        </div>
-      </div>
-
-      <div className="hapm-cols sys-block">
-        <div className="card">
-          <div className="card-header">
-            <h2 className="card-title">{t('Bestandteile')}</h2>
-            <Link className="btn btn-ghost btn-sm" href="/updates">
-              {t('Updates')}
-            </Link>
-          </div>
-          <div className="table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>{t('Bestandteil')}</th>
-                  <th>{t('Version')}</th>
-                  <th>{t('Zustand')}</th>
-                  <th>{t('Läuft seit')}</th>
-                  <th>{t('Update')}</th>
-                  <th aria-label={t('Aktionen')} />
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td data-label="primary">
-                    <div className="hapm-part">
-                      <span className="kpi-icon">
-                        <Network size={16} strokeWidth={1.5} />
-                      </span>
-                      <div>
-                        <strong>HAProxy</strong>
-                        <div className="detail-sub mono">{haproxy.image ?? haproxy.name}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td data-label={t('Version')}>{haproxy.version ?? t('Unbekannt')}</td>
-                  <td data-label={t('Zustand')}>
-                    <span
-                      className={`badge-status ${haproxyBadge.cls}`}
-                      data-tooltip={haproxyBadge.tooltip ? t(haproxyBadge.tooltip) : undefined}
-                    >
-                      <span className="dot" />
-                      {t(haproxyBadge.label)}
-                    </span>
-                  </td>
-                  <td data-label={t('Läuft seit')}>
-                    {haproxy.startedAt ? (
-                      <span data-tooltip={formatDateTime(haproxy.startedAt, locale)}>
-                        {formatUptime(now, haproxy.startedAt, locale)}
-                      </span>
-                    ) : haproxy.exists === null ? (
-                      t('Unbekannt')
-                    ) : (
-                      t('Läuft nicht')
-                    )}
-                    {haproxy.restartCount !== null && haproxy.restartCount > 0 && (
-                      <div className="detail-sub">
-                        {plural(haproxy.restartCount, {
-                          one: 'Ein Neustart durch Docker',
-                          other: '{count} Neustarts durch Docker',
-                        })}
-                      </div>
-                    )}
-                  </td>
-                  <td data-label={t('Update')}>
-                    <UpdateBadge state={stateOf('haproxy')} />
-                  </td>
-                  <td data-label="actions">
-                    {haproxy.running && (
-                      <div className="actions hapm-actions-end">
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-icon btn-sm"
-                          data-tooltip={t('HAProxy neu starten')}
-                          data-tooltip-pos="left"
-                          aria-label={t('HAProxy neu starten')}
-                          onClick={confirmRestart}
-                        >
-                          <RotateCw size={16} strokeWidth={1.5} />
-                        </button>
-                      </div>
-                    )}
-                  </td>
-                </tr>
-                <tr>
-                  <td data-label="primary">
-                    <div className="hapm-part">
-                      <span className="kpi-icon">
-                        <LayoutDashboard size={16} strokeWidth={1.5} />
-                      </span>
-                      <div>
-                        <strong>HAPM</strong>
-                        <div className="detail-sub mono">
-                          {hapm.image ?? (hapm.containerized ? t('Abbild unbekannt') : t('Läuft ohne Container'))}
-                        </div>
-                      </div>
-                    </div>
-                  </td>
-                  <td data-label={t('Version')}>{hapm.version}</td>
-                  <td data-label={t('Zustand')}>
-                    <span className="badge-status badge-success">
-                      <span className="dot" />
-                      {t('Läuft')}
-                    </span>
-                  </td>
-                  <td data-label={t('Läuft seit')}>
-                    {hapm.startedAt ? (
-                      <span data-tooltip={formatDateTime(hapm.startedAt, locale)}>
-                        {formatUptime(now, hapm.startedAt, locale)}
-                      </span>
-                    ) : (
-                      t('Unbekannt')
-                    )}
-                  </td>
-                  <td data-label={t('Update')}>
-                    <UpdateBadge state={stateOf('hapm')} />
-                  </td>
-                  <td data-label="actions" />
-                </tr>
-                <tr>
-                  <td data-label="primary">
-                    <div className="hapm-part">
-                      <span className="kpi-icon">
-                        <ShieldCheck size={16} strokeWidth={1.5} />
-                      </span>
-                      <div>
-                        <strong>acme.sh</strong>
-                        <div className="detail-sub">
-                          {acme.accountEmail
-                            ? t('Konto: {email}', { email: acme.accountEmail })
-                            : t('Keine Adresse für das Konto hinterlegt')}
-                        </div>
-                      </div>
-                    </div>
-                  </td>
-                  <td data-label={t('Version')}>{acme.version ?? t('Unbekannt')}</td>
-                  <td data-label={t('Zustand')}>
-                    {acme.installed === null ? (
-                      <span className="badge-status badge-neutral" data-tooltip={acme.error ?? undefined}>
-                        <span className="dot" />
-                        {t('Unbekannt')}
-                      </span>
-                    ) : acme.installed ? (
-                      <span className="badge-status badge-success">
-                        <span className="dot" />
-                        {t('Eingerichtet')}
-                      </span>
-                    ) : (
-                      <span className="badge-status badge-danger">
-                        <span className="dot" />
-                        {t('Nicht installiert')}
-                      </span>
-                    )}
-                  </td>
-                  <td data-label={t('Läuft seit')}>
-                    <span className="hapm-muted">{t('Läuft bei Bedarf')}</span>
-                  </td>
-                  <td data-label={t('Update')}>
-                    <UpdateBadge state={stateOf('acme')} />
-                  </td>
-                  <td data-label="actions" />
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="card-header">
-            <h2 className="card-title">{t('Betrieb')}</h2>
-          </div>
-          <div className="dash-kv">
-            <KvRow
-              label="Docker"
-              value={docker.available ? t('Version {version}', { version: docker.version ?? '' }) : t('Nicht erreichbar')}
-              tone={docker.available ? undefined : 'danger'}
-            />
-            <KvRow
-              label={t('Ersteinrichtung')}
-              value={t(BOOTSTRAP_LABELS[bootstrap.status])}
-              tone={bootstrap.status === 'error' ? 'danger' : bootstrap.status === 'ok' ? undefined : 'muted'}
-              tooltip={bootstrap.finishedAt ? formatDateTime(bootstrap.finishedAt, locale) : undefined}
-            />
-            <KvRow
-              label={t('Statistik')}
-              hint={t(
-                'HAPM sammelt die Zähler von HAProxy im Minutentakt ein. Die Angabe gilt seit dem letzten Start von HAPM.'
-              )}
-              value={
-                scheduler.lastStatsError
-                  ? t('Fehler')
-                  : scheduler.lastStatsRun
-                    ? formatAgo(now, scheduler.lastStatsRun, locale)
-                    : t('Noch keine Runde')
-              }
-              tone={scheduler.lastStatsError ? 'warning' : scheduler.lastStatsRun ? undefined : 'muted'}
-              tooltip={scheduler.lastStatsError ?? undefined}
-            />
-            <KvRow
-              label={t('Erneuerung')}
-              hint={t(
-                'acme.sh erneuert fällige Zertifikate einmal am Tag um 03:17 Uhr. Die Angabe gilt seit dem letzten Start von HAPM.'
-              )}
-              value={
-                scheduler.lastRenewal
-                  ? t(scheduler.lastRenewal.ok ? '{ago}, ohne Fehler' : '{ago}, mit Fehler', {
-                      ago: formatAgo(now, scheduler.lastRenewal.at, locale),
-                    })
-                  : t('Noch kein Lauf')
-              }
-              tone={scheduler.lastRenewal ? (scheduler.lastRenewal.ok ? undefined : 'danger') : 'muted'}
-              tooltip={scheduler.lastRenewal ? formatDateTime(scheduler.lastRenewal.at, locale) : undefined}
-            />
-            <KvRow
-              label={t('Log-Mitschnitt')}
-              hint={t(
-                'HAPM schreibt die Ausgabe von HAProxy in eine Datei mit. Daraus liest die Statistik, wer zugreift: Adressen, Länder und Pfade.'
-              )}
-              value={
-                logFollower.connected
-                  ? plural(logFollower.lines, { one: 'Verbunden, {count} Zeile', other: 'Verbunden, {count} Zeilen' })
-                  : t('Getrennt')
-              }
-              tone={logFollower.connected ? undefined : 'warning'}
-              tooltip={
-                logFollower.last ? t('Letzte Zeile {time}', { time: formatDateTime(logFollower.last, locale) }) : undefined
-              }
-            />
-            <KvRow
-              label={t('Zeitgesteuerte Aufgaben')}
-              value={scheduler.started ? t('Aktiv') : t('Nicht gestartet')}
-              tone={scheduler.started ? undefined : 'warning'}
-            />
-          </div>
-        </div>
-      </div>
-
-      <div className="hapm-cols sys-block">
-        <div className="card">
-          <div className="card-header">
-            <h2 className="card-title">
-              {t('Letzte Vorgänge')}
-              {runs.running ? (
-                <span className="section-count">
-                  {plural(runs.running, { one: '{count} läuft', other: '{count} laufen' })}
-                </span>
-              ) : null}
-            </h2>
-            <Link className="btn btn-ghost btn-sm" href="/reverse-proxy/logs">
-              {t('Protokoll')}
-            </Link>
-          </div>
-          {runs.recent === null ? (
-            <p className="form-hint">{t('Die Historie war nicht zu lesen.')}</p>
-          ) : runs.recent.length === 0 ? (
-            <p className="form-hint">{t('Noch kein Vorgang am Reverse-Proxy.')}</p>
-          ) : (
-            <div className="table-wrap">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>{t('Eintrag')}</th>
-                    <th>{t('Vorgang')}</th>
-                    <th>{t('Status')}</th>
-                    <th>{t('Dauer')}</th>
-                    <th>{t('Zeitpunkt')}</th>
-                    <th>{t('Ausgelöst von')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {runs.recent.map((run) => (
-                    <tr key={run.$id}>
-                      <td data-label="primary">
-                        <strong>{run.serviceId}</strong>
-                        {run.error && <div className="detail-error">{t(run.error)}</div>}
-                      </td>
-                      <td data-label={t('Vorgang')}>
-                        {ACTION_LABELS[run.action] ? t(ACTION_LABELS[run.action]) : run.action}
-                      </td>
-                      <td data-label={t('Status')}>
-                        <span className={`badge-status ${RUN_STATUS_CLASS[run.status] ?? 'badge-neutral'}`}>
-                          {run.status === 'running' && <Loader2 size={12} strokeWidth={1.5} className="spin" />}
-                          {RUN_STATUS_LABELS[run.status] ? t(RUN_STATUS_LABELS[run.status]) : run.status}
-                        </span>
-                      </td>
-                      <td data-label={t('Dauer')}>{run.duration !== null ? `${run.duration} s` : ''}</td>
-                      <td data-label={t('Zeitpunkt')}>
-                        <span data-tooltip={formatDateTime(run.startedAt, locale)}>
-                          {formatAgo(now, run.startedAt, locale)}
-                        </span>
-                      </td>
-                      <td data-label={t('Ausgelöst von')}>{run.triggeredBy ?? ''}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+      {(() => {
+        const sections: Record<DashKey, ReactNode> = {
+          live: empty ? null : <LiveTraffic href="/reverse-proxy/statistiken" />,
+          proxy: (
+            <div className="kpi-grid">
+              <Kpi
+                href="/reverse-proxy"
+                icon={<Network size={16} strokeWidth={1.5} />}
+                label={t('Ziele')}
+                value={proxy.services}
+              />
+              <Kpi
+                href="/reverse-proxy"
+                icon={<Layers size={16} strokeWidth={1.5} />}
+                label={t('Gruppen')}
+                value={proxy.scopes}
+              />
+              <Kpi
+                href="/reverse-proxy"
+                icon={<Cable size={16} strokeWidth={1.5} />}
+                label={t('TCP-Weiterleitungen')}
+                value={proxy.streams}
+              />
+              <Kpi
+                href="/reverse-proxy"
+                icon={<Unplug size={16} strokeWidth={1.5} />}
+                label={t('Backend nicht erreichbar')}
+                value={unhealthyCount}
+                sub={proxy.checked ? t('von {count} geprüften', { count: formatNumber(locale, proxy.checked) }) : undefined}
+                tone={proxy.down ? 'danger' : proxy.partial ? 'warning' : proxy.checked ? 'ok' : undefined}
+              />
             </div>
-          )}
-        </div>
+          ),
+          certs: (
+            <div className="kpi-grid">
+              <Kpi
+                href="/reverse-proxy/zertifikate"
+                icon={<ShieldCheck size={16} strokeWidth={1.5} />}
+                label={t('Zertifikate')}
+                value={certificates.total}
+              />
+              <Kpi
+                href="/reverse-proxy/zertifikate"
+                icon={<CalendarClock size={16} strokeWidth={1.5} />}
+                label={t('Laufen in {days} Tagen ab', { days: certificates.warnDays })}
+                value={certificates.expiring}
+                tone={expired ? 'danger' : certificates.expiring ? 'warning' : undefined}
+              />
+            </div>
+          ),
+          security: <CrowdsecKpis crowdsec={crowdsec} />,
+          ops: (
+            <div className="kpi-grid">
+              <Kpi
+                href="/reverse-proxy/logs"
+                icon={<AlertTriangle size={16} strokeWidth={1.5} />}
+                label={t('Vorgänge fehlgeschlagen')}
+                value={runs.failed}
+                tone={runs.failed ? 'danger' : undefined}
+              />
+              <Kpi
+                href="/updates"
+                icon={<Download size={16} strokeWidth={1.5} />}
+                label={t('Updates verfügbar')}
+                value={pendingUpdates}
+                tone={pendingUpdates ? 'warning' : undefined}
+              />
+            </div>
+          ),
+          quick: (
+                  <div className="card">
+                    <div className="kind-grid">
+                      <Link className="kind-card" href="/reverse-proxy">
+                        <span className="kind-card-icon">
+                          <Plus size={17} strokeWidth={1.5} />
+                        </span>
+                        <span className="kind-card-text">
+                          <span className="kind-card-title">{t('Ziel anlegen')}</span>
+                          <span className="kind-card-sub">{t('Domain, Backend und Zertifikat in einem Vorgang.')}</span>
+                        </span>
+                      </Link>
+                      <Link className="kind-card" href="/reverse-proxy/statistiken">
+                        <span className="kind-card-icon">
+                          <BarChart3 size={17} strokeWidth={1.5} />
+                        </span>
+                        <span className="kind-card-text">
+                          <span className="kind-card-title">{t('Statistik')}</span>
+                          <span className="kind-card-sub">{t('Anfragen, Statuscodes, Antwortzeiten und wer zugreift.')}</span>
+                        </span>
+                      </Link>
+                      <Link className="kind-card" href="/reverse-proxy/logs">
+                        <span className="kind-card-icon">
+                          <ScrollText size={17} strokeWidth={1.5} />
+                        </span>
+                        <span className="kind-card-text">
+                          <span className="kind-card-title">{t('Protokoll')}</span>
+                          <span className="kind-card-sub">{t('Jeder Vorgang am Reverse-Proxy mit seinen Schritten.')}</span>
+                        </span>
+                      </Link>
+                      <Link className="kind-card" href="/reverse-proxy/einstellungen">
+                        <span className="kind-card-icon">
+                          <Settings2 size={17} strokeWidth={1.5} />
+                        </span>
+                        <span className="kind-card-text">
+                          <span className="kind-card-title">{t('Einstellungen')}</span>
+                          <span className="kind-card-sub">{t('Was für alle Ziele gilt.')}</span>
+                        </span>
+                      </Link>
+                      <Link className="kind-card" href="/updates">
+                        <span className="kind-card-icon">
+                          <Container size={17} strokeWidth={1.5} />
+                        </span>
+                        <span className="kind-card-text">
+                          <span className="kind-card-title">{t('Updates')}</span>
+                          <span className="kind-card-sub">{t('Neue Abbilder prüfen und einspielen.')}</span>
+                        </span>
+                      </Link>
+                    </div>
+                  </div>
+          ),
+          parts: (
+                  <div className="hapm-cols">
+                    <div className="card">
+                      <div className="card-header">
+                        <h2 className="card-title">{t('Bestandteile')}</h2>
+                        <Link className="btn btn-ghost btn-sm" href="/updates">
+                          {t('Updates')}
+                        </Link>
+                      </div>
+                      <div className="table-wrap">
+                        <table className="table">
+                          <thead>
+                            <tr>
+                              <th>{t('Bestandteil')}</th>
+                              <th>{t('Version')}</th>
+                              <th>{t('Zustand')}</th>
+                              <th>{t('Läuft seit')}</th>
+                              <th>{t('Update')}</th>
+                              <th aria-label={t('Aktionen')} />
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr>
+                              <td data-label="primary">
+                                <div className="hapm-part">
+                                  <span className="kpi-icon">
+                                    <Network size={16} strokeWidth={1.5} />
+                                  </span>
+                                  <div>
+                                    <strong>
+                                      <BrandName brand="haproxy">HAProxy</BrandName>
+                                    </strong>
+                                    <div className="detail-sub mono">{haproxy.image ?? haproxy.name}</div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td data-label={t('Version')}>{haproxy.version ?? t('Unbekannt')}</td>
+                              <td data-label={t('Zustand')}>
+                                <span
+                                  className={`badge-status ${haproxyBadge.cls}`}
+                                  data-tooltip={haproxyBadge.tooltip ? t(haproxyBadge.tooltip) : undefined}
+                                >
+                                  <span className="dot" />
+                                  {t(haproxyBadge.label)}
+                                </span>
+                              </td>
+                              <td data-label={t('Läuft seit')}>
+                                {haproxy.startedAt ? (
+                                  <span data-tooltip={formatDateTime(haproxy.startedAt, locale)}>
+                                    {formatUptime(now, haproxy.startedAt, locale)}
+                                  </span>
+                                ) : haproxy.exists === null ? (
+                                  t('Unbekannt')
+                                ) : (
+                                  t('Läuft nicht')
+                                )}
+                                {haproxy.restartCount !== null && haproxy.restartCount > 0 && (
+                                  <div className="detail-sub">
+                                    {plural(haproxy.restartCount, {
+                                      one: 'Ein Neustart durch Docker',
+                                      other: '{count} Neustarts durch Docker',
+                                    })}
+                                  </div>
+                                )}
+                              </td>
+                              <td data-label={t('Update')}>
+                                <UpdateBadge state={stateOf('haproxy')} />
+                              </td>
+                              <td data-label="actions">
+                                {haproxy.running && (
+                                  <div className="actions hapm-actions-end">
+                                    <button
+                                      type="button"
+                                      className="btn btn-ghost btn-icon btn-sm"
+                                      data-tooltip={t('HAProxy neu starten')}
+                                      data-tooltip-pos="left"
+                                      aria-label={t('HAProxy neu starten')}
+                                      onClick={confirmRestart}
+                                    >
+                                      <RotateCw size={16} strokeWidth={1.5} />
+                                    </button>
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                            <tr>
+                              <td data-label="primary">
+                                <div className="hapm-part">
+                                  <span className="kpi-icon">
+                                    <LayoutDashboard size={16} strokeWidth={1.5} />
+                                  </span>
+                                  <div>
+                                    <strong>HAPM</strong>
+                                    <div className="detail-sub mono">
+                                      {hapm.image ?? (hapm.containerized ? t('Abbild unbekannt') : t('Läuft ohne Container'))}
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td data-label={t('Version')}>{hapm.version}</td>
+                              <td data-label={t('Zustand')}>
+                                <span className="badge-status badge-success">
+                                  <span className="dot" />
+                                  {t('Läuft')}
+                                </span>
+                              </td>
+                              <td data-label={t('Läuft seit')}>
+                                {hapm.startedAt ? (
+                                  <span data-tooltip={formatDateTime(hapm.startedAt, locale)}>
+                                    {formatUptime(now, hapm.startedAt, locale)}
+                                  </span>
+                                ) : (
+                                  t('Unbekannt')
+                                )}
+                              </td>
+                              <td data-label={t('Update')}>
+                                <UpdateBadge state={stateOf('hapm')} />
+                              </td>
+                              <td data-label="actions" />
+                            </tr>
+                            <tr>
+                              <td data-label="primary">
+                                <div className="hapm-part">
+                                  <span className="kpi-icon">
+                                    <ShieldCheck size={16} strokeWidth={1.5} />
+                                  </span>
+                                  <div>
+                                    <strong>acme.sh</strong>
+                                    <div className="detail-sub">
+                                      {acme.accountEmail
+                                        ? t('Konto: {email}', { email: acme.accountEmail })
+                                        : t('Keine Adresse für das Konto hinterlegt')}
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td data-label={t('Version')}>{acme.version ?? t('Unbekannt')}</td>
+                              <td data-label={t('Zustand')}>
+                                {acme.installed === null ? (
+                                  <span className="badge-status badge-neutral" data-tooltip={acme.error ?? undefined}>
+                                    <span className="dot" />
+                                    {t('Unbekannt')}
+                                  </span>
+                                ) : acme.installed ? (
+                                  <span className="badge-status badge-success">
+                                    <span className="dot" />
+                                    {t('Eingerichtet')}
+                                  </span>
+                                ) : (
+                                  <span className="badge-status badge-danger">
+                                    <span className="dot" />
+                                    {t('Nicht installiert')}
+                                  </span>
+                                )}
+                              </td>
+                              <td data-label={t('Läuft seit')}>
+                                <span className="hapm-muted">{t('Läuft bei Bedarf')}</span>
+                              </td>
+                              <td data-label={t('Update')}>
+                                <UpdateBadge state={stateOf('acme')} />
+                              </td>
+                              <td data-label="actions" />
+                            </tr>
+                            {crowdsec.summary?.inStack && (
+                              <>
+                                <CrowdsecPartRow
+                                  name="CrowdSec"
+                                  container={crowdsec.crowdsec}
+                                  state={stateOf('crowdsec')}
+                                  now={now}
+                                />
+                                <CrowdsecPartRow
+                                  name={t('CrowdSec-Bouncer')}
+                                  container={crowdsec.bouncer}
+                                  state={stateOf('crowdsec-bouncer')}
+                                  now={now}
+                                />
+                              </>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
 
-        <CertificatesCard certificates={certificates} />
-      </div>
+                    <div className="card">
+                      <div className="card-header">
+                        <h2 className="card-title">{t('Betrieb')}</h2>
+                      </div>
+                      <div className="dash-kv">
+                        <KvRow
+                          label="Docker"
+                          value={docker.available ? t('Version {version}', { version: docker.version ?? '' }) : t('Nicht erreichbar')}
+                          tone={docker.available ? undefined : 'danger'}
+                        />
+                        <KvRow
+                          label={t('Ersteinrichtung')}
+                          value={t(BOOTSTRAP_LABELS[bootstrap.status])}
+                          tone={bootstrap.status === 'error' ? 'danger' : bootstrap.status === 'ok' ? undefined : 'muted'}
+                          tooltip={bootstrap.finishedAt ? formatDateTime(bootstrap.finishedAt, locale) : undefined}
+                        />
+                        <KvRow
+                          label={t('Statistik')}
+                          hint={t(
+                            'HAPM sammelt die Zähler von HAProxy im Minutentakt ein. Die Angabe gilt seit dem letzten Start von HAPM.'
+                          )}
+                          value={
+                            scheduler.lastStatsError
+                              ? t('Fehler')
+                              : scheduler.lastStatsRun
+                                ? formatAgo(now, scheduler.lastStatsRun, locale)
+                                : t('Noch keine Runde')
+                          }
+                          tone={scheduler.lastStatsError ? 'warning' : scheduler.lastStatsRun ? undefined : 'muted'}
+                          tooltip={scheduler.lastStatsError ?? undefined}
+                        />
+                        <KvRow
+                          label={t('Erneuerung')}
+                          hint={t(
+                            'acme.sh erneuert fällige Zertifikate einmal am Tag um 03:17 Uhr. Die Angabe gilt seit dem letzten Start von HAPM.'
+                          )}
+                          value={
+                            scheduler.lastRenewal
+                              ? t(scheduler.lastRenewal.ok ? '{ago}, ohne Fehler' : '{ago}, mit Fehler', {
+                                  ago: formatAgo(now, scheduler.lastRenewal.at, locale),
+                                })
+                              : t('Noch kein Lauf')
+                          }
+                          tone={scheduler.lastRenewal ? (scheduler.lastRenewal.ok ? undefined : 'danger') : 'muted'}
+                          tooltip={scheduler.lastRenewal ? formatDateTime(scheduler.lastRenewal.at, locale) : undefined}
+                        />
+                        <KvRow
+                          label={t('Log-Mitschnitt')}
+                          hint={t(
+                            'HAPM schreibt die Ausgabe von HAProxy in eine Datei mit. Daraus liest die Statistik, wer zugreift: Adressen, Länder und Pfade.'
+                          )}
+                          value={
+                            logFollower.connected
+                              ? plural(logFollower.lines, { one: 'Verbunden, {count} Zeile', other: 'Verbunden, {count} Zeilen' })
+                              : t('Getrennt')
+                          }
+                          tone={logFollower.connected ? undefined : 'warning'}
+                          tooltip={
+                            logFollower.last ? t('Letzte Zeile {time}', { time: formatDateTime(logFollower.last, locale) }) : undefined
+                          }
+                        />
+                        <KvRow
+                          label={t('Zeitgesteuerte Aufgaben')}
+                          value={scheduler.started ? t('Aktiv') : t('Nicht gestartet')}
+                          tone={scheduler.started ? undefined : 'warning'}
+                        />
+                      </div>
+                    </div>
+                  </div>
+          ),
+          recent: (
+                  <div className="hapm-cols">
+                    <div className="card">
+                      <div className="card-header">
+                        <h2 className="card-title">
+                          {t('Letzte Vorgänge')}
+                          {runs.running ? (
+                            <span className="section-count">
+                              {plural(runs.running, { one: '{count} läuft', other: '{count} laufen' })}
+                            </span>
+                          ) : null}
+                        </h2>
+                        <Link className="btn btn-ghost btn-sm" href="/reverse-proxy/logs">
+                          {t('Protokoll')}
+                        </Link>
+                      </div>
+                      {runs.recent === null ? (
+                        <p className="form-hint">{t('Die Historie war nicht zu lesen.')}</p>
+                      ) : runs.recent.length === 0 ? (
+                        <p className="form-hint">{t('Noch kein Vorgang am Reverse-Proxy.')}</p>
+                      ) : (
+                        <div className="table-wrap">
+                          <table className="table">
+                            <thead>
+                              <tr>
+                                <th>{t('Eintrag')}</th>
+                                <th>{t('Vorgang')}</th>
+                                <th>{t('Status')}</th>
+                                <th>{t('Dauer')}</th>
+                                <th>{t('Zeitpunkt')}</th>
+                                <th>{t('Ausgelöst von')}</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {runs.recent.map((run) => (
+                                <tr key={run.$id}>
+                                  <td data-label="primary">
+                                    <strong>{run.serviceId}</strong>
+                                    {run.error && <div className="detail-error">{t(run.error)}</div>}
+                                  </td>
+                                  <td data-label={t('Vorgang')}>
+                                    {ACTION_LABELS[run.action] ? t(ACTION_LABELS[run.action]) : run.action}
+                                  </td>
+                                  <td data-label={t('Status')}>
+                                    <span className={`badge-status ${RUN_STATUS_CLASS[run.status] ?? 'badge-neutral'}`}>
+                                      {run.status === 'running' && <Loader2 size={12} strokeWidth={1.5} className="spin" />}
+                                      {RUN_STATUS_LABELS[run.status] ? t(RUN_STATUS_LABELS[run.status]) : run.status}
+                                    </span>
+                                  </td>
+                                  <td data-label={t('Dauer')}>{run.duration !== null ? `${run.duration} s` : ''}</td>
+                                  <td data-label={t('Zeitpunkt')}>
+                                    <span data-tooltip={formatDateTime(run.startedAt, locale)}>
+                                      {formatAgo(now, run.startedAt, locale)}
+                                    </span>
+                                  </td>
+                                  <td data-label={t('Ausgelöst von')}>{run.triggeredBy ?? ''}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
 
+                    <CertificatesCard certificates={certificates} />
+                  </div>
+          ),
+        };
+        return layout.order
+          .filter((key) => !layout.hidden.includes(key) && sections[key] !== null)
+          .filter((key) => key !== 'security' || crowdsec.summary?.inStack)
+          .map((key) => (
+            <DashSection
+              key={key}
+              title={t(SECTION_LABELS[key])}
+              icon={key === 'security' ? <BrandLogo brand="crowdsec" size={14} /> : undefined}
+              collapsed={layout.collapsed.includes(key)}
+              onToggle={() => toggleCollapsed(key)}
+            >
+              {sections[key]}
+            </DashSection>
+          ));
+      })()}
+
+      {layoutOpen && (
+        <LayoutDialog
+          layout={layout}
+          labels={SECTION_LABELS}
+          onChange={setLayout}
+          onReset={resetLayout}
+          onClose={() => setLayoutOpen(false)}
+        />
+      )}
     </>
   );
 }

@@ -21,6 +21,8 @@ import type { ChartPoint } from '@/lib/systems/series';
 import { formatBytes, formatCount, formatDateTime, formatShare, formatTime, msgid } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
 import { STATS_FORMATS, seriesPerLocale } from './format';
+import BrandLogo from '@/components/BrandLogo';
+import CrowdsecStats from '@/components/crowdsec/CrowdsecStats';
 
 /**
  * Die Auswertung des Reverse-Proxys.
@@ -199,12 +201,81 @@ const REQUEST_SERIES = seriesPerLocale([
 export default function ReverseProxyStatsPage() {
   return (
     <Suspense fallback={<SkeletonRows />}>
-      <StatsView />
+      <StatsSwitch />
     </Suspense>
   );
 }
 
-function StatsView() {
+type StatsTab = 'verkehr' | 'crowdsec';
+
+/**
+ * Zwei Reiter: der Verkehr über HAProxy und CrowdSec (`?ansicht=crowdsec`).
+ * CrowdSec hat eine eigene Quelle (seine Ereignisse) und einen eigenen
+ * Zeitraum, deshalb ein eigener Reiter und kein Block unter dem Verkehr.
+ */
+function StatsSwitch() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { t } = useT();
+  const [tab, setTab] = useState<StatsTab>(() => (searchParams.get('ansicht') === 'crowdsec' ? 'crowdsec' : 'verkehr'));
+
+  const choose = useCallback(
+    (next: StatsTab) => {
+      setTab(next);
+      router.replace(next === 'crowdsec' ? '/reverse-proxy/statistiken?ansicht=crowdsec' : '/reverse-proxy/statistiken', {
+        scroll: false,
+      });
+    },
+    [router]
+  );
+
+  const tabs = (
+    <div className="tabs" role="tablist">
+      <button
+        type="button"
+        role="tab"
+        aria-selected={tab === 'verkehr'}
+        className={`tab ${tab === 'verkehr' ? 'active' : ''}`}
+        onClick={() => choose('verkehr')}
+      >
+        <BrandLogo brand="haproxy" size={15} />
+        {t('Verkehr')}
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={tab === 'crowdsec'}
+        className={`tab ${tab === 'crowdsec' ? 'active' : ''}`}
+        onClick={() => choose('crowdsec')}
+      >
+        <BrandLogo brand="crowdsec" size={15} />
+        CrowdSec
+      </button>
+    </div>
+  );
+
+  if (tab === 'crowdsec') {
+    return (
+      <>
+        <div className="page-header">
+          <div>
+            <Link className="sys-back" href="/reverse-proxy">
+              <ArrowLeft size={14} />
+              {t('Reverse-Proxy')}
+            </Link>
+            <h1 className="page-title">{t('Reverse-Proxy-Statistik')}</h1>
+            <p className="page-subtitle">{t('Was CrowdSec erkannt und abgelehnt hat: WAF-Treffer, Szenarien und Sperren.')}</p>
+          </div>
+        </div>
+        {tabs}
+        <CrowdsecStats />
+      </>
+    );
+  }
+  return <StatsView tabs={tabs} />;
+}
+
+function StatsView({ tabs }: { tabs: React.ReactNode }) {
   const { apiFetch } = useApp();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -440,6 +511,8 @@ function StatsView() {
           </button>
         </div>
       </div>
+
+      {tabs}
 
       {error && <div className="alert alert-danger sys-block">{error}</div>}
 

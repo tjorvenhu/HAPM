@@ -80,6 +80,7 @@ const COOLIFY: CreateServiceInput = {
   requestHeaders: [],
   // Früher das Preset „Coolify".
   tunnel: true,
+  crowdsec: false,
   healthcheck: false,
   backendTls: 'off',
 };
@@ -279,6 +280,7 @@ describe('löschen', () => {
       responseHeaders: [],
       requestHeaders: [],
       tunnel: false,
+      crowdsec: false,
     });
 
     const zurueck = removeService(beides, 'coolify');
@@ -313,6 +315,7 @@ describe('anlegen weist ab', () => {
       responseHeaders: [],
       requestHeaders: [],
       tunnel: false,
+      crowdsec: false,
     });
     expect(() => addService(belegt, COOLIFY)).toThrow(HaproxyConfigError);
     expect(() => addService(belegt, COOLIFY)).toThrow(/coolify_terminal/);

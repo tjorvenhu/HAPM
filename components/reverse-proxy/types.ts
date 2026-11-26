@@ -53,6 +53,10 @@ export interface ProxyRow {
   globalHeaders: Record<HeaderDirection, string[]>;
   /** `timeout tunnel` aus dem `defaults`-Block, oder `null`: dann gilt es nicht für alle. */
   defaultsTunnel: string | null;
+  /** CrowdSec prüft alle Ziele. `null`: der Block ist von Hand geändert. */
+  crowdsecGlobal: boolean | null;
+  /** Ob der Stack CrowdSec mitbringt. */
+  crowdsecInStack: boolean;
   /** Was HAProxy über die Ziele weiß, je Dienst-ID. Ein fehlender Eintrag heißt
    *  „nicht bekannt" und nicht „in Ordnung". */
   health: Record<string, ServiceHealth>;

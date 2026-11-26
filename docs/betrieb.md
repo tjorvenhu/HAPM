@@ -4,13 +4,15 @@ HAPM bringt HAProxy mit. Hier steht, wie die Container zusammenhängen, was beim
 ersten Start geschieht und wie Updates, Benachrichtigungen und Sicherung
 ablaufen.
 
-## Drei Container, ein Ordner mit Daten
+## Die Container, ein Ordner mit Daten
 
 | Container | Abbild | Aufgabe |
 |---|---|---|
 | `hapm` | `ghcr.io/tjorvenhu/hapm` | Oberfläche, Scheduler, acme.sh, das Kommando `hapm-ctl` |
 | `hapm-haproxy` | `haproxy:lts` (offiziell, unverändert) | HAProxy |
 | `hapm-postgres` | `postgres:17-alpine` (offiziell, unverändert) | Die Datenbank von HAPM |
+| `hapm-crowdsec` | `crowdsecurity/crowdsec:latest` (offiziell, unverändert) | CrowdSec: liest das Log von HAProxy, lokale API, WAF. Abschaltbar, siehe [`crowdsec.md`](crowdsec.md) |
+| `hapm-crowdsec-bouncer` | `crowdsecurity/spoa-bouncer:latest` (offiziell, unverändert) | Der SPOE-Agent, den HAProxy je Anfrage fragt. Abschaltbar |
 
 Alle Daten liegen in einem Ordner auf dem Server: `HAPM_STORAGE`, ohne Angabe
 `data` neben `docker-compose.yml` (mit dem Installationsskript also
@@ -25,6 +27,21 @@ Alle Daten liegen in einem Ordner auf dem Server: `HAPM_STORAGE`, ohne Angabe
 | `acme/` | `/root/.acme.sh` | | | acme.sh, Konto, Zertifikate, Erneuerungseinträge |
 | `postgres/` | | | `/var/lib/postgresql/data` | Die Datenbank: Konten, Sitzungen, Passkeys, Einstellungen, Protokoll, Statistik |
 | `run/postgres/` | `/var/run/postgresql` | | `/var/run/postgresql` | Der Unix-Socket von Postgres, sonst nichts |
+| `crowdsec/` | `/crowdsec` | | | Alles für CrowdSec. HAPM schreibt dort bei jedem Start seine Dateien (`lib/crowdsec/setup.ts`) |
+
+Die Unterordner von `crowdsec/` in den beiden CrowdSec-Containern:
+
+| Unterordner | In `hapm-crowdsec` | In `hapm-crowdsec-bouncer` | Inhalt |
+|---|---|---|---|
+| `crowdsec/config/` | `/etc/crowdsec` | | Konfiguration, Hub, installierte Sammlungen, dazu `acquis.d/hapm.yaml` und `parsers/s02-enrich/hapm-backend.yaml` von HAPM |
+| `crowdsec/data/` | `/var/lib/crowdsec/data` | | SQLite-Datenbank mit Sperren, Ereignissen und Freigabelisten, dazu die Daten der Regeln |
+| `crowdsec/secrets/` | `/run/secrets` | | `bouncer_key_hapm`, der Schlüssel des Bouncers. CrowdSec meldet ihn beim Start damit an |
+| `crowdsec/bouncer/` | | eingebunden als Konfiguration | `crowdsec-spoa-bouncer.yaml`, von HAPM geschrieben |
+| `log/` | `/var/log/haproxy` (nur lesend) | | Das Log von HAProxy, Quelle der Szenarien |
+
+Die SPOE-Datei und die Freigaben für HAProxy liegen nicht dort, sondern unter
+`haproxy/hapm-crowdsec/` (`spoe.cfg`, `allow.lst`): HAProxy sieht nur
+`/etc/haproxy`.
 
 **Ordner statt Docker-Volumes**, damit auf dem Server sichtbar ist, wo alles
 liegt, und damit sich der Ort wählen lässt (eine eigene Platte, ein Ordner, den
@@ -65,6 +82,29 @@ Desktop nach: HAProxy teilt sich das Netz mit dem HAPM-Container.
 des Hosts zu binden, und gibt die Rechte danach ab (`user haproxy` in der
 Konfiguration). Im Netz des Hosts greift die Erleichterung nicht, mit der Docker
 sonst unprivilegierten Containern niedrige Ports erlaubt.
+
+**CrowdSec und der Bouncer laufen im Netz des Stacks**, nicht im Netz des
+Hosts. Sie brauchen keinen Port der Maschine: der Bouncer erreicht CrowdSec
+unter dem Namen `crowdsec` (lokale API auf 8080, WAF auf 7422). Im Netz des
+Hosts lägen beide Ports auf jeder Adresse des Servers, und 8080 ist oft schon
+belegt. Veröffentlicht wird nur der Port des Bouncers, und der nur auf
+`127.0.0.1:${HAPM_SPOA_PORT:-7423}`: dort erreicht ihn HAProxy aus dem Netz des
+Hosts, von außen niemand. Beide Dienste tragen `scale: ${HAPM_CROWDSEC:-1}`;
+mit `HAPM_CROWDSEC=0` in `.env` (oder `install.sh --no-crowdsec`) legt Compose
+sie nicht an. Das braucht Docker Compose v2 mit dem Attribut `scale`, 2.20 oder
+neuer. Abschalten im laufenden Stack: Variable setzen, dann
+`docker compose up -d --remove-orphans`. Warum `scale` und kein Profil, steht in
+[`crowdsec.md`](crowdsec.md).
+
+**Was HAPM zu CrowdSec wissen muss**, alles mit Vorgabe:
+
+| Variable | Vorgabe | Wofür |
+|---|---|---|
+| `HAPM_CROWDSEC` | `1` | `0`: der Stack bringt CrowdSec nicht mit. Compose (`scale`) und HAPM (`crowdsecInStack`) lesen sie |
+| `HAPM_SPOA_PORT` | `7423` | Port des Bouncers auf `127.0.0.1` des Servers, für Compose und `backend hapm_crowdsec_spoa` |
+| `HAPM_CROWDSEC_CONTAINER` | `hapm-crowdsec` | Name des Containers, in dem `cscli` läuft |
+| `HAPM_CROWDSEC_BOUNCER_CONTAINER` | `hapm-crowdsec-bouncer` | Name des Bouncers, für Log und Updates |
+| `HAPM_CROWDSEC_DIR` | `/crowdsec` | Wo HAPM den Ordner `crowdsec/` sieht |
 
 ## Postgres
 
@@ -438,6 +478,10 @@ steht. Für acme.sh fragt es die neueste Veröffentlichung bei GitHub.
   offen vor und schließt ihn (`reconcileUpdateRuns`): läuft er in einem anderen
   Abbild als vorher, ist es gelungen.
 - **acme.sh:** `acme.sh --upgrade`.
+- **CrowdSec und der Bouncer:** ihre Abbilder meldet und tauscht die Seite
+  ebenso, sofern der Stack sie mitbringt (`HAPM_CROWDSEC`). Solange der
+  Bouncer getauscht wird, gehen Anfragen ungeprüft durch (fail-open, siehe
+  [`crowdsec.md`](crowdsec.md)).
 
 Beim Ersetzen bleibt nur, was am Container eingestellt wurde, nicht was sein
 Abbild vorgab (`recreateBody`): sonst stünde im neuen Container
@@ -844,6 +888,188 @@ Start an; ohne Ordner landet die Sicherung von vorher in
 `hapm-before-restore.tar.gz` im Daten-Ordner. Der Zähler der Anmeldeversuche
 liegt im Daten-Ordner und gehört nicht zur Sicherung: er bleibt beim
 Zurückspielen, wie er ist.
+
+## Ausgehende Verbindungen (Firmennetz, Firewall, Proxy)
+
+Was der Server nach außen erreichen muss, wenn eine Firewall ausgehend nur
+Freigegebenes durchlässt oder ein Proxy dazwischensteht. Außer DNS, NTP und
+SMTP ist alles HTTPS auf TCP 443.
+
+**Freigaben nach Namen, nicht nach Adressen.** Hinter fast allen Hosts stehen
+CDNs (Cloudflare, CloudFront, Fastly) mit wechselnden Adressen. Eine Freigabe
+nach IP veraltet ohne Vorwarnung. Die Firewall braucht Regeln nach Hostname
+(FQDN, SNI) oder einen Proxy, der nach Namen filtert.
+
+Die Liste ist im November 2026 aus dem Code von HAPM, dem Quelltext von
+acme.sh und den Dokumentationen von Docker und CrowdSec zusammengestellt. Die
+Weiterleitungen von Docker Hub und GHCR sind nachgemessen.
+
+### Allgemein
+
+| Ziel | Port | Wer | Wofür | Nötig |
+|---|---|---|---|---|
+| DNS-Server des Netzes | 53 UDP und TCP | Host, alle Container | Namensauflösung | ja |
+| NTP-Server des Netzes | 123 UDP | Host | Uhrzeit. Zertifikate, zweiter Faktor und Ablaufzeiten von Sperren hängen daran | ja |
+| Paketquellen der Distribution, `download.docker.com` | 443 (oder 80) | `install.sh` | Docker installieren, falls es fehlt | nur bei der Installation |
+| `raw.githubusercontent.com` | 443 | `install.sh`, `curl` von Hand | `install.sh` und `docker-compose.yml` holen | nur bei der Installation |
+
+### Abbilder
+
+Abbilder holt die **Docker-Engine auf dem Host**, nicht HAPM: bei der
+Installation, bei `docker compose pull` und bei jedem Update aus der
+Oberfläche. Ob es ein neues gibt, fragt dagegen **HAPM selbst** (alle sechs
+Stunden, `lib/docker/registry.ts`), und zwar dieselben Hosts.
+
+| Ziel | Port | Wer | Wofür | Nötig |
+|---|---|---|---|---|
+| `ghcr.io` | 443 | Docker-Engine, HAPM | Abbild von HAPM, Token für den anonymen Abruf | ja |
+| `pkg-containers.githubusercontent.com` | 443 | Docker-Engine, HAPM | Schichten der Abbilder von GHCR (`ghcr.io` leitet dorthin weiter) | ja |
+| `registry-1.docker.io` | 443 | Docker-Engine, HAPM | HAProxy, Postgres, CrowdSec, Bouncer von Docker Hub | ja |
+| `auth.docker.io` | 443 | Docker-Engine, HAPM | Token für den anonymen Abruf | ja |
+| `production.cloudfront.docker.com` | 443 | Docker-Engine, HAPM | Schichten von Docker Hub (Weiterleitung) | ja |
+| `production.cloudflare.docker.com` | 443 | Docker-Engine, HAPM | Schichten von Docker Hub, je nach Ort und Zeitpunkt statt CloudFront | empfohlen |
+
+Docker nennt die Hosts in der [Freigabeliste für Docker Desktop](https://docs.docker.com/desktop/enterprise/allow-list/),
+die Engine braucht davon nur die zum Holen. Gemessen im November 2026 leitete
+Docker Hub auf `production.cloudfront.docker.com` weiter; Docker hat beide
+Namen schon benutzt, deshalb stehen beide hier.
+
+### Zertifikate und DNS (Container `hapm`)
+
+| Ziel | Port | Wer | Wofür | Nötig |
+|---|---|---|---|---|
+| `acme-v02.api.letsencrypt.org` | 443 | acme.sh | Zertifikate von Let's Encrypt | mit Let's Encrypt |
+| `acme-staging-v02.api.letsencrypt.org` | 443 | acme.sh | `HAPM_ACME_SERVER=letsencrypt_test` | nur zum Testen |
+| `acme.zerossl.com` | 443 | acme.sh | `HAPM_ACME_SERVER=zerossl` | nur dann |
+| Eigener ACME-Server | sein Port | acme.sh | Eintrag unter „Allgemein“ | nur dann |
+| `api.cloudflare.com` | 443 | HAPM, acme.sh (`dns_cf`) | DNS-Einträge, TXT-Einträge für DNS-01 | mit Cloudflare |
+| `api.hetzner.cloud` | 443 | HAPM, acme.sh (`dns_hetznercloud`) | dasselbe bei Hetzner | mit Hetzner |
+| `cloudflare-dns.com`, sonst `dns.google`, `dns.alidns.com` oder `doh.pub` | 443 | acme.sh | Nach dem Setzen des TXT-Eintrags fragt acme.sh über DNS over HTTPS, ob er sichtbar ist | für DNS-01 einer davon |
+
+**Der letzte Punkt fällt leicht durch.** acme.sh nimmt den ersten der vier
+DoH-Dienste, der antwortet. Erreicht es keinen, wartet es 20 Minuten auf einen
+Eintrag, den es nie sieht, und bricht ab (`_check_dns_entries` in `acme.sh`).
+HAPM setzt `--dnssleep` nicht, die Prüfung läuft also bei jedem Zertifikat über
+DNS-01. Für eine interne Installation, die nur DNS-01 kennt, heißt das: ohne
+`cloudflare-dns.com` (oder einen der anderen) kein Zertifikat.
+
+### Updates, Länder, Mails (Container `hapm`)
+
+| Ziel | Port | Wer | Wofür | Nötig |
+|---|---|---|---|---|
+| `api.github.com` | 443 | HAPM | Neueste Fassung von acme.sh (`lib/acme.ts`) | für die Anzeige auf „Updates“ |
+| `github.com`, `codeload.github.com` | 443 | acme.sh `--upgrade` | Neue Fassung von acme.sh | nur beim Update von acme.sh |
+| `download.db-ip.com` | 443 | HAPM (`lib/geoip/fetch.ts`) | Neue Länder-Tabelle. HAPM folgt nur Weiterleitungen innerhalb von `db-ip.com` | nein, die mitgelieferte gilt weiter |
+| SMTP-Server | 587, 465 oder der eingetragene Port | HAPM | Mails | wenn Mails eingerichtet sind |
+
+**SMTP geht nicht über einen HTTP-Proxy.** HAPM verbindet sich direkt mit dem
+Mailserver. Ist das gesperrt, braucht es eine Freigabe in der Firewall oder
+einen Mailserver im eigenen Netz.
+
+### CrowdSec (Container `hapm-crowdsec`)
+
+| Ziel | Port | Wer | Wofür | Nötig |
+|---|---|---|---|---|
+| `cdn-hub.crowdsec.net` | 443 | `cscli` | Hub: Sammlungen, Parser, Szenarien, Regeln der WAF. Beim Start, beim Schalten von Regeln, bei „Regeln aktualisieren“ | ja |
+| `hub-data.crowdsec.net` | 443 | `cscli` | Daten, die Regeln laden (Listen, GeoIP-Datenbanken) | ja |
+| `api.crowdsec.net` | 443 | lokale API | Central API: Signale melden, Community-Blocklist holen | nein, ohne sie keine Community-Blocklist |
+| `blocklists.api.crowdsec.net` | 443 | lokale API | Blocklisten laden | mit der Central API |
+| `papi.api.crowdsec.net` | 443 | lokale API | Steuerung aus der CrowdSec Console | nur nach `cscli console enroll` |
+| `version.crowdsec.net` | 443 | `cscli` | Neueste Fassung von CrowdSec | nein |
+
+Quelle: [CrowdSec, „Network management“](https://docs.crowdsec.net/docs/next/configuration/network_management).
+Die Namen haben sich zwischen Fassungen von CrowdSec geändert; wer eine Fassung
+festschreibt, sieht in der Dokumentation dieser Fassung nach. Die Central API
+lässt sich abschalten (`DISABLE_ONLINE_API=true`, siehe
+[`crowdsec.md`](crowdsec.md)). **Der Bouncer** spricht nur mit CrowdSec im Netz
+des Stacks und braucht nach außen nichts.
+
+### Eingehend, der Vollständigkeit halber
+
+| Port | Wer | Wofür |
+|---|---|---|
+| 80 TCP | HAProxy | HTTP, Weiterleitung auf HTTPS, HTTP-01 von Let's Encrypt |
+| 443 TCP | HAProxy | HTTPS |
+| 443 UDP | HAProxy | HTTP/3 (QUIC) |
+| 7080 TCP | HAPM | Oberfläche, bis sie unter ihrer Domain erreichbar ist |
+| Ports der TCP-Weiterleitungen | HAProxy | was dort eingerichtet ist |
+
+HAProxy selbst braucht nach außen nichts außer den Zielen, zu denen es
+weiterleitet. Postgres hat kein Netz.
+
+### Durch einen Proxy
+
+Drei Stellen, jede für sich:
+
+**1. Die Docker-Engine** (Abbilder holen). Sie liest keine Variablen aus der
+Shell, sondern aus ihrem Dienst. Als systemd-Ergänzung
+`/etc/systemd/system/docker.service.d/http-proxy.conf`:
+
+```ini
+[Service]
+Environment="HTTP_PROXY=http://proxy.example.org:3128"
+Environment="HTTPS_PROXY=http://proxy.example.org:3128"
+Environment="NO_PROXY=localhost,127.0.0.1"
+```
+
+```bash
+systemctl daemon-reload && systemctl restart docker
+```
+
+Oder in `/etc/docker/daemon.json` unter `"proxies"` (`http-proxy`,
+`https-proxy`, `no-proxy`), dann `systemctl restart docker`. Siehe
+[Docker, „Daemon proxy configuration“](https://docs.docker.com/engine/daemon/proxy/).
+Das gilt nur für die Engine, nicht für die Container.
+
+**2. Die Container**, über eine `docker-compose.override.yml` neben
+`docker-compose.yml`. Compose liest sie von selbst, und ein neues
+`docker-compose.yml` überschreibt sie nicht:
+
+```yaml
+services:
+  hapm:
+    environment:
+      HTTP_PROXY: http://proxy.example.org:3128
+      HTTPS_PROXY: http://proxy.example.org:3128
+      NO_PROXY: localhost,127.0.0.1
+      NODE_USE_ENV_PROXY: "1"
+  crowdsec:
+    environment:
+      HTTP_PROXY: http://proxy.example.org:3128
+      HTTPS_PROXY: http://proxy.example.org:3128
+      NO_PROXY: localhost,127.0.0.1,0.0.0.0,crowdsec
+```
+
+Danach `docker compose up -d`.
+
+- **HAPM** läuft auf Node 24 (`node:24-bookworm-slim` im `Dockerfile`). Dessen
+  `fetch`, über das HAPM alle eigenen Abrufe macht (Registry, GitHub, Cloudflare,
+  Hetzner, db-ip), beachtet `HTTP_PROXY` und `HTTPS_PROXY` **nur mit
+  `NODE_USE_ENV_PROXY=1`** ([Node.js, `NODE_USE_ENV_PROXY`](https://nodejs.org/docs/latest-v24.x/api/cli.html#node_use_env_proxy1),
+  seit 24.0.0, Stabilität „Active Development“). Der Docker-Socket ist ein
+  Unix-Socket und geht nie über den Proxy. acme.sh benutzt `curl`, und `curl`
+  liest `HTTPS_PROXY` und `NO_PROXY` selbst. Ein eigener ACME-Server im
+  eigenen Netz gehört mit in `NO_PROXY`.
+- **CrowdSec** beachtet `HTTP_PROXY`, `HTTPS_PROXY` und `NO_PROXY` laut seiner
+  [Dokumentation](https://docs.crowdsec.net/docs/next/configuration/network_management).
+  `cscli` spricht im Container die lokale API unter `http://0.0.0.0:8080` an,
+  daher `0.0.0.0` in `NO_PROXY`; ohne das ginge auch dieser Aufruf an den Proxy.
+- **Der Bouncer, HAProxy und Postgres** brauchen keinen Proxy.
+
+Was am Container von HAPM eingestellt ist, übernimmt ein Update aus der
+Oberfläche (`recreateBody`, siehe „Updates“), die Variablen bleiben also.
+
+**3. SMTP** geht an keinem Proxy vorbei und durch keinen hindurch, siehe oben.
+
+**Prüfen:** „Updates“ zeigt bei jedem Bestandteil, ob die Abfrage gelang
+(unbekannt heißt: kein Weg zur Registry). Unter „Reverse-Proxy, CrowdSec“,
+Reiter „Regeln“, meldet „Regeln aktualisieren“ einen Fehler, wenn der Hub nicht
+erreichbar ist. Von Hand:
+
+```bash
+docker exec hapm-crowdsec cscli hub update
+docker exec hapm node -e "fetch('https://api.github.com').then(r => console.log(r.status))"
+```
 
 ## Bauen
 

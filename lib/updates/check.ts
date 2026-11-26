@@ -18,6 +18,7 @@
 
 import { createDocument, getDocument, listAll, updateDocument, NotFoundError } from '../db';
 import { msgid } from '../i18n';
+import { bouncerContainerName, crowdsecContainerName, crowdsecInStack } from '../crowdsec/paths';
 import { COLLECTIONS, type UpdateComponent, type UpdateState } from '../types';
 import { containerInfo, haproxyContainerName, ownContainer, registryArchitecture } from '../docker';
 import { remoteDetails, remoteDigest } from '../docker/registry';
@@ -44,7 +45,7 @@ async function previous(component: UpdateComponent): Promise<UpdateState | null>
   return getDocument<UpdateState>(COLLECTIONS.UPDATE_STATE, component).catch(() => null);
 }
 
-async function checkImage(component: 'haproxy' | 'hapm', container: string | null): Promise<StateData> {
+async function checkImage(component: Exclude<UpdateComponent, 'acme'>, container: string | null): Promise<StateData> {
   const now = new Date().toISOString();
   const empty: StateData = {
     component,
@@ -147,6 +148,11 @@ export function checkUpdates(): Promise<UpdateState[]> {
         checkImage('haproxy', haproxyContainerName()),
         checkImage('hapm', ownContainer()),
         checkAcme(),
+        // CrowdSec nur, wenn der Stack es mitbringt: sonst stünde dort ein
+        // Fehler über einen Container, den es mit Absicht nicht gibt.
+        ...(crowdsecInStack()
+          ? [checkImage('crowdsec', crowdsecContainerName()), checkImage('crowdsec-bouncer', bouncerContainerName())]
+          : []),
       ]);
       for (const result of results) await save(result);
       // Einmal je neuer Fassung, das regelt `notify`. Hält die Prüfung nicht auf und wirft nie.
@@ -214,7 +220,7 @@ export function settleAfterRuns(
   void checkUpdates().catch(() => undefined);
 }
 
-const ORDER: UpdateComponent[] = ['haproxy', 'hapm', 'acme'];
+const ORDER: UpdateComponent[] = ['haproxy', 'hapm', 'acme', 'crowdsec', 'crowdsec-bouncer'];
 
 export async function readUpdateStates(): Promise<UpdateState[]> {
   const rows = await listAll<UpdateState>(COLLECTIONS.UPDATE_STATE);

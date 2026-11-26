@@ -5,7 +5,7 @@ import Link from 'next/link';
 import {
   Globe, Activity, GitBranch, Server, Lock, LockOpen, Pencil, Trash2, Loader2, ArrowRight,
   EyeOff, ChevronDown, ChevronRight, CornerUpRight, Scale, Cookie, BarChart3, KeyRound, ShieldCheck,
-  SlidersHorizontal, LockKeyhole, Hourglass,
+  SlidersHorizontal, LockKeyhole, Hourglass, ShieldAlert,
 } from 'lucide-react';
 import {
   BALANCE_LABELS,
@@ -18,6 +18,7 @@ import {
 import { msgid } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
 import type { ProxyRow } from './types';
+import BrandLogo from '@/components/BrandLogo';
 import { findSavedTarget, type SavedTarget } from '@/lib/haproxy/saved-targets';
 
 /**
@@ -226,6 +227,7 @@ export default function ServiceCard({
     ...(service.tunnel ? [t('Lange Verbindungen')] : []),
   ];
 
+  const crowdsecOn = proxy.crowdsecInStack && (service.crowdsec || proxy.crowdsecGlobal === true);
   const lockedCount = service.lockedDomains.length;
   const fullyLocked = lockedCount > 0 && lockedCount === service.domains.length;
   const partlyLocked = lockedCount > 0 && !fullyLocked;
@@ -276,6 +278,18 @@ export default function ServiceCard({
               ? t('Nur erreichbar von {addresses}', { addresses })
               : t('Nur von {addresses} erreichbar: {domains}', { addresses, domains: lockedDomains }),
           className: fullyLocked ? 'is-locked' : 'is-partly-locked',
+        }]
+      : []),
+    /* CrowdSec prüft die Anfragen: eigener Schalter oder global. Hinter der
+     * Sperre, weil beides sagt, wer durchkommt. */
+    ...(crowdsecOn
+      ? [{
+          key: 'crowdsec',
+          icon: <BrandLogo brand="crowdsec" size={14} />,
+          label: 'CrowdSec',
+          tooltip: service.crowdsec
+            ? t('CrowdSec prüft die Anfragen an dieses Ziel.')
+            : t('CrowdSec prüft die Anfragen an alle Ziele.'),
         }]
       : []),
     /* Verdeckt heißt: HAProxy erreicht diese Weiche nie, weil eine Wildcard
@@ -597,6 +611,16 @@ export default function ServiceCard({
           lesend, und gerade der Eintrag, den dieses Werkzeug nicht anfassen
           darf, ist einer, über den man etwas wissen will.
         */}
+        {crowdsecOn && (
+          <Link
+            href={`/reverse-proxy/crowdsec?bereich=ereignisse&ziel=${encodeURIComponent(service.id)}`}
+            className="rp-action"
+            data-tooltip={t('CrowdSec-Ereignisse dieses Ziels')}
+            aria-label={t('CrowdSec-Ereignisse dieses Ziels')}
+          >
+            <ShieldAlert size={16} />
+          </Link>
+        )}
         <Link
           href={`/reverse-proxy/statistiken?dienst=${encodeURIComponent(service.id)}`}
           className="rp-action"

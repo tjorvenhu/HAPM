@@ -104,6 +104,7 @@ const INPUT: CreateServiceInput = {
   responseHeaders: [],
   requestHeaders: [],
   tunnel: false,
+  crowdsec: false,
   healthcheck: true,
   backendTls: 'off',
 };
@@ -338,6 +339,7 @@ describe('validateCreateInput', () => {
       responseHeaders: [],
       requestHeaders: [],
       tunnel: false,
+      crowdsec: false,
     });
     expect(normalised.healthcheck).toBe(false);
   });

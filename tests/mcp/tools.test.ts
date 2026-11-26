@@ -75,6 +75,17 @@ const more = vi.hoisted(() => ({
   geoipOverview: vi.fn(),
   refreshGeoipNow: vi.fn(async () => ({ changed: false })),
   changeGeoipAutoRefresh: vi.fn(async () => ({})),
+  crowdsecOverview: vi.fn(),
+  listDecisions: vi.fn(async () => []),
+  addDecision: vi.fn(async () => ({})),
+  removeDecision: vi.fn(async () => ({})),
+  listAllowlist: vi.fn(async () => []),
+  addAllowlist: vi.fn(async () => ({})),
+  removeAllowlist: vi.fn(async () => ({})),
+  listAlerts: vi.fn(),
+  crowdsecStatistics: vi.fn(),
+  crowdsecRules: vi.fn(),
+  changeRules: vi.fn(async () => ({})),
 }));
 
 vi.mock('@/lib/updates/actions', () => ({
@@ -115,6 +126,19 @@ vi.mock('@/lib/system/haproxy-container', () => ({
   restartHaproxy: more.restartHaproxy,
 }));
 vi.mock('@/lib/geoip/fetch', () => ({ geoipOverview: more.geoipOverview }));
+vi.mock('@/lib/crowdsec/actions', () => ({
+  crowdsecOverview: more.crowdsecOverview,
+  listDecisions: more.listDecisions,
+  addDecision: more.addDecision,
+  removeDecision: more.removeDecision,
+  listAllowlist: more.listAllowlist,
+  addAllowlist: more.addAllowlist,
+  removeAllowlist: more.removeAllowlist,
+  listAlerts: more.listAlerts,
+  crowdsecStatistics: more.crowdsecStatistics,
+  crowdsecRules: more.crowdsecRules,
+  changeRules: more.changeRules,
+}));
 vi.mock('@/lib/geoip/actions', () => ({
   refreshGeoipNow: more.refreshGeoipNow,
   changeGeoipAutoRefresh: more.changeGeoipAutoRefresh,
@@ -147,6 +171,12 @@ const RUN_WRITING = [
 /** Die schreibenden Werkzeuge der übrigen Bereiche. Eine neue Zeile hier ist eine Entscheidung. */
 const OTHER_WRITING = [
   'start_update',
+  // CrowdSec: Sperren und Freigaben gelten sofort, ohne Lauf.
+  'add_crowdsec_decision',
+  'remove_crowdsec_decision',
+  'add_crowdsec_allowlist',
+  'remove_crowdsec_allowlist',
+  'update_crowdsec_rules',
   'update_backup_settings',
   'start_backup',
   'update_settings',
@@ -317,6 +347,11 @@ describe('Rechte: die übrigen schreibenden Werkzeuge schreiben unter dem Namen 
     ['redeploy_error_pages', {}, 'redeployErrorPages', auditActor],
     ['refresh_geoip', {}, 'refreshGeoipNow', auditActor],
     ['set_geoip_auto_refresh', { autoRefresh: true }, 'changeGeoipAutoRefresh', auditActor],
+    ['add_crowdsec_decision', { value: '203.0.113.7' }, 'addDecision', auditActor],
+    ['remove_crowdsec_decision', { id: 3 }, 'removeDecision', auditActor],
+    ['add_crowdsec_allowlist', { value: '203.0.113.7' }, 'addAllowlist', auditActor],
+    ['remove_crowdsec_allowlist', { value: '203.0.113.7' }, 'removeAllowlist', auditActor],
+    ['update_crowdsec_rules', { crs: 'detect' }, 'changeRules', auditActor],
   ];
 
   it('deckt jedes übrige schreibende Werkzeug ab', () => {

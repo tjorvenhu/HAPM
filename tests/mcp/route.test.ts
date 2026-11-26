@@ -165,7 +165,7 @@ describe('POST /api/mcp', () => {
 
     // Die Werkzeuge außerhalb des Reverse-Proxys kommen als JSON Schema mit an.
     const update = tools.find((tool) => tool.name === 'start_update')!;
-    expect(update.inputSchema.properties?.component).toMatchObject({ enum: ['haproxy', 'hapm', 'acme'] });
+    expect(update.inputSchema.properties?.component).toMatchObject({ enum: ['haproxy', 'hapm', 'acme', 'crowdsec', 'crowdsec-bouncer'] });
     expect(update.annotations.destructiveHint).toBe(true);
 
     const settings = tools.find((tool) => tool.name === 'update_settings')!;

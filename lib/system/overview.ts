@@ -25,6 +25,8 @@ import { CERT_WARN_DAYS, certificateDue, pemExpiry, uploadedDue, warnDaysFor, ty
 import { readUpdateStates } from '../updates/check';
 import { msgid } from '../i18n';
 
+import { crowdsecSummary, type CrowdsecSummary } from '../crowdsec/actions';
+import { bouncerContainerName, crowdsecContainerName } from '../crowdsec/paths';
 export type { CertificateDue } from './certificates';
 
 export interface SystemDocker {
@@ -148,6 +150,14 @@ export interface SystemOverview {
   runs: SystemRuns;
   /** `null` heißt: der Stand der Updates war nicht zu lesen. */
   updates: UpdateState[] | null;
+  crowdsec: SystemCrowdsec;
+}
+
+export interface SystemCrowdsec {
+  /** Zahlen und Schalter. `null`: nicht zu lesen. */
+  summary: CrowdsecSummary | null;
+  crowdsec: SystemContainer;
+  bouncer: SystemContainer;
 }
 
 function message(err: unknown): string {
@@ -162,7 +172,24 @@ async function readDocker(): Promise<SystemDocker> {
 }
 
 async function readHaproxy(): Promise<SystemContainer> {
-  const name = haproxyContainerName();
+  return readContainer(haproxyContainerName());
+}
+
+async function readCrowdsec(): Promise<SystemCrowdsec> {
+  const [summary, crowdsec, bouncer] = await Promise.all([
+    crowdsecSummary().catch(() => null),
+    readContainer(crowdsecContainerName()),
+    readContainer(bouncerContainerName()),
+  ]);
+  // Die Abbilder tragen keine Versionsangabe, `cscli` kennt sie.
+  return {
+    summary,
+    crowdsec: { ...crowdsec, version: crowdsec.version ?? summary?.version ?? null },
+    bouncer: { ...bouncer, version: bouncer.version ?? summary?.bouncerVersion ?? null },
+  };
+}
+
+async function readContainer(name: string): Promise<SystemContainer> {
   const unknown: SystemContainer = {
     name,
     exists: null,
@@ -411,7 +438,7 @@ export async function systemOverview(): Promise<SystemOverview> {
   // Zwei Teile hängen an derselben Probe. Ihr Fehler wird je Teil gemeldet, nicht hier.
   probe.catch(() => undefined);
 
-  const [docker, haproxy, hapm, acme, proxy, certificates, runs, updates] = await Promise.all([
+  const [docker, haproxy, hapm, acme, proxy, certificates, runs, updates, crowdsec] = await Promise.all([
     readDocker(),
     readHaproxy(),
     readHapm(),
@@ -420,6 +447,7 @@ export async function systemOverview(): Promise<SystemOverview> {
     readCertificateSummary(probe),
     readRuns(),
     readUpdateStates().catch(() => null),
+    readCrowdsec(),
   ]);
 
   return {
@@ -435,5 +463,6 @@ export async function systemOverview(): Promise<SystemOverview> {
     certificates,
     runs,
     updates,
+    crowdsec,
   };
 }

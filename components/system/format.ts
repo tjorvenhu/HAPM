@@ -21,6 +21,8 @@ export const COMPONENT_LABELS: Record<UpdateComponent, string> = {
   haproxy: 'HAProxy',
   hapm: 'HAPM',
   acme: 'acme.sh',
+  crowdsec: 'CrowdSec',
+  'crowdsec-bouncer': 'CrowdSec-Bouncer',
 };
 
 export const RUN_STATUS_LABELS: Record<RunStatus, string> = {

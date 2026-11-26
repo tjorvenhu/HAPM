@@ -23,6 +23,7 @@ import { msg, msgid } from '../i18n';
 import { logAudit } from '../audit';
 import { COLLECTIONS, type HaproxyStep, type UpdateComponent, type UpdateRun } from '../types';
 import { containerInfo, engine, haproxyContainerName, ownContainer } from '../docker';
+import { bouncerContainerName, crowdsecContainerName } from '../crowdsec/paths';
 import { replaceContainer } from '../docker/replace.mjs';
 import { HAPROXY_CFG } from '../haproxy/config';
 import { acmeStatus, upgradeAcme } from '../acme';
@@ -39,7 +40,17 @@ const LABELS: Record<UpdateComponent, string> = {
   haproxy: 'HAProxy',
   hapm: 'HAPM',
   acme: 'acme.sh',
+  crowdsec: 'CrowdSec',
+  'crowdsec-bouncer': 'CrowdSec-Bouncer',
 };
+
+function containerOf(component: UpdateComponent): string | null {
+  if (component === 'haproxy') return haproxyContainerName();
+  if (component === 'crowdsec') return crowdsecContainerName();
+  if (component === 'crowdsec-bouncer') return bouncerContainerName();
+  if (component === 'hapm') return ownContainer();
+  return null;
+}
 
 export function componentLabel(component: UpdateComponent): string {
   return LABELS[component];
@@ -209,6 +220,41 @@ async function updateSelf(log: StepLog): Promise<'handover' | null> {
   return 'handover';
 }
 
+/**
+ * CrowdSec oder sein Bouncer: Abbild holen, Container ersetzen, altes Abbild
+ * entfernen. Ohne Prüfung vorab wie bei HAProxy: es gibt keine Datei, die das
+ * neue Abbild ablehnen könnte. Während des Tauschs gehen Anfragen ungeprüft
+ * durch (HAProxy fragt einen Bouncer, der nicht antwortet, nicht weiter).
+ */
+async function updateContainer(log: StepLog, name: string): Promise<string | null> {
+  const current: any = await engine.findContainer(name);
+  if (!current) throw new UpdateFailure(`Der Container "${name}" existiert nicht.`);
+  const reference: string = current.Config.Image;
+  const oldImage = await engine.inspectImage(current.Image).catch(() => null);
+
+  if (!(await pull(log, reference, current.Image))) return null;
+
+  const lines: string[] = [];
+  const replaced = await replaceContainer(name, reference, {
+    log: (line: string) => lines.push(line),
+    oldImage: oldImage ?? undefined,
+  });
+  await log.add(
+    msgid('Container ersetzen'),
+    replaced.ok,
+    replaced.ok ? lines.join('. ') : `${replaced.error ?? ''}${replaced.tail ? `\n${replaced.tail}` : ''}`
+  );
+  if (!replaced.ok) {
+    throw new UpdateFailure(msgid('Der neue Container ist nicht gestartet. Der bisherige läuft wieder.'));
+  }
+  const removed = await engine.removeImage(current.Image).then(
+    () => true,
+    () => false
+  );
+  await log.add(msgid('Altes Abbild entfernen'), true, removed ? undefined : msgid('Bleibt liegen, es wird noch benutzt.'));
+  return (await containerInfo(name))?.version ?? null;
+}
+
 async function updateAcme(log: StepLog): Promise<string | null> {
   const result = await upgradeAcme();
   await log.add(msgid('acme.sh aktualisieren'), result.ok, result.output.trim().split('\n').slice(-3).join('\n'));
@@ -220,14 +266,14 @@ async function updateAcme(log: StepLog): Promise<string | null> {
 
 async function currentVersion(component: UpdateComponent): Promise<string | null> {
   if (component === 'acme') return (await acmeStatus().catch(() => null))?.version ?? null;
-  const container = component === 'haproxy' ? haproxyContainerName() : ownContainer();
+  const container = containerOf(component);
   if (!container) return null;
   return (await containerInfo(container).catch(() => null))?.version ?? null;
 }
 
 async function currentImage(component: UpdateComponent): Promise<string | null> {
   if (component === 'acme') return null;
-  const container = component === 'haproxy' ? haproxyContainerName() : ownContainer();
+  const container = containerOf(component);
   if (!container) return null;
   return (await containerInfo(container).catch(() => null))?.imageId ?? null;
 }
@@ -288,7 +334,12 @@ async function execute(run: UpdateRun, actor: UpdateActor): Promise<void> {
       if (outcome === 'handover') return;
       await finish(run, 'success', { toVersion: run.fromVersion }, actor);
     } else {
-      const version = run.component === 'haproxy' ? await updateHaproxy(log) : await updateAcme(log);
+      const version =
+        run.component === 'haproxy'
+          ? await updateHaproxy(log)
+          : run.component === 'acme'
+            ? await updateAcme(log)
+            : await updateContainer(log, containerOf(run.component)!);
       await finish(run, 'success', { toVersion: version ?? run.fromVersion }, actor);
     }
   } catch (err) {

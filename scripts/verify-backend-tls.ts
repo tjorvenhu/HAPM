@@ -90,6 +90,7 @@ const service = (over: Partial<CreateServiceInput>): CreateServiceInput => ({
   responseHeaders: [],
   requestHeaders: [],
   tunnel: false,
+  crowdsec: false,
   healthcheck: true,
   backendTls: 'insecure',
   ...over,

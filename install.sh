@@ -121,6 +121,10 @@ Installieren:
                      <dir>/data: Konfiguration, Zertifikate, Datenbank.
   --port PORT        Port der Oberfläche (Vorgabe 7080)
   --image ABBILD     ein anderes Abbild von HAPM
+  --no-crowdsec      CrowdSec (WAF) nicht mitinstallieren. Ohne die Angabe gehört
+                     es zum Stack, prüft aber nichts, bis es in der Oberfläche
+                     eingeschaltet wird.
+  --crowdsec         CrowdSec wieder dazunehmen, wenn es abgewählt war
   --force            auch starten, wenn Port 80 oder 443 schon belegt ist
   --yes              nichts nachfragen, die Vorgaben nehmen
 
@@ -131,7 +135,7 @@ Entfernen:
   --yes              ohne Rückfrage entfernen
 
 Dieselben Angaben über die Umgebung: HAPM_DIR, HAPM_STORAGE, HAPM_PORT,
-HAPM_IMAGE, HAPM_FORCE=1, HAPM_YES=1. HAPM_SOURCE nennt, woher
+HAPM_IMAGE, HAPM_CROWDSEC=0 oder 1, HAPM_FORCE=1, HAPM_YES=1. HAPM_SOURCE nennt, woher
 docker-compose.yml kommt (Vorgabe das Repository auf GitHub).
 EOF
 }
@@ -146,6 +150,9 @@ IMAGE="${HAPM_IMAGE:-}"
 FORCE="${HAPM_FORCE:-0}"
 YES="${HAPM_YES:-0}"
 KEEP_DATA=0
+# Leer heißt: nicht angegeben. Dann bleibt, was in .env steht, und eine neue
+# .env bekommt CrowdSec.
+CROWDSEC="${HAPM_CROWDSEC:-}"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -166,6 +173,8 @@ while [ $# -gt 0 ]; do
     --force)     FORCE=1;           shift ;;
     --yes | -y)  YES=1;             shift ;;
     --keep-data) KEEP_DATA=1;       shift ;;
+    --no-crowdsec) CROWDSEC=0;      shift ;;
+    --crowdsec)  CROWDSEC=1;        shift ;;
     --uninstall | --remove)
       MODE=uninstall
       shift
@@ -504,7 +513,7 @@ uninstall() {
     if [ "$HAS_STORAGE" = 1 ]; then
       # Nur die Ordner, die HAPM angelegt hat. Liegt daneben etwas anderes,
       # etwa ein Ordner mit Sicherungen, bleibt es liegen.
-      for part in hapm haproxy acme postgres log run; do
+      for part in hapm haproxy acme postgres log run crowdsec; do
         rm -rf "${STORAGE:?}/$part"
       done
       rm -f "$STORAGE/$MARKER"
@@ -673,6 +682,7 @@ if [ ! -f .env ]; then
     printf 'HAPM_STORAGE=%s\n' "$STORAGE"
     [ -z "$ZONE" ] || printf 'TZ=%s\n' "$ZONE"
     [ -z "$IMAGE" ] || printf 'HAPM_IMAGE=%s\n' "$IMAGE"
+    printf 'HAPM_CROWDSEC=%s\n' "${CROWDSEC:-1}"
   } >.env
   note ".env angelegt."
 else
@@ -687,6 +697,25 @@ else
     printf 'HAPM_STORAGE=%s\n' "$STORAGE" >>.env
     note "Der Ordner der Daten steht jetzt in .env."
   fi
+fi
+
+# CrowdSec an- oder abwählen, wenn es angegeben ist. Eine vorhandene Zeile wird
+# ersetzt, sonst angehängt. Ohne Angabe bleibt .env, wie sie ist.
+if [ -n "$CROWDSEC" ]; then
+  case "$CROWDSEC" in
+    0 | 1) ;;
+    *) fail "HAPM_CROWDSEC ist 0 oder 1, nicht $CROWDSEC." ;;
+  esac
+  if grep -q '^HAPM_CROWDSEC=' .env; then
+    sed -i "s/^HAPM_CROWDSEC=.*/HAPM_CROWDSEC=$CROWDSEC/" .env
+  else
+    printf 'HAPM_CROWDSEC=%s\n' "$CROWDSEC" >>.env
+  fi
+fi
+if [ "$(env_value HAPM_CROWDSEC .env)" = 0 ]; then
+  note "CrowdSec (WAF) ist abgewählt. Dazunehmen: sh install.sh --crowdsec"
+else
+  note "CrowdSec (WAF) gehört dazu. Es prüft nichts, bis es in der Oberfläche eingeschaltet wird."
 fi
 
 mkdir -p "$STORAGE"

@@ -84,6 +84,7 @@ const INPUT: CreateServiceInput = {
   responseHeaders: [],
   requestHeaders: [],
   tunnel: false,
+  crowdsec: false,
   healthcheck: true,
   backendTls: 'off',
 };
@@ -110,6 +111,7 @@ describe('replaceService', () => {
       responseHeaders: [],
       requestHeaders: [],
       tunnel: false,
+      crowdsec: false,
       healthcheck: true,
       backendTls: 'off',
     });
@@ -243,9 +245,10 @@ describe('editable', () => {
   it('was gerendert wurde, ist danach bearbeitbar — in jeder Kombination', () => {
     // Die Klammer um alles: `renderBackendBlock` und die Rücklese-Muster dürfen
     // nicht auseinanderlaufen. Wer das eine erweitert, sieht hier das andere.
-    const ADDONS: Pick<CreateServiceInput, 'responseHeaders' | 'requestHeaders' | 'tunnel'>[] = [
-      { responseHeaders: [], requestHeaders: [], tunnel: false },
-      { responseHeaders: [], requestHeaders: [], tunnel: true },
+    const ADDONS: Pick<CreateServiceInput, 'responseHeaders' | 'requestHeaders' | 'tunnel' | 'crowdsec'>[] = [
+      { responseHeaders: [], requestHeaders: [], tunnel: false, crowdsec: false },
+      { responseHeaders: [], requestHeaders: [], tunnel: true, crowdsec: false },
+      { responseHeaders: [], requestHeaders: [], tunnel: false, crowdsec: true },
       {
         responseHeaders: [
           { name: 'X-Robots-Tag', value: 'noindex,nofollow' },
@@ -253,11 +256,13 @@ describe('editable', () => {
         ],
         requestHeaders: [],
         tunnel: false,
+        crowdsec: false,
       },
       {
         responseHeaders: [{ name: 'Content-Security-Policy', value: "default-src 'self'; img-src *" }],
         requestHeaders: [{ name: 'X-Quelle', value: '100% "echt" $HOME %[src]' }],
         tunnel: true,
+        crowdsec: true,
       },
     ];
     for (const addons of ADDONS) {
@@ -270,6 +275,7 @@ describe('editable', () => {
         expect(service.responseHeaders, label).toEqual(addons.responseHeaders);
         expect(service.requestHeaders, label).toEqual(addons.requestHeaders);
         expect(service.tunnel, label).toBe(addons.tunnel);
+        expect(service.crowdsec, label).toBe(addons.crowdsec);
         expect(service.healthcheck, label).toBe(healthcheck);
         // Und das Formular bekommt exakt zurück, was hineinging.
         expect(toCreateInput(service), label).toEqual(input);

@@ -19,6 +19,7 @@ import {
   withoutLockSecret,
   parseGlobalHeaders,
   parseDefaultsTunnel,
+  parseCrowdsecGlobal,
   parseGlobalSettings,
   parseScopes,
   serviceHealth,
@@ -31,6 +32,7 @@ import type { HeaderDirection } from '@/lib/haproxy/config';
 import type { HaproxyStream } from '@/lib/haproxy/streams';
 import { surfaceTarget, type SurfaceTarget } from '@/lib/haproxy/protected';
 import { LOCAL_SERVER_ID, localServer } from '@/lib/helpers';
+import { crowdsecInStack } from '@/lib/crowdsec/paths';
 import type { CertificateSource, Exposure } from '@/lib/types';
 
 /**
@@ -86,6 +88,10 @@ interface ProxyRow {
   globalHeaders: Record<HeaderDirection, string[]>;
   /** `timeout tunnel` aus dem `defaults`-Block, siehe `parseDefaultsTunnel`. */
   defaultsTunnel: string | null;
+  /** CrowdSec prüft alle Ziele (Block im HTTPS-Frontend). `null`: von Hand geändert. */
+  crowdsecGlobal: boolean | null;
+  /** Ob der Stack CrowdSec mitbringt. Ohne kann der Schalter nichts bewirken. */
+  crowdsecInStack: boolean;
   /**
    * Die TCP-Weiterleitungen derselben Datei.
    *
@@ -142,6 +148,8 @@ export async function GET() {
               adminIps: [],
               globalHeaders: { request: [], response: [] },
               defaultsTunnel: null,
+              crowdsecGlobal: null,
+              crowdsecInStack: crowdsecInStack(),
               health: {},
               baseConfigMissing: 0,
               error: t('Die HAProxy-Konfiguration ist nicht lesbar.'),
@@ -162,6 +170,8 @@ export async function GET() {
             adminIps: parseGlobalSettings(probe.raw).adminIps,
             globalHeaders: parseGlobalHeaders(probe.raw),
             defaultsTunnel: parseDefaultsTunnel(probe.raw),
+            crowdsecGlobal: parseCrowdsecGlobal(probe.raw),
+            crowdsecInStack: crowdsecInStack(),
             health: Object.fromEntries([
               ...probe.services.map((service) => [
                 service.id,
@@ -193,6 +203,8 @@ export async function GET() {
             adminIps: [],
             globalHeaders: { request: [], response: [] },
               defaultsTunnel: null,
+            crowdsecGlobal: null,
+            crowdsecInStack: crowdsecInStack(),
             health: {},
             baseConfigMissing: 0,
             error: err instanceof Error ? err.message : t('HAProxy ist nicht erreichbar.'),

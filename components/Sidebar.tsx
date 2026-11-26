@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard, Network, BarChart3, ShieldCheck, ScrollText, Globe, SlidersHorizontal,
-  Plug, PackageCheck, DatabaseBackup, Bell, Settings, Users, UserCog, FileWarning, Palette, type LucideIcon,
+  Plug, PackageCheck, DatabaseBackup, Bell, Settings, Users, UserCog, FileWarning, Palette, ShieldAlert, type LucideIcon,
 } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { ShellSidebar, type ShellNavArea, type ShellNavGroup } from '@/ui/shell/ShellSidebar';
@@ -49,6 +49,7 @@ const NAV_SECTIONS: NavSection[] = [
       { label: msgid('Zertifikate'), href: '/reverse-proxy/zertifikate', icon: ShieldCheck },
       { label: msgid('DNS'), href: '/dns', icon: Globe },
       { label: msgid('Fehlerseiten'), href: '/reverse-proxy/fehlerseiten', icon: FileWarning },
+      { label: msgid('CrowdSec'), href: '/reverse-proxy/crowdsec', icon: ShieldAlert },
       { label: msgid('API und MCP'), href: '/reverse-proxy/api', icon: Plug },
       { label: msgid('Einstellungen'), href: '/reverse-proxy/einstellungen', icon: SlidersHorizontal },
     ],

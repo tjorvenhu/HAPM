@@ -49,6 +49,8 @@ const COMPONENT_LABELS: Record<UpdateComponent, string> = {
   haproxy: 'HAProxy',
   hapm: 'HAPM',
   acme: 'acme.sh',
+  crowdsec: 'CrowdSec',
+  'crowdsec-bouncer': 'CrowdSec-Bouncer',
 };
 
 const RUN_ACTION_LABELS: Record<HaproxyAction, string> = {

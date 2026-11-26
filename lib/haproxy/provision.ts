@@ -69,7 +69,14 @@ import {
   geoBlockCountries,
   geoBlockFile,
   GEO_BLOCK_DIR,
+  CROWDSEC_SPOE_DIR,
+  CROWDSEC_SPOE_FILE,
+  CROWDSEC_ALLOW_FILE,
+  crowdsecSpoeConfig,
+  syncCrowdsecBackend,
+  usesCrowdsec,
 } from './config';
+import { spoaAddress } from '../crowdsec/paths';
 import { lockPages, lockPageDigestCommand, lockPageWriteCommand } from './lock-page';
 import { geoipTable } from '../geoip/store';
 import { geoBlockFileContent, knownCountries } from '../geoip/networks';
@@ -880,6 +887,36 @@ export async function refreshGeoBlockFiles(server: Server): Promise<'none' | 'un
 }
 
 /**
+ * Die freigegebenen Adressen für HAProxy schreiben und neu laden, wenn sich
+ * die Datei geändert hat und die Konfiguration CrowdSec benutzt. Wie
+ * `refreshGeoBlockFiles`: kein abgekoppelter Lauf, an `haproxy.cfg` ändert
+ * sich nichts, geprüft wird trotzdem vor dem Neuladen.
+ */
+export async function refreshCrowdsecAllowFile(server: Server, content: string): Promise<'unchanged' | 'written' | 'reloaded'> {
+  return withProxyLock(server.$id, async () => {
+    const ssh = await getSSHConfig(server);
+    const current = await sshExec(ssh, buildCommand(['sh', '-c', 'cat "$1" 2>/dev/null || true', 'sh', CROWDSEC_ALLOW_FILE]), SHORT_MS);
+    // `withStdin` hängt an einen leeren Inhalt einen Zeilenumbruch an: verglichen
+    // wird ohne ihn, sonst lüde jeder Abgleich HAProxy neu.
+    if (current.stdout.trim() === content.trim()) return 'unchanged';
+    const write = await sshExec(
+      ssh,
+      `${buildCommand(['mkdir', '-p', CROWDSEC_SPOE_DIR])} && ${withStdin(['sh', '-c', 'cat > "$1"', 'sh', CROWDSEC_ALLOW_FILE], content)}`,
+      SHORT_MS
+    );
+    if (write.code !== 0) throw new Error(tail(write.stderr));
+
+    const probe = await probeProxy(server);
+    if (!probe.configReadable || !usesCrowdsec(probe.raw)) return 'written';
+    const check = await sshExec(ssh, buildCommand(['haproxy', '-c', '-f', HAPROXY_CFG]), SHORT_MS);
+    if (check.code !== 0) throw new Error(tail(check.stderr || check.stdout));
+    const reload = await sshExec(ssh, buildCommand(RELOAD_ARGV), RELOAD_MS);
+    if (reload.code !== 0) throw new Error(tail(reload.stderr || reload.stdout));
+    return 'reloaded';
+  });
+}
+
+/**
  * Eine Passwortsperre auf einer Maschine, deren HAProxy sie nicht kann.
  *
  * `haproxy -c` lehnte die Datei ohnehin ab, aber mit einer Meldung über ein
@@ -930,6 +967,21 @@ async function stageAndCheck(
   if (usesLockPages(text)) {
     const pages = await ensureLockPages(ssh);
     if (!pages.ok) return pages;
+  }
+  // Das Backend des Bouncers folgt der Benutzung, und die SPOE-Datei muss vor
+  // der Prüfung liegen: `haproxy -c` lädt sie.
+  text = syncCrowdsecBackend(text, spoaAddress());
+  if (usesCrowdsec(text)) {
+    const spoe = await sshExec(
+      ssh,
+      // Das Heredoc von `withStdin` steht am Ende: hinter seiner Endmarke darf
+      // nichts mehr stehen, sonst endet es nicht, und die Marke landet in der Datei.
+      `${buildCommand(['mkdir', '-p', CROWDSEC_SPOE_DIR])} && ${buildCommand(['sh', '-c', 'test -f "$1" || : > "$1"', 'sh', CROWDSEC_ALLOW_FILE])} && ${withStdin(['sh', '-c', 'cat > "$1"', 'sh', CROWDSEC_SPOE_FILE], crowdsecSpoeConfig())}`,
+      SHORT_MS
+    );
+    if (spoe.code !== 0) {
+      return { ok: false, detail: `${CROWDSEC_SPOE_FILE}: ${tail(spoe.stderr)}` };
+    }
   }
   const countries = geoBlockCountries(text);
   if (countries.length > 0) {

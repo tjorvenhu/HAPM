@@ -24,6 +24,9 @@ services:
       TZ: Europe/Berlin
       HAPM_HAPROXY_CONTAINER: hapm-dev-haproxy
       HAPM_POSTGRES_CONTAINER: hapm-dev-postgres
+      HAPM_CROWDSEC_CONTAINER: hapm-dev-crowdsec
+      HAPM_CROWDSEC_BOUNCER_CONTAINER: hapm-dev-crowdsec-bouncer
+      HAPM_CROWDSEC: ${HAPM_CROWDSEC:-1}
     ports:
       - "7080:7080"
       - "8080:80"
@@ -38,6 +41,7 @@ services:
       - haproxy-run:/run/haproxy
       - haproxy-log:/var/log/haproxy
       - acme:/root/.acme.sh
+      - crowdsec:/crowdsec
       - postgres-run:/var/run/postgresql
       - /var/run/docker.sock:/var/run/docker.sock
 
@@ -77,6 +81,41 @@ services:
       - haproxy-etc:/etc/haproxy:ro
       - haproxy-run:/run/haproxy
 
+
+  # CrowdSec wie im Betrieb, nur dass der Bouncer im Netz von HAPM lauscht:
+  # HAProxy teilt sich hier dieses Netz (unter Docker Desktop gibt es kein
+  # Netz des Hosts), und 127.0.0.1:7423 ist dann derselbe Ort wie im Betrieb.
+  crowdsec:
+    image: crowdsecurity/crowdsec:latest
+    container_name: hapm-dev-crowdsec
+    restart: unless-stopped
+    scale: ${HAPM_CROWDSEC:-1}
+    environment:
+      COLLECTIONS: crowdsecurity/haproxy crowdsecurity/appsec-virtual-patching crowdsecurity/appsec-generic-rules
+    depends_on:
+      hapm:
+        condition: service_healthy
+    volumes:
+      - crowdsec-config:/etc/crowdsec
+      - crowdsec-data:/var/lib/crowdsec/data
+      - crowdsec:/hapm-crowdsec:ro
+      - haproxy-log:/var/log/haproxy:ro
+    # Unter Docker Desktop liegen die Dateien in Volumes: Schlüssel, Quellen
+    # und Parser werden vor dem Start an ihren Ort kopiert.
+    entrypoint: ["/bin/sh", "-c", "mkdir -p /run/secrets /etc/crowdsec/acquis.d /etc/crowdsec/parsers/s02-enrich && cp /hapm-crowdsec/secrets/* /run/secrets/ && cp /hapm-crowdsec/config/acquis.d/hapm.yaml /etc/crowdsec/acquis.d/ && cp /hapm-crowdsec/config/parsers/s02-enrich/hapm-backend.yaml /etc/crowdsec/parsers/s02-enrich/ && exec /bin/bash /docker_start.sh"]
+
+  crowdsec-bouncer:
+    image: crowdsecurity/spoa-bouncer:latest
+    container_name: hapm-dev-crowdsec-bouncer
+    restart: unless-stopped
+    scale: ${HAPM_CROWDSEC:-1}
+    network_mode: service:hapm
+    depends_on:
+      - crowdsec
+    command: ["-c", "/hapm-crowdsec/bouncer/crowdsec-spoa-bouncer.yaml"]
+    volumes:
+      - crowdsec:/hapm-crowdsec:ro
+
 volumes:
   data:
   haproxy-etc:
@@ -85,3 +124,6 @@ volumes:
   acme:
   postgres-data:
   postgres-run:
+  crowdsec:
+  crowdsec-config:
+  crowdsec-data:

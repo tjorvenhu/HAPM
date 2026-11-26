@@ -19,6 +19,7 @@
     "geoip:build": "tsx lib/geoip/build.ts",
     "haproxy:verify-pages": "tsx scripts/verify-proxy-pages.ts",
     "haproxy:verify-tls": "tsx scripts/verify-backend-tls.ts",
+    "crowdsec:verify": "tsx scripts/verify-crowdsec.ts",
     "i18n:report": "tsx scripts/i18n-report.ts",
     "test": "vitest run"
   },

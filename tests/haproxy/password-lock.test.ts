@@ -93,6 +93,7 @@ const SERVICE: CreateServiceInput = {
   responseHeaders: [],
   requestHeaders: [],
   tunnel: false,
+  crowdsec: false,
   healthcheck: true,
   backendTls: 'off',
 };

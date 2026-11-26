@@ -17,7 +17,7 @@ import { COLLECTIONS, type UpdateComponent, type UpdateRun } from '../types';
 import { checkUpdates, isCheckRunning, readUpdateStates, settleAfterRuns } from './check';
 import { listUpdateRuns, startUpdate, type UpdateActor } from './apply';
 
-export const UPDATE_COMPONENTS: readonly UpdateComponent[] = ['haproxy', 'hapm', 'acme'];
+export const UPDATE_COMPONENTS: readonly UpdateComponent[] = ['haproxy', 'hapm', 'acme', 'crowdsec', 'crowdsec-bouncer'];
 
 const HISTORY = 30;
 

@@ -3,15 +3,17 @@
 import { Suspense, useCallback, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, History, ScrollText } from 'lucide-react';
+import { ArrowLeft, History } from 'lucide-react';
 import { SkeletonRows } from '@/components/Skeleton';
 import { useT } from '@/lib/i18n/react';
 import RunsView from './RunsView';
 import HaproxyLogView from './HaproxyLogView';
+import CrowdsecLogView from '@/components/crowdsec/CrowdsecLogView';
+import BrandLogo from '@/components/BrandLogo';
 import '../../../logs.css';
 
 /**
- * Reverse-Proxy → Logs: zwei Quellen, zwei Reiter.
+ * Reverse-Proxy → Logs: drei Quellen, drei Reiter (der dritte: CrowdSec).
  *
  * „Vorgänge" ist, was HAPM an der Konfiguration geändert hat
  * (`haproxy_runs`). „HAProxy-Log" ist, was HAProxy selbst schreibt: jede
@@ -23,7 +25,7 @@ import '../../../logs.css';
  * direkt auf das Log setzen lässt.
  */
 
-type View = 'runs' | 'haproxy';
+type View = 'runs' | 'haproxy' | 'crowdsec';
 
 export default function ReverseProxyLogsPage() {
   // `useSearchParams` verlangt eine Suspense-Grenze, sonst scheitert der Build.
@@ -38,14 +40,15 @@ function LogsPage() {
   const { t } = useT();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [view, setView] = useState<View>(() =>
-    searchParams.get('ansicht') === 'haproxy' ? 'haproxy' : 'runs'
-  );
+  const [view, setView] = useState<View>(() => {
+    const wanted = searchParams.get('ansicht');
+    return wanted === 'haproxy' || wanted === 'crowdsec' ? wanted : 'runs';
+  });
 
   const select = useCallback(
     (next: View) => {
       setView(next);
-      router.replace(next === 'haproxy' ? '?ansicht=haproxy' : '/reverse-proxy/logs', { scroll: false });
+      router.replace(next === 'runs' ? '/reverse-proxy/logs' : `?ansicht=${next}`, { scroll: false });
     },
     [router]
   );
@@ -67,9 +70,9 @@ function LogsPage() {
               ? t(
                   'Jeder Vorgang mit seinen Schritten: angelegt, geändert, gelöscht. Domains und Ziele stehen mit in der Zeile, damit auch ein entferntes Ziel noch lesbar ist.'
                 )
-              : t(
-                  'Was HAProxy selbst schreibt: jede Anfrage und jede Meldung des Prozesses, die neueste oben.'
-                )}
+              : view === 'haproxy'
+                ? t('Was HAProxy selbst schreibt: jede Anfrage und jede Meldung des Prozesses, die neueste oben.')
+                : t('Was CrowdSec und sein Bouncer melden, die neueste Zeile oben. Erkannte Angriffe stehen unter CrowdSec, Ereignisse.')}
           </p>
         </div>
       </div>
@@ -92,12 +95,22 @@ function LogsPage() {
           className={`tab ${view === 'haproxy' ? 'active' : ''}`}
           onClick={() => select('haproxy')}
         >
-          <ScrollText size={15} />
+          <BrandLogo brand="haproxy" size={15} />
           {t('HAProxy-Log')}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === 'crowdsec'}
+          className={`tab ${view === 'crowdsec' ? 'active' : ''}`}
+          onClick={() => select('crowdsec')}
+        >
+          <BrandLogo brand="crowdsec" size={15} />
+          CrowdSec
         </button>
       </div>
 
-      {view === 'runs' ? <RunsView /> : <HaproxyLogView />}
+      {view === 'runs' ? <RunsView /> : view === 'haproxy' ? <HaproxyLogView /> : <CrowdsecLogView />}
     </>
   );
 }

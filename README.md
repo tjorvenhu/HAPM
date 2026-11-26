@@ -37,8 +37,10 @@ HAProxy, Let's Encrypt und die Grundkonfiguration richtet HAPM selbst ein.
   - [Weg 1: Nur mit Docker Compose](#weg-1-nur-mit-docker-compose)
   - [Weg 2: Mit dem Installationsskript](#weg-2-mit-dem-installationsskript)
   - [Weg 3: Portainer, Dockge und andere Oberflächen](#weg-3-portainer-dockge-und-andere-oberflächen)
+  - [Firmennetz: Firewall und Proxy](#firmennetz-firewall-und-proxy)
 - [Erste Schritte](#erste-schritte)
 - [Einstellungen](#einstellungen)
+- [CrowdSec (WAF)](#crowdsec-waf)
 - [Mit Claude steuern (MCP)](#mit-claude-steuern-mcp)
 - [Aufbau](#aufbau)
 - [Betrieb](#betrieb)
@@ -101,6 +103,7 @@ Konfiguration, prüft sie mit HAProxy, lädt neu und holt die Zertifikate.
 **Schutz und Darstellung**
 - Domains nur für bestimmte IP-Adressen freigeben
 - Passwortabfrage vor einer Domain, ausgeliefert von HAProxy selbst
+- WAF und Sperren mit CrowdSec, für alle Ziele oder einzelne
 - Fehlerseiten: Standard, selbst gestaltet oder eine eigene HTML-Datei
 - Konten mit Passwort, zweitem Faktor und Passkeys
 
@@ -147,10 +150,11 @@ durch den Rest.
 | Was | Warum |
 |---|---|
 | Ein **Linux**-Server, `amd64` oder `arm64` | HAPM und HAProxy laufen im Netz des Hosts. Das geht nur unter Linux, nicht mit Docker Desktop auf Mac oder Windows |
-| **Docker** mit dem **Compose-Plugin** | `docker compose version` zeigt, ob es da ist |
+| **Docker** mit dem **Compose-Plugin**, Version 2.20 oder neuer | `docker compose version` zeigt, ob es da ist. Ältere Fassungen kennen das Attribut `scale` nicht, mit dem sich CrowdSec abschalten lässt |
 | Ports **80** und **443** frei | Dort lauscht HAProxy. Für HTTP/3 zusätzlich 443 über UDP |
 | Port **7080** erreichbar | Für die Einrichtung. Danach lässt er sich schließen, siehe [Sicherheit](#sicherheit) |
 | Für Zertifikate von Let's Encrypt: Port 80 aus dem Internet erreichbar | Let's Encrypt prüft jede Domain über Port 80. Steht der Server nur im eigenen Netz, geht es über DNS-01 |
+| Ausgehend HTTPS (TCP 443) | Für Abbilder, Zertifikate, Updates und die Regeln von CrowdSec. Welche Hosts genau: [Firmennetz](#firmennetz-firewall-und-proxy) |
 
 ### Weg 1: Nur mit Docker Compose
 
@@ -198,6 +202,8 @@ services:
       HOSTNAME: ${HAPM_BIND:-0.0.0.0}
       TZ: ${TZ:-Europe/Berlin}
       HAPM_ACME_SERVER: ${HAPM_ACME_SERVER:-letsencrypt}
+      HAPM_CROWDSEC: ${HAPM_CROWDSEC:-1}
+      HAPM_SPOA_PORT: ${HAPM_SPOA_PORT:-7423}
     depends_on:
       postgres:
         condition: service_healthy
@@ -207,6 +213,7 @@ services:
       - ${HAPM_STORAGE:-./data}/run/haproxy:/run/haproxy
       - ${HAPM_STORAGE:-./data}/log:/var/log/haproxy
       - ${HAPM_STORAGE:-./data}/acme:/root/.acme.sh
+      - ${HAPM_STORAGE:-./data}/crowdsec:/crowdsec
       - ${HAPM_STORAGE:-./data}/run/postgres:/var/run/postgresql
       - /var/run/docker.sock:/var/run/docker.sock
 
@@ -254,6 +261,45 @@ services:
       options:
         max-size: "50m"
         max-file: "3"
+
+  crowdsec:
+    image: ${CROWDSEC_IMAGE:-crowdsecurity/crowdsec:latest}
+    container_name: hapm-crowdsec
+    restart: unless-stopped
+    scale: ${HAPM_CROWDSEC:-1}
+    environment:
+      TZ: ${TZ:-Europe/Berlin}
+      COLLECTIONS: crowdsecurity/haproxy crowdsecurity/appsec-virtual-patching crowdsecurity/appsec-generic-rules
+    depends_on:
+      hapm:
+        condition: service_healthy
+    volumes:
+      - ${HAPM_STORAGE:-./data}/crowdsec/config:/etc/crowdsec
+      - ${HAPM_STORAGE:-./data}/crowdsec/data:/var/lib/crowdsec/data
+      - ${HAPM_STORAGE:-./data}/crowdsec/secrets:/run/secrets:ro
+      - ${HAPM_STORAGE:-./data}/log:/var/log/haproxy:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  crowdsec-bouncer:
+    image: ${CROWDSEC_BOUNCER_IMAGE:-crowdsecurity/spoa-bouncer:latest}
+    container_name: hapm-crowdsec-bouncer
+    restart: unless-stopped
+    scale: ${HAPM_CROWDSEC:-1}
+    depends_on:
+      - crowdsec
+    ports:
+      - "127.0.0.1:${HAPM_SPOA_PORT:-7423}:7423"
+    volumes:
+      - ${HAPM_STORAGE:-./data}/crowdsec/bouncer:/etc/crowdsec/bouncers:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
 ```
 
 </details>
@@ -273,14 +319,15 @@ Alle Werte stehen unter [Einstellungen](#einstellungen).
 docker compose up -d
 ```
 
-Beim ersten Start lädt Docker drei Abbilder und HAPM richtet HAProxy ein. Das
+Beim ersten Start lädt Docker fünf Abbilder und HAPM richtet HAProxy ein. Das
 dauert etwa eine Minute. Ob alles läuft:
 
 ```bash
 docker compose ps
 ```
 
-Alle drei Container sollten `running` zeigen, `hapm` zusätzlich `healthy`.
+Alle Container sollten `running` zeigen, `hapm` zusätzlich `healthy`. Das sind
+fünf, ohne CrowdSec drei.
 
 **6. Im Browser öffnen:** `http://<IP-des-Servers>:7080`. Weiter geht es unter
 [Erste Schritte](#erste-schritte).
@@ -313,6 +360,8 @@ HAPM, ohne Daten oder Einstellungen anzufassen.
 | `--image ABBILD` | `HAPM_IMAGE` | `ghcr.io/tjorvenhu/hapm:latest` | Ein anderes Abbild von HAPM |
 | `--force` | `HAPM_FORCE=1` | | Auch starten, wenn Port 80 oder 443 belegt ist |
 | `--yes` | `HAPM_YES=1` | | Nichts nachfragen, Vorgaben nehmen |
+| `--no-crowdsec` | `HAPM_CROWDSEC=0` | | Ohne CrowdSec installieren, siehe [CrowdSec (WAF)](#crowdsec-waf) |
+| `--crowdsec` | | | CrowdSec wieder in den Stack nehmen |
 | `--uninstall` | | | HAPM wieder entfernen, siehe [Entfernen](#entfernen) |
 
 Beispiel mit Optionen:
@@ -336,6 +385,32 @@ neuen Stack an und fügen Sie den Inhalt von
 > Setzen Sie dabei die Variable `HAPM_STORAGE` auf einen festen Pfad, etwa
 > `/opt/hapm/data`. Ohne sie legt die Oberfläche die Daten relativ zu ihrem
 > eigenen Arbeitsordner ab, und dort sind sie schwer zu finden und zu sichern.
+
+### Firmennetz: Firewall und Proxy
+
+Lässt die Firewall ausgehend nur Freigegebenes durch, braucht der Server vor
+allem HTTPS (TCP 443) zu diesen Hosts:
+
+- **Abbilder:** `ghcr.io`, `pkg-containers.githubusercontent.com`,
+  `registry-1.docker.io`, `auth.docker.io`, `production.cloudfront.docker.com`,
+  `production.cloudflare.docker.com`
+- **Zertifikate:** `acme-v02.api.letsencrypt.org`, bei DNS-01 dazu
+  `cloudflare-dns.com` und die API des DNS-Anbieters (`api.cloudflare.com` oder
+  `api.hetzner.cloud`)
+- **Updates und Länder:** `api.github.com`, `github.com`,
+  `codeload.github.com`, `download.db-ip.com`
+- **CrowdSec:** `cdn-hub.crowdsec.net`, `hub-data.crowdsec.net`, für die
+  Community-Blocklist `api.crowdsec.net` und `blocklists.api.crowdsec.net`
+
+Dazu DNS (53), NTP (123 UDP) und, wenn Mails eingerichtet sind, der
+SMTP-Server (587 oder 465). Geben Sie Hosts nach Namen frei, nicht nach
+IP-Adressen: dahinter stehen CDNs mit wechselnden Adressen.
+
+Mit einem Proxy braucht die Docker-Engine ihn für die Abbilder, die Container
+`hapm` und `crowdsec` brauchen ihn für ihre eigenen Abrufe. HAPM beachtet
+`HTTPS_PROXY` nur zusammen mit `NODE_USE_ENV_PROXY=1`. Die vollständige Liste
+mit Zweck je Host und die Einrichtung des Proxys stehen in
+[`docs/betrieb.md`](docs/betrieb.md#ausgehende-verbindungen-firmennetz-firewall-proxy).
 
 ## Erste Schritte
 
@@ -386,9 +461,65 @@ mit Erklärungen steht in [`.env.example`](.env.example). Nach einer Änderung:
 | `HAPM_ACME_SERVER` | `letsencrypt` | Vorgabe der Zertifizierungsstelle: `letsencrypt`, `letsencrypt_test`, `zerossl` oder die Adresse eines ACME-Verzeichnisses. Ein eigener ACME-Server unter „Allgemein“ geht vor |
 | `HAPROXY_IMAGE` | `haproxy:lts` | Abbild von HAProxy. `haproxy:latest` folgt dem neuesten Zweig |
 | `HAPM_IMAGE` | `ghcr.io/tjorvenhu/hapm:latest` | Abbild von HAPM |
+| `HAPM_CROWDSEC` | `1` | `0`: CrowdSec gehört nicht zum Stack, siehe [CrowdSec (WAF)](#crowdsec-waf) |
+| `HAPM_SPOA_PORT` | `7423` | Port, auf dem HAProxy den Bouncer von CrowdSec erreicht. Nur auf `127.0.0.1` |
 
 Alles andere stellen Sie in der Oberfläche ein, unter „Allgemein“ und
 „Reverse-Proxy, Einstellungen“.
+
+## CrowdSec (WAF)
+
+<img src="public/brands/crowdsec.png" alt="" width="16" height="16"> HAPM bringt [CrowdSec](https://www.crowdsec.net) mit. Es prüft Anfragen, bevor
+HAProxy sie an ein Ziel weitergibt, und lehnt Angriffe mit 403 ab: bekannte
+Lücken, verdächtige Pfade wie `/.env`, auf Wunsch die OWASP-Regeln. Aus dem Log
+von HAProxy erkennt es Adressen, die Seiten durchprobieren, und sperrt sie.
+
+**Nach der Installation prüft CrowdSec nichts.** Die Container laufen mit, aber
+erst wenn Sie CrowdSec in der Oberfläche einschalten, gehen Anfragen dorthin:
+unter „Reverse-Proxy, CrowdSec“ für alle Ziele, oder im Dialog eines Ziels mit
+dem Schalter „CrowdSec (WAF)“. Wer im Assistenten „aus dem Internet erreichbar“
+wählt, bekommt das Einschalten für alle Ziele vorgeschlagen.
+
+In der Oberfläche sehen Sie Sperren, Ereignisse je Ziel und eine Statistik. Sie
+können Adressen von Hand sperren oder freigeben und Regeln dazuschalten,
+etwa für WordPress.
+
+**Voraussetzungen:**
+
+| Was | Warum |
+|---|---|
+| Docker Compose 2.20 oder neuer | Die beiden Dienste hängen am Attribut `scale` |
+| Die Abbilder `crowdsecurity/crowdsec` und `crowdsecurity/spoa-bouncer` | Docker lädt sie beim ersten Start selbst |
+| Ausgehend HTTPS zum Hub von CrowdSec | Die Regeln kommen von `cdn-hub.crowdsec.net` und `hub-data.crowdsec.net`, siehe [Firmennetz](#firmennetz-firewall-und-proxy) |
+| Port `127.0.0.1:7423` frei | Dort erreicht HAProxy den Bouncer. Ein anderer Port: `HAPM_SPOA_PORT` |
+| Rund 100 bis 200 MB Arbeitsspeicher zusätzlich | Mit den OWASP-Regeln mehr |
+| HAProxy 2.4 oder neuer | Das Abbild `haproxy:lts` erfüllt das |
+
+> [!NOTE]
+> CrowdSec meldet in der Vorgabe die Adressen, die es sperrt, an die Central API
+> von CrowdSec (`api.crowdsec.net`) und bekommt dafür die Community-Blocklist.
+> Das ist das Verhalten von CrowdSec selbst. Wie man es abschaltet, steht in
+> [`docs/crowdsec.md`](docs/crowdsec.md).
+
+**Ohne CrowdSec installieren:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/tjorvenhu/HAPM/main/install.sh | sh -s -- --no-crowdsec
+```
+
+Bei Weg 1 und 3: `HAPM_CROWDSEC=0` in `.env` bzw. in den Variablen des Stacks.
+
+**Später entfernen:** in der Oberfläche überall ausschalten, dann
+
+```bash
+cd /opt/hapm
+echo "HAPM_CROWDSEC=0" >> .env
+docker compose up -d --remove-orphans
+```
+
+Wieder dazunehmen: die Zeile aus `.env` löschen und `docker compose up -d`.
+Einzelheiten zu Aufbau, Grenzen und Fehlersuche stehen in
+[`docs/crowdsec.md`](docs/crowdsec.md).
 
 ## Mit Claude steuern (MCP)
 
@@ -421,7 +552,7 @@ zum Kopieren, Einzelheiten in [`docs/mcp.md`](docs/mcp.md).
 
 ## Aufbau
 
-Drei Container, ein Ordner für die Daten:
+Drei Container, dazu zwei für CrowdSec, und ein Ordner für die Daten:
 
 ```mermaid
 flowchart LR
@@ -432,11 +563,16 @@ flowchart LR
         HAProxy["hapm-haproxy<br/>offizielles HAProxy-Abbild"]
         HAPM["hapm<br/>Oberfläche, acme.sh"]
         Postgres[("hapm-postgres<br/>ohne Netz")]
+        Bouncer["hapm-crowdsec-bouncer"]
+        CrowdSec["hapm-crowdsec<br/>WAF, Sperren"]
         Daten[("data/")]
     end
 
     HAPM -->|Docker-Socket: prüfen, neu laden, Updates| HAProxy
     HAPM -->|Unix-Socket| Postgres
+    HAProxy -->|127.0.0.1:7423, je Anfrage| Bouncer
+    Bouncer --> CrowdSec
+    HAPM -->|Docker-Socket: cscli| CrowdSec
     HAProxy --> Ziele([Ihre Dienste])
     HAPM --- Daten
     HAProxy --- Daten
@@ -447,6 +583,8 @@ flowchart LR
 | `hapm` | Die Oberfläche. Schreibt `haproxy.cfg`, holt Zertifikate mit acme.sh, sammelt die Statistik |
 | `hapm-haproxy` | Das offizielle HAProxy-Abbild. Nimmt den Verkehr auf Port 80 und 443 an |
 | `hapm-postgres` | Die Datenbank: Konten, Einstellungen, Historie. Ohne Netz, nur über einen Unix-Socket erreichbar |
+| `hapm-crowdsec` | CrowdSec: WAF, liest das Log von HAProxy, führt Sperren und Freigaben. Abschaltbar |
+| `hapm-crowdsec-bouncer` | Nimmt die Fragen von HAProxy an und gibt sie an CrowdSec weiter. Von außen nicht erreichbar |
 
 <details>
 <summary><b>Was im Ordner <code>data/</code> liegt</b></summary>
@@ -459,6 +597,7 @@ flowchart LR
 | `postgres/` | Die Datenbank |
 | `log/` | Das Log von HAProxy, Quelle der Statistik |
 | `run/` | Sockets von HAProxy und Postgres |
+| `crowdsec/` | Konfiguration, Regeln und Datenbank von CrowdSec, die Einstellungen des Bouncers |
 
 </details>
 
@@ -467,8 +606,9 @@ flowchart LR
 ### Aktualisieren
 
 In der Oberfläche unter **„Updates“**. HAPM meldet neue Abbilder von sich
-selbst, von HAProxy und ein neues acme.sh. Ein neues HAProxy prüft vor dem
-Tausch die vorhandene Konfiguration. Startet es nicht, läuft das alte weiter.
+selbst, von HAProxy und von CrowdSec, dazu ein neues acme.sh. Ein neues
+HAProxy prüft vor dem Tausch die vorhandene Konfiguration. Startet es nicht,
+läuft das alte weiter.
 
 Von Hand:
 
@@ -680,11 +820,12 @@ jeder Entscheidung, warum sie so getroffen wurde.
 
 | Dokument | Inhalt |
 |---|---|
-| [`docs/betrieb.md`](docs/betrieb.md) | Container, Volumes, Updates, Datenbank, Ersteinrichtung, Sicherung |
+| [`docs/betrieb.md`](docs/betrieb.md) | Container, Volumes, Updates, Datenbank, Ersteinrichtung, Sicherung, ausgehende Verbindungen und Proxy |
 | [`docs/reverse-proxy.md`](docs/reverse-proxy.md) | Ziele, Gruppen, Zertifikate, Wildcards, Sperren, Fehlerseiten, Statistik, Import |
 | [`docs/reverse-proxy-api.md`](docs/reverse-proxy-api.md) | Die API für Skripte und andere Dienste |
 | [`docs/mcp.md`](docs/mcp.md) | Der MCP-Server für Claude und andere Clients |
 | [`docs/dns.md`](docs/dns.md) | DNS bei Cloudflare und Hetzner |
+| [`docs/crowdsec.md`](docs/crowdsec.md) | CrowdSec: Aufbau, Regeln, Freigaben, Grenzen, Fehlersuche |
 | [`docs/i18n.md`](docs/i18n.md) | Übersetzungen der Oberfläche |
 
 ## Mitmachen
@@ -712,5 +853,8 @@ Lizenz zugänglich machen. Eine Gewährleistung gibt es nicht.
 - Die Zeichen von Hetzner und Cloudflare stammen aus
   [Simple Icons](https://simpleicons.org) (CC0). Die Marken gehören ihren
   Inhabern. HAPM steht mit keinem der beiden in Verbindung.
+- HAProxy und CrowdSec sind Marken ihrer Inhaber. Ihre Zeichen stehen in der
+  Oberfläche und hier nur, um das jeweilige Programm zu kennzeichnen. HAPM
+  steht mit keinem der beiden in Verbindung.
 
 </details>

@@ -16,6 +16,7 @@ export async function getSetupState(): Promise<SetupChoices> {
     domain: row.domain ?? null,
     wildcard: row.wildcard === true,
     wildcardBase: row.wildcardBase ?? null,
+    crowdsec: row.crowdsec ?? null,
     execution: row.execution ?? null,
   };
 }

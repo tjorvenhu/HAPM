@@ -72,6 +72,7 @@ describe('Meldungen des Reverse-Proxys über handleError', () => {
       responseHeaders: [],
       requestHeaders: [],
       tunnel: false,
+      crowdsec: false,
       healthcheck: false,
       backendTls: 'off',
     });

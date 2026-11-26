@@ -44,6 +44,8 @@ import {
   precheckUpdate,
   probeProxy,
   readCertificateInventory,
+  readGlobalSettings,
+  precheckSettings,
 } from '../haproxy/provision';
 import { WITHOUT_SURFACE_PROTECTION } from '../haproxy/protected';
 import { parseSteps, startHaproxyRun, waitForRun, type HaproxyActor } from '../haproxy/runner';
@@ -216,6 +218,23 @@ const STAGES: Record<SetupStageKey, (context: StageContext) => Promise<string>> 
     });
     await finished(run, context);
     return `Angelegt: ${input.domains[0]} → ${target}.`;
+  },
+
+  async crowdsec(context) {
+    const server = localServer();
+    const { settings } = await readGlobalSettings(server);
+    if (settings.crowdsec === true) return msgid('Ist schon eingeschaltet.');
+    const input = { httpsLines: settings.httpsLines ?? [], adminIps: settings.adminIps, crowdsec: true };
+    await prechecked(() => precheckSettings(server, input));
+    const run = await startHaproxyRun({
+      server,
+      action: 'settings',
+      serviceId: 'globale-einstellungen',
+      settings: input,
+      actor: context.actor,
+    });
+    await finished(run, context);
+    return msgid('Eingeschaltet. Sperren und Freigaben stehen unter Reverse-Proxy, CrowdSec.');
   },
 
   async publicUrl({ state }) {

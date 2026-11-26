@@ -33,7 +33,17 @@ export const DEFAULT_LISTEN_PORT = 7080;
 
 export type SetupChoices = Pick<
   SetupState,
-  'exposure' | 'dns' | 'dnsHook' | 'certificates' | 'mail' | 'address' | 'domain' | 'wildcard' | 'wildcardBase' | 'execution'
+  | 'exposure'
+  | 'dns'
+  | 'dnsHook'
+  | 'certificates'
+  | 'mail'
+  | 'address'
+  | 'domain'
+  | 'wildcard'
+  | 'wildcardBase'
+  | 'crowdsec'
+  | 'execution'
 >;
 
 export const EMPTY_SETUP: SetupChoices = {
@@ -46,6 +56,7 @@ export const EMPTY_SETUP: SetupChoices = {
   domain: null,
   wildcard: false,
   wildcardBase: null,
+  crowdsec: null,
   execution: null,
 };
 
@@ -267,6 +278,7 @@ export function hapmServiceInput(domain: string, listenPort: number): CreateServ
     responseHeaders: [],
     requestHeaders: [],
     tunnel: false,
+    crowdsec: false,
     // Der Check ruft `GET /` mit dem Host der Domain auf und erwartet 200 bis
     // 399. HAPM antwortet dort mit einer Weiterleitung auf die Übersicht.
     healthcheck: true,
@@ -337,6 +349,7 @@ export const STAGE_LABELS: Record<SetupStageKey, string> = {
   scope: msgid('Gruppe {scope} anlegen'),
   certificate: msgid('Zertifikat ausstellen'),
   service: msgid('Ziel für die Oberfläche anlegen'),
+  crowdsec: msgid('CrowdSec für alle Ziele einschalten'),
   publicUrl: msgid('Adresse von HAPM eintragen'),
 };
 
@@ -346,14 +359,24 @@ export const STAGE_LABELS: Record<SetupStageKey, string> = {
  * eigener ACME-Server HAPM über Port 80 erreicht.
  */
 export function executionPlan(
-  state: Pick<SetupChoices, 'exposure' | 'domain' | 'wildcard' | 'wildcardBase'>,
+  state: Pick<SetupChoices, 'exposure' | 'domain' | 'wildcard' | 'wildcardBase'> & Partial<Pick<SetupChoices, 'crowdsec'>>,
   certificates: CertificateFacts = DEFAULT_CERTIFICATE_FACTS
 ): SetupStageKey[] {
   const exposure: Exposure = state.exposure ?? 'public';
   const overDns =
     certificates.source === 'acme' &&
     needsDnsChallenge(certificateDomains(state), exposure, certificates.httpReachable);
-  return [...(overDns ? (['dns'] as const) : []), 'scope', 'certificate', 'service', 'publicUrl'];
+  // CrowdSec nach dem Ziel der Oberfläche: dann prüft es von Anfang an auch sie,
+  // und ein Fehler hier lässt die Oberfläche trotzdem erreichbar zurück.
+  const crowdsec = exposure === 'public' && state.crowdsec === true;
+  return [
+    ...(overDns ? (['dns'] as const) : []),
+    'scope',
+    'certificate',
+    'service',
+    ...(crowdsec ? (['crowdsec'] as const) : []),
+    'publicUrl',
+  ];
 }
 
 export function newExecution(stages: SetupStageKey[], startedAt: string): SetupExecution {

@@ -11,6 +11,7 @@ import { useApp } from '@/components/AppShell';
 import { suggestPassword } from '@/components/suggestPassword';
 import Select from '@/components/Select';
 import { InfoHint } from '@/ui/primitives/InfoHint';
+import BrandLogo from '@/components/BrandLogo';
 import {
   HAPROXY_BALANCE,
   BALANCE_LABELS,
@@ -331,6 +332,8 @@ export default function ServiceFormModal({
     request: edit?.service.requestHeaders.map((rule) => ({ ...rule })) ?? [],
   });
   const [tunnel, setTunnel] = useState(edit?.service.tunnel ?? false);
+  /** CrowdSec für dieses Ziel. Gilt es global, ist der Schalter an und gesperrt. */
+  const [crowdsec, setCrowdsec] = useState(edit?.service.crowdsec ?? false);
   /** Zugeklappt wie die Pfad-Regeln, aus demselben Grund. */
   const [addonsOpen, setAddonsOpen] = useState(false);
   const [healthcheck, setHealthcheck] = useState(edit?.service.healthcheck ?? true);
@@ -535,6 +538,7 @@ export default function ServiceFormModal({
     responseHeaders: redirecting ? [] : sentHeaders('response'),
     requestHeaders: redirecting ? [] : sentHeaders('request'),
     tunnel: !redirecting && tunnel,
+    crowdsec: !redirecting && crowdsec,
     // Eine Wildcard als Hauptdomain schließt ihn aus. Der Schalter behält
     // dabei seinen Wert im Zustand — wer die Domain wieder ändert, findet ihn
     // so vor, wie er ihn gesetzt hat, statt ihn erneut umlegen zu müssen.
@@ -2045,6 +2049,47 @@ export default function ServiceFormModal({
                   Pfad-Regeln. Bei einer Weiterleitung fehlt die Karte: ihre
                   Antwort erzeugt HAProxy selbst, und darauf wirken diese
                   Zeilen nicht. */}
+              {!redirecting && (
+                <section className="form-section">
+                  <div className="form-subsection-head">
+                    <div>
+                      <div className="form-label-row">
+                        <div className="form-section-title">
+                          <BrandLogo brand="crowdsec" />
+                          {t('CrowdSec (WAF)')}
+                        </div>
+                        <InfoHint
+                          text={t(
+                            'CrowdSec prüft jede Anfrage an dieses Ziel: bekannte Angriffe (WAF) und Adressen, die gesperrt sind. Abgelehnt wird mit 403. Antwortet CrowdSec nicht, gehen Anfragen durch. Sperren und Freigaben stehen unter Reverse-Proxy, CrowdSec.'
+                          )}
+                        />
+                      </div>
+                      <div className="form-section-sub">
+                        {!selectedProxy?.crowdsecInStack
+                          ? t('CrowdSec ist bei dieser Installation abgeschaltet.')
+                          : selectedProxy.crowdsecGlobal && !crowdsec
+                            ? t('Gilt schon für alle Ziele.')
+                            : selectedProxy.crowdsecGlobal
+                              ? t('Gilt schon für alle Ziele. Der eigene Schalter dieses Ziels lässt sich ausschalten.')
+                              : t(crowdsec ? 'Anfragen an dieses Ziel prüft CrowdSec.' : 'Anfragen an dieses Ziel prüft CrowdSec nicht.')}
+                      </div>
+                    </div>
+                    {/* Wie „Lange Verbindungen“: gilt es global, steht der
+                        Schalter an und gesperrt, und `crowdsec` bleibt false. */}
+                    <label className="toggle-switch">
+                      <input
+                        type="checkbox"
+                        checked={crowdsec || !!selectedProxy?.crowdsecGlobal}
+                        disabled={(!!selectedProxy?.crowdsecGlobal && !crowdsec) || (!selectedProxy?.crowdsecInStack && !crowdsec)}
+                        onChange={(e) => setCrowdsec(e.target.checked)}
+                        aria-label={t('CrowdSec (WAF)')}
+                      />
+                      <span className="toggle-slider" />
+                    </label>
+                  </div>
+                </section>
+              )}
+
               {!redirecting && (
               <section className="form-section">
                 <button

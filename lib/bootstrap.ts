@@ -14,7 +14,17 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { HAPROXY_CFG, HAPROXY_CERT_DIR, LOCK_PAGE_DIR } from './haproxy/config';
+import {
+  CROWDSEC_SPOE_DIR,
+  CROWDSEC_SPOE_FILE,
+  CROWDSEC_ALLOW_FILE,
+  HAPROXY_CFG,
+  HAPROXY_CERT_DIR,
+  LOCK_PAGE_DIR,
+  crowdsecSpoeConfig,
+} from './haproxy/config';
+import { writeCrowdsecFiles } from './crowdsec/setup';
+import { crowdsecInStack } from './crowdsec/paths';
 import { ERROR_DIR, renderBaseConfig } from './haproxy/base-config';
 import { errorFiles } from './haproxy/error-pages';
 import { defaultPageDesign, type PageDesign } from './haproxy/page-design';
@@ -175,6 +185,32 @@ function ensureBaseConfig(errorStatuses: number[]): BootstrapStep {
  * Compose mit ihm ohnehin, bis HAPM bereit ist. Hier geht es um den Fall, dass
  * er ohne Konfiguration schon einmal gescheitert ist.
  */
+/**
+ * Die Dateien für CrowdSec: die SPOE-Datei für HAProxy (immer, sie ist klein
+ * und wird nur geladen, wenn `haproxy.cfg` sie nennt) und, wenn der Stack
+ * CrowdSec mitbringt, Quellen, Parser und Bouncer. Den Bouncer meldet
+ * `reconcileCrowdsec` im Scheduler an, sobald CrowdSec läuft: Compose startet
+ * es erst, wenn HAPM gesund ist, also nach diesem Schritt.
+ */
+function ensureCrowdsecFiles(): BootstrapStep | null {
+  fs.mkdirSync(CROWDSEC_SPOE_DIR, { recursive: true });
+  const spoe = crowdsecSpoeConfig();
+  let current = '';
+  try {
+    current = fs.readFileSync(CROWDSEC_SPOE_FILE, 'utf8');
+  } catch {
+    // Gibt es noch nicht.
+  }
+  if (current !== spoe) fs.writeFileSync(CROWDSEC_SPOE_FILE, spoe);
+  if (!fs.existsSync(CROWDSEC_ALLOW_FILE)) fs.writeFileSync(CROWDSEC_ALLOW_FILE, '');
+
+  if (!crowdsecInStack()) return null;
+  const files = writeCrowdsecFiles();
+  return files.mounted
+    ? { label: 'CrowdSec', ok: true }
+    : { label: 'CrowdSec', ok: true, detail: msgid('Der Ordner für CrowdSec ist nicht eingebunden.') };
+}
+
 async function ensureHaproxyRunning(): Promise<BootstrapStep> {
   const name = haproxyContainerName();
   try {
@@ -226,6 +262,13 @@ export async function runBootstrap(acmeEmail: string | null): Promise<BootstrapS
 
     const acme = await ensureAcme(acmeEmail);
     add({ label: 'acme.sh', ok: acme.ok, detail: acme.detail });
+
+    try {
+      const crowdsec = ensureCrowdsecFiles();
+      if (crowdsec) add(crowdsec);
+    } catch (err) {
+      add({ label: 'CrowdSec', ok: false, detail: err instanceof Error ? err.message : String(err) });
+    }
 
     add(await ensureHaproxyRunning());
     followPagesAfterStart();

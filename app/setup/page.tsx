@@ -28,6 +28,7 @@ import AuthFormSkeleton from '@/ui/auth/AuthFormSkeleton';
 import { SetupStepper } from './SetupStepper';
 import { SetupSuccess } from './SetupSuccess';
 import { InfoHint } from '@/ui/primitives/InfoHint';
+import BrandLogo from '@/components/BrandLogo';
 import Select from '@/components/Select';
 import { LONG_TEXT } from '@/ui/primitives/hint-text';
 import { usePolling } from '@/components/usePolling';
@@ -501,6 +502,8 @@ function ExposureStep({
 }) {
   const { t } = useT();
   const [choice, setChoice] = useState<Exposure | null>(setup.exposure);
+  /** Aus dem Internet schlägt der Assistent CrowdSec für alle Ziele vor. */
+  const [crowdsec, setCrowdsec] = useState(setup.crowdsec ?? true);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -514,7 +517,7 @@ function ExposureStep({
     try {
       const data = await call<{ setup: SetupView }>(csrf, '/api/setup/exposure', {
         method: 'PUT',
-        body: JSON.stringify({ exposure: choice }),
+        body: JSON.stringify({ exposure: choice, crowdsec }),
       });
       onSaved(data.setup);
     } catch (err: unknown) {
@@ -548,6 +551,30 @@ function ExposureStep({
           </button>
         ))}
       </div>
+      {choice === 'public' && setup.crowdsecInStack && (
+        <label className="hapm-switch-row">
+          <span className="hapm-switch-text">
+            <span>
+              <BrandLogo brand="crowdsec" size={16} />
+              {t('CrowdSec (WAF) für alle Ziele einschalten')}
+              <InfoHint
+                text={t(
+                  'Empfohlen für einen Server im Internet. CrowdSec prüft jede Anfrage auf bekannte Angriffe und sperrt Adressen, die scannen oder Passwörter raten. Abgelehnt wird mit 403. Später unter Reverse-Proxy, CrowdSec zu ändern, auch je Ziel.'
+                )}
+              />
+            </span>
+          </span>
+          <span className="toggle-switch">
+            <input
+              type="checkbox"
+              checked={crowdsec}
+              disabled={saving}
+              onChange={(e) => setCrowdsec(e.target.checked)}
+            />
+            <span className="toggle-slider" />
+          </span>
+        </label>
+      )}
       {error && <div className="auth-error">{error}</div>}
       <div className="hapm-setup-nav">
         {later}

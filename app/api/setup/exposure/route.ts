@@ -6,6 +6,7 @@ import { EXPOSURES, updateSettings } from '@/lib/settings';
 import { readSetupView } from '@/lib/setup';
 import { getSetupState, updateSetupState } from '@/lib/setup/store';
 import type { Exposure } from '@/lib/types';
+import { crowdsecInStack } from '@/lib/crowdsec/paths';
 
 /**
  * Schritt 2 der Einrichtung: intern oder aus dem Internet erreichbar.
@@ -18,7 +19,7 @@ export async function PUT(request: Request) {
   try {
     await requireCsrf(request);
     const session = await requireSession();
-    const body = await jsonBody<{ exposure?: unknown }>(request);
+    const body = await jsonBody<{ exposure?: unknown; crowdsec?: unknown }>(request);
 
     const exposure = body.exposure as Exposure;
     if (!EXPOSURES.includes(exposure)) {
@@ -30,6 +31,8 @@ export async function PUT(request: Request) {
     const state = await getSetupState();
     await updateSetupState({
       exposure,
+      // Nur aus dem Internet und nur, wenn der Stack CrowdSec mitbringt.
+      crowdsec: exposure === 'public' && crowdsecInStack() ? body.crowdsec !== false : null,
       // „Übersprungen" gibt es bei einer internen Installation nicht: der Schritt kommt dann wieder.
       ...(exposure === 'internal' && state.dns === 'skipped' ? { dns: 'pending' as const } : {}),
       ...(exposure === 'internal' && state.address === 'skipped' ? { address: 'pending' as const } : {}),

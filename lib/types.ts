@@ -284,7 +284,7 @@ export type SetupStatus = 'open' | 'done' | 'skipped';
  * Was der Benutzer im Assistenten gewählt hat und wie weit das Ausführen kam.
  * Ein Token steht hier nie: er geht durch nach `account.conf`.
  */
-export type SetupStageKey = 'dns' | 'scope' | 'certificate' | 'service' | 'publicUrl';
+export type SetupStageKey = 'dns' | 'scope' | 'certificate' | 'service' | 'crowdsec' | 'publicUrl';
 export type SetupStageStatus = 'pending' | 'running' | 'ok' | 'error';
 
 export interface SetupStage {
@@ -352,6 +352,12 @@ export interface SetupState extends DbDoc {
   wildcard: boolean;
   /** Die Basis der Wildcard: `example.org` für `*.example.org`. */
   wildcardBase: string | null;
+  /**
+   * Ob CrowdSec am Ende für alle Ziele eingeschaltet wird. Der Assistent
+   * schlägt es bei einer Installation aus dem Internet vor. `null` oder
+   * fehlend: nicht gefragt (intern, ohne CrowdSec im Stack, ältere Zeile).
+   */
+  crowdsec?: boolean | null;
   execution: SetupExecution | null;
   /**
    * Das Token des gewählten DNS-Anbieters, verschlüsselt, und nur solange die
@@ -421,7 +427,7 @@ export const NOTIFICATION_DELIVERY_ID = 'last_delivery';
  * Was die letzte Prüfung über die Abbilder und acme.sh ergeben hat. Eine Zeile
  * je Bestandteil, Kennung ist der Name (`haproxy`, `hapm`, `acme`).
  */
-export type UpdateComponent = 'haproxy' | 'hapm' | 'acme';
+export type UpdateComponent = 'haproxy' | 'hapm' | 'acme' | 'crowdsec' | 'crowdsec-bouncer';
 
 export interface UpdateState extends DbDoc {
   component: UpdateComponent;

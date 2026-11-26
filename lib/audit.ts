@@ -85,7 +85,12 @@ export type AuditAction =
   | 'settings_updated'
   | 'branding_updated'
   | 'mail_test_sent'
-  | 'mail_test_failed';
+  | 'mail_test_failed'
+  | 'crowdsec_decision_added'
+  | 'crowdsec_decision_removed'
+  | 'crowdsec_allowlist_added'
+  | 'crowdsec_allowlist_removed'
+  | 'crowdsec_rules_updated';
 
 interface AuditParams {
   userId: string;

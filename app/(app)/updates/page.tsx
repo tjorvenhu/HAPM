@@ -9,10 +9,10 @@ import {
   Info,
   LayoutDashboard,
   Loader2,
-  Network,
   RefreshCw,
   ShieldCheck,
 } from 'lucide-react';
+import BrandLogo from '@/components/BrandLogo';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
@@ -53,12 +53,17 @@ interface UpdatesData {
   checking: boolean;
 }
 
-const COMPONENTS: UpdateComponent[] = ['haproxy', 'hapm', 'acme'];
+const COMPONENTS: UpdateComponent[] = ['haproxy', 'hapm', 'acme', 'crowdsec', 'crowdsec-bouncer'];
+
+/** CrowdSec steht nur da, wenn der Stack es mitbringt: dann gibt es einen Stand dafür. */
+const OPTIONAL: UpdateComponent[] = ['crowdsec', 'crowdsec-bouncer'];
 
 const COMPONENT_ICONS: Record<UpdateComponent, ReactNode> = {
-  haproxy: <Network size={17} strokeWidth={1.5} />,
+  haproxy: <BrandLogo brand="haproxy" size={17} />,
   hapm: <LayoutDashboard size={17} strokeWidth={1.5} />,
   acme: <ShieldCheck size={17} strokeWidth={1.5} />,
+  crowdsec: <BrandLogo brand="crowdsec" size={17} />,
+  'crowdsec-bouncer': <BrandLogo brand="crowdsec" size={17} />,
 };
 
 /** Was der Dialog vor dem Klick sagt: die Folge, nicht der Vorgang. */
@@ -71,6 +76,12 @@ const CONSEQUENCES: Record<UpdateComponent, string> = {
   ),
   acme: msgid(
     'acme.sh aktualisiert sich selbst auf die neueste Fassung. HAProxy und die vorhandenen Zertifikate bleiben unberührt.'
+  ),
+  crowdsec: msgid(
+    'Der Container von CrowdSec wird durch das neue Abbild ersetzt. Sperren, Freigaben und Regeln bleiben, sie liegen im Ordner der Daten. Während des Tauschs gehen Anfragen ungeprüft durch.'
+  ),
+  'crowdsec-bouncer': msgid(
+    'Der Bouncer wird durch das neue Abbild ersetzt. Während des Tauschs gehen Anfragen ungeprüft durch.'
   ),
 };
 
@@ -374,7 +385,9 @@ export default function UpdatesPage() {
 
       <div className="sys-block">
         <EntityGrid>
-          {COMPONENTS.map((component) => {
+          {COMPONENTS.filter(
+            (component) => !OPTIONAL.includes(component) || data.states.some((state) => state.component === component)
+          ).map((component) => {
             const state = data.states.find((entry) => entry.component === component);
             const updating = activeRun?.component === component || starting === component;
             const stale = isSettling(component, state);
