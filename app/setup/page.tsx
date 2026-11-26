@@ -242,7 +242,21 @@ export default function SetupPage() {
 
   if (shown === 'exposure') {
     return (
-      <Frame step={shown} motion={motion} progress={progress} subtitle={t('Davon hängt ab, wie HAPM Zertifikate ausstellt.')}>
+      <Frame
+        step={shown}
+        motion={motion}
+        progress={progress}
+        subtitle={
+          <>
+            {t('Davon hängt ab, wie HAPM Zertifikate ausstellt.')}
+            <InfoHint
+              text={t(
+                "Im eigenen Netz erreicht Let's Encrypt den Server nicht, Zertifikate kommen deshalb über Ihren DNS-Anbieter. Im Internet prüft Let's Encrypt jede Domain über Port 80."
+              )}
+            />
+          </>
+        }
+      >
         {acmeWarning}
         <ExposureStep setup={setup} csrf={csrf} onSaved={advance} later={later} />
       </Frame>
@@ -476,15 +490,13 @@ const EXPOSURE_CHOICES: { value: Exposure; title: string; text: string; icon: Re
   {
     value: 'internal',
     title: msgid('Nur im eigenen Netz'),
-    text: msgid("Let's Encrypt erreicht den Server nicht. Zertifikate kommen deshalb über Ihren DNS-Anbieter."),
+    text: msgid("Let's Encrypt erreicht den Server nicht. Zertifikate kommen über DNS."),
     icon: <Home size={18} strokeWidth={1.5} />,
   },
   {
     value: 'public',
     title: msgid('Aus dem Internet erreichbar'),
-    text: msgid(
-      "Der Server muss auf Port 80 und 443 von außen erreichbar sein. Let's Encrypt prüft jede Domain über Port 80."
-    ),
+    text: msgid('Port 80 und 443 müssen von außen erreichbar sein.'),
     icon: <Globe size={18} strokeWidth={1.5} />,
   },
 ];
@@ -725,11 +737,11 @@ function DnsStep({
       </div>
 
       {hook === MANUAL_DNS && (
-        <p className="auth-hint">
+        <div className="alert alert-info">
           {setup.exposure === 'internal'
             ? t("Ohne Anbieter mit API erreicht Let's Encrypt diesen Server nicht. Im nächsten Schritt wählen Sie einen eigenen ACME-Server oder hochgeladene Zertifikate.")
             : t("Zertifikate kommen weiter von Let's Encrypt über Port 80. Eine Wildcard geht ohne Anbieter mit API nur als hochgeladenes Zertifikat.")}
-        </p>
+        </div>
       )}
 
       {provider && (
@@ -756,9 +768,18 @@ function DnsStep({
             ))}
           </div>
           <p className="auth-hint">
-            {provider.apiTokenField
-              ? t('Mit dem Token stellt acme.sh Zertifikate aus. HAPM richtet damit auch die Zone unter „DNS“ ein und speichert es dafür verschlüsselt.')
-              : t('Der Token geht an acme.sh und wird in HAPM nicht gespeichert.')}{' '}
+            {provider.apiTokenField ? (
+              <>
+                {t('HAPM speichert den Token verschlüsselt.')}
+                <InfoHint
+                  text={t(
+                    'Mit dem Token stellt acme.sh Zertifikate aus. HAPM richtet damit auch die Zone unter „DNS“ ein und speichert ihn dafür verschlüsselt.'
+                  )}
+                />
+              </>
+            ) : (
+              t('Der Token geht an acme.sh und wird in HAPM nicht gespeichert.')
+            )}{' '}
             <a href={provider.consoleUrl} target="_blank" rel="noreferrer">
               {t('Token bei {provider} anlegen', { provider: provider.label })}
             </a>
@@ -1022,7 +1043,7 @@ function CertificatesStep({
         </div>
       )}
       {choice === 'upload' && (
-        <p className="auth-hint">{t('Das Zertifikat der Oberfläche laden Sie im letzten Schritt hoch, bevor HAPM sie einrichtet.')}</p>
+        <p className="auth-hint">{t('Das Zertifikat der Oberfläche laden Sie im letzten Schritt hoch.')}</p>
       )}
 
       {error && <div className="auth-error" role="alert">{error}</div>}

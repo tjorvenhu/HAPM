@@ -7,9 +7,9 @@ export const system: Dictionary = {
   "{name} ist angebunden.": "{name} is connected.",
   "{name} war schon angebunden. Der Zugang wurde ersetzt.": "{name} was already connected. The access was replaced.",
   "Anbindung entfernen": "Remove connection",
-  "Bei {provider} ändert sich nichts: die Zone {zone} und ihre Einträge bleiben. HAPM legt danach für Ziele unter dieser Domain keinen DNS-Eintrag mehr an. Der API-Token wird gelöscht.": "Nothing changes at {provider}: the zone {zone} and its records stay. After this, HAPM no longer creates a DNS record for targets under this domain. The API token is deleted.",
+  "Bei {provider} ändert sich nichts: die Zone {zone} und ihre Einträge bleiben. HAPM legt danach für Ziele unter dieser Domain keinen DNS-Eintrag mehr an. Der API-Token wird entfernt.": "Nothing changes at {provider}: the zone {zone} and its records stay. After this, HAPM no longer creates a DNS record for targets under this domain. The API token is removed.",
   "{name} ist nicht mehr angebunden.": "{name} is no longer connected.",
-  "Der Zugang zu Hetzner oder Cloudflare. Damit legt HAPM den DNS-Eintrag eines Ziels an, und der Einrichtungsassistent den Eintrag der Oberfläche. Die übrigen Einträge verwalten Sie beim Anbieter.": "The access to Hetzner or Cloudflare. HAPM uses it to create the DNS record of a target, and the setup assistant to create the record of the web interface. You manage all other records at the provider.",
+  "Mit dem Zugang legt HAPM den DNS-Eintrag eines Ziels an, und der Einrichtungsassistent den Eintrag der Oberfläche. Die übrigen Einträge verwalten Sie beim Anbieter.": "HAPM uses the access to create the DNS record of a target, and the setup assistant to create the record of the web interface. You manage all other records at the provider.",
   "Domain anbinden": "Connect domain",
   "Die Anbindung ließ sich nicht entfernen.": "The connection could not be removed.",
   "Der Token ließ sich nicht austauschen.": "The token could not be replaced.",
@@ -31,10 +31,9 @@ export const system: Dictionary = {
   "Einträge": "Records",
   "Zone-ID": "Zone ID",
   "Zuletzt geprüft": "Last checked",
-  "nie": "never",
   "API-Token": "API token",
   "Er wird verschlüsselt gespeichert und verlässt den Server nicht.": "It is stored encrypted and never leaves the server.",
-  "Der Token wird sofort ausprobiert: die Kennung der Zone kommt aus der Antwort von {provider}. Findet er die Domain nicht, sagt die Meldung, welche Zonen er stattdessen sieht.": "The token is tried right away: the zone ID comes from the response of {provider}. If it does not find the domain, the message lists the zones it sees instead.",
+  "Der Token wird beim Anbinden sofort bei {provider} geprüft.": "The token is checked with {provider} right away when connecting.",
   "Hinzufügen": "Add",
   "Anlegen fehlgeschlagen": "Creating failed",
   "Speichern fehlgeschlagen": "Saving failed",
@@ -44,7 +43,7 @@ export const system: Dictionary = {
   "Der Token für {name} ist ausgetauscht.": "The token for {name} has been replaced.",
   "API-Token für „{name}“": "API token for \"{name}\"",
   "Neuer Token von {provider}": "New token from {provider}",
-  "Der bisherige Token wird ersetzt. Der neue muss dieselbe Zone sehen, sonst wird er abgelehnt, und der alte bleibt stehen.": "The current token is replaced. The new one must see the same zone, otherwise it is rejected and the old one stays in place.",
+  "Der bisherige Token wird ersetzt.": "The current token is replaced.",
   "Nichts gefunden": "Nothing found",
   "Bearbeiten": "Edit",
   "Notiz": "Note",
@@ -108,12 +107,12 @@ export const system: Dictionary = {
   "Mit Fehlern": "With errors",
   "Angelegt": "Created",
   "Geändert": "Changed",
-  "Gelöscht": "Deleted",
+  "Entfernt": "Removed",
   "Gruppe angelegt": "Group created",
   "Gruppe entfernt": "Group removed",
   "TCP angelegt": "TCP created",
   "TCP geändert": "TCP changed",
-  "TCP gelöscht": "TCP deleted",
+  "TCP entfernt": "TCP removed",
   "Import": "Import",
   "Die Ausgabe ließ sich nicht lesen.": "The output could not be read.",
   "Der Container von HAProxy fehlt.": "The HAProxy container is missing.",
@@ -185,10 +184,10 @@ export const system: Dictionary = {
   "Die Konfiguration von HAProxy war nicht zu lesen.": "The HAProxy configuration could not be read.",
   "Ziele, Gruppen und Weiterleitungen sind deshalb unbekannt.": "Targets, groups, and TCP forwards are therefore unknown.",
   "Zuerst eine Gruppe anlegen": "Create a group first",
-  "Eine Gruppe fasst Ziele zusammen, etwa „Websites“ oder „Intern“. Jedes Ziel gehört in eine Gruppe. Die erste legen Sie unter „Reverse-Proxy“ an, danach das erste Ziel.": "A group bundles targets, such as “Websites” or “Internal”. Every target belongs to a group. Create the first one under “Reverse proxy”, then the first target.",
-  "Zum Reverse-Proxy": "Go to reverse proxy",
+  "Eine Gruppe fasst Ziele zusammen, etwa „Websites“ oder „Intern“. Jedes Ziel gehört in eine Gruppe. Die erste legen Sie unter „Ziele“ an, danach das erste Ziel.": "A group bundles targets, such as “Websites” or “Internal”. Every target belongs to a group. Create the first one under “Targets”, then the first target.",
+  "Zu den Zielen": "Go to targets",
   "Noch kein Ziel angelegt": "No target yet",
-  "Unter „Reverse-Proxy“ eine Gruppe öffnen und dort „Ziel anlegen“ wählen. Das Zertifikat für die Domain stellt HAPM dabei selbst aus.": "Open a group under “Reverse proxy” and choose “Create target” there. HAPM issues the certificate for the domain itself.",
+  "Unter „Ziele“ eine Gruppe öffnen und dort „Ziel anlegen“ wählen. Das Zertifikat für die Domain stellt HAPM dabei selbst aus.": "Open a group under “Targets” and choose “Create target” there. HAPM issues the certificate for the domain itself.",
   "Gruppen": "Groups",
   "Backend nicht erreichbar": "Backend unreachable",
   "von {count} geprüften": "of {count} checked",
@@ -234,7 +233,6 @@ export const system: Dictionary = {
   "Letzte Vorgänge": "Recent tasks",
   "{count} läuft": "{count} running",
   "{count} laufen": "{count} running",
-  "Protokoll": "Log",
   "Die Historie war nicht zu lesen.": "The history could not be read.",
   "Noch kein Vorgang am Reverse-Proxy.": "No reverse proxy tasks yet.",
   "Eintrag": "Entry",
@@ -355,8 +353,7 @@ export const system: Dictionary = {
   'Fehlgeschlagen bei: {step}': 'Failed at: {step}',
   'Die Schritte stehen im Fenster des Laufs.': 'The steps are in the run window.',
   'Beim Update von HAPM ist das zu erwarten.': 'This is expected during an update of HAPM.',
-  'Gerade wird {name} zurückgespielt. Der Fortschritt steht im Fenster des Laufs.': 'Restoring {name}. Progress is shown in the run window.',
-  'Fortschritt ansehen': 'Show progress',
+  'Gerade wird {name} zurückgespielt.': 'Restoring {name}.',
   '{noun} läuft': '{noun} running',
   '{noun} fehlgeschlagen': '{noun} failed',
   '{noun} abgeschlossen': '{noun} completed',
@@ -367,8 +364,8 @@ export const system: Dictionary = {
   'Schließen': 'Close',
 
   // Sicherung: `app/(app)/backup`, `lib/backup`, `app/api/backup`
-  'Datenbank, Schlüssel, Konfiguration und Zertifikate als Archiv in einem Ordner auf dem Server.':
-    'Database, key, configuration, and certificates as an archive in a folder on the server.',
+  'Datenbank, Schlüssel, Konfiguration und Zertifikate in einem Archiv.':
+    'Database, key, configuration, and certificates in one archive.',
   'Jetzt sichern': 'Back up now',
   'Erst einen Ordner eintragen und speichern.': 'Enter and save a folder first.',
   'Die Sicherung konnte nicht geladen werden.': 'The backup could not be loaded.',
@@ -392,10 +389,10 @@ export const system: Dictionary = {
   'Es gilt die Zeitzone des Containers, gesetzt über die Variable TZ. Gesichert wird einmal am Tag zu dieser Minute.':
     "The container's time zone applies, set through the TZ variable. The backup runs once a day at this minute.",
   'Aufbewahren': 'Keep',
-  'Anzahl Sicherungen. Ältere löscht der nächste Lauf.': 'Number of backups. The next run deletes older ones.',
+  'Anzahl Sicherungen. Ältere entfernt der nächste Lauf.': 'Number of backups. The next run removes older ones.',
   'Speichern und jetzt sichern': 'Save and back up now',
-  'Eine Sicherung von Hand braucht nur den Ordner. Der Schalter „Täglich sichern“ kann aus bleiben.':
-    'A manual backup only needs the folder. The “Daily backup” switch can stay off.',
+  'Eine Sicherung von Hand braucht nur den Ordner, keinen Zeitplan.':
+    'A manual backup only needs the folder, no schedule.',
   'Was gesichert wird': 'What is backed up',
   'Datenbank': 'Database',
   'Die Datenbank von HAPM: Konten, Einstellungen, Historie.': 'The HAPM database: accounts, settings, history.',
@@ -412,8 +409,8 @@ export const system: Dictionary = {
   'Stand nach dem letzten Lauf in {path}.': 'As of the last run in {path}.',
   'Stand nach dem letzten Lauf vom {date}.': 'As of the last run on {date}.',
   'Stand nach dem letzten Lauf vom {date} in {path}.': 'As of the last run on {date} in {path}.',
-  'HAPM liest den Ordner nicht laufend. Die Liste stammt aus dem letzten Lauf. Was danach von Hand gelöscht oder dazugelegt wurde, steht hier nicht.':
-    'HAPM does not read the folder continuously. The list comes from the last run. Anything deleted or added by hand since then is not shown here.',
+  'HAPM liest den Ordner nicht laufend. Die Liste stammt aus dem letzten Lauf. Was danach von Hand entfernt oder dazugelegt wurde, steht hier nicht.':
+    'HAPM does not read the folder continuously. The list comes from the last run. Anything removed or added by hand since then is not shown here.',
   'Noch keine Sicherung geschrieben': 'No backup written yet',
   'Nach dem ersten erfolgreichen Lauf steht hier, was im Ordner liegt.': 'After the first successful run, this shows what is in the folder.',
   'Keine Sicherung im Ordner': 'No backup in the folder',
@@ -452,8 +449,8 @@ export const system: Dictionary = {
 
   // Sicherung zurückspielen: `components/backup/RestorePanel.tsx`, `lib/backup/restore*.ts`, `lib/backup/archive.ts`, `app/api/backup/restore`
   'Sicherung zurückspielen': 'Restore backup',
-  'Ein Archiv aus dem Ordner oder hochgeladen, etwa beim Umzug von einem anderen Server.':
-    'An archive from the folder or uploaded, for example when moving from another server.',
+  'Ein Archiv aus dem Ordner oder ein hochgeladenes.':
+    'An archive from the folder or an uploaded one.',
   'Das Zurückspielen braucht Docker. HAPM läuft gerade nicht in einem Container.': 'Restoring needs Docker. HAPM is not running in a container right now.',
   'HAPM startet mit dem Stand der Sicherung neu': 'HAPM is restarting with the state of the backup',
   'Die Oberfläche ist kurz nicht erreichbar. Diese Seite lädt neu, sobald HAPM wieder antwortet. Danach melden Sie sich mit einem Konto aus der Sicherung an.':
@@ -493,8 +490,8 @@ export const system: Dictionary = {
   'Die Liste stammt aus einem früheren Ordner.': 'The list comes from an earlier folder.',
   'Ein Archiv lässt sich auch hochladen, etwa von einem anderen Server.': 'You can also upload an archive, for example from another server.',
   'Archiv hochladen': 'Upload archive',
-  'Ein Archiv von HAPM (.tar.gz), höchstens {max}. Es wird vor allem anderen geprüft.':
-    'A HAPM archive (.tar.gz), up to {max}. It is checked before anything else happens.',
+  'Ein Archiv von HAPM (.tar.gz), höchstens {max}.':
+    'A HAPM archive (.tar.gz), up to {max}.',
   // Prüfung des Archivs (`lib/backup/archive.ts`)
   'Das Archiv lässt sich nicht vollständig lesen. Es ist beschädigt, unvollständig oder kein .tar.gz-Archiv.':
     'The archive cannot be read completely. It is damaged, incomplete, or not a .tar.gz archive.',
@@ -586,7 +583,7 @@ export const system: Dictionary = {
     "New certificates will then be validated over port 80. If Let's Encrypt cannot reach the server, every new request fails. Existing certificates keep their method, including on renewal.",
   'Umstellen': 'Switch',
   'Die Art der Installation ist umgestellt. Sie gilt für neue Zertifikate.': 'The installation type is changed. It applies to new certificates.',
-  'Sie steht in den Links der Mails, und an ihre Domain werden Passkeys gebunden.': 'It is used in the links in emails, and passkeys are bound to its domain.',
+  'Steht in den Links der Mails. An ihre Domain sind Passkeys gebunden.': 'Used in the links in emails. Passkeys are bound to its domain.',
   'Art der Installation': 'Installation type',
   'Sie bestimmt, wie neue Zertifikate ausgestellt werden.': 'It determines how new certificates are issued.',
   'Bestehende Zertifikate behalten ihre Methode, auch bei der Erneuerung.': 'Existing certificates keep their method, including on renewal.',
@@ -596,11 +593,11 @@ export const system: Dictionary = {
   'Die Benutzer konnten nicht geladen werden.': 'The users could not be loaded.',
   'Das Konto ließ sich nicht anlegen.': 'The account could not be created.',
   'Das Konto für {email} ist angelegt.': 'The account for {email} is created.',
-  'Benutzer löschen': 'Delete user',
-  'Soll das Konto von {name} ({email}) gelöscht werden? Die Person ist danach sofort abgemeldet.':
-    'Delete the account of {name} ({email})? The person is signed out immediately.',
-  'Das Konto ließ sich nicht löschen.': 'The account could not be deleted.',
-  'Das Konto von {name} ist gelöscht.': 'The account of {name} is deleted.',
+  'Benutzer entfernen?': 'Remove user?',
+  'Das Konto von {name} ({email}) wird entfernt. Die Person ist danach sofort abgemeldet.':
+    'The account of {name} ({email}) will be removed. The person is signed out immediately.',
+  'Das Konto ließ sich nicht entfernen.': 'The account could not be removed.',
+  'Das Konto von {name} ist entfernt.': 'The account of {name} is removed.',
   'Jedes Konto darf alles. Es gibt keine Rollen.': 'Every account can do everything. There are no roles.',
   'Benutzer anlegen': 'Create user',
   'E-Mail': 'Email',
@@ -609,8 +606,7 @@ export const system: Dictionary = {
   'Ja': 'Yes',
   'Nein': 'No',
   'noch nie': 'never',
-  'Das eigene Konto lässt sich nicht löschen': 'You cannot delete your own account',
-  '{name} löschen': 'Delete {name}',
+  'Das eigene Konto lässt sich nicht entfernen': 'You cannot remove your own account',
   'max@example.com': 'jane@example.com',
   'Das Passwort geben Sie selbst an die Person weiter. HAPM verschickt es nicht.': 'You pass the password on to the person yourself. HAPM does not send it.',
   'Das Feld {field} erwartet einen Text.': 'The field {field} expects text.',
@@ -663,11 +659,11 @@ export const system: Dictionary = {
   "Unter {link} lässt sich die Tabelle holen oder hochladen.": "Under {link} you can download or upload the table.",
   // components/SetupReminder.tsx, Rückfrage vor dem Überspringen
   "Einrichtung überspringen?": "Skip setup?",
-  "Danach lässt sie sich nicht wieder öffnen. Adresse und Art der Installation stellen Sie unter „Allgemein“ ein, Ziele unter „Reverse-Proxy“.": "It cannot be reopened afterwards. Set the address and the type of installation under “General”, targets under “Reverse proxy”.",
+  "Danach lässt sie sich nicht wieder öffnen. Adresse und Art der Installation stellen Sie unter „Allgemein“ ein, Ziele legen Sie unter „Ziele“ an.": "It cannot be reopened afterwards. Set the address and the type of installation under “General”, create targets under “Targets”.",
   // Zertifikate: hochladen, eigener ACME-Server, eigener DNS-Server
   "Let's Encrypt erreicht den Server nicht. Neue Zertifikate gehen über den DNS-Anbieter, über einen eigenen ACME-Server, der HAPM über Port 80 erreicht, oder werden hochgeladen.": "Let's Encrypt cannot reach the server. New certificates go through the DNS provider, through your own ACME server that reaches HAPM on port 80, or are uploaded.",
   "Jedes neue Zertifikat wird danach über den DNS-Anbieter ausgestellt, außer ein eigener ACME-Server erreicht HAPM über Port 80 oder Zertifikate werden hochgeladen. Ohne einen dieser Wege lässt sich kein Ziel mehr anlegen. Bestehende Zertifikate behalten ihre Methode, auch bei der Erneuerung.": "Every new certificate will then be issued through the DNS provider, unless your own ACME server reaches HAPM on port 80 or certificates are uploaded. Without one of these ways, no new target can be created. Existing certificates keep their method, including on renewal.",
-  "Adresse, Art der Installation, Zertifikate und der Kontakt beim ACME-Server.": "Address, installation type, certificates, and the contact at the ACME server.",
+  "Adresse von HAPM, Art der Installation und Zertifikate.": "HAPM address, installation type, and certificates.",
   "Eigener ACME-Server": "Own ACME server",
    "Directory-URL": "Directory URL",
   "Die Adresse, unter der der ACME-Server sein Verzeichnis anbietet. Bei step-ca etwa https://ca.example.org/acme/acme/directory. acme.sh muss sie über HTTPS mit einem Zertifikat erreichen, dem es vertraut.": "The address at which the ACME server offers its directory. For step-ca, for example https://ca.example.org/acme/acme/directory. acme.sh must reach it over HTTPS with a certificate it trusts.",
@@ -683,7 +679,7 @@ export const system: Dictionary = {
   "HAPM beantragt danach kein Zertifikat mehr. Ein neues Ziel lässt sich nur anlegen, wenn für seine Domains schon eins hochgeladen ist. Bestehende Zertifikate von acme.sh werden weiter erneuert.": "HAPM will then request no more certificates. A new target can only be created if one is already uploaded for its domains. Existing certificates from acme.sh keep being renewed.",
   "Gespeichert. acme.sh hat ein Konto beim ACME-Server angemeldet.": "Saved. acme.sh registered an account with the ACME server.",
   "Gespeichert. Es gilt für neue Zertifikate.": "Saved. It applies to new certificates.",
-  "Woher neue Zertifikate kommen und bei welchem ACME-Server sie beantragt werden.": "Where new certificates come from and at which ACME server they are requested.",
+  "Woher neue Zertifikate kommen: über ACME oder hochgeladen.": "Where new certificates come from: through ACME or uploaded.",
   "Über ACME ausstellen": "Issue through ACME",
   "HAPM beantragt Zertifikate selbst über acme.sh und erneuert sie vor dem Ablauf.": "HAPM requests certificates itself through acme.sh and renews them before they expire.",
   "Nur hochladen": "Upload only",
@@ -740,8 +736,8 @@ export const system: Dictionary = {
     'The domain still leads to this server, for example through address translation (NAT).',
   'Die Prüfung hat nicht ergeben, dass {domain} auf diesen Server zeigt. Bitte bestätigen Sie, dass es trotzdem stimmt.':
     'The check did not show that {domain} points to this server. Please confirm that it is correct anyway.',
-  'Die bisherige Adresse antwortet nicht mehr, ihr Ziel ist entfernt. Ob der letzte Schritt ganz durchgelaufen ist, steht unter der neuen Adresse in Allgemein.':
-    'The previous address no longer responds, its target is removed. Whether the last step fully completed is shown at the new address under General.',
+  'Die bisherige Adresse antwortet nicht mehr, ihr Ziel ist entfernt.':
+    'The previous address no longer responds, its target is removed.',
   'Erneut prüfen':
     'Check again',
   'Es gab keine alte Adresse.':
@@ -811,36 +807,45 @@ export const system: Dictionary = {
   '{domain} liegt in keiner Zone, die unter DNS eingerichtet ist.':
     '{domain} is not in any zone set up under DNS.',
   'Adresse von HAPM einrichten': 'Set up the HAPM address',
-  'Alle hinterlegten Passkeys werden gelöscht, sie sind an die Domain gebunden. Links in schon verschickten Mails zeigen weiter auf die alte Adresse. Das Ziel, über das die bisherige Adresse läuft, lässt sich danach wieder entfernen: geschützt ist immer das Ziel der aktuellen Adresse.':
-    'All stored passkeys are deleted, they are bound to the domain. Links in mails already sent keep pointing to the old address. The target serving the previous address can be removed afterwards: protected is always the target of the current address.',
-  'Eine Änderung der Domain löscht alle hinterlegten Passkeys.':
-    'Changing the domain deletes all stored passkeys.',
-  'HAPM legt dann weder Zertifikat noch Ziel an und lässt das alte Ziel stehen. Das passt, wenn HAPM hinter einem anderen Reverse-Proxy steht. Alle hinterlegten Passkeys werden gelöscht.':
-    'HAPM then creates neither certificate nor target and keeps the old target. That fits when HAPM runs behind another reverse proxy. All stored passkeys are deleted.',
-  'Alle hinterlegten Passkeys werden dabei gelöscht. Sie sind an die bisherige Domain gebunden und melden unter der neuen niemanden an.':
-    'All stored passkeys are deleted in the process. They are bound to the previous domain and sign nobody in under the new one.',
+  'Alle hinterlegten Passkeys werden entfernt, sie sind an die Domain gebunden. Links in schon verschickten Mails zeigen weiter auf die alte Adresse. Das Ziel, über das die bisherige Adresse läuft, lässt sich danach wieder entfernen: geschützt ist immer das Ziel der aktuellen Adresse.':
+    'All stored passkeys are removed, they are bound to the domain. Links in mails already sent keep pointing to the old address. The target serving the previous address can be removed afterwards: protected is always the target of the current address.',
+  'Eine Änderung der Domain entfernt alle hinterlegten Passkeys.':
+    'Changing the domain removes all stored passkeys.',
+  'HAPM legt dann weder Zertifikat noch Ziel an und lässt das alte Ziel stehen. Das passt, wenn HAPM hinter einem anderen Reverse-Proxy steht. Alle hinterlegten Passkeys werden entfernt.':
+    'HAPM then creates neither certificate nor target and keeps the old target. That fits when HAPM runs behind another reverse proxy. All stored passkeys are removed.',
+  'Alle hinterlegten Passkeys werden dabei entfernt. Sie sind an die bisherige Domain gebunden und melden unter der neuen niemanden an.':
+    'All stored passkeys are removed in the process. They are bound to the previous domain and sign nobody in under the new one.',
   'Diese Adresse antwortet gerade nicht, etwa weil HAProxy neu lädt. Der Umzug läuft auf dem Server weiter, und unter der neuen Adresse ist HAPM schon erreichbar.':
     'This address is not responding right now, for example because HAProxy is reloading. The move continues on the server, and HAPM is already reachable at the new address.',
   'Diese Adresse antwortet gerade nicht, etwa weil HAProxy neu lädt. Der Umzug läuft auf dem Server weiter, die Anzeige holt auf, sobald sie wieder antwortet.':
     'This address is not responding right now, for example because HAProxy is reloading. The move continues on the server, and the display catches up as soon as it responds again.',
   'Neue Adresse öffnen':
     'Open new address',
-  'Die Passkeys der bisherigen Adresse sind gelöscht. Neue legen Sie unter Konto an.':
-    'The passkeys of the previous address are deleted. Create new ones under Account.',
+  'Die bisherigen Passkeys sind entfernt. Neue legen Sie unter Konto an.':
+    'The previous passkeys are removed. Create new ones under Account.',
   'Testmail verschickt':
     'Test mail sent',
   'DNS-Eintrag angelegt':
     'DNS record created',
   // Selbsttätige Updates je Bestandteil
-  'Das neue Abbild prüft vorher die Konfiguration. HAProxy ist beim Tausch wenige Sekunden nicht erreichbar.':
-    'The new image checks the configuration first. HAProxy is unreachable for a few seconds during the swap.',
+  'Beim Tausch ist HAProxy wenige Sekunden nicht erreichbar.':
+    'HAProxy is unreachable for a few seconds during the swap.',
   'acme.sh aktualisiert sich selbst. Nichts wird unterbrochen.': 'acme.sh updates itself. Nothing is interrupted.',
   'Während des Tauschs gehen Anfragen ungeprüft durch.': 'During the swap, requests pass unchecked.',
-  'HAPM ersetzt sich selbst, die Oberfläche ist etwa eine Minute weg. Vorgabe: nur auf Klick.':
-    'HAPM replaces itself, the interface is gone for about a minute. Default: only on click.',
+  'Die Oberfläche ist etwa eine Minute weg. Vorgabe: nur auf Klick.':
+    'The interface is gone for about a minute. Default: only on click.',
   'Selbsttätig aktualisiert wird täglich um {time} Uhr: {components}.': 'Updated automatically every day at {time}: {components}.',
   'Nichts wird selbsttätig aktualisiert.': 'Nothing is updated automatically.',
   'Zur eingestellten Uhrzeit prüft HAPM, ob es Neues gibt, und spielt es für die gewählten Bestandteile nacheinander ein, HAPM selbst zuletzt.':
     'At the set time, HAPM checks for new versions and installs them for the selected components one after another, HAPM itself last.',
   'Selbsttätige Updates sind eine Liste aus {components}.': 'Automatic updates are a list of {components}.',
+  'Anbindung entfernen?': 'Remove connection?',
+  'Angebundene Domains und ihr Zugang zu Hetzner oder Cloudflare.': 'Connected domains and their access to Hetzner or Cloudflare.',
+  'Der neue Token muss dieselbe Zone sehen. Sonst wird er abgelehnt, und der bisherige bleibt stehen.': 'The new token must see the same zone. Otherwise it is rejected and the current one stays in place.',
+  'Das Archiv wird erst geprüft. Zurückgespielt wird es danach mit einem eigenen Schritt.': 'The archive is checked first. Restoring it is a separate step afterwards.',
+  'Ob der letzte Schritt ganz durchgelaufen ist, steht unter der neuen Adresse in Allgemein.': 'Whether the last step fully completed is shown at the new address under General.',
+  'Unbekannter Fehler. Kennung: {code}': 'Unknown error. Reference: {code}',
+  'Zu dieser Kennung liegt nichts mehr vor. Im Log des Containers steht der Fehler unter derselben Kennung.': 'Nothing is stored for this reference any more. The container log has the error under the same reference.',
+  'HAPM hat nicht geantwortet.': 'HAPM did not respond.',
+  'Aufgetreten am {when}. Dasselbe steht im Log des Containers.': 'Occurred on {when}. The container log has the same.',
 };

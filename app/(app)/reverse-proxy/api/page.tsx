@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useEffect, useState, useCallback, type FormEvent } from 'react';
+import ErrorNote from '@/components/ErrorNote';
 import PageHeading from '@/components/PageHeading';
 import {
   KeyRound, Plus, Ban, Loader2, Copy, X, Globe, Link2, Bot, Plug } from 'lucide-react';
@@ -287,7 +288,7 @@ function ApiPage() {
           <PageHeading
             icon={<Plug size={20} />}
             title={t('API und MCP')}
-            back={{ label: t('Übersicht'), href: '/reverse-proxy' }}
+            back={{ label: t('Ziele'), href: '/reverse-proxy' }}
           />
           <p className="page-subtitle">
             {rich(
@@ -304,7 +305,7 @@ function ApiPage() {
         </div>
       </div>
 
-      {error && <div className="alert alert-danger sys-block">{error}</div>}
+      {error && <div className="alert alert-danger sys-block"><ErrorNote text={error} /></div>}
 
       <AreaTabs areas={AREAS} value={area} onChange={selectArea} />
 
@@ -362,7 +363,7 @@ function ApiPage() {
                   {token.allowedIps.length > 0 ? token.allowedIps.join(', ') : t('von überall')}
                 </EntityField>
                 <EntityField label={t('Zuletzt benutzt')}>
-                  {lastUsed(locale, token.lastUsedAt, now) ?? t('nie')}
+                  {lastUsed(locale, token.lastUsedAt, now) ?? t('noch nie')}
                   {token.lastUsedIp ? ` · ${token.lastUsedIp}` : ''}
                 </EntityField>
               </EntityCard>
@@ -456,7 +457,7 @@ function ApiPage() {
           </p>
 
           <div className="table-wrap">
-            <table className="table">
+            <table className="table table-cards">
               <thead>
                 <tr>
                   <th>{t('Methode')}</th>
@@ -467,13 +468,13 @@ function ApiPage() {
               <tbody>
                 {ENDPOINTS.map((endpoint) => (
                   <tr key={`${endpoint.method} ${endpoint.path}`}>
-                    <td style={{ fontSize: '0.8125rem', whiteSpace: 'nowrap' }}>
+                    <td data-label={t('Methode')} style={{ fontSize: '0.8125rem', whiteSpace: 'nowrap' }}>
                       <code>{endpoint.method}</code>
                     </td>
-                    <td style={{ fontSize: '0.8125rem', whiteSpace: 'nowrap' }}>
+                    <td data-label="primary" style={{ fontSize: '0.8125rem', whiteSpace: 'nowrap' }}>
                       <code>{endpoint.path}</code>
                     </td>
-                    <td style={{ fontSize: '0.8125rem' }}>{t(endpoint.what)}</td>
+                    <td data-label={t('Was er tut')} style={{ fontSize: '0.8125rem' }}>{t(endpoint.what)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -550,15 +551,18 @@ function ApiPage() {
         >
           <div className="modal">
             <div className="modal-header">
-              <h2 className="modal-title">{t('Adressen für „{name}“', { name: editing.name })}</h2>
+              <h2 className="modal-title">
+                {t('Adressen für „{name}“', { name: editing.name })}
+                <InfoHint
+                  text={t(
+                    'Verglichen wird gegen die Adresse, die bei HAPM ankommt. Steht sie nicht auf der Liste, antwortet der Aufruf mit 403 und nennt sie.'
+                  )}
+                />
+              </h2>
             </div>
             <div className="modal-body">
               <IpAllowList value={editIps} onChange={setEditIps} disabled={saving} />
-              <span className="form-hint">
-                {t(
-                  'Wirkt sofort. Der Key bleibt derselbe, er muss also nirgends neu eingetragen werden. Verglichen wird gegen die Adresse, die bei HAPM ankommt. Steht sie nicht auf der Liste, antwortet der Aufruf mit 403 und nennt sie.'
-                )}
-              </span>
+              <span className="form-hint">{t('Wirkt sofort. Der Key bleibt derselbe.')}</span>
             </div>
             <div className="modal-footer">
               <button

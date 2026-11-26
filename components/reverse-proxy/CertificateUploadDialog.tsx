@@ -103,7 +103,7 @@ export default function CertificateUploadDialog({ replace, expected, onUpload, o
           )}
           {replace && replace.domains.length > 0 && (
             <p className="form-hint">
-              {t('Bisher abgedeckt: {domains}. Was davon ein Ziel braucht, muss das neue auch abdecken.', {
+              {t('Bisher abgedeckt: {domains}. Das neue muss abdecken, was Ziele brauchen.', {
                 domains: replace.domains.join(', '),
               })}
             </p>

@@ -1,6 +1,7 @@
 'use client';
 
 import { Fragment, Suspense, useCallback, useEffect, useState, type FormEvent } from 'react';
+import ErrorNote from '@/components/ErrorNote';
 import {
   AlertTriangle,
   Archive,
@@ -246,9 +247,7 @@ function Backup() {
     <div className="page-header">
       <div>
         <h1 className="page-title">{t('Sicherung')}</h1>
-        <p className="page-subtitle">
-          {t('Datenbank, Schlüssel, Konfiguration und Zertifikate als Archiv in einem Ordner auf dem Server.')}
-        </p>
+        <p className="page-subtitle">{t('Datenbank, Schlüssel, Konfiguration und Zertifikate in einem Archiv.')}</p>
       </div>
       <div className="page-actions">
         <button
@@ -271,7 +270,7 @@ function Backup() {
       <>
         {header}
         {error ? (
-          <div className="alert alert-danger sys-block">{error}</div>
+          <div className="alert alert-danger sys-block"><ErrorNote text={error} /></div>
         ) : (
           <>
             <div className="sys-block">
@@ -300,7 +299,7 @@ function Backup() {
         </div>
       )}
 
-      {error && <div className="alert alert-danger sys-block">{error}</div>}
+      {error && <div className="alert alert-danger sys-block"><ErrorNote text={error} /></div>}
 
       <AreaTabs areas={AREAS} value={area} onChange={selectArea} dirty={(key) => key === 'einstellungen' && draft !== null} />
 
@@ -388,7 +387,7 @@ function Backup() {
                     disabled={saving}
                     onChange={(event) => edit({ keep: readKeepField(event.target.value, form.keep) })}
                   />
-                  <p className="form-hint">{t('Anzahl Sicherungen. Ältere löscht der nächste Lauf.')}</p>
+                  <p className="form-hint">{t('Anzahl Sicherungen. Ältere entfernt der nächste Lauf.')}</p>
                 </div>
               </div>
 
@@ -407,9 +406,7 @@ function Backup() {
                   {draft ? t('Speichern und jetzt sichern') : t('Jetzt sichern')}
                 </button>
               </div>
-              <p className="form-hint">
-                {t('Eine Sicherung von Hand braucht nur den Ordner. Der Schalter „Täglich sichern“ kann aus bleiben.')}
-              </p>
+              <p className="form-hint">{t('Eine Sicherung von Hand braucht nur den Ordner, keinen Zeitplan.')}</p>
             </form>
           </div>
 
@@ -482,7 +479,7 @@ function Backup() {
             </div>
           ) : (
             <div className="table-wrap">
-              <table className="table">
+              <table className="table table-cards">
                 <thead>
                   <tr>
                     <th>{t('Beginn')}</th>
@@ -550,7 +547,7 @@ function Backup() {
                         </tr>
                         {open && (
                           <tr className="hapm-run-detail">
-                            <td colSpan={7}>
+                            <td colSpan={7} data-label="primary">
                               <RunSteps run={run} />
                             </td>
                           </tr>

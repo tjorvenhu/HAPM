@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import ErrorNote from '@/components/ErrorNote';
 import Link from 'next/link';
 import {
   AlertTriangle,
@@ -71,13 +72,13 @@ const POLL_MS = 25_000;
 const ACTION_LABELS: Record<HaproxyAction, string> = {
   create: msgid('Angelegt'),
   update: msgid('Geändert'),
-  delete: msgid('Gelöscht'),
+  delete: msgid('Entfernt'),
   settings: msgid('Einstellungen'),
   'scope-add': msgid('Gruppe angelegt'),
   'scope-remove': msgid('Gruppe entfernt'),
   'stream-create': msgid('TCP angelegt'),
   'stream-update': msgid('TCP geändert'),
-  'stream-delete': msgid('TCP gelöscht'),
+  'stream-delete': msgid('TCP entfernt'),
   certificate: msgid('Zertifikat'),
   import: msgid('Import'),
 };
@@ -792,7 +793,7 @@ export default function DashboardPage() {
     return (
       <>
         {header}
-        {error ? <div className="alert alert-danger sys-block">{error}</div> : <DashboardSkeleton />}
+        {error ? <div className="alert alert-danger sys-block"><ErrorNote text={error} /></div> : <DashboardSkeleton />}
       </>
     );
   }
@@ -882,11 +883,11 @@ export default function DashboardPage() {
           <h3>{t('Zuerst eine Gruppe anlegen')}</h3>
           <p>
             {t(
-              'Eine Gruppe fasst Ziele zusammen, etwa „Websites“ oder „Intern“. Jedes Ziel gehört in eine Gruppe. Die erste legen Sie unter „Reverse-Proxy“ an, danach das erste Ziel.'
+              'Eine Gruppe fasst Ziele zusammen, etwa „Websites“ oder „Intern“. Jedes Ziel gehört in eine Gruppe. Die erste legen Sie unter „Ziele“ an, danach das erste Ziel.'
             )}
           </p>
           <Link className="btn btn-primary" href="/reverse-proxy">
-            {t('Zum Reverse-Proxy')}
+            {t('Zu den Zielen')}
             <ArrowRight size={16} strokeWidth={1.5} />
           </Link>
         </div>
@@ -898,12 +899,12 @@ export default function DashboardPage() {
           <h3>{t('Noch kein Ziel angelegt')}</h3>
           <p>
             {t(
-              'Unter „Reverse-Proxy“ eine Gruppe öffnen und dort „Ziel anlegen“ wählen. Das Zertifikat für die Domain stellt HAPM dabei selbst aus.'
+              'Unter „Ziele“ eine Gruppe öffnen und dort „Ziel anlegen“ wählen. Das Zertifikat für die Domain stellt HAPM dabei selbst aus.'
             )}
           </p>
           <Link className="btn btn-primary" href="/reverse-proxy">
             <Plus size={16} strokeWidth={1.5} />
-            {t('Zum Reverse-Proxy')}
+            {t('Zu den Zielen')}
           </Link>
         </div>
       )}
@@ -1003,7 +1004,7 @@ export default function DashboardPage() {
                           <ScrollText size={17} strokeWidth={1.5} />
                         </span>
                         <span className="kind-card-text">
-                          <span className="kind-card-title">{t('Protokoll')}</span>
+                          <span className="kind-card-title">{t('Logs')}</span>
                           <span className="kind-card-sub">{t('Jeder Vorgang am Reverse-Proxy mit seinen Schritten.')}</span>
                         </span>
                       </Link>
@@ -1293,7 +1294,7 @@ export default function DashboardPage() {
                           ) : null}
                         </h2>
                         <Link className="btn btn-ghost btn-sm" href="/reverse-proxy/logs">
-                          {t('Protokoll')}
+                          {t('Logs')}
                         </Link>
                       </div>
                       {runs.recent === null ? (

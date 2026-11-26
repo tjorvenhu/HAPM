@@ -1,11 +1,13 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback, use, Suspense } from 'react';
+import ErrorNote from '@/components/ErrorNote';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
-  Globe, Plus, Loader2, RefreshCw, X, Search, ArrowLeft, FolderMinus, ShieldCheck,
+  Globe, Plus, Loader2, RefreshCw, X, Search, FolderMinus, ShieldCheck,
 } from 'lucide-react';
+import PageHeading from '@/components/PageHeading';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
 import { errorText } from '@/components/errorText';
@@ -201,7 +203,7 @@ function ScopeView({ slug }: { slug: string }) {
   }, [load]);
 
   /*
-   * 20 Sekunden und nicht 60 wie auf der Übersicht.
+   * 20 Sekunden und nicht 60 wie auf der Seite „Ziele“.
    *
    * Für die Konfiguration wären 60 richtig — eine `haproxy.cfg` ändert sich
    * nicht im Minutentakt. Auf DIESER Seite steht aber die Healthcheck-Marke je
@@ -334,8 +336,8 @@ function ScopeView({ slug }: { slug: string }) {
             title: run.label,
             message: ok
               ? t('Durchgelaufen, HAProxy hat die neue Konfiguration übernommen.')
-              : t('Nicht durchgelaufen. Der erste fehlgeschlagene Schritt steht im Protokoll.'),
-            action: { label: t('Protokoll'), onClick: () => showRun(run.id) },
+              : t('Nicht durchgelaufen. Der erste fehlgeschlagene Schritt steht im Fenster des Laufs.'),
+            action: { label: t('Schritte ansehen'), onClick: () => showRun(run.id) },
           });
         }
         for (const run of lost) {
@@ -471,7 +473,7 @@ function ScopeView({ slug }: { slug: string }) {
       .finally(() => setPreparingDelete(false));
 
     await confirm({
-      title: t('Reverse-Proxy-Ziel löschen'),
+      title: t('Reverse-Proxy-Ziel entfernen?'),
       message: [
         t(
           'Das entfernt die Weiche für {domains} aus der HAProxy-Konfiguration, samt Backend, Zertifikat und dessen automatischer Erneuerung.',
@@ -497,9 +499,9 @@ function ScopeView({ slug }: { slug: string }) {
       checkboxDefault: true,
       requireText: service.id,
       requireTextLabel: t('Zum Bestätigen die Dienst-ID abtippen:'),
-      confirmLabel: t('Endgültig löschen'),
+      confirmLabel: t('Endgültig entfernen'),
       variant: 'danger',
-      failedTitle: t('Löschen fehlgeschlagen'),
+      failedTitle: t('Entfernen fehlgeschlagen'),
       onConfirm: async (removeDns) => {
         const res = await apiFetch(`/api/haproxy/services/${encodeURIComponent(service.id)}`, {
           method: 'DELETE',
@@ -516,11 +518,11 @@ function ScopeView({ slug }: { slug: string }) {
         if (!res.ok) {
           // Geworfen statt gemeldet: `useConfirm` zeigt den Text als Meldung
           // (Titel `failedTitle`) und lässt den Dialog offen.
-          throw new Error(data.error || t('Das Ziel konnte nicht gelöscht werden.'));
+          throw new Error(data.error || t('Das Ziel konnte nicht entfernt werden.'));
         }
         startRun({
           id: data.data.runId,
-          label: t('Ziel „{id}“ löschen', { id: service.id }),
+          label: t('Ziel „{id}“ entfernen', { id: service.id }),
           serviceId: service.id,
           title: service.domains[0] ?? service.id,
           isNew: false,
@@ -542,16 +544,16 @@ function ScopeView({ slug }: { slug: string }) {
    */
   async function handleDeleteStream(proxy: ProxyRow, stream: HaproxyStream) {
     await confirm({
-      title: t('TCP-Weiterleitung löschen'),
+      title: t('TCP-Weiterleitung entfernen?'),
       message: t(
         'Das nimmt den listen-Abschnitt „{id}“ aus der HAProxy-Konfiguration. Port {port} nimmt danach keine Verbindungen mehr an, und was gerade darüber läuft, bricht ab.',
         { id: stream.id, port: stream.port ?? '?' }
       ),
       requireText: stream.id,
       requireTextLabel: t('Zum Bestätigen die Kennung abtippen:'),
-      confirmLabel: t('Endgültig löschen'),
+      confirmLabel: t('Endgültig entfernen'),
       variant: 'danger',
-      failedTitle: t('Löschen fehlgeschlagen'),
+      failedTitle: t('Entfernen fehlgeschlagen'),
       onConfirm: async () => {
         const res = await apiFetch(`/api/haproxy/streams/${encodeURIComponent(stream.id)}`, {
           method: 'DELETE',
@@ -559,10 +561,10 @@ function ScopeView({ slug }: { slug: string }) {
           body: JSON.stringify({ serverId: proxy.$id }),
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || t('Die TCP-Weiterleitung konnte nicht gelöscht werden.'));
+        if (!res.ok) throw new Error(data.error || t('Die TCP-Weiterleitung konnte nicht entfernt werden.'));
         startRun({
           id: data.data.runId,
-          label: t('TCP-Weiterleitung „{id}“ löschen', { id: stream.id }),
+          label: t('TCP-Weiterleitung „{id}“ entfernen', { id: stream.id }),
           serviceId: stream.id,
           title: t('Port {port}', { port: stream.port ?? '?' }),
           isNew: false,
@@ -615,7 +617,7 @@ function ScopeView({ slug }: { slug: string }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || t('Die Gruppe konnte nicht entfernt werden.'));
       // Diese Seite gibt es gleich nicht mehr. Der Vorgang wird deshalb an die
-      // Übersicht übergeben, die ihn zu Ende verfolgt und die Karte so lange
+      // Seite „Ziele“ übergeben, die ihn zu Ende verfolgt und die Karte so lange
       // rot stehen lässt — sonst stünde die Gruppe dort unverändert in der
       // Liste, bis der nächste Takt sie abholt.
       const runIds: string[] = data.data.runs.map((r: { runId: string }) => r.runId);
@@ -687,23 +689,14 @@ function ScopeView({ slug }: { slug: string }) {
     return (
       <>
         <div className="page-header">
-          <div className="page-heading">
-            <span className="page-heading-icon">
-              <Globe size={20} />
-            </span>
-            <div>
-              <h1 className="page-title">{error ? t('Gruppe') : t('Gruppe nicht gefunden')}</h1>
-              <div className="page-crumbs">
-                <Link className="page-back" href="/reverse-proxy">
-                  <ArrowLeft size={14} />
-                  {t('Übersicht')}
-                </Link>
-              </div>
-            </div>
-          </div>
+          <PageHeading
+            icon={<Globe size={20} />}
+            title={error ? t('Gruppe') : t('Gruppe nicht gefunden')}
+            back={{ label: t('Ziele'), href: '/reverse-proxy' }}
+          />
         </div>
         {error ? (
-          <div className="alert alert-danger sys-block">{error}</div>
+          <div className="alert alert-danger sys-block"><ErrorNote text={error} /></div>
         ) : (
           <div className="empty-state">
             <Globe size={40} />
@@ -723,40 +716,32 @@ function ScopeView({ slug }: { slug: string }) {
   return (
     <>
       <div className="page-header">
-        <div className="page-heading">
-          <span className="page-heading-icon">
-            <Globe size={20} />
-          </span>
-          <div>
-            {/* Solange die Konfiguration nicht gelesen ist, steht hier ein
-                Balken und nicht der Adressteil. Der wäre zwar da, aber falsch:
-                `scopeSlug` schreibt klein, `scopeLabel` schreibt groß — die
-                Überschrift sprang sichtbar von „kunden" auf „Kunden", sobald
-                die Antwort da war. Ein Platzhalter behauptet nichts. */}
-            {page ? (
-              <h1 className="page-title">
+        <PageHeading
+          icon={<Globe size={20} />}
+          /* Solange die Konfiguration nicht gelesen ist, steht hier ein Balken
+             und nicht der Adressteil. Der wäre zwar da, aber falsch:
+             `scopeSlug` schreibt klein, `scopeLabel` schreibt groß — die
+             Überschrift sprang sichtbar von „kunden" auf „Kunden", sobald die
+             Antwort da war. Ein Platzhalter behauptet nichts. */
+          title={
+            page ? (
+              <>
                 {page.title}
                 <span className="section-count">
                   {plural(entries.length, { one: '{count} Dienst', other: '{count} Dienste' })}
                 </span>
-              </h1>
+              </>
             ) : (
-              <h1 className="page-title">
-                <SkeletonTitle />
-              </h1>
-            )}
-            {/* Ein Zurück-Knopf statt einer Brotkrume: die Hierarchie ist eine
-                Stufe tief, und ein Häuschen mit einem Schrägstrich daneben ist
-                dafür eine Bauform ohne Inhalt. Was hier steht, sagt dasselbe
-                und lässt sich anklicken, ohne auf ein 14 Pixel großes Symbol zu
-                zielen. */}
-            <div className="page-crumbs">
-              <Link className="page-back" href="/reverse-proxy">
-                <ArrowLeft size={14} />
-                {t('Übersicht')}
-              </Link>
-              <span>{t('Gruppe')}</span>
-              {page?.surface && (
+              <SkeletonTitle />
+            )
+          }
+          back={{ label: t('Ziele'), href: '/reverse-proxy' }}
+          /* `PageHeading` setzt `note` in EIN `span`. Als bloßes Kind stünde
+             die Plakette darin ohne Abstand am Wort, deshalb die Zeile darum. */
+          note={
+            page?.surface ? (
+              <span className="hapm-inline-actions">
+                {t('Gruppe')}
                 <span
                   className="badge-status badge-neutral"
                   data-tooltip={t('HAPM ist über ein Ziel dieser Gruppe erreichbar ({url})', { url: page.surface.url })}
@@ -764,10 +749,12 @@ function ScopeView({ slug }: { slug: string }) {
                   <ShieldCheck size={13} />
                   {t('Oberfläche von HAPM')}
                 </span>
-              )}
-            </div>
-          </div>
-        </div>
+              </span>
+            ) : (
+              t('Gruppe')
+            )
+          }
+        />
 
         <div className="page-actions">
           <div className="page-search">
@@ -849,7 +836,7 @@ function ScopeView({ slug }: { slug: string }) {
           sondern ein Zustand — er hört nicht von selbst auf, also darf die
           Meldung auch nicht von selbst verschwinden. Alles, was ein Ereignis
           ist (gespeichert, gesperrt, fehlgeschlagen), geht als Toast raus. */}
-      {error && <div className="alert alert-danger sys-block">{error}</div>}
+      {error && <div className="alert alert-danger sys-block"><ErrorNote text={error} /></div>}
 
       {/* Ein neuer Eintrag steht schon in der Liste, während er entsteht: das
           Anlegen dauert Minuten (Zertifikat), und eine Liste, die sich nach dem

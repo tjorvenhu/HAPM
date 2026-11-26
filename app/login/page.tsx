@@ -210,7 +210,7 @@ export default function LoginPage() {
               {useRecovery ? <LifeBuoy /> : <ShieldCheck />}
               <p>
                 {useRecovery
-                  ? t('Geben Sie einen Ihrer Wiederherstellungscodes ein. Er ist danach verbraucht.')
+                  ? t('Geben Sie einen Wiederherstellungscode ein. Er ist danach verbraucht.')
                   : t('Geben Sie den 6-stelligen Code aus Ihrer Authenticator-App ein.')}
               </p>
             </div>

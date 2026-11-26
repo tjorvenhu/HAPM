@@ -61,7 +61,7 @@ export default function SetupReminder() {
     const confirmed = await confirm({
       title: t('Einrichtung überspringen?'),
       message: t(
-        'Danach lässt sie sich nicht wieder öffnen. Adresse und Art der Installation stellen Sie unter „Allgemein“ ein, Ziele unter „Reverse-Proxy“.'
+        'Danach lässt sie sich nicht wieder öffnen. Adresse und Art der Installation stellen Sie unter „Allgemein“ ein, Ziele legen Sie unter „Ziele“ an.'
       ),
       confirmLabel: t('Überspringen'),
       variant: 'warning',

@@ -9,6 +9,8 @@ import {
   parseAlerts,
   parseAllowlist,
   parseDecisions,
+  bansToRestore,
+  type CrowdsecDecision,
   type AlertTarget,
 } from '@/lib/crowdsec/data';
 import { allowFileContent } from '@/lib/crowdsec/allow-file';
@@ -231,5 +233,58 @@ describe('crowdsecStats', () => {
     expect(stats.bucketMs).toBe(86_400_000);
     expect(stats.series).toHaveLength(7);
     expect(crowdsecStats(alerts, TARGETS, 0, 1000).totals.alerts).toBe(0);
+  });
+});
+
+describe('bansToRestore', () => {
+  const now = Date.parse('2026-11-26T08:00:00Z');
+  const ban = (over: Partial<CrowdsecDecision>): CrowdsecDecision => ({
+    id: 1,
+    alertId: 1,
+    value: '192.0.2.44',
+    scope: 'Ip',
+    type: 'ban',
+    origin: 'cscli',
+    reason: 'Brute Force',
+    until: '2026-11-26T12:00:00.000Z',
+    createdAt: null,
+    country: null,
+    asName: null,
+    simulated: false,
+    ...over,
+  });
+
+  it('nimmt nur Sperren von Hand, mit Restdauer in Sekunden', () => {
+    expect(
+      bansToRestore(
+        [
+          ban({}),
+          ban({ id: 2, value: '198.51.100.0/24', scope: 'Range', origin: 'cscli-import', reason: '' }),
+          ban({ id: 3, value: '203.0.113.58', origin: 'crowdsec' }),
+          ban({ id: 4, value: '203.0.113.9', origin: 'CAPI' }),
+        ],
+        now
+      )
+    ).toEqual([
+      { value: '192.0.2.44', scope: 'ip', duration: '14400s', reason: 'Brute Force' },
+      { value: '198.51.100.0/24', scope: 'range', duration: '14400s', reason: 'Gesperrt in HAPM' },
+    ]);
+  });
+
+  it('je Adresse die längste, ohne Abgelaufenes und ohne das, was keine Adresse ist', () => {
+    expect(
+      bansToRestore(
+        [
+          ban({ until: '2026-11-26T09:00:00.000Z' }),
+          ban({ id: 2, until: '2026-11-27T08:00:00.000Z', reason: 'länger' }),
+          ban({ id: 3, value: '192.0.2.50', until: '2026-11-26T08:00:30.000Z' }),
+          ban({ id: 4, value: '192.0.2.51', until: null }),
+          ban({ id: 5, value: 'DE', scope: 'Country' }),
+          ban({ id: 6, value: '192.0.2.52', type: 'captcha' }),
+          ban({ id: 7, value: '192.0.2.53', simulated: true }),
+        ],
+        now
+      )
+    ).toEqual([{ value: '192.0.2.44', scope: 'ip', duration: '86400s', reason: 'länger' }]);
   });
 });

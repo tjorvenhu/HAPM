@@ -2,6 +2,7 @@
 
 import { Plus, X, Globe } from 'lucide-react';
 import { useT } from '@/lib/i18n/react';
+import { InfoHint } from '@/ui/primitives/InfoHint';
 
 /**
  * Die Adressliste eines Dienst-Tokens: eine Zeile je Adresse oder CIDR-Bereich.
@@ -57,10 +58,11 @@ export default function IpAllowList({
             <Globe size={17} />
           </span>
           <div>
-            <div className="form-section-title">{t('Erlaubte Adressen')}</div>
-            <div className="form-section-sub">
-              {t('Von welchen Adressen dieses Token gelten darf. Einzelne Adresse oder CIDR-Bereich, IPv4 und IPv6. Leer heißt: von überall.')}
+            <div className="form-section-title">
+              {t('Erlaubte Adressen')}
+              <InfoHint text={t('Einzelne Adresse oder CIDR-Bereich, IPv4 und IPv6. Leer heißt: von überall.')} />
             </div>
+            <div className="form-section-sub">{t('Von welchen Adressen dieses Token gelten darf.')}</div>
           </div>
         </div>
       )}
@@ -104,10 +106,16 @@ export default function IpAllowList({
 
       {empty && (
         <span className="form-hint">
-          {emptyHint ??
-            t(
-              'Ohne Eintrag gilt das Token von jeder Adresse aus. Für ein Skript auf einem festen Server ist eine Zeile hier der Unterschied zwischen „gestohlen und nutzbar“ und „gestohlen und wertlos“.'
-            )}
+          {emptyHint ?? (
+            <>
+              {t('Ohne Eintrag gilt das Token von jeder Adresse aus.')}
+              <InfoHint
+                text={t(
+                  'Für ein Skript auf einem festen Server ist eine Zeile hier der Unterschied zwischen „gestohlen und nutzbar“ und „gestohlen und wertlos“.'
+                )}
+              />
+            </>
+          )}
         </span>
       )}
     </div>

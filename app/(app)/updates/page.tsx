@@ -1,6 +1,7 @@
 'use client';
 
 import { Fragment, useCallback, useEffect, useState, type ReactNode } from 'react';
+import ErrorNote from '@/components/ErrorNote';
 import {
   AlertTriangle,
   ChevronDown,
@@ -93,11 +94,11 @@ const CONSEQUENCES: Record<UpdateComponent, string> = {
 
 /** Was beim selbsttätigen Update geschieht, je Bestandteil in einem Satz. */
 const AUTO_HINTS: Record<UpdateComponent, string> = {
-  haproxy: msgid('Das neue Abbild prüft vorher die Konfiguration. HAProxy ist beim Tausch wenige Sekunden nicht erreichbar.'),
+  haproxy: msgid('Beim Tausch ist HAProxy wenige Sekunden nicht erreichbar.'),
   acme: msgid('acme.sh aktualisiert sich selbst. Nichts wird unterbrochen.'),
   crowdsec: msgid('Während des Tauschs gehen Anfragen ungeprüft durch.'),
   'crowdsec-bouncer': msgid('Während des Tauschs gehen Anfragen ungeprüft durch.'),
-  hapm: msgid('HAPM ersetzt sich selbst, die Oberfläche ist etwa eine Minute weg. Vorgabe: nur auf Klick.'),
+  hapm: msgid('Die Oberfläche ist etwa eine Minute weg. Vorgabe: nur auf Klick.'),
 };
 
 const POLL_IDLE_MS = 30_000;
@@ -366,7 +367,7 @@ export default function UpdatesPage() {
       <>
         {header}
         {error ? (
-          <div className="alert alert-danger sys-block">{error}</div>
+          <div className="alert alert-danger sys-block"><ErrorNote text={error} /></div>
         ) : offline ? (
           <div className="alert alert-warning sys-block">
             <AlertTriangle size={16} strokeWidth={1.5} />
@@ -403,7 +404,7 @@ export default function UpdatesPage() {
         </div>
       )}
 
-      {error && !offline && <div className="alert alert-danger sys-block">{error}</div>}
+      {error && !offline && <div className="alert alert-danger sys-block"><ErrorNote text={error} /></div>}
 
       <div className="sys-block">
         <EntityGrid>
@@ -539,15 +540,17 @@ export default function UpdatesPage() {
 
       <div className="card sys-block">
         <div className="card-header">
-          <h2 className="card-title">{t('Selbsttätig aktualisieren')}</h2>
+          <h2 className="card-title">
+            {t('Selbsttätig aktualisieren')}
+            <InfoHint
+              text={t(
+                'Zur eingestellten Uhrzeit prüft HAPM, ob es Neues gibt, und spielt es für die gewählten Bestandteile nacheinander ein, HAPM selbst zuletzt.'
+              )}
+            />
+          </h2>
         </div>
         <div className="hapm-auto">
           <div className="hapm-auto-list">
-            <p className="form-hint">
-              {t(
-                'Zur eingestellten Uhrzeit prüft HAPM, ob es Neues gibt, und spielt es für die gewählten Bestandteile nacheinander ein, HAPM selbst zuletzt.'
-              )}
-            </p>
             {autoComponents.map((component) => (
               <label key={component} className="form-subsection hapm-auto-switch">
                 <div className="form-subsection-head">
@@ -622,7 +625,7 @@ export default function UpdatesPage() {
         </div>
       ) : (
         <div className="table-wrap">
-          <table className="table">
+          <table className="table table-cards">
             <thead>
               <tr>
                 <th>{t('Zeitpunkt')}</th>
@@ -678,7 +681,7 @@ export default function UpdatesPage() {
                     </tr>
                     {open && (
                       <tr className="hapm-run-detail">
-                        <td colSpan={7}>
+                        <td colSpan={7} data-label="primary">
                           <RunSteps run={run} />
                         </td>
                       </tr>

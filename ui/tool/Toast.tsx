@@ -5,6 +5,7 @@ import {
 } from 'react';
 import { AlertTriangle, CheckCircle2, Info, X, XCircle } from 'lucide-react';
 import { useT } from '@/lib/i18n/react';
+import { errorCodeIn, openErrorDetail } from '@/lib/error-code';
 
 /**
  * Die Meldungen nach einer Handlung — unten rechts, mit ablaufender Zeit.
@@ -121,16 +122,26 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setToasts((current) => current.filter((toast) => toast.id !== id));
   }, []);
 
-  const notify = useCallback((input: ToastInput) => {
-    const id = nextId.current++;
-    const variant = input.variant ?? 'info';
-    setToasts((current) =>
-      [...current, { ...input, id, variant, duration: input.duration ?? DURATIONS[variant] }].slice(
-        -MAX_VISIBLE
-      )
-    );
-    return id;
-  }, []);
+  const notify = useCallback(
+    (given: ToastInput) => {
+      const id = nextId.current++;
+      // Ein unbekannter Fehler nennt nur seine Kennung (`lib/error-log.ts`). Die
+      // Einzelheiten dazu öffnet jede solche Meldung mit „Anzeigen", ohne dass
+      // jeder Aufrufer daran denken muss.
+      const code = given.action ? null : errorCodeIn(`${given.title ?? ''} ${given.message}`);
+      const input: ToastInput = code
+        ? { ...given, action: { label: t('Anzeigen'), onClick: () => openErrorDetail(code) } }
+        : given;
+      const variant = input.variant ?? 'info';
+      setToasts((current) =>
+        [...current, { ...input, id, variant, duration: input.duration ?? DURATIONS[variant] }].slice(
+          -MAX_VISIBLE
+        )
+      );
+      return id;
+    },
+    [t]
+  );
 
   return (
     <ToastContext.Provider value={{ notify, dismiss }}>

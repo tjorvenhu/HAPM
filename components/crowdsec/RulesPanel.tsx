@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import ErrorNote from '@/components/ErrorNote';
 import { Check, ChevronDown, ChevronUp, Download, Loader2 } from 'lucide-react';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/ConfirmDialog';
@@ -103,7 +104,7 @@ export default function RulesPanel() {
 
   return (
     <>
-      {error && <div className="alert alert-danger sys-block">{error}</div>}
+      {error && <div className="alert alert-danger sys-block"><ErrorNote text={error} /></div>}
       {data && (
         <>
           <div className="card sys-block">
@@ -140,10 +141,15 @@ export default function RulesPanel() {
           <div className="card sys-block">
             <div className="card-header">
               <div>
-                <h2 className="card-title">{t('Anwendungen')}</h2>
-                <p className="card-subtitle">
-                  {t('Ausnahmen gegen bekannte Fehlsperren einzelner Anwendungen, für WordPress auch virtuelle Patches.')}
-                </p>
+                <h2 className="card-title">
+                  {t('Anwendungen')}
+                  <InfoHint
+                    text={t(
+                      'Der normale Betrieb mancher Anwendungen sieht für CrowdSec wie ein Angriff aus, etwa viele Antworten mit 404 in kurzer Zeit. Dann sperrt es die eigenen Nutzer. Die Ausnahmen nehmen diese bekannten Fälle aus der Prüfung. Für WordPress kommen virtuelle Patches gegen bekannte Lücken dazu.'
+                    )}
+                  />
+                </h2>
+                <p className="card-subtitle">{t('Ausnahmen gegen bekannte Fehlsperren einzelner Anwendungen.')}</p>
               </div>
             </div>
             <div className="table-wrap">

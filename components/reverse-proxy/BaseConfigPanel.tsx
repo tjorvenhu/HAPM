@@ -208,7 +208,7 @@ export default function BaseConfigPanel() {
             <span className="form-hint">{t('Die Datei entspricht der Grundkonfiguration von HAPM.')}</span>
           ) : (
             <div className="table-wrap">
-              <table className="table">
+              <table className="table table-cards">
                 <thead>
                   <tr>
                     <th style={{ width: 56 }} />
@@ -221,13 +221,13 @@ export default function BaseConfigPanel() {
                   {bySection(diff.drifts).map(([section, drifts]) => (
                     <Fragment key={section}>
                       <tr>
-                        <td colSpan={4}>
+                        <td colSpan={4} data-label="primary">
                           <code>{section}</code>
                         </td>
                       </tr>
                       {drifts.map((drift) => (
                         <tr key={drift.id}>
-                          <td>
+                          <td data-label="actions">
                             {drift.kind === 'extra' ? null : (
                               <label className="toggle-switch">
                                 <input
@@ -242,23 +242,23 @@ export default function BaseConfigPanel() {
                             )}
                           </td>
                           {drift.current === null ? (
-                            <td>
+                            <td data-label={t('In der Datei')}>
                               <span className="form-hint">{t('fehlt')}</span>
                             </td>
                           ) : (
-                            <td className="mono">{drift.current}</td>
+                            <td className="mono" data-label={t('In der Datei')}>{drift.current}</td>
                           )}
                           {drift.proposed === null ? (
-                            <td>
+                            <td data-label={t('Vorschlag')}>
                               <span className="badge-status badge-neutral">
                                 <span className="dot" />
                                 {t('Nur hier, bleibt stehen')}
                               </span>
                             </td>
                           ) : (
-                            <td className="mono">{drift.proposed}</td>
+                            <td className="mono" data-label={t('Vorschlag')}>{drift.proposed}</td>
                           )}
-                          <td>{drift.hint && <InfoHint text={t(drift.hint)} position="left" />}</td>
+                          <td data-label="actions">{drift.hint && <InfoHint text={t(drift.hint)} position="left" />}</td>
                         </tr>
                       ))}
                     </Fragment>

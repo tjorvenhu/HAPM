@@ -81,6 +81,7 @@ import {
   addAllowlist,
   addDecision,
   changeRules,
+  clearCrowdsec,
   crowdsecOverview,
   setCrowdsecEnabled,
   crowdsecRules,
@@ -901,6 +902,18 @@ export const TOOLS: ToolDefinition[] = [
     },
     annotations: READ_ONLY,
     run: (args) => listAlerts({ window: args.window, service: args.service, limit: 200 }),
+  }),
+
+  defineTool({
+    name: 'clear_crowdsec',
+    title: 'Clear CrowdSec alerts and automatic bans',
+    description:
+      'Fresh start: removes every alert and lifts the bans CrowdSec imposed from them, so statistics start at zero. ' +
+      'Manual bans, the allowlist, rules and the community blocklist stay. Takes up to a minute: HAPM waits until the bouncer ' +
+      'has fetched the lifted bans. Returns alerts (removed), lifted (bans), kept (manual bans) and lost (manual bans that could not be set again).',
+    input: {},
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    run: (_args, ctx) => clearCrowdsec(auditActor(ctx.actor)),
   }),
 
   defineTool({

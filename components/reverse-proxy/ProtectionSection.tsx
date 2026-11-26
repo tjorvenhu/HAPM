@@ -2,6 +2,7 @@
 
 import { Ban, Gauge, Globe2, Info, Plus, ShieldAlert, X } from 'lucide-react';
 import Select from '@/components/Select';
+import { InfoHint } from '@/ui/primitives/InfoHint';
 import CountryFlag from '@/components/CountryFlag';
 import { countryName } from '@/lib/country-flags';
 import {
@@ -109,7 +110,7 @@ export default function ProtectionSection({
           <div>
             <div className="form-section-title">{t('Gesperrte Adressen')}</div>
             <div className="form-section-sub">
-              {t('Einzelne IPs oder Netze, die keinen Dienst erreichen. Gilt auch für Admin-IPs.')}
+              {t('IPs oder Netze, die keinen Dienst erreichen. Gilt auch für Admin-IPs.')}
             </div>
           </div>
         </div>
@@ -169,7 +170,7 @@ export default function ProtectionSection({
             <div className="form-section-sub">
               {hasAdminIps
                 ? t('Besucher aus diesen Ländern bekommen 403. Admin-IPs sind ausgenommen.')
-                : t('Besucher aus diesen Ländern bekommen 403. Mit Admin-IPs wären diese ausgenommen.')}
+                : t('Besucher aus diesen Ländern bekommen 403. Admin-IPs wären ausgenommen.')}
             </div>
           </div>
         </div>
@@ -204,7 +205,7 @@ export default function ProtectionSection({
         {countries.length === 0 ? (
           <div className="form-note">
             <Info size={14} />
-            <span>{t('Ohne GeoIP-Tabelle lässt sich kein Land sperren. Sie lässt sich oben auf dieser Seite holen.')}</span>
+            <span>{t('Ohne Länder-Tabelle lässt sich kein Land sperren. Holen lässt sie sich im Reiter „Länder-Tabelle“.')}</span>
           </div>
         ) : (
           <Select<string>
@@ -236,7 +237,7 @@ export default function ProtectionSection({
             <div>
               <div className="form-section-title">{t('Ratenbegrenzung')}</div>
               <div className="form-section-sub">
-                {t('Zu viele Anfragen von einer Adresse bekommen 429, bis sie wieder unter der Grenze liegt.')}
+                {t('Zu viele Anfragen von einer Adresse bekommen 429.')}
               </div>
             </div>
           </div>
@@ -262,7 +263,14 @@ export default function ProtectionSection({
         {value.rateLimit && (
           <div className="form-row">
             <div className="form-group">
-              <label className="form-label">{t('Anfragen je Adresse')}</label>
+              <div className="form-label-row">
+                <label className="form-label">{t('Anfragen je Adresse')}</label>
+                <InfoHint
+                  text={t(
+                    'Eine Seite lädt beim ersten Aufruf oft hundert Dateien und mehr, und mehrere Menschen hinter einem Anschluss teilen sich eine Adresse.'
+                  )}
+                />
+              </div>
               <input
                 className="form-input"
                 inputMode="numeric"
@@ -295,8 +303,8 @@ export default function ProtectionSection({
             <Info size={14} />
             <span>
               {hasAdminIps
-                ? t('Admin-IPs zählen nicht mit. Eine Seite lädt beim ersten Aufruf oft hundert Dateien und mehr, und mehrere Menschen hinter einem Anschluss teilen sich eine Adresse.')
-                : t('Eine Seite lädt beim ersten Aufruf oft hundert Dateien und mehr, und mehrere Menschen hinter einem Anschluss teilen sich eine Adresse. Das gilt auch für diese Oberfläche.')}
+                ? t('Admin-IPs zählen nicht mit.')
+                : t('Die Grenze gilt auch für diese Oberfläche.')}
             </span>
           </div>
         )}

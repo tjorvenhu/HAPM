@@ -3,8 +3,8 @@ import type { Dictionary } from './index';
 /** Der Zugang über MCP auf der Seite „API und MCP" (`components/reverse-proxy/McpAccess.tsx`). */
 export const mcp: Dictionary = {
   'MCP': 'MCP',
-  'Steuert HAPM aus Claude und anderen MCP-Clients. Es gelten dieselben API-Keys wie für die API.':
-    'Controls HAPM from Claude and other MCP clients. The same API keys as for the API apply.',
+  'Steuert HAPM aus MCP-Clients wie Claude, mit denselben API-Keys.':
+    'Controls HAPM from MCP clients such as Claude, with the same API keys.',
   'Jedes Werkzeug läuft mit allen Rechten des Keys: Ziele entfernen, Updates einspielen, HAProxy neu starten, Einstellungen ändern. Am besten einen eigenen Key für MCP anlegen.':
     'Every tool runs with the full rights of the key: remove targets, install updates, restart HAProxy, change settings. Best create a separate key for MCP.',
   'Adresse des Endpunkts': 'Endpoint address',
@@ -17,8 +17,8 @@ export const mcp: Dictionary = {
   'Claude Code im Projekt, VS Code und andere': 'Claude Code in a project, VS Code and others',
   'Clients, die nur lokale Server kennen': 'Clients that only know local servers',
   '{placeholder} durch den Key ersetzen.': 'Replace {placeholder} with the key.',
-  'In Claude unter Connectors einen eigenen Connector (Custom connector) hinzufügen: als Adresse die oben, unter Request headers die Kopfzeile unten, ohne OAuth.':
-    'In Claude, add a custom connector under Connectors: the address above as URL, the header below under Request headers, no OAuth.',
+  'Eigenen Connector in Claude anlegen: Adresse oben, Kopfzeile unten.':
+    'Create a custom connector in Claude: address above, header below.',
   'Die Verbindung kommt aus der Cloud von Anthropic. Eine Freigabeliste am Key muss deren Adressen enthalten oder leer sein.':
     'The connection comes from the Anthropic cloud. An allow list on the key must contain its addresses or be empty.',
   'Den Key als Umgebungsvariable {variable} setzen, dann steht er in keiner Datei.':
@@ -39,4 +39,5 @@ export const mcp: Dictionary = {
     'An External Account Binding key cannot be set through the API. It is set in the web interface under General.',
   'Es fehlt die Domain, die geprüft werden soll.': 'The domain to check is missing.',
   'Die Adresse von HAPM konnte nicht geladen werden. Bitte laden Sie die Seite neu.': 'The HAPM address could not be loaded. Please reload the page.',
+  'In Claude unter Connectors einen „Custom connector“ hinzufügen. Die Kopfzeile gehört unter „Request headers“. OAuth bleibt aus.': 'In Claude, add a “Custom connector” under Connectors. The header goes under “Request headers”. Leave OAuth off.',
 };

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useRef, useState } from 'react';
+import ErrorNote from '@/components/ErrorNote';
 import { Globe, Upload, Loader2, ExternalLink, RotateCcw, Check, RefreshCw } from 'lucide-react';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import { useApp } from '@/components/AppShell';
@@ -374,13 +375,11 @@ export default function GeoipPanel() {
                     {t('Selbsttätig erneuern')}
                     <InfoHint
                       text={t(
-                        'Solange die Tabelle nicht vom laufenden Monat ist, fragt HAPM einmal am Tag bei db-ip.com nach der neuen Datei. DB-IP stellt sie am Monatsanfang ein. Abgeschaltet bleibt die Tabelle auf ihrem Stand, bis sie von Hand erneuert wird.'
+                        'Solange die Tabelle nicht vom laufenden Monat ist, fragt HAPM einmal am Tag bei db-ip.com nach der neuen Datei. DB-IP stellt sie am Monatsanfang ein. Besucheradressen verlassen den Server dabei nicht. Abgeschaltet bleibt die Tabelle auf ihrem Stand, bis sie von Hand erneuert wird.'
                       )}
                     />
                   </div>
-                  <div className="form-section-sub">
-                    {t('HAPM lädt einmal im Monat eine Datei von db-ip.com. Besucheradressen verlassen den Server dabei nicht.')}
-                  </div>
+                  <div className="form-section-sub">{t('HAPM lädt einmal im Monat eine Datei von db-ip.com.')}</div>
                 </div>
                 <span className="toggle-switch">
                   <input
@@ -407,7 +406,7 @@ export default function GeoipPanel() {
               </label>
               <span className="form-hint">{t('Für Server ohne Zugang nach außen.')}</span>
 
-              {formError && <div className="alert alert-danger">{formError}</div>}
+              {formError && <div className="alert alert-danger"><ErrorNote text={formError} /></div>}
 
               <input
                 ref={fileInput}

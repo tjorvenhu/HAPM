@@ -136,7 +136,7 @@ export default function AddressMoveWizard({
     const ok = await confirm({
       title: t('Nur die Adresse eintragen?'),
       message: t(
-        'HAPM legt dann weder Zertifikat noch Ziel an und lässt das alte Ziel stehen. Das passt, wenn HAPM hinter einem anderen Reverse-Proxy steht. Alle hinterlegten Passkeys werden gelöscht.'
+        'HAPM legt dann weder Zertifikat noch Ziel an und lässt das alte Ziel stehen. Das passt, wenn HAPM hinter einem anderen Reverse-Proxy steht. Alle hinterlegten Passkeys werden entfernt.'
       ),
       confirmLabel: t('Nur eintragen'),
       variant: currentUrl ? 'warning' : 'default',
@@ -357,7 +357,7 @@ export default function AddressMoveWizard({
                   />
                   {currentUrl && (
                     <div className="alert alert-warning">
-                      <span>{t('Alle hinterlegten Passkeys werden dabei gelöscht. Sie sind an die bisherige Domain gebunden und melden unter der neuen niemanden an.')}</span>
+                      <span>{t('Alle hinterlegten Passkeys werden dabei entfernt. Sie sind an die bisherige Domain gebunden und melden unter der neuen niemanden an.')}</span>
                     </div>
                   )}
                   <button type="button" className="btn btn-ghost btn-sm hapm-move-aside" onClick={saveOnly} disabled={busy || !domain}>
@@ -639,7 +639,7 @@ function Done({
   url: string;
   stages: AddressMoveStage[];
   lostContact: boolean;
-  /** Es gab eine Adresse davor: ihre Passkeys hat das Umstellen gelöscht. */
+  /** Es gab eine Adresse davor: ihre Passkeys hat das Umstellen entfernt. */
   passkeysGone: boolean;
 }) {
   const { t } = useT();
@@ -692,12 +692,13 @@ function Done({
         </a>
         {passkeysGone && (
           <p className="form-hint hapm-move-done-hint">
-            {t('Die Passkeys der bisherigen Adresse sind gelöscht. Neue legen Sie unter Konto an.')}
+            {t('Die bisherigen Passkeys sind entfernt. Neue legen Sie unter Konto an.')}
           </p>
         )}
         {lostContact && (
           <p className="form-hint hapm-move-done-hint">
-            {t('Die bisherige Adresse antwortet nicht mehr, ihr Ziel ist entfernt. Ob der letzte Schritt ganz durchgelaufen ist, steht unter der neuen Adresse in Allgemein.')}
+            {t('Die bisherige Adresse antwortet nicht mehr, ihr Ziel ist entfernt.')}
+            <InfoHint text={t('Ob der letzte Schritt ganz durchgelaufen ist, steht unter der neuen Adresse in Allgemein.')} />
           </p>
         )}
       </div>

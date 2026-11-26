@@ -47,26 +47,12 @@ export const crowdsec: Readonly<Record<string, string>> = {
   'CrowdSec ist auf diesem Server noch nicht eingerichtet': 'CrowdSec is not set up on this server yet',
   'Die Installation stammt von vor CrowdSec: ihre docker-compose.yml kennt die beiden Container noch nicht. Nachrüsten mit dem Installationsskript, es holt die neue Datei und startet CrowdSec mit. Daten und Einstellungen bleiben.':
     'This installation predates CrowdSec: its docker-compose.yml does not know the two containers yet. Add it with the install script, which fetches the new file and starts CrowdSec as well. Data and settings stay.',
-  'Solange CrowdSec oder der Bouncer fehlt, gehen alle Anfragen ungeprüft durch. Mehr sagt der Reiter „CrowdSec“ unter Reverse-Proxy, Logs.':
-    'While CrowdSec or the bouncer is missing, all requests pass unchecked. More in the "CrowdSec" tab under Reverse proxy, Logs.',
-  'Welche Ziele CrowdSec prüft': 'Which targets CrowdSec checks',
-  'Alle Ziele, über den Schalter für alle.': 'All targets, through the switch for all.',
-  '{count} Ziel mit eigenem Schalter.': '{count} target with its own switch.',
-  '{count} Ziele mit eigenem Schalter.': '{count} targets with their own switch.',
+  'Solange CrowdSec oder der Bouncer fehlt, gehen alle Anfragen ungeprüft durch. Mehr sagt der Reiter „CrowdSec“ unter Logs.':
+    'While CrowdSec or the bouncer is missing, all requests pass unchecked. More in the "CrowdSec" tab under Logs.',
   'Alle Ziele prüfen': 'Check all targets',
   'Steht im HTTPS-Frontend von HAProxy und gilt damit auch für Ziele, die später dazukommen. Ohne den Schalter prüft CrowdSec nur Ziele, bei denen es im Dialog des Ziels eingeschaltet ist.':
     'Lives in the HTTPS frontend of HAProxy and so also applies to targets added later. Without the switch, CrowdSec only checks targets where it is turned on in the target dialog.',
-  'Der Block „# CrowdSec“ in haproxy.cfg ist von Hand geändert und wird nicht angefasst.':
-    'The "# CrowdSec" block in haproxy.cfg was edited by hand and is left alone.',
-  'Wird übernommen.': 'Being applied.',
-  'An. Jede Anfrage geht durch CrowdSec.': 'On. Every request goes through CrowdSec.',
-  'Aus.': 'Off.',
-  'HAProxy wird neu geladen.': 'HAProxy is reloading.',
-  'Geprüft über': 'Checked through',
   'Eigener Schalter': 'Own switch',
-  'Schalter für alle': 'Switch for all',
-  'Noch kein Ziel. Einschalten lässt es sich hier für alle oder im Dialog eines Ziels unter „CrowdSec (WAF)“.':
-    'No target yet. Turn it on here for all, or in the dialog of a target under "CrowdSec (WAF)".',
   'Lokale API': 'Local API',
   Antwortet: 'Responding',
   'Antwortet nicht': 'Not responding',
@@ -74,11 +60,6 @@ export const crowdsec: Readonly<Record<string, string>> = {
   'Ja, zuletzt {ago}': 'Yes, last {ago}',
   'Nein. HAPM holt das in den nächsten Minuten nach.': 'No. HAPM catches up within the next minutes.',
   'OWASP-Regeln': 'OWASP rules',
-  'Was CrowdSec hier tut': 'What CrowdSec does here',
-  'Prüft jede Anfrage auf bekannte Angriffe und lehnt sie mit 403 ab.': 'Checks every request for known attacks and rejects them with 403.',
-  'Erkennung im Log': 'Log detection',
-  'Liest das Log von HAProxy und sperrt Adressen, die scannen oder raten.': 'Reads the HAProxy log and bans addresses that scan or guess.',
-  'Sperrt Adressen, die anderen CrowdSec-Installationen aufgefallen sind.': 'Bans addresses that other CrowdSec installations have reported.',
   'Den Container {name} gibt es nicht.': 'The container {name} does not exist.',
   Gemeinschaftsliste: 'Community blocklist',
 
@@ -124,7 +105,7 @@ export const crowdsec: Readonly<Record<string, string>> = {
   'Danach prüft CrowdSec die Anfragen von {value} wieder.': 'CrowdSec then checks requests from {value} again.',
   'Die Freigabe für {value} ist entfernt.': '{value} is removed from the allowlist.',
   'Adresse freigeben': 'Allow address',
-  'Freigegebene Adressen sperrt CrowdSec nicht, und die WAF prüft sie nicht.': 'CrowdSec does not ban allowed addresses, and the WAF does not check them.',
+  'Freigegebene Adressen sperrt CrowdSec nicht. Die WAF prüft sie nicht.': 'CrowdSec does not ban allowed addresses. The WAF does not check them.',
   'Eigene Adresse': 'Own address',
   'Eigene Adresse eintragen': 'Enter own address',
   Gilt: 'Valid for',
@@ -265,8 +246,8 @@ export const crowdsec: Readonly<Record<string, string>> = {
   // Regeln, Anwendungen
   Anwendungen: 'Applications',
   Anwendung: 'Application',
-  'Ausnahmen gegen bekannte Fehlsperren einzelner Anwendungen, für WordPress auch virtuelle Patches.':
-    'Exclusions against known false bans of individual applications, for WordPress also virtual patches.',
+  'Ausnahmen gegen bekannte Fehlsperren einzelner Anwendungen.':
+    'Exclusions against known false bans of individual applications.',
   'Wirkt auf': 'Applies to',
   Log: 'Log',
   OWASP: 'OWASP',
@@ -329,10 +310,10 @@ export const crowdsec: Readonly<Record<string, string>> = {
     'Music Assistant loads covers via /imageproxy/ with a long identifier per image, and missing images answer 404. That looks like a crawler or scanner to CrowdSec. The exclusion covers these requests.',
 
   // Logs und Statistik
-  'Was CrowdSec und sein Bouncer melden, die neueste Zeile oben. Erkannte Angriffe stehen unter CrowdSec, Ereignisse.':
-    'What CrowdSec and its bouncer report, newest line first. Detected attacks are under CrowdSec, Events.',
+  'Was CrowdSec und sein Bouncer melden, die neueste Zeile oben.':
+    'What CrowdSec and its bouncer report, newest line first.',
   Verkehr: 'Traffic',
-  'Was CrowdSec erkannt und abgelehnt hat: WAF-Treffer, Szenarien und Sperren.': 'What CrowdSec detected and rejected: WAF hits, scenarios and bans.',
+  'Was CrowdSec erkannt und abgelehnt hat: WAF-Treffer, Szenarien, Sperren.': 'What CrowdSec detected and rejected: WAF hits, scenarios, bans.',
   'Bouncer für HAProxy': 'Bouncer for HAProxy',
   Container: 'Container',
   'Den Container gibt es nicht': 'The container does not exist',
@@ -375,8 +356,8 @@ export const crowdsec: Readonly<Record<string, string>> = {
     'CrowdSec checks every request to this target: known attacks (WAF) and banned addresses. Rejections use 403. If CrowdSec does not respond, requests go through. Bans and allowlist are under Reverse proxy, CrowdSec.',
   'CrowdSec ist bei dieser Installation abgeschaltet.': 'CrowdSec is turned off for this installation.',
   'Gilt schon für alle Ziele.': 'Already applies to all targets.',
-  'Gilt schon für alle Ziele. Der eigene Schalter dieses Ziels lässt sich ausschalten.':
-    "Already applies to all targets. This target's own switch can be turned off.",
+  'Gilt schon für alle Ziele. Der eigene Schalter ist überflüssig.':
+    "Already applies to all targets. This target's own switch is redundant.",
   'Anfragen an dieses Ziel prüft CrowdSec.': 'CrowdSec checks requests to this target.',
   'Anfragen an dieses Ziel prüft CrowdSec nicht.': 'CrowdSec does not check requests to this target.',
 
@@ -409,4 +390,42 @@ export const crowdsec: Readonly<Record<string, string>> = {
     'CrowdSec checks requests to a backend with servers. A redirect has none.',
   'In {file} war keine Stelle für CrowdSec zu finden: gesucht wird die letzte bind-Zeile des Frontends mit "{marker}".':
     'No place for CrowdSec found in {file}: looking for the last bind line of the frontend with "{marker}".',
+  'Erkannte Angriffe stehen unter CrowdSec, Ereignisse.': 'Detected attacks are under CrowdSec, Events.',
+  'Der normale Betrieb mancher Anwendungen sieht für CrowdSec wie ein Angriff aus, etwa viele Antworten mit 404 in kurzer Zeit. Dann sperrt es die eigenen Nutzer. Die Ausnahmen nehmen diese bekannten Fälle aus der Prüfung. Für WordPress kommen virtuelle Patches gegen bekannte Lücken dazu.': 'The normal operation of some applications looks like an attack to CrowdSec, for example many 404 responses in a short time. It then bans your own users. The exclusions exempt these known cases from the check. For WordPress, virtual patches against known vulnerabilities are added.',
+  'CrowdSec leeren?': 'Clear CrowdSec?',
+  'Entfernt alle Ereignisse und hebt die Sperren auf, die CrowdSec daraus verhängt hat. Statistik und Zähler beginnen bei null. Sperren von Hand, Freigaben, Regeln und die Gemeinschaftsliste bleiben. Das dauert bis zu einer Minute.': 'Removes all events and lifts the bans CrowdSec imposed from them. Statistics and counters start at zero. Manual bans, the allowlist, rules and the community blocklist stay. This takes up to a minute.',
+  'Leeren': 'Clear',
+  'Leeren fehlgeschlagen': 'Clearing failed',
+  'CrowdSec ist geleert': 'CrowdSec is cleared',
+  'Diese Sperren von Hand ließen sich nicht wieder setzen: {values}': 'These manual bans could not be set again: {values}',
+  '{alerts} Ereignisse entfernt, {bans} Sperren aufgehoben.': '{alerts} events removed, {bans} bans lifted.',
+  '{count} Sperre von Hand gilt weiter.': '{count} manual ban stays in place.',
+  '{count} Sperren von Hand gelten weiter.': '{count} manual bans stay in place.',
+  'CrowdSec leeren': 'Clear CrowdSec',
+  'CrowdSec wird gerade geleert.': 'CrowdSec is being cleared right now.',
+  'Die Sperren sind aufgehoben, aber der Bouncer hat sie noch nicht abgeholt. Die Ereignisse stehen noch da. Bitte gleich noch einmal versuchen.': 'The bans are lifted, but the bouncer has not fetched them yet. The events are still there. Please try again in a moment.',
+  'Anfragen gehen ungeprüft durch.': 'Requests pass unchecked.',
+  'Prüft das eine Ziel.': 'Checks the one target.',
+  'Prüft alle {count} Ziele.': 'Checks all {count} targets.',
+  'Prüft {count} von {total} Zielen.': 'Checks {count} of {total} targets.',
+  'Eingebunden über einen eigenen Block in haproxy.cfg.': 'Included through a custom block in haproxy.cfg.',
+  'Prüft nichts': 'Checks nothing',
+  'Läuft, aber kein Ziel ist eingeschaltet.': 'Running, but no target is switched on.',
+  'CrowdSec prüft jede Anfrage an ein geschütztes Ziel auf bekannte Angriffe und lehnt sie mit 403 ab (WAF). Es liest das Log von HAProxy und sperrt Adressen, die scannen oder raten. Dazu sperrt es Adressen, die anderen CrowdSec-Installationen aufgefallen sind (Gemeinschaftsliste).': 'CrowdSec checks every request to a protected target for known attacks and rejects it with 403 (WAF). It reads the HAProxy log and bans addresses that scan or guess. It also bans addresses that other CrowdSec installations have noticed (community blocklist).',
+  'Verlauf': 'History',
+  'WAF-Treffer (24 h)': 'WAF hits (24 h)',
+  'Ereignisse (24 h)': 'Events (24 h)',
+  'Geschützte Ziele': 'Protected targets',
+  'Die Ziele, deren Anfragen CrowdSec prüft.': 'The targets whose requests CrowdSec checks.',
+  'Der Block „# CrowdSec“ in haproxy.cfg ist von Hand geändert. Der Schalter ist deshalb gesperrt.': 'The block "# CrowdSec" in haproxy.cfg was edited by hand. The switch is therefore locked.',
+  'Wird übernommen. HAProxy wird neu geladen.': 'Being applied. HAProxy is reloading.',
+  '„Alle Ziele prüfen“ ist an: CrowdSec prüft jedes Ziel, auch jedes neue.': '"Check all targets" is on: CrowdSec checks every target, including every new one.',
+  'Am Ziel selbst eingeschaltet. Bleibt geprüft, auch wenn der Schalter für alle aus ist.': 'Switched on at the target itself. Stays checked even when the switch for all is off.',
+  'Ereignisse von {target}': 'Events of {target}',
+  'Noch kein Ziel': 'No target yet',
+  'Sobald es Ziele gibt, stehen hier die, die CrowdSec prüft.': 'Once there are targets, the ones CrowdSec checks are listed here.',
+  'Kein Ziel wird geschützt': 'No target is protected',
+  'Oben „Alle Ziele prüfen“ einschalten, oder CrowdSec im Dialog eines Ziels.': 'Switch on "Check all targets" above, or CrowdSec in the dialog of a target.',
+  '{count} weiteres Ziel prüft CrowdSec nicht.': 'CrowdSec does not check {count} other target.',
+  '{count} weitere Ziele prüft CrowdSec nicht.': 'CrowdSec does not check {count} other targets.',
 };

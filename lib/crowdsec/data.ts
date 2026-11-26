@@ -398,3 +398,42 @@ export function cleanNote(value: unknown, max = 120): string {
     .trim()
     .slice(0, max);
 }
+
+/** Woran man eine Sperre von Hand erkennt (`cscli decisions add`, `import`). */
+const MANUAL_ORIGINS = new Set(['cscli', 'cscli-import']);
+
+export function isManualBan(decision: Pick<CrowdsecDecision, 'origin'>): boolean {
+  return MANUAL_ORIGINS.has(decision.origin);
+}
+
+export interface BanToRestore {
+  value: string;
+  scope: 'ip' | 'range';
+  /** Die Restdauer in ganzen Sekunden, wie `cscli --duration` sie annimmt (`3600s`). */
+  duration: string;
+  reason: string;
+}
+
+/**
+ * Die Sperren von Hand, die das Leeren der Ereignisse überstehen sollen.
+ * `cscli alerts delete` nimmt die Sperre mit ihrem Ereignis weg, deshalb setzt
+ * HAPM sie danach mit der Restdauer neu. Je Adresse die längste, Abgelaufenes
+ * und was keine Adresse ist, fällt weg.
+ */
+export function bansToRestore(decisions: readonly CrowdsecDecision[], now: number): BanToRestore[] {
+  const byValue = new Map<string, { left: number; ban: BanToRestore }>();
+  for (const decision of decisions) {
+    if (!isManualBan(decision) || decision.type !== 'ban' || decision.simulated || !decision.until) continue;
+    const address = parseAddress(decision.value);
+    if (!address) continue;
+    const left = Math.floor((Date.parse(decision.until) - now) / 1000);
+    if (!(left >= 60)) continue;
+    const known = byValue.get(address.value);
+    if (known && known.left >= left) continue;
+    byValue.set(address.value, {
+      left,
+      ban: { ...address, duration: `${left}s`, reason: cleanNote(decision.reason) || 'Gesperrt in HAPM' },
+    });
+  }
+  return [...byValue.values()].map((entry) => entry.ban);
+}

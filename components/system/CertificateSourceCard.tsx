@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
+import ErrorNote from '@/components/ErrorNote';
 import Link from 'next/link';
 import { Loader2, Save, ShieldCheck, Upload } from 'lucide-react';
 import { InfoHint } from '@/ui/primitives/InfoHint';
@@ -120,12 +121,12 @@ export default function CertificateSourceCard({
             <ShieldCheck size={17} strokeWidth={1.5} />
             {t('Zertifikate')}
           </h2>
-          <p className="card-subtitle">{t('Woher neue Zertifikate kommen und bei welchem ACME-Server sie beantragt werden.')}</p>
+          <p className="card-subtitle">{t('Woher neue Zertifikate kommen: über ACME oder hochgeladen.')}</p>
         </div>
       </div>
 
       <form className="card-body" onSubmit={save}>
-        {error && <div className="alert alert-danger">{error}</div>}
+        {error && <div className="alert alert-danger"><ErrorNote text={error} /></div>}
 
         <div className="hapm-choices">
           <button

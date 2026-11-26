@@ -35,6 +35,8 @@ interface MetricChartProps {
   bars?: boolean;
   /** Feste Obergrenze, z. B. 100 bei Prozentwerten. */
   max?: number;
+  /** Anzahlen: nur ganze Zahlen an der Achse. Sonst steht bei kleinen Werten „1, 1, 2, 2" da. */
+  integers?: boolean;
   height?: number;
   /** Macht die Legende anklickbar (Container: der Name führt in die Detailansicht). */
   onSelect?: (name: string) => void;
@@ -49,6 +51,7 @@ function MetricChart({
   area = false,
   bars = false,
   max,
+  integers = false,
   height = 190,
   onSelect,
 }: MetricChartProps) {
@@ -71,6 +74,7 @@ function MetricChart({
       variant={bars ? 'bars' : area || stacked ? 'area' : 'line'}
       stacked={stacked || (bars && series.length > 1)}
       domain={max === undefined ? undefined : [0, max]}
+      integers={integers}
       height={height}
       dots={false}
       onSelect={onSelect ? (key) => onSelect(nameByKey.get(key) ?? key) : undefined}

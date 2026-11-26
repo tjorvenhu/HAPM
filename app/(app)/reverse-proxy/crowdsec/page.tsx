@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useCallback, useState } from 'react';
+import ErrorNote from '@/components/ErrorNote';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Ban, CheckCircle2, LayoutDashboard, ListChecks, Loader2, Power, RefreshCw, ScrollText } from 'lucide-react';
 import PageHeading from '@/components/PageHeading';
@@ -105,7 +106,7 @@ function CrowdsecView() {
         <PageHeading
           icon={<BrandLogo brand="crowdsec" size={22} />}
           title="CrowdSec"
-          back={{ label: t('Übersicht'), href: '/reverse-proxy' }}
+          back={{ label: t('Ziele'), href: '/reverse-proxy' }}
           note={t('WAF, Sperren und Freigaben')}
         />
         <div className="page-actions">
@@ -122,7 +123,7 @@ function CrowdsecView() {
         </div>
       </div>
 
-      {overview.error && !data && <div className="alert alert-danger sys-block">{overview.error}</div>}
+      {overview.error && !data && <div className="alert alert-danger sys-block"><ErrorNote text={overview.error} /></div>}
 
       {inStack && <AreaTabs areas={AREAS} value={area} onChange={select} />}
 
@@ -141,6 +142,7 @@ function CrowdsecView() {
           target={target}
           onTarget={chooseTarget}
           targets={data.protection.targets}
+          onCleared={() => void overview.reload()}
         />
       ) : (
         <RulesPanel />

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import ErrorNote from '@/components/ErrorNote';
 import { FileWarning, Loader2, Paintbrush } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
@@ -154,14 +155,12 @@ export default function ErrorPagesPanel({ row, onWritten }: ErrorPagesPanelProps
       {!row ? (
         <SkeletonRows count={3} />
       ) : row.error ? (
-        <div className="alert alert-danger">{row.error}</div>
+        <div className="alert alert-danger"><ErrorNote text={row.error} /></div>
       ) : row.entries.length === 0 ? (
-        <span className="form-hint">
-          {t('In der Konfiguration steht keine errorfile-Zeile. HAProxy zeigt seine eigenen Seiten, und hier gibt es nichts zu schreiben.')}
-        </span>
+        <span className="form-hint">{t('Keine errorfile-Zeile in haproxy.cfg. HAProxy zeigt eigene Seiten.')}</span>
       ) : (
         <div className="table-wrap">
-          <table className="table">
+          <table className="table table-cards">
             <thead>
               <tr>
                 <th>{t('Datei')}</th>
@@ -173,10 +172,10 @@ export default function ErrorPagesPanel({ row, onWritten }: ErrorPagesPanelProps
             <tbody>
               {row.entries.map((entry) => (
                 <tr key={entry.path}>
-                  <td className="mono">{entry.path}</td>
-                  <td>{entry.status ?? t('Unbekannt')}</td>
-                  <td>{entry.codes.join(', ')}</td>
-                  <td>
+                  <td className="mono" data-label="primary">{entry.path}</td>
+                  <td data-label={t('Status der Seite')}>{entry.status ?? t('Unbekannt')}</td>
+                  <td data-label={t('Gezeigt bei')}>{entry.codes.join(', ')}</td>
+                  <td data-label={t('Zustand')}>
                     <span
                       className={`badge-status ${STATE[entry.state].className}`}
                       data-tooltip={t(STATE[entry.state].hint)}

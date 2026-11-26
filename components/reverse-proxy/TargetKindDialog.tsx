@@ -64,22 +64,22 @@ const KINDS: {
   {
     kind: 'proxy',
     icon: <Globe size={18} />,
-    sub: msgid('Eine Domain auf ein Ziel im Backend. Mit Zertifikat und Healthcheck, der Normalfall.'),
+    sub: msgid('Eine Domain auf ein Ziel, mit Zertifikat. Der Normalfall.'),
   },
   {
     kind: 'balance',
     icon: <Scale size={18} />,
-    sub: msgid('Eine Domain auf mehrere Ziele: Verfahren, Gewichtung und auf Wunsch Sitzungsbindung.'),
+    sub: msgid('Eine Domain auf mehrere Ziele: Verfahren, Gewicht, Sitzungsbindung.'),
   },
   {
     kind: 'redirect',
     icon: <CornerUpRight size={18} />,
-    sub: msgid('Eine Domain antwortet mit 301 oder 302 und zeigt woanders hin. Ohne eigenen Server dahinter.'),
+    sub: msgid('Eine Domain antwortet mit 301 oder 302 und zeigt woanders hin.'),
   },
   {
     kind: 'stream',
     icon: <Cable size={18} />,
-    sub: msgid('Ein Port dieses Servers, durchgereicht an ein Ziel dahinter: Datenbank, SSH, SMTP. Ohne Domain und ohne Zertifikat.'),
+    sub: msgid('Ein Port dieses Servers an ein Ziel dahinter: Datenbank, SSH, SMTP.'),
   },
 ];
 

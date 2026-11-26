@@ -119,7 +119,7 @@ export default function TwoFactorSetup({ start, verify, onComplete, onCancel, re
       <div className="two-factor-dialog">
         <div className="two-factor-header">
           {cancellable && (
-            <button type="button" className="two-factor-close" onClick={onCancel} aria-label={t("Abbrechen")}>
+            <button type="button" className="two-factor-close" onClick={onCancel} aria-label={t("Dialog schließen")}>
               <X size={18} />
             </button>
           )}
@@ -162,7 +162,7 @@ export default function TwoFactorSetup({ start, verify, onComplete, onCancel, re
         {step === "scan" && (
           <div className="two-factor-body">
             <p style={{ marginBottom: 16, color: "var(--text-secondary)", fontSize: "0.875rem" }}>
-              {t("Scannen Sie den QR-Code mit Ihrer Authenticator-App oder geben Sie den Code manuell ein.")}
+              {t("Scannen Sie den QR-Code mit der App oder tippen Sie den Code ab.")}
             </p>
 
             <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
@@ -205,7 +205,7 @@ export default function TwoFactorSetup({ start, verify, onComplete, onCancel, re
         {step === "verify" && (
           <form className="two-factor-body" onSubmit={verifyCode}>
             <p style={{ marginBottom: 16, color: "var(--text-secondary)", fontSize: "0.875rem" }}>
-              {t("Geben Sie den 6-stelligen Code aus Ihrer Authenticator-App ein, um die Einrichtung abzuschließen.")}
+              {t("Geben Sie den 6-stelligen Code aus Ihrer Authenticator-App ein.")}
             </p>
             <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 20 }}>
               <input
@@ -244,7 +244,7 @@ export default function TwoFactorSetup({ start, verify, onComplete, onCancel, re
                 "Mit diesen Codes können Sie sich anmelden, falls Sie den Zugriff auf Ihre Authenticator-App verlieren. Jeder Code ist einmal verwendbar und wird {onlyNow} angezeigt.",
                 { onlyNow: <strong>{t("nur jetzt")}</strong> }
               )}{" "}
-              {t("Legen Sie sie getrennt von diesem Gerät ab, zum Beispiel ausgedruckt oder im Passwortmanager.")}
+              {t("Legen Sie sie getrennt von diesem Gerät ab, etwa im Passwortmanager.")}
             </p>
 
             <div style={{ marginBottom: 16 }}>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
+import ErrorNote from '@/components/ErrorNote';
 import { createPortal } from 'react-dom';
 import { RotateCw, X } from 'lucide-react';
 import Select from '@/components/Select';
@@ -70,9 +71,7 @@ export default function CertificateIssueDialog({ mainDomain, domains, dnsHooks, 
 
         <div className="modal-body">
           <p className="form-hint">
-            {t('acme.sh beantragt ein Zertifikat für {domains} und legt es für HAProxy ab. Ziele mit eigenem Zertifikat behalten es.', {
-              domains: domains.join(', '),
-            })}
+            {t('Gilt für {domains}. Ziele mit eigenem Zertifikat behalten es.', { domains: domains.join(', ') })}
           </p>
 
           {chooseHook && (
@@ -88,7 +87,7 @@ export default function CertificateIssueDialog({ mainDomain, domains, dnsHooks, 
             </div>
           )}
 
-          {error && <div className="alert alert-danger">{error}</div>}
+          {error && <div className="alert alert-danger"><ErrorNote text={error} /></div>}
         </div>
 
         <div className="modal-footer">

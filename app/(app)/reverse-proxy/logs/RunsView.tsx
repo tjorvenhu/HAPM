@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import ErrorNote from '@/components/ErrorNote';
 import {
   ScrollText, Eye, RefreshCw, Loader2, Plus, Pencil, Trash2, Settings2, FolderPlus,
   FolderMinus, Cable, ShieldCheck, FileInput,
@@ -53,7 +54,7 @@ interface RunView {
 const ACTION_LABELS: Record<HaproxyAction, string> = {
   create: msgid('Angelegt'),
   update: msgid('Geändert'),
-  delete: msgid('Gelöscht'),
+  delete: msgid('Entfernt'),
   settings: msgid('Einstellungen'),
   'scope-add': msgid('Gruppe angelegt'),
   'scope-remove': msgid('Gruppe entfernt'),
@@ -62,7 +63,7 @@ const ACTION_LABELS: Record<HaproxyAction, string> = {
   // Etikett sehen und nicht erst an der Spalte daneben.
   'stream-create': msgid('TCP angelegt'),
   'stream-update': msgid('TCP geändert'),
-  'stream-delete': msgid('TCP gelöscht'),
+  'stream-delete': msgid('TCP entfernt'),
   certificate: msgid('Zertifikat'),
   import: msgid('Import'),
 };
@@ -159,7 +160,7 @@ export default function RunsView() {
         setRuns(data.data);
         setError('');
       } catch (err: unknown) {
-        setError(errorText(err, t('Die Protokolle konnten nicht geladen werden.')));
+        setError(errorText(err, t('Die Vorgänge konnten nicht geladen werden.')));
       } finally {
         setLoading(false);
       }
@@ -188,7 +189,7 @@ export default function RunsView() {
 
   return (
     <>
-      {error && <div className="alert alert-danger sys-block">{error}</div>}
+      {error && <div className="alert alert-danger sys-block"><ErrorNote text={error} /></div>}
 
       <div className="logs-toolbar">
         <div className="form-group">
@@ -249,17 +250,17 @@ export default function RunsView() {
              Seitengröße, führt der Knopf auf eine leere Seite. */
           <div className="empty-state">
             <ScrollText size={40} />
-            <h3>{t('Keine weiteren Protokolle')}</h3>
+            <h3>{t('Keine weiteren Vorgänge')}</h3>
             <p>{t('Die Einträge enden auf einer früheren Seite.')}</p>
           </div>
         ) : (
           <div className="empty-state">
             <ScrollText size={40} />
-            <h3>{t('Keine Protokolle')}</h3>
+            <h3>{t('Keine Vorgänge')}</h3>
             <p>
               {actionFilter || statusFilter
                 ? t('Für diesen Filter gibt es keine Einträge.')
-                : t('Sobald ein Ziel angelegt, geändert oder gelöscht wurde, steht der Vorgang hier.')}
+                : t('Sobald ein Ziel angelegt, geändert oder entfernt wurde, steht der Vorgang hier.')}
             </p>
           </div>
         )
@@ -331,9 +332,9 @@ export default function RunsView() {
                   <td data-label="actions" className="logs-end">
                     <button
                       className="btn btn-ghost btn-icon btn-sm"
-                      data-tooltip={t('Schritte anzeigen')}
+                      data-tooltip={t('Schritte ansehen')}
                       data-tooltip-pos="left"
-                      aria-label={t('Schritte anzeigen')}
+                      aria-label={t('Schritte ansehen')}
                       onClick={() => openRun({ kind: 'haproxy', id: run.$id })}
                     >
                       <Eye size={16} />

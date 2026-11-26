@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import ErrorNote from '@/components/ErrorNote';
 import { FileText, Loader2, RefreshCw, Search, X } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { usePolling } from '@/components/usePolling';
@@ -195,7 +196,7 @@ export default function HaproxyLogView() {
         </div>
       </div>
 
-      {error && <div className="alert alert-danger sys-block">{error}</div>}
+      {error && <div className="alert alert-danger sys-block"><ErrorNote text={error} /></div>}
 
       {loading && !log ? (
         <SkeletonRows />

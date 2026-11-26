@@ -253,7 +253,7 @@ bleiben.
    IP und Port, ein Passwortmanager speicherte die Anmeldung für diese Adresse,
    und ein Passkey hängt an der Domain. Das Fenster erscheint ohne zweiten
    Faktor und ohne Passkey, bis jemand es wegklickt (`securityPromptDismissedAt`
-   in `user_state`). „Passkey anlegen“ führt nach
+   in `user_state`). „Passkey hinterlegen“ führt nach
    `/konto?bereich=passkeys&passkey=neu`, wo der Dialog gleich aufgeht.
    Nach einer Anmeldung mit einem Wiederherstellungscode geht es auf
    `/konto?bereich=zweiter-faktor`: dort stehen die übrigen Codes. Fehlen

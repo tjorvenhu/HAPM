@@ -5,7 +5,7 @@ export const logs: Dictionary = {
   // Reiter
   "Vorgänge": "Tasks",
   "HAProxy-Log": "HAProxy log",
-  "Was HAProxy selbst schreibt: jede Anfrage und jede Meldung des Prozesses, die neueste oben.": "What HAProxy itself writes: every request and every message of the process, newest first.",
+  "Was HAProxy selbst schreibt: Anfragen und Meldungen, die neueste oben.": "What HAProxy itself writes: requests and messages, newest first.",
 
   // Vorgänge
   "{count} weitere": "{count} more",

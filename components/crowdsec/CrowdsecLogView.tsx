@@ -1,11 +1,12 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import ErrorNote from '@/components/ErrorNote';
 import { FileText, Loader2, RefreshCw, Search, X } from 'lucide-react';
 import Select from '@/components/Select';
 import { SkeletonRows } from '@/components/Skeleton';
 import { parseCrowdsecLogLine, type CrowdsecLogLine, type LogLevel } from '@/lib/crowdsec/log-lines';
-import { formatDate, formatDateTime, formatMs, formatNumber, formatTime, msgid, type Locale } from '@/lib/i18n';
+import { MISSING, formatDate, formatDateTime, formatMs, formatNumber, formatTime, msgid, type Locale } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
 import { useCrowdsecData } from './useCrowdsecData';
 
@@ -156,7 +157,7 @@ export default function CrowdsecLogView() {
         </div>
       </div>
 
-      {error && <div className="alert alert-danger sys-block">{error}</div>}
+      {error && <div className="alert alert-danger sys-block"><ErrorNote text={error} /></div>}
 
       {!data ? (
         loading ? <SkeletonRows /> : null
@@ -222,14 +223,14 @@ export default function CrowdsecLogView() {
                             )}
                           </>
                         ) : (
-                          <span className="logs-muted">–</span>
+                          <span className="logs-muted">{MISSING}</span>
                         )}
                       </td>
                       <td data-label={t('Stufe')}>
                         {line.level ? (
                           <span className={`badge-status ${LEVEL_BADGE[line.level].cls}`}>{LEVEL_BADGE[line.level].label}</span>
                         ) : (
-                          <span className="logs-muted">–</span>
+                          <span className="logs-muted">{MISSING}</span>
                         )}
                       </td>
                       <td data-label={t('Meldung')}>
@@ -257,7 +258,7 @@ export default function CrowdsecLogView() {
                         )}
                       </td>
                       <td data-label={t('Bereich')}>
-                        {areaOf(line) ? <span className="logs-mono">{areaOf(line)}</span> : <span className="logs-muted">–</span>}
+                        {areaOf(line) ? <span className="logs-mono">{areaOf(line)}</span> : <span className="logs-muted">{MISSING}</span>}
                       </td>
                     </tr>
                   );

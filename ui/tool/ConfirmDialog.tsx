@@ -44,7 +44,7 @@ interface ConfirmOptions {
    * wirft die Meldung der Route und meldet nicht selbst.
    */
   onConfirm?: (checkboxChecked: boolean) => Promise<void>;
-  /** Der Titel dieser Meldung, etwa „Löschen fehlgeschlagen". Ohne Angabe „Fehlgeschlagen". */
+  /** Der Titel dieser Meldung, etwa „Entfernen fehlgeschlagen". Ohne Angabe „Fehlgeschlagen". */
   failedTitle?: string;
 }
 

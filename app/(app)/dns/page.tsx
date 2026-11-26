@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, type FormEvent } from 'react';
+import ErrorNote from '@/components/ErrorNote';
 import { Globe, Plus, Loader2, Trash2, KeyRound, Info, ExternalLink } from 'lucide-react';
 import PageHeading from '@/components/PageHeading';
 import { useApp } from '@/components/AppShell';
@@ -181,9 +182,9 @@ export default function DnsZonesPage() {
 
   async function handleDelete(zone: ZoneRow) {
     await confirm({
-      title: t('Anbindung entfernen'),
+      title: t('Anbindung entfernen?'),
       message: t(
-        'Bei {provider} ändert sich nichts: die Zone {zone} und ihre Einträge bleiben. HAPM legt danach für Ziele unter dieser Domain keinen DNS-Eintrag mehr an. Der API-Token wird gelöscht.',
+        'Bei {provider} ändert sich nichts: die Zone {zone} und ihre Einträge bleiben. HAPM legt danach für Ziele unter dieser Domain keinen DNS-Eintrag mehr an. Der API-Token wird entfernt.',
         { provider: dnsProviderInfo(zone.provider).label, zone: zone.name }
       ),
       confirmLabel: t('Entfernen'),
@@ -203,12 +204,21 @@ export default function DnsZonesPage() {
     <>
       <div className="page-header">
         <div>
-          <PageHeading icon={<Globe size={20} />} title={t('Domains')} back={{ label: t('Übersicht'), href: '/reverse-proxy' }} />
-          <p className="page-subtitle">
-            {t(
-              'Der Zugang zu Hetzner oder Cloudflare. Damit legt HAPM den DNS-Eintrag eines Ziels an, und der Einrichtungsassistent den Eintrag der Oberfläche. Die übrigen Einträge verwalten Sie beim Anbieter.'
-            )}
-          </p>
+          <PageHeading
+            icon={<Globe size={20} />}
+            title={
+              <>
+                {t('DNS')}
+                <InfoHint
+                  text={t(
+                    'Mit dem Zugang legt HAPM den DNS-Eintrag eines Ziels an, und der Einrichtungsassistent den Eintrag der Oberfläche. Die übrigen Einträge verwalten Sie beim Anbieter.'
+                  )}
+                />
+              </>
+            }
+            back={{ label: t('Ziele'), href: '/reverse-proxy' }}
+          />
+          <p className="page-subtitle">{t('Angebundene Domains und ihr Zugang zu Hetzner oder Cloudflare.')}</p>
         </div>
         <div className="page-actions">
           <button className="btn btn-primary" onClick={openModal}>
@@ -218,7 +228,7 @@ export default function DnsZonesPage() {
         </div>
       </div>
 
-      {error && <div className="alert alert-danger sys-block">{error}</div>}
+      {error && <div className="alert alert-danger sys-block"><ErrorNote text={error} /></div>}
 
       {/* Nach einem gescheiterten Abruf ist nicht bekannt, ob es Domains gibt:
           dann steht nur die Meldung da, nicht „Noch keine Domain angebunden“. */}
@@ -286,7 +296,7 @@ export default function DnsZonesPage() {
                 {zone.zoneId}
               </EntityField>
               <EntityField label={t('Zuletzt geprüft')}>
-                {zone.lastCheckedAt ? formatRelative(locale, now, zone.lastCheckedAt) : t('nie')}
+                {zone.lastCheckedAt ? formatRelative(locale, now, zone.lastCheckedAt) : t('noch nie')}
               </EntityField>
               {zone.lastError && <EntityField label={t('Fehler')}>{zone.lastError}</EntityField>}
             </EntityCard>
@@ -305,7 +315,7 @@ export default function DnsZonesPage() {
             </div>
             <form onSubmit={handleSubmit}>
               <div className="modal-body">
-                {formError && <div className="alert alert-danger sys-block">{formError}</div>}
+                {formError && <div className="alert alert-danger sys-block"><ErrorNote text={formError} /></div>}
 
                 <div className="form-group">
                   <span className="form-label">{t('Anbieter')}</span>
@@ -380,12 +390,7 @@ export default function DnsZonesPage() {
 
                     <div className="form-note">
                       <Info size={14} />
-                      <span>
-                        {t(
-                          'Der Token wird sofort ausprobiert: die Kennung der Zone kommt aus der Antwort von {provider}. Findet er die Domain nicht, sagt die Meldung, welche Zonen er stattdessen sieht.',
-                          { provider: chosen.label }
-                        )}
-                      </span>
+                      <span>{t('Der Token wird beim Anbinden sofort bei {provider} geprüft.', { provider: chosen.label })}</span>
                     </div>
                   </>
                 )}
@@ -425,10 +430,16 @@ export default function DnsZonesPage() {
             <form onSubmit={handleRotate}>
               <div className="modal-body">
                 <div className="form-group">
-                  <label className="form-label">
-                    {t('Neuer Token von {provider}', { provider: dnsProviderInfo(rotating.provider).label })}
-                  </label>
+                  <div className="form-label-row">
+                    <label className="form-label" htmlFor="dnsNewToken">
+                      {t('Neuer Token von {provider}', { provider: dnsProviderInfo(rotating.provider).label })}
+                    </label>
+                    <InfoHint
+                      text={t('Der neue Token muss dieselbe Zone sehen. Sonst wird er abgelehnt, und der bisherige bleibt stehen.')}
+                    />
+                  </div>
                   <input
+                    id="dnsNewToken"
                     className="form-input"
                     type="password"
                     value={newToken}
@@ -436,11 +447,7 @@ export default function DnsZonesPage() {
                     autoComplete="off"
                     required
                   />
-                  <span className="form-hint">
-                    {t(
-                      'Der bisherige Token wird ersetzt. Der neue muss dieselbe Zone sehen, sonst wird er abgelehnt, und der alte bleibt stehen.'
-                    )}
-                  </span>
+                  <span className="form-hint">{t('Der bisherige Token wird ersetzt.')}</span>
                 </div>
               </div>
               <div className="modal-footer">

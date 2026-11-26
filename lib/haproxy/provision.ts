@@ -878,13 +878,13 @@ export async function refreshGeoBlockFiles(server: Server): Promise<'none' | 'un
     if (countries.length === 0) return 'none';
 
     const files = await ensureGeoBlockFiles(ssh, countries);
-    if (!files.ok) throw new Error(files.detail);
+    if (!files.ok) throw new ApiError(files.detail, 502);
     if (!files.changed) return 'unchanged';
 
     const check = await sshExec(ssh, buildCommand(['haproxy', '-c', '-f', HAPROXY_CFG]), SHORT_MS);
-    if (check.code !== 0) throw new Error(tail(check.stderr || check.stdout));
+    if (check.code !== 0) throw new ApiError(tail(check.stderr || check.stdout), 409);
     const reload = await sshExec(ssh, buildCommand(RELOAD_ARGV), RELOAD_MS);
-    if (reload.code !== 0) throw new Error(tail(reload.stderr || reload.stdout));
+    if (reload.code !== 0) throw new ApiError(tail(reload.stderr || reload.stdout), 502);
     return 'reloaded';
   });
 }
@@ -907,14 +907,14 @@ export async function refreshCrowdsecAllowFile(server: Server, content: string):
       `${buildCommand(['mkdir', '-p', CROWDSEC_SPOE_DIR])} && ${withStdin(['sh', '-c', 'cat > "$1"', 'sh', CROWDSEC_ALLOW_FILE], content)}`,
       SHORT_MS
     );
-    if (write.code !== 0) throw new Error(tail(write.stderr));
+    if (write.code !== 0) throw new ApiError(tail(write.stderr), 502);
 
     const probe = await probeProxy(server);
     if (!probe.configReadable || !usesCrowdsec(probe.raw)) return 'written';
     const check = await sshExec(ssh, buildCommand(['haproxy', '-c', '-f', HAPROXY_CFG]), SHORT_MS);
-    if (check.code !== 0) throw new Error(tail(check.stderr || check.stdout));
+    if (check.code !== 0) throw new ApiError(tail(check.stderr || check.stdout), 409);
     const reload = await sshExec(ssh, buildCommand(RELOAD_ARGV), RELOAD_MS);
-    if (reload.code !== 0) throw new Error(tail(reload.stderr || reload.stdout));
+    if (reload.code !== 0) throw new ApiError(tail(reload.stderr || reload.stdout), 502);
     return 'reloaded';
   });
 }
@@ -931,9 +931,9 @@ export async function reloadForCrowdsec(server: Server): Promise<'none' | 'reloa
     if (!probe.configReadable || !usesCrowdsec(probe.raw)) return 'none';
     const ssh = await getSSHConfig(server);
     const check = await sshExec(ssh, buildCommand(['haproxy', '-c', '-f', HAPROXY_CFG]), SHORT_MS);
-    if (check.code !== 0) throw new Error(tail(check.stderr || check.stdout));
+    if (check.code !== 0) throw new ApiError(tail(check.stderr || check.stdout), 409);
     const reload = await sshExec(ssh, buildCommand(RELOAD_ARGV), RELOAD_MS);
-    if (reload.code !== 0) throw new Error(tail(reload.stderr || reload.stdout));
+    if (reload.code !== 0) throw new ApiError(tail(reload.stderr || reload.stdout), 502);
     return 'reloaded';
   });
 }

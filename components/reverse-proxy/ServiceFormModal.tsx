@@ -1,6 +1,7 @@
 'use client';
 
 import { Fragment, useEffect, useState, type FormEvent } from 'react';
+import ErrorNote from '@/components/ErrorNote';
 import Link from 'next/link';
 import {
   Plus, Trash2, Loader2, X, Server, Waypoints, Info, Globe, Lock,
@@ -8,6 +9,7 @@ import {
   CircleCheck, CircleDashed, CircleAlert,
 } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
+import { useTabMotion } from '@/components/AreaTabs';
 import { useToast } from '@/components/Toast';
 import { errorText } from '@/components/errorText';
 import { suggestPassword } from '@/components/suggestPassword';
@@ -351,6 +353,7 @@ export default function ServiceFormModal({
   });
   /** Der Reiter des Dialogs. Beginnt bei den Domains, beim Bearbeiten auch. */
   const [tab, setTab] = useState<FormTab>('domains');
+  const motion = useTabMotion(tab);
   const [tunnel, setTunnel] = useState(edit?.service.tunnel ?? false);
   /** CrowdSec für dieses Ziel. Gilt es global, ist der Schalter an und gesperrt. */
   const [crowdsec, setCrowdsec] = useState(edit?.service.crowdsec ?? false);
@@ -933,7 +936,7 @@ export default function ServiceFormModal({
       </div>
       <form onSubmit={handleSubmit}>
         <div className="modal-body">
-          {formError && <div className="alert alert-danger">{formError}</div>}
+          {formError && <div className="alert alert-danger"><ErrorNote text={formError} /></div>}
 
           {/* Dass der Eintrag in einem Zug ersetzt wird, stand hier als Satz —
               er beschrieb, wie das Werkzeug arbeitet, und nicht, was jemand
@@ -948,7 +951,7 @@ export default function ServiceFormModal({
           {/* Vier Reiter statt einer langen Seite, wie unter Einstellungen.
               Alles bleibt im Zustand des Formulars: ein Wechsel verliert
               nichts, und gespeichert wird immer der ganze Eintrag. */}
-          <div className="tabs form-tabs" role="tablist">
+          <div className={`tabs form-tabs ${motion}`} role="tablist">
             {FORM_TABS.filter((entry) => !(redirecting && entry.key === 'erweitert')).map((entry) => {
               const Icon = entry.icon;
               return (
@@ -997,7 +1000,7 @@ export default function ServiceFormModal({
                   />
                   {scopeOptions.length === 0 && (
                     <span className="form-hint">
-                      {t('In der Konfiguration steht kein vollständiger Marker-Block. Gruppen legt man in der Übersicht an.')}
+                      {t('Noch keine Gruppe. Gruppen legt man in der Übersicht an.')}
                     </span>
                   )}
                 </div>
@@ -1112,7 +1115,7 @@ export default function ServiceFormModal({
                   </div>
                 )}
                 {certificateDue && certificatePresent && (uploadOnly || needsDnsChallenge(input.domains, selectedProxy?.exposure ?? 'public', selectedProxy?.httpChallenge ?? false)) && (
-                  <p className="form-hint">{t('Ein vorhandenes Zertifikat deckt diese Domains ab. Es wird keins beantragt.')}</p>
+                  <p className="form-hint">{t('Ein Zertifikat für diese Domains liegt vor. Es wird keins beantragt.')}</p>
                 )}
 
                 {/* ── DNS-Hook ──
@@ -1181,7 +1184,7 @@ export default function ServiceFormModal({
                       {dnsRows.length > 0 && (
                         <InfoHint
                           text={t(
-                            'Der Eintrag zeigt auf die Domain der Zone selbst, deren A-Eintrag auf diesen Server zeigt. Beim Löschen des Ziels wird angeboten, ihn mitzunehmen.'
+                            'Der Eintrag zeigt auf die Domain der Zone selbst, deren A-Eintrag auf diesen Server zeigt. Beim Entfernen des Ziels wird angeboten, ihn mitzunehmen.'
                           )}
                         />
                       )}
@@ -1330,8 +1333,17 @@ export default function ServiceFormModal({
                     )}
                   </span>
                   <div>
-                    <div className="form-section-title">
-                      {t(redirecting ? 'Weiterleitung' : balancing ? 'Ziele' : 'Ziel')}
+                    <div className="form-label-row">
+                      <div className="form-section-title">
+                        {t(redirecting ? 'Weiterleitung' : balancing ? 'Ziele' : 'Ziel')}
+                      </div>
+                      {redirecting && (
+                        <InfoHint
+                          text={t(
+                            'Pfad-Regeln, Header, Healthcheck und Verteilverfahren gehören zu einem Eintrag mit Zielen. Wer sie braucht, legt einen Reverse-Proxy oder eine Lastverteilung an.'
+                          )}
+                        />
+                      )}
                     </div>
                     <div className="form-section-sub">
                       {t(
@@ -1420,12 +1432,10 @@ export default function ServiceFormModal({
                           <span className="toggle-slider" />
                         </label>
                       </div>
+                      {/* Eine Folge und kein Hinweis: sie steht als Warnung da. */}
                       {redirectPermanent && (
-                        <div className="form-note">
-                          <Info size={14} />
-                          <span>
-                            {t('Ein Browser merkt sich eine 301 und ruft die alte Adresse nicht mehr auf. Wer sie später ändert, erreicht damit niemanden mehr, der schon einmal hier war, bis dessen Cache abläuft.')}
-                          </span>
+                        <div className="alert alert-warning">
+                          {t('Ein Browser merkt sich eine 301 und ruft die alte Adresse nicht mehr auf. Wer sie später ändert, erreicht damit niemanden mehr, der schon einmal hier war, bis dessen Cache abläuft.')}
                         </div>
                       )}
                     </div>
@@ -1519,24 +1529,28 @@ export default function ServiceFormModal({
                   </div>
                 )}
                 <span className="form-hint">
-                  {t('Adresse und Port, wie HAProxy sie erreicht, üblicherweise die Adresse im privaten Netz.')}
+                  {t('Adresse und Port, wie HAProxy sie erreicht, meist im privaten Netz.')}
                 </span>
                 {/* Der eine Weg von hier ins größere Formular. Ohne ihn wäre
                     ein zweites Ziel hinter einer laufenden Domain nur über
                     Löschen und Neuanlegen zu haben. */}
                 {!balancing && editingId && onSwitchKind && (
                   <div>
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      onClick={() => onSwitchKind('balance')}
-                    >
-                      <Scale size={14} />
-                      {t('Zweites Ziel: auf Lastverteilung umstellen')}
-                    </button>
-                    <span className="form-hint">
-                      {t('Öffnet dasselbe Ziel im Lastverteilungs-Formular, mit Verfahren, Gewichtung und Sitzungsbindung. Nicht gespeicherte Eingaben in diesem Formular gehen dabei verloren.')}
-                    </span>
+                    <div className="form-label-row">
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => onSwitchKind('balance')}
+                      >
+                        <Scale size={14} />
+                        {t('Zweites Ziel: auf Lastverteilung umstellen')}
+                      </button>
+                      <InfoHint
+                        text={t('Öffnet dasselbe Ziel im Lastverteilungs-Formular, mit Verfahren, Gewichtung und Sitzungsbindung.')}
+                      />
+                    </div>
+                    {/* Die Folge bleibt sichtbar: sie gilt vor dem Klick. */}
+                    <span className="form-hint">{t('Nicht gespeicherte Eingaben gehen dabei verloren.')}</span>
                   </div>
                 )}
                 {balancing && (
@@ -1852,7 +1866,7 @@ export default function ServiceFormModal({
                 <div className="form-note">
                   <Info size={14} />
                   <span>
-                    {t('Eine Weiterleitung hat kein Backend. Pfad-Regeln, Header, Healthcheck und Verteilverfahren stehen deshalb nicht in diesem Formular: sie alle gehören zu einem Eintrag mit Zielen. Wer die braucht, legt einen Reverse-Proxy oder eine Lastverteilung an.')}
+                    {t('Eine Weiterleitung hat kein Backend, also weder Pfad-Regeln noch Header.')}
                   </span>
                 </div>
               )}
@@ -1894,7 +1908,7 @@ export default function ServiceFormModal({
                     </span>
                     <strong>{t('Keine Pfad-Regeln')}</strong>
                     <span>
-                      {t('Alles geht an das Standard-Backend. Der Fall dafür ist Coolify: Oberfläche auf 8000, Terminal auf 6002, Live-Ansicht auf 6001.')}
+                      {t('Nötig, wenn ein Pfad auf einen anderen Port desselben Ziels gehört.')}
                     </span>
                   </div>
                 )}
@@ -1933,7 +1947,10 @@ export default function ServiceFormModal({
                       </div>
 
                       <div className="form-group">
-                        <label className="form-label">{t('Pfade')}</label>
+                        <div className="form-label-row">
+                          <label className="form-label">{t('Pfade')}</label>
+                          <InfoHint text={t('Verglichen wird der Anfang des Pfads: /app trifft auch /app/socket.')} />
+                        </div>
                         <div className="form-list">
                           {route.paths.map((path, pathIndex) => (
                             <div className="form-list-row" key={pathIndex}>
@@ -2047,7 +2064,14 @@ export default function ServiceFormModal({
 
                       <div className="form-subsection-head">
                         <div>
-                          <div className="form-section-title">{t('Verbindungsprüfung')}</div>
+                          <div className="form-label-row">
+                            <div className="form-section-title">{t('Verbindungsprüfung')}</div>
+                            <InfoHint
+                              text={t(
+                                'Eine WebSocket-Strecke antwortet auf ein GET auf / nicht mit 200. Deshalb hier kein HTTP-Check, sonst nähme HAProxy sie dauerhaft aus dem Betrieb.'
+                              )}
+                            />
+                          </div>
                           <div className="form-section-sub">
                             {t('Nur `check` auf der server-Zeile, kein HTTP-Check.')}
                           </div>
@@ -2067,30 +2091,21 @@ export default function ServiceFormModal({
                 })}
 
                 {routesOpen && (
-                  <>
-                    <div>
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        onClick={() =>
-                          setRoutes([
-                            ...routes,
-                            { ...EMPTY_ROUTE, paths: [''], servers: [{ ...EMPTY_ROUTE_SERVER }] },
-                          ])
-                        }
-                      >
-                        <Plus size={14} />
-                        {t('Pfad-Regel hinzufügen')}
-                      </button>
-                    </div>
-
-                    <div className="form-note">
-                      <Info size={14} />
-                      <span>
-                        {t('Verglichen wird der Anfang des Pfads: /app trifft auch /app/socket. Eine WebSocket-Strecke antwortet auf ein GET auf / nicht mit 200. Deshalb hier kein HTTP-Check, sonst nähme HAProxy sie dauerhaft aus dem Betrieb.')}
-                      </span>
-                    </div>
-                  </>
+                  <div>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() =>
+                        setRoutes([
+                          ...routes,
+                          { ...EMPTY_ROUTE, paths: [''], servers: [{ ...EMPTY_ROUTE_SERVER }] },
+                        ])
+                      }
+                    >
+                      <Plus size={14} />
+                      {t('Pfad-Regel hinzufügen')}
+                    </button>
+                  </div>
                 )}
               </section>
               )}
@@ -2127,7 +2142,7 @@ export default function ServiceFormModal({
                           : selectedProxy.crowdsecGlobal && !crowdsec
                             ? t('Gilt schon für alle Ziele.')
                             : selectedProxy.crowdsecGlobal
-                              ? t('Gilt schon für alle Ziele. Der eigene Schalter dieses Ziels lässt sich ausschalten.')
+                              ? t('Gilt schon für alle Ziele. Der eigene Schalter ist überflüssig.')
                               : t(crowdsec ? 'Anfragen an dieses Ziel prüft CrowdSec.' : 'Anfragen an dieses Ziel prüft CrowdSec nicht.')}
                       </div>
                     </div>
@@ -2299,7 +2314,7 @@ export default function ServiceFormModal({
                           {globalTunnel && !tunnel
                             ? t('Gilt schon für alle Ziele: „timeout tunnel {value}“ im defaults-Block.', { value: globalTunnel })
                             : globalTunnel
-                              ? t('Gilt schon für alle Ziele. Die eigene Zeile dieses Ziels ist doppelt und lässt sich ausschalten.')
+                              ? t('Gilt schon für alle Ziele. Die eigene Zeile ist überflüssig.')
                               : t(
                                   tunnel
                                     ? 'Eine offene Verbindung bleibt bis zu einer Stunde bestehen.'

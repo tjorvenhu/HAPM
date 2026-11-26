@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, type FormEvent } from 'react';
+import ErrorNote from '@/components/ErrorNote';
 import { Plus, Loader2, X, Cable, Server, ShieldAlert, Info, Check } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
@@ -323,7 +324,7 @@ export default function StreamFormModal({
 
         <form onSubmit={handleSubmit}>
           <div className="modal-body">
-            {formError && <div className="alert alert-danger">{formError}</div>}
+            {formError && <div className="alert alert-danger"><ErrorNote text={formError} /></div>}
 
             <div className="form-columns">
               <div className="form-col">
@@ -333,9 +334,12 @@ export default function StreamFormModal({
                       <Cable size={17} />
                     </span>
                     <div>
-                      <div className="form-section-title">{t('Allgemein')}</div>
+                      <div className="form-label-row">
+                        <div className="form-section-title">{t('Allgemein')}</div>
+                        <InfoHint text={t('Kein HTTP, kein Zertifikat: was durchgeht, sieht HAProxy nicht an.')} />
+                      </div>
                       <div className="form-section-sub">
-                        {t('Ein Port dieses Servers, durchgereicht an ein Ziel dahinter. Kein HTTP, kein Zertifikat: was durchgeht, sieht HAProxy nicht an.')}
+                        {t('Ein Port dieses Servers, durchgereicht an ein Ziel dahinter.')}
                       </div>
                     </div>
                   </div>
@@ -380,7 +384,7 @@ export default function StreamFormModal({
                           <Loader2 size={12} className="spin" /> {t('Wird auf dem Server geprüft…')}
                         </>
                       ) : portCheck === null ? (
-                        t('{min} bis {max}. HAProxy nimmt danach auf diesem Port Verbindungen an, auf allen Adressen dieses Servers.', {
+                        t('{min} bis {max}. HAProxy lauscht danach auf allen Adressen des Servers.', {
                           min: STREAM_PORT_MIN,
                           max: STREAM_PORT_MAX,
                         })
@@ -450,10 +454,15 @@ export default function StreamFormModal({
                       <ShieldAlert size={17} />
                     </span>
                     <div>
-                      <div className="form-section-title">{t('Erreichbar von')}</div>
-                      <div className="form-section-sub">
-                        {t('Leer heißt: von jeder Adresse im Internet. Eine eigene Liste je Eintrag und nicht die Admin-IPs. Wer an eine Datenbank darf, ist eine andere Frage als wer eine Verwaltungsoberfläche sehen darf.')}
+                      <div className="form-label-row">
+                        <div className="form-section-title">{t('Erreichbar von')}</div>
+                        <InfoHint
+                          text={t(
+                            'Eine eigene Liste je Eintrag und nicht die Admin-IPs. Wer an eine Datenbank darf, ist eine andere Frage als wer eine Verwaltungsoberfläche sehen darf.'
+                          )}
+                        />
                       </div>
+                      <div className="form-section-sub">{t('Leer heißt: von jeder Adresse im Internet.')}</div>
                     </div>
                   </div>
 
@@ -463,7 +472,7 @@ export default function StreamFormModal({
                     value={allowedSources}
                     onChange={setAllowedSources}
                     heading={false}
-                    emptyHint={t('Einzelne Adresse oder CIDR-Bereich, IPv4 und IPv6. Eine Zeile pro Absender.')}
+                    emptyHint={t('Adresse oder CIDR-Bereich, IPv4 und IPv6. Eine Zeile pro Absender.')}
                   />
 
                   {input.allowedSources.length === 0 ? (
@@ -579,7 +588,7 @@ export default function StreamFormModal({
                     </button>
                   </div>
                   <span className="form-hint">
-                    {t('Adresse und Port, wie HAProxy sie erreicht. Der Port dort muss nicht der gleiche sein wie der hier.')}
+                    {t('Wie HAProxy das Ziel erreicht. Der Port darf ein anderer sein als hier.')}
                   </span>
                   {balancing && (
                     <span className="form-hint">
@@ -621,7 +630,7 @@ export default function StreamFormModal({
                       <div>
                         <div className="form-section-title">{t('Verbindungsprüfung')}</div>
                         <div className="form-section-sub">
-                          {t('HAProxy baut regelmäßig eine Verbindung auf und nimmt ein totes Ziel aus dem Betrieb.')}
+                          {t('HAProxy prüft die Ziele und nimmt ein totes aus dem Betrieb.')}
                         </div>
                       </div>
                       <label className="toggle-switch">
@@ -634,12 +643,10 @@ export default function StreamFormModal({
                         <span className="toggle-slider" />
                       </label>
                     </div>
+                    {/* Eine Folge und kein Hinweis: sie steht als Warnung da. */}
                     {!check && (
-                      <div className="form-note">
-                        <Info size={14} />
-                        <span>
-                          {t('Aus heißt: über den Zustand der Ziele ist nichts bekannt, und die Karte zeigt keine Farbe. HAProxy schickt Verbindungen auch an ein Ziel, das nicht antwortet.')}
-                        </span>
+                      <div className="alert alert-warning">
+                        {t('Aus heißt: über den Zustand der Ziele ist nichts bekannt, und die Karte zeigt keine Farbe. HAProxy schickt Verbindungen auch an ein Ziel, das nicht antwortet.')}
                       </div>
                     )}
                   </div>

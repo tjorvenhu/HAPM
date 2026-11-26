@@ -28,7 +28,7 @@ export interface PendingRun {
   title: string;
   /** Ein Anlegen hat noch keine Karte in der Liste, alles andere schon. */
   isNew: boolean;
-  /** Beim Löschen steht die Karte noch da und ist im Begriff zu verschwinden. */
+  /** Beim Entfernen steht die Karte noch da und ist im Begriff zu verschwinden. */
   kind: 'write' | 'delete';
   /** Aus dem Lauf nachgezogen, als deutscher Schlüssel aus
    *  `HAPROXY_PHASE_LABELS`: die Karten übersetzen ihn selbst. */
@@ -91,7 +91,7 @@ export function placeholderRuns(runs: PendingRun[], knownIds: ReadonlySet<string
 /**
  * Der Lauf, den die Karte eines bestehenden Eintrags zeigt.
  *
- * Bei mehreren für denselben Eintrag (erst ändern, dann löschen) der zuerst
+ * Bei mehreren für denselben Eintrag (erst ändern, dann entfernen) der zuerst
  * gestartete: er steht am Lock vorn, also ist es der, der gerade etwas tut.
  */
 export function runForEntry(runs: PendingRun[], serviceId: string): PendingRun | null {

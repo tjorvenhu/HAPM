@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { authErrorMessage } from './auth/errors';
 import { interpolate, msg, translate, type Locale, type Message, type Params } from './i18n';
 import { getLocale } from './i18n/server';
+import { rememberError } from './error-log';
 
 /**
  * Response shape shared by every route: { success, data? , error? }.
@@ -65,7 +66,10 @@ async function responseLocale(): Promise<Locale> {
 }
 
 /**
- * Map a thrown error onto a response. Unknown errors never leak their message.
+ * Map a thrown error onto a response. Unknown errors never leak their message:
+ * die Antwort nennt eine Kennung, unter der ein angemeldeter Benutzer den Text
+ * nachsehen kann (`GET /api/errors/<kennung>`). Was der Benutzer lesen soll,
+ * wird deshalb als `ApiError` geworfen, nicht als `Error`.
  *
  * Asynchron, weil die Sprache der Anfrage aus Kopfzeilen und Sitzung kommt.
  * Jede Route schreibt `return handleError(err)`, das bleibt so gültig.
@@ -92,11 +96,14 @@ export async function handleError(err: unknown): Promise<NextResponse> {
     if (err.message === '2FA-Verifizierung erforderlich') {
       return fail(translate(locale, '2FA-Verifizierung erforderlich'), 403);
     }
-    console.error('[api]', err);
-    return fail(translate(locale, err.message), 500);
   }
-  console.error('[api] Unbekannter Fehler:', err);
-  return fail(translate(locale, 'Unerwarteter Fehler'), 500);
+  // Alles, was niemand als Meldung geworfen hat: der Text bleibt hier, hinaus
+  // geht nur die Kennung (`lib/error-log.ts`).
+  const code = rememberError(err);
+  return NextResponse.json(
+    { success: false, error: translate(locale, 'Unbekannter Fehler. Kennung: {code}', { code }), code },
+    { status: 500 }
+  );
 }
 
 /** Parse and validate a JSON body. Throws ApiError on malformed input. */

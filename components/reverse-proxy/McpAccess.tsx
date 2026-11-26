@@ -108,7 +108,7 @@ export default function McpAccess({
         <div>
           <div className="form-section-title">{t('MCP')}</div>
           <div className="form-section-sub">
-            {t('Steuert HAPM aus Claude und anderen MCP-Clients. Es gelten dieselben API-Keys wie für die API.')}
+            {t('Steuert HAPM aus MCP-Clients wie Claude, mit denselben API-Keys.')}
           </div>
         </div>
       </div>
@@ -181,9 +181,12 @@ export default function McpAccess({
           {client === 'connector' && (
             <>
               <p className="form-hint">
-                {t(
-                  'In Claude unter Connectors einen eigenen Connector (Custom connector) hinzufügen: als Adresse die oben, unter Request headers die Kopfzeile unten, ohne OAuth.'
-                )}
+                {t('Eigenen Connector in Claude anlegen: Adresse oben, Kopfzeile unten.')}
+                <InfoHint
+                  text={t(
+                    'In Claude unter Connectors einen „Custom connector“ hinzufügen. Die Kopfzeile gehört unter „Request headers“. OAuth bleibt aus.'
+                  )}
+                />
               </p>
               <div className="form-group">
                 <label className="form-label">{t('Kopfzeile')}</label>
@@ -196,9 +199,9 @@ export default function McpAccess({
                   />
                   <CopyButton text={`Authorization: Bearer ${TOKEN_PLACEHOLDER}`} label={copyLabel} onCopy={copy} />
                 </div>
-                <span className="form-hint">
-                  {t('Die Verbindung kommt aus der Cloud von Anthropic. Eine Freigabeliste am Key muss deren Adressen enthalten oder leer sein.')}
-                </span>
+              </div>
+              <div className="alert alert-info">
+                {t('Die Verbindung kommt aus der Cloud von Anthropic. Eine Freigabeliste am Key muss deren Adressen enthalten oder leer sein.')}
               </div>
             </>
           )}

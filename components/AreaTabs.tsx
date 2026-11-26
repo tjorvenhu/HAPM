@@ -60,6 +60,23 @@ export function useArea<K extends string>(
   return [area, select];
 }
 
+/**
+ * Die Bewegung beim Wechsel eines Reiters: eine Klasse für die Leiste der
+ * Reiter (`.tabs`), nach der alles darunter kurz einblendet
+ * (`ui/css/tool-vocabulary.css`, „Wechsel des Reiters").
+ *
+ * Die Klasse wechselt bei jedem neuen Reiter zwischen zwei gleichen
+ * Animationen: ein anderer Name startet die Bewegung neu, ohne dass der Inhalt
+ * neu aufgebaut wird (ein `key` um den Inhalt verlöre getippte Eingaben).
+ * Vor dem ersten Wechsel gibt es keine: beim Laden bewegt sich schon die Seite.
+ * Jede Leiste aus Reitern nimmt das, auch die ohne `AreaTabs`.
+ */
+export function useTabMotion(value: string): string {
+  const [state, setState] = useState<{ value: string; flip: 0 | 1 | 2 }>({ value, flip: 0 });
+  if (state.value !== value) setState({ value, flip: state.flip === 1 ? 2 : 1 });
+  return state.flip === 0 ? '' : state.flip === 1 ? 'tabs-switched-a' : 'tabs-switched-b';
+}
+
 export default function AreaTabs<K extends string>({
   areas,
   value,
@@ -73,8 +90,9 @@ export default function AreaTabs<K extends string>({
   dirty?: (key: K) => boolean;
 }) {
   const { t } = useT();
+  const motion = useTabMotion(value);
   return (
-    <div className="tabs" role="tablist">
+    <div className={`tabs ${motion}`} role="tablist">
       {areas.map((entry) => {
         const Icon = entry.icon;
         return (

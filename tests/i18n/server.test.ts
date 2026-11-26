@@ -125,6 +125,30 @@ describe('handleError', () => {
     expect(await errorOf(unauthorized)).toBe('Not signed in');
   });
 
+  it('nennt bei einem unbekannten Fehler nur eine Kennung, der Text bleibt auf dem Server', async () => {
+    const { findError } = await import('@/lib/error-log');
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const raw = 'connect ECONNREFUSED /var/run/postgresql/.s.PGSQL.5432';
+      const response = await handleError(new Error(raw));
+      expect(response.status).toBe(500);
+      const body = (await response.json()) as { success: boolean; error: string; code: string };
+      expect(body.error).toMatch(/^Unbekannter Fehler\. Kennung: F-[0-9A-F]{6}$/);
+      expect(body.error).not.toContain('ECONNREFUSED');
+      expect(body.error).toContain(body.code);
+      // Unter der Kennung liegt, was passiert ist: für „Anzeigen" und im Log.
+      expect(findError(body.code)?.message).toBe(raw);
+      expect(findError('F-000000')).toBeNull();
+      expect(findError('../../etc/passwd')).toBeNull();
+
+      request.cookie = 'en';
+      const english = (await (await handleError('kein Error-Objekt')).json()) as { error: string };
+      expect(english.error).toMatch(/^Unknown error\. Reference: F-[0-9A-F]{6}$/);
+    } finally {
+      quiet.mockRestore();
+    }
+  });
+
   it('macht aus einem Fehler des Anmeldedienstes eine eigene Meldung', async () => {
     request.cookie = 'en';
     const rejected = Object.assign(new Error('Invalid token'), {

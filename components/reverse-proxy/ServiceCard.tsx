@@ -253,7 +253,7 @@ export default function ServiceCard({
    * steht als Überschrift über den Routen selbst. */
   const tags: Tag[] = [
     // Ganz vorn, damit sie nie im „+1" verschwindet: sie erklärt den gesperrten
-    // Löschen-Knopf. Ein Schild und kein Schloss, das hier schon die Sperre meint.
+    // Entfernen-Knopf. Ein Schild und kein Schloss, das hier schon die Sperre meint.
     ...(surface
       ? [{
           key: 'surface',
@@ -636,12 +636,12 @@ export default function ServiceCard({
             surface
               ? t('Nicht entfernbar: Oberfläche von HAPM. Die Adresse steht unter Allgemein.')
               : service.removable
-                ? t('Löschen')
+                ? t('Entfernen')
                 : t('Nicht über HAPM angelegt: ACL, Weiche oder Backend folgen nicht dem erwarteten Schema')
           }
           disabled={!service.removable || surface !== null || pending}
           onClick={onDelete}
-          aria-label={t('Löschen')}
+          aria-label={t('Entfernen')}
         >
           <Trash2 size={16} />
         </button>

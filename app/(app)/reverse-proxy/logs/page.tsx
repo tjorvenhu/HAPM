@@ -6,11 +6,13 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { History, ScrollText } from 'lucide-react';
 import { SkeletonRows } from '@/components/Skeleton';
 import { useT } from '@/lib/i18n/react';
+import { InfoHint } from '@/ui/primitives/InfoHint';
 import RunsView from './RunsView';
 import HaproxyLogView from './HaproxyLogView';
 import CrowdsecLogView from '@/components/crowdsec/CrowdsecLogView';
 import BrandLogo from '@/components/BrandLogo';
 import { useApp } from '@/components/AppShell';
+import { useTabMotion } from '@/components/AreaTabs';
 import '../../../logs.css';
 
 /**
@@ -48,6 +50,7 @@ function LogsPage() {
   });
   // Ohne CrowdSec gibt es dessen Reiter nicht: ein Link mit `?ansicht=crowdsec` landet beim ersten.
   const view: View = chosen === 'crowdsec' && !crowdsec ? 'runs' : chosen;
+  const motion = useTabMotion(view);
 
   const select = useCallback(
     (next: View) => {
@@ -57,28 +60,38 @@ function LogsPage() {
     [router]
   );
 
+  // Was über den einen Satz unter dem Titel hinausgeht. Das HAProxy-Log braucht nichts weiter.
+  const hint =
+    view === 'runs'
+      ? t('Domains und Ziele stehen mit in der Zeile, damit auch ein entferntes Ziel noch lesbar ist.')
+      : view === 'crowdsec'
+        ? t('Erkannte Angriffe stehen unter CrowdSec, Ereignisse.')
+        : null;
+
   return (
     <>
       <div className="page-header">
         <div>
           <PageHeading
             icon={<ScrollText size={20} />}
-            title={t('Reverse-Proxy-Protokolle')}
-            back={{ label: t('Übersicht'), href: '/reverse-proxy' }}
+            title={
+              <>
+                {t('Logs')} {hint && <InfoHint text={hint} />}
+              </>
+            }
+            back={{ label: t('Ziele'), href: '/reverse-proxy' }}
           />
           <p className="page-subtitle">
             {view === 'runs'
-              ? t(
-                  'Jeder Vorgang mit seinen Schritten: angelegt, geändert, gelöscht. Domains und Ziele stehen mit in der Zeile, damit auch ein entferntes Ziel noch lesbar ist.'
-                )
+              ? t('Was HAPM an HAProxy geändert hat, jeder Vorgang mit seinen Schritten.')
               : view === 'haproxy'
-                ? t('Was HAProxy selbst schreibt: jede Anfrage und jede Meldung des Prozesses, die neueste oben.')
-                : t('Was CrowdSec und sein Bouncer melden, die neueste Zeile oben. Erkannte Angriffe stehen unter CrowdSec, Ereignisse.')}
+                ? t('Was HAProxy selbst schreibt: Anfragen und Meldungen, die neueste oben.')
+                : t('Was CrowdSec und sein Bouncer melden, die neueste Zeile oben.')}
           </p>
         </div>
       </div>
 
-      <div className="tabs" role="tablist">
+      <div className={`tabs ${motion}`} role="tablist">
         <button
           type="button"
           role="tab"

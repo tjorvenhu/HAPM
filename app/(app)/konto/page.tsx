@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useCallback, useEffect, useState, type FormEvent } from 'react';
+import ErrorNote from '@/components/ErrorNote';
 import Link from 'next/link';
 import {
   Check,
@@ -28,6 +29,7 @@ import { SkeletonRows } from '@/components/Skeleton';
 import AreaTabs, { useArea, type Area } from '@/components/AreaTabs';
 import TwoFactorSetup from '@/components/TwoFactorSetup';
 import { RecoveryCodeGrid, useRecoveryCodeActions } from '@/ui/auth/RecoveryCodes';
+import { InfoHint } from '@/ui/primitives/InfoHint';
 import Select from '@/components/Select';
 import { formatDate, LOCALES, LOCALE_NAMES, msgid, type Locale } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
@@ -366,7 +368,7 @@ function Account() {
         passkeyDialog.mode === 'add'
           ? {
               variant: 'error',
-              title: t('Anlegen fehlgeschlagen'),
+              title: t('Hinterlegen fehlgeschlagen'),
               message: errorText(err, t('Der Passkey konnte nicht hinterlegt werden.')),
             }
           : {
@@ -382,9 +384,9 @@ function Account() {
 
   async function handleRemovePasskey(passkey: PasskeyView) {
     await confirm({
-      title: t('Passkey entfernen'),
+      title: t('Passkey entfernen?'),
       message: t(
-        'Mit „{name}“ ist danach keine Anmeldung mehr möglich. Ihr Passwort bleibt bestehen. Auf dem Gerät selbst löschen Sie den Passkey in dessen Einstellungen.',
+        'Mit „{name}“ ist danach keine Anmeldung mehr möglich. Ihr Passwort bleibt bestehen. Auf dem Gerät selbst entfernen Sie den Passkey in dessen Einstellungen.',
         { name: passkey.name }
       ),
       confirmLabel: t('Entfernen'),
@@ -446,7 +448,7 @@ function Account() {
         </div>
       </div>
 
-      {error && <div className="alert alert-danger sys-block">{error}</div>}
+      {error && <div className="alert alert-danger sys-block"><ErrorNote text={error} /></div>}
 
       {/* Über den Reitern und nicht im Reiter „Zweiter Faktor“: wer die Seite
           öffnet, landet auf „Passwort“, und eine Warnung, die man erst nach
@@ -486,7 +488,7 @@ function Account() {
           </div>
 
           <form className="card-body" onSubmit={handlePassword}>
-            {passwordError && <div className="alert alert-danger">{passwordError}</div>}
+            {passwordError && <div className="alert alert-danger"><ErrorNote text={passwordError} /></div>}
 
             <div className="form-group">
               <label className="form-label" htmlFor="currentPassword">{t('Aktuelles Passwort')}</label>
@@ -564,16 +566,14 @@ function Account() {
             <SkeletonRows />
           ) : account ? (
             <div className="card-body">
-              {account.totpEnabled && account.recoveryCodesLeft > FEW_RECOVERY_CODES && (
+              {(!account.totpEnabled || account.recoveryCodesLeft > FEW_RECOVERY_CODES) && (
                 <p className="form-hint">
-                  {t('{count} Wiederherstellungscodes übrig. Jeder ersetzt bei der Anmeldung einmal den Code aus der App.', {
-                    count: account.recoveryCodesLeft,
-                  })}
-                </p>
-              )}
-              {!account.totpEnabled && (
-                <p className="form-hint">
-                  {t('Bei der Einrichtung entstehen zehn Wiederherstellungscodes für den Fall, dass die App verloren geht.')}
+                  {account.totpEnabled
+                    ? t('{count} Wiederherstellungscodes übrig.', { count: account.recoveryCodesLeft })
+                    : t('Bei der Einrichtung entstehen zehn Wiederherstellungscodes.')}
+                  <InfoHint
+                    text={t('Ein Wiederherstellungscode ersetzt bei der Anmeldung einmal den Code aus der App, wenn die App verloren geht.')}
+                  />
                 </p>
               )}
               <p className="form-hint">
@@ -619,10 +619,13 @@ function Account() {
               <h2 className="card-title">
                 <Fingerprint size={17} />
                 {t('Passkeys')}
+                <InfoHint
+                  text={t(
+                    'Ein Passkey liegt auf Ihrem Gerät oder in Ihrem Passwortmanager. Geht das Gerät verloren, melden Sie sich wie bisher mit dem Passwort an.'
+                  )}
+                />
               </h2>
-              <p className="card-subtitle">
-                {t('Anmelden ohne Passwort und ohne Code, per Fingerabdruck, Gesicht oder PIN.')}
-              </p>
+              <p className="card-subtitle">{t('Anmelden ohne Passwort und Code, per Fingerabdruck, Gesicht oder PIN.')}</p>
             </div>
             <button
               className="btn btn-primary"
@@ -639,7 +642,7 @@ function Account() {
               data-tooltip-pos="left"
             >
               <Plus size={16} />
-              {t('Passkey hinzufügen')}
+              {t('Passkey hinterlegen')}
             </button>
           </div>
 
@@ -659,15 +662,11 @@ function Account() {
             </div>
           ) : passkeyState && passkeys.length === 0 ? (
             <div className="card-body">
-              <p className="form-hint">
-                {t(
-                  'Noch kein Passkey hinterlegt. Ein Passkey liegt auf Ihrem Gerät oder in Ihrem Passwortmanager. Geht das Gerät verloren, melden Sie sich wie bisher mit dem Passwort an.'
-                )}
-              </p>
+              <p className="form-hint">{t('Noch kein Passkey hinterlegt.')}</p>
             </div>
           ) : passkeyState ? (
             <div className="table-wrap">
-              <table className="table">
+              <table className="table table-cards">
                 <thead>
                   <tr>
                     <th>{t('Name')}</th>
@@ -679,11 +678,11 @@ function Account() {
                 <tbody>
                   {passkeys.map((passkey) => (
                     <tr key={passkey.id}>
-                      <td>{passkey.name}</td>
-                      <td>{t(passkey.storage)}</td>
-                      <td>{formatDate(locale, passkey.createdAt)}</td>
-                      <td>
-                        <div className="actions" style={{ justifyContent: 'flex-end' }}>
+                      <td data-label="primary">{passkey.name}</td>
+                      <td data-label={t('Ablage')}>{t(passkey.storage)}</td>
+                      <td data-label={t('Hinterlegt am')}>{formatDate(locale, passkey.createdAt)}</td>
+                      <td data-label="actions">
+                        <div className="actions hapm-actions-end">
                           <button
                             className="btn btn-ghost btn-icon btn-sm"
                             type="button"
@@ -767,9 +766,9 @@ function Account() {
             </div>
             <form onSubmit={handleDisable}>
               <div className="modal-body">
-                <p className="form-hint">
-                  {t('Danach reicht für die Anmeldung das Passwort. Das hinterlegte Geheimnis wird gelöscht.')}
-                </p>
+                <div className="alert alert-warning">
+                  {t('Danach reicht für die Anmeldung das Passwort. Das hinterlegte Geheimnis wird entfernt.')}
+                </div>
                 <div className="form-group">
                   <label className="form-label" htmlFor="disablePassword">{t('Passwort')}</label>
                   <input
@@ -830,7 +829,7 @@ function Account() {
                       'Mit diesen Codes können Sie sich anmelden, falls Sie den Zugriff auf Ihre Authenticator-App verlieren. Jeder Code ist einmal verwendbar und wird {onlyNow} angezeigt.',
                       { onlyNow: <strong>{t('nur jetzt')}</strong> }
                     )}{' '}
-                    {t('Legen Sie sie getrennt von diesem Gerät ab, zum Beispiel ausgedruckt oder im Passwortmanager.')}
+                    {t('Legen Sie sie getrennt von diesem Gerät ab, etwa im Passwortmanager.')}
                   </p>
                   <RecoveryCodeGrid codes={newCodes} />
                 </div>
@@ -852,9 +851,7 @@ function Account() {
             ) : (
               <form onSubmit={handleCreateCodes}>
                 <div className="modal-body">
-                  <p className="form-hint">
-                    {t('Zehn neue Codes entstehen und werden einmal angezeigt. Zur Bestätigung Ihr Passwort.')}
-                  </p>
+                  <p className="form-hint">{t('Zehn neue Codes entstehen und werden einmal angezeigt.')}</p>
                   <div className="form-group">
                     <label className="form-label" htmlFor="recoveryPassword">{t('Passwort')}</label>
                     <input
@@ -892,7 +889,7 @@ function Account() {
           <div className="modal">
             <div className="modal-header">
               <h2 className="modal-title">
-                {passkeyDialog.mode === 'add' ? t('Passkey hinzufügen') : t('Passkey umbenennen')}
+                {passkeyDialog.mode === 'add' ? t('Passkey hinterlegen') : t('Passkey umbenennen')}
               </h2>
               <button
                 type="button"
@@ -937,7 +934,7 @@ function Account() {
                 </button>
                 <button className="btn btn-primary" type="submit" disabled={savingPasskey}>
                   {savingPasskey ? <Loader2 size={16} className="spin" /> : null}
-                  {passkeyDialog.mode === 'add' ? t('Passkey anlegen') : t('Speichern')}
+                  {passkeyDialog.mode === 'add' ? t('Passkey hinterlegen') : t('Speichern')}
                 </button>
               </div>
             </form>

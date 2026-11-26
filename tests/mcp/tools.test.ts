@@ -77,6 +77,7 @@ const more = vi.hoisted(() => ({
   changeGeoipAutoRefresh: vi.fn(async () => ({})),
   crowdsecOverview: vi.fn(),
   listDecisions: vi.fn(async () => []),
+  clearCrowdsec: vi.fn(async () => ({ alerts: 0, lifted: 0, kept: 0, lost: [] })),
   addDecision: vi.fn(async () => ({})),
   removeDecision: vi.fn(async () => ({})),
   listAllowlist: vi.fn(async () => []),
@@ -136,6 +137,7 @@ vi.mock('@/lib/crowdsec/actions', () => ({
   addAllowlist: more.addAllowlist,
   removeAllowlist: more.removeAllowlist,
   listAlerts: more.listAlerts,
+  clearCrowdsec: more.clearCrowdsec,
   crowdsecStatistics: more.crowdsecStatistics,
   crowdsecRules: more.crowdsecRules,
   changeRules: more.changeRules,
@@ -179,6 +181,7 @@ const OTHER_WRITING = [
   'add_crowdsec_allowlist',
   'remove_crowdsec_allowlist',
   'update_crowdsec_rules',
+  'clear_crowdsec',
   // Ganz abschalten wartet selbst auf den Lauf am Reverse-Proxy.
   'set_crowdsec_enabled',
   'update_backup_settings',
@@ -356,6 +359,7 @@ describe('Rechte: die übrigen schreibenden Werkzeuge schreiben unter dem Namen 
     ['add_crowdsec_allowlist', { value: '203.0.113.7' }, 'addAllowlist', auditActor],
     ['remove_crowdsec_allowlist', { value: '203.0.113.7' }, 'removeAllowlist', auditActor],
     ['update_crowdsec_rules', { crs: 'detect' }, 'changeRules', auditActor],
+    ['clear_crowdsec', {}, 'clearCrowdsec', auditActor],
     ['set_crowdsec_enabled', { enabled: false }, 'setCrowdsecEnabled', auditActor],
   ];
 

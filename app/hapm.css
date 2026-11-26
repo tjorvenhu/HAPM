@@ -14,7 +14,11 @@
 /* Die Meldung des Systems unter der eigenen Erklärung, wörtlich und deshalb in Festbreite. */
 .hapm-flag-reason { font-family: var(--font-mono); font-size: 0.75rem; opacity: 0.85; }
 
-.hapm-flag-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto; }
+/* Ohne `margin-left: auto`: der Text daneben wächst und schiebt die Knöpfe in
+   derselben Zeile nach rechts. Brechen sie um, stehen sie links unter dem
+   Text (eingerückt um das Symbol), nicht rechtsbündig in einer eigenen Reihe. */
+.hapm-flag-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.hapm-flag > svg ~ .hapm-flag-actions { padding-left: 26px; }
 
 .hapm-flag-detail { flex: 0 0 100%; min-width: 0; }
 
@@ -415,8 +419,10 @@
 
 .hapm-target-actions { display: flex; gap: 2px; flex-shrink: 0; }
 
-/* Der Knopf im Kopf eines Abschnitts rückt ans rechte Ende. */
+/* Der Knopf im Kopf eines Abschnitts rückt ans rechte Ende. Auf dem Handy
+   bricht er unter die Überschrift um und steht dort links. */
 .hapm-section-action { margin-left: auto; align-self: center; }
+@media (max-width: 640px) { .hapm-section-action { margin-left: 0; } }
 
 .hapm-target-form { display: grid; grid-template-columns: 1fr 1.4fr 7rem auto; align-items: center; gap: 8px; }
 
@@ -577,21 +583,86 @@
 .cs-form .form-group { flex: 0 1 13rem; min-width: 10rem; margin-bottom: 0; }
 .cs-form .cs-form-wide { flex: 1 1 16rem; }
 .cs-form .cs-form-end { margin-left: auto; }
+@media (max-width: 640px) { .cs-form .cs-form-end { margin-left: 0; } }
 .cs-card-alert { margin: 16px 0 0; }
 /* Reiter im Dialog eines Ziels (ServiceFormModal). */
 .form-tabs { flex-wrap: wrap; margin-bottom: 16px; }
 
-/* CrowdSec, Übersicht: Kennzahlen über die volle Breite, darunter links zwei
-   Karten übereinander und rechts der Zustand, beide Spalten gleich hoch. */
-.cs-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-@media (max-width: 900px) { .cs-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-.hapm-cols.cs-overview { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); align-items: stretch; }
-@media (max-width: 1100px) { .hapm-cols.cs-overview { grid-template-columns: minmax(0, 1fr); } }
-.cs-stack { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-.cs-stack > .card { margin: 0; }
-.cs-state { height: 100%; }
-.cs-how { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
-.cs-how li { display: flex; align-items: flex-start; gap: 12px; }
+/* Fünf Kennzahlen in vollen Reihen: fünf nebeneinander, sonst drei und zwei
+   (die zwei teilen sich die Breite), auf dem Handy zwei, zwei und eine breite.
+   Nie eine einzelne Kachel allein in der letzten Reihe neben leerem Platz. */
+.hapm-kpis-5 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.hapm-kpis-5 > * { grid-column: span 2; }
+.hapm-kpis-5 > :nth-child(n + 4) { grid-column: span 3; }
+@media (min-width: 1400px) {
+  .hapm-kpis-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .hapm-kpis-5 > *, .hapm-kpis-5 > :nth-child(n + 4) { grid-column: auto; }
+}
+@media (max-width: 640px) {
+  .hapm-kpis-5 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hapm-kpis-5 > *, .hapm-kpis-5 > :nth-child(n + 4) { grid-column: auto; }
+  .hapm-kpis-5 > :last-child { grid-column: 1 / -1; }
+}
+
+/* Acht Kennzahlen in vollen Reihen: acht, vier, zwei oder eine je Reihe. Das
+   Raster von `.kpi-grid` füllt nach Breite und ließe sonst zwei einzelne
+   Kacheln in der zweiten Reihe stehen. */
+.hapm-kpis-8 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (min-width: 1760px) { .hapm-kpis-8 { grid-template-columns: repeat(8, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .hapm-kpis-8 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 360px) { .hapm-kpis-8 { grid-template-columns: minmax(0, 1fr); } }
+
+/* ── Hauptspalte und Seitenspalte ──
+ * Für jede Seite, auf der etwas Langes (Liste, Tabelle) neben Kurzem (Zustand,
+ * Erklärung) steht. Die Hauptspalte nimmt den Platz, die Seitenspalte bleibt
+ * schmal und stapelt ihre Karten. Keine Karte wird gestreckt.
+ *
+ * Umgebrochen wird nach dem Platz, den der Bereich wirklich hat (`.hapm-fit`
+ * ist der Container), nicht nach der Breite des Fensters: die Seitenleiste
+ * nimmt 280 px, und dieselbe Seite steht mal mit, mal ohne sie da. Unter 980 px
+ * rutscht die Seitenspalte unter die Hauptspalte und legt ihre Karten dort
+ * nebeneinander, solange jede 280 px bekommt, sonst untereinander.
+ *
+ * `.hapm-fit` nie um etwas legen, das ein Fenster öffnet (`position: fixed`):
+ * ein Container ist dessen Bezugsrahmen. Rückfragen und Meldungen hängen am
+ * Rahmen der Anwendung und sind davon nicht betroffen. */
+.hapm-fit { container-type: inline-size; }
+.hapm-main-side { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 380px); gap: 16px; align-items: start; }
+.hapm-side { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; align-items: start; min-width: 0; }
+/* Dasselbe gespiegelt: die schmale Spalte steht links (CrowdSec, Übersicht).
+   Sie wird mit dem Platz schmaler (260 bis 340 px) und bleibt deshalb länger
+   neben der Hauptspalte stehen: drei ungleich hohe Karten nebeneinander über
+   einer Liste sähen zerrissen aus. */
+.hapm-side-main { display: grid; grid-template-columns: clamp(260px, 30%, 340px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.hapm-side-main > .hapm-side { grid-template-columns: minmax(0, 1fr); }
+.hapm-main-side > .card, .hapm-side-main > .card, .hapm-side > .card { margin: 0; min-width: 0; }
+@container (max-width: 980px) { .hapm-main-side { grid-template-columns: minmax(0, 1fr); } }
+/* Schmal: alles untereinander. Die erste kurze Karte (Status) bleibt oben,
+   dann die Hauptkarte, dann der Rest. Sonst stünde die Liste unter drei Karten. */
+@container (max-width: 720px) {
+  .hapm-side-main { grid-template-columns: minmax(0, 1fr); }
+  .hapm-side-main > .hapm-side { display: contents; }
+  .hapm-side-main > .hapm-side > .card:first-child { order: 1; }
+  .hapm-side-main > .card { order: 2; }
+  .hapm-side-main > .hapm-side > .card:not(:first-child) { order: 3; }
+}
+/* CrowdSec, Übersicht. */
+.cs-state-line { font-size: 0.875rem; color: var(--text-secondary); }
+.cs-kv-badge { display: inline-flex; align-items: center; gap: 8px; font-weight: 500; }
+.cs-kv-wrap { overflow-wrap: anywhere; }
+.cs-kv .dash-kv-value { text-align: right; }
+.cs-kv .dash-kv-value { min-width: 0; }
+.cs-all-switch { display: flex; align-items: center; gap: 8px; font-size: 0.875rem; font-weight: 500; color: var(--text); }
+.cs-all-switch-label { white-space: nowrap; }
+.cs-target { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+.cs-target-icon { flex-shrink: 0; margin-top: 2px; color: var(--success); }
+.cs-target-name { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
+.cs-targets td:last-child { width: 1%; white-space: nowrap; }
+/* Schmal trägt der Verweis nur sein Symbol: die Domain braucht die Breite. */
+@container (max-width: 520px) {
+  .cs-target-link > span { display: none; }
+  .cs-targets :is(th, td) { padding-inline: 0.75rem; }
+}
 /* Regeln: die Namen aus dem Hub sind lang und ohne Leerzeichen. Sie dürfen
    überall umbrechen, damit auf einem schmalen Schirm der Schalter in der
    letzten Spalte sichtbar bleibt, statt aus der Tabelle zu laufen. */
@@ -606,7 +677,6 @@
 .cs-alerts td:first-child { white-space: nowrap; }
 .cs-more { display: flex; justify-content: center; }
 .cs-kinds { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-.cs-how li > span:last-child { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .form-columns > .form-col:empty { display: none; }
 /* Updates: je Bestandteil ein Schalter für das selbsttätige Update. */
 .hapm-auto-list { display: flex; flex-direction: column; gap: 8px; flex: 1 1 24rem; min-width: 0; }

@@ -51,8 +51,8 @@ export default function ForgotPasswordPage() {
 
   const subtitle =
     available === false
-      ? t('Auf dieser Installation ist das Zurücksetzen per E-Mail nicht eingerichtet.')
-      : t('Geben Sie die E-Mail-Adresse Ihres Kontos ein. Sie erhalten einen Link, über den Sie ein neues Passwort festlegen.');
+      ? t('Das Zurücksetzen per E-Mail ist hier nicht eingerichtet.')
+      : t('Sie erhalten per E-Mail einen Link für ein neues Passwort.');
 
   return (
     <AuthCard standalone title={t('Passwort vergessen')} subtitle={subtitle}>
@@ -66,9 +66,9 @@ export default function ForgotPasswordPage() {
           <p className="auth-hint">
             <code>docker exec -it hapm hapm-admin reset-password &lt;{t('e-mail')}&gt;</code>
           </p>
-          <p className="auth-hint">
+          <div className="alert alert-warning">
             {t('Es schaltet auch den zweiten Faktor des Kontos ab, entfernt seine Passkeys und beendet seine Sitzungen.')}
-          </p>
+          </div>
         </div>
       )}
 

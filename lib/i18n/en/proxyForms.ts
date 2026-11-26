@@ -3,7 +3,6 @@ import type { Dictionary } from './index';
 /** Reverse-Proxy, Dialoge und Bausteine (`components/reverse-proxy/`, `components/IpAllowList.tsx`). */
 export const proxyForms: Dictionary = {
   // Von mehreren Dialogen gebraucht, womöglich auch außerhalb
-  'Löschen': 'Delete',
   'Zurücksetzen': 'Reset',
   'Bitte wählen': 'Please select',
   'Adresse': 'Address',
@@ -35,23 +34,23 @@ export const proxyForms: Dictionary = {
   'HTTP-Weiterleitung': 'HTTP redirect',
   'TCP-Weiterleitung': 'TCP forward',
   'Was soll angelegt werden?': 'What do you want to create?',
-  'Eine Domain auf ein Ziel im Backend. Mit Zertifikat und Healthcheck, der Normalfall.':
-    'One domain to one backend target. With certificate and healthcheck, the usual case.',
-  'Eine Domain auf mehrere Ziele: Verfahren, Gewichtung und auf Wunsch Sitzungsbindung.':
-    'One domain to several targets: algorithm, weights and optional session persistence.',
-  'Eine Domain antwortet mit 301 oder 302 und zeigt woanders hin. Ohne eigenen Server dahinter.':
-    'A domain answers with 301 or 302 and points elsewhere. No server of its own behind it.',
-  'Ein Port dieses Servers, durchgereicht an ein Ziel dahinter: Datenbank, SSH, SMTP. Ohne Domain und ohne Zertifikat.':
-    'A port of this server, passed through to a target behind it: database, SSH, SMTP. No domain and no certificate.',
+  'Eine Domain auf ein Ziel, mit Zertifikat. Der Normalfall.':
+    'One domain to one target, with certificate. The usual case.',
+  'Eine Domain auf mehrere Ziele: Verfahren, Gewicht, Sitzungsbindung.':
+    'One domain to several targets: algorithm, weight, session persistence.',
+  'Eine Domain antwortet mit 301 oder 302 und zeigt woanders hin.':
+    'A domain answers with 301 or 302 and points elsewhere.',
+  'Ein Port dieses Servers an ein Ziel dahinter: Datenbank, SSH, SMTP.':
+    'A port of this server to a target behind it: database, SSH, SMTP.',
 
   // Adressliste (`components/IpAllowList.tsx`)
   'Erlaubte Adressen': 'Allowed addresses',
-  'Von welchen Adressen dieses Token gelten darf. Einzelne Adresse oder CIDR-Bereich, IPv4 und IPv6. Leer heißt: von überall.':
-    'The addresses this token is valid from. A single address or CIDR range, IPv4 and IPv6. Empty means: from anywhere.',
+  'Von welchen Adressen dieses Token gelten darf.':
+    'The addresses this token is valid from.',
   '203.0.113.7 oder 10.0.0.0/8': '203.0.113.7 or 10.0.0.0/8',
   'Adresse hinzufügen': 'Add address',
-  'Ohne Eintrag gilt das Token von jeder Adresse aus. Für ein Skript auf einem festen Server ist eine Zeile hier der Unterschied zwischen „gestohlen und nutzbar“ und „gestohlen und wertlos“.':
-    'Without an entry, the token is valid from any address. For a script on a fixed server, one line here is the difference between “stolen and usable” and “stolen and worthless”.',
+  'Ohne Eintrag gilt das Token von jeder Adresse aus.':
+    'Without an entry, the token is valid from any address.',
 
   // Sperre (`LockDialog.tsx`)
   'Wie soll gesperrt werden?': 'How do you want to lock it?',
@@ -60,12 +59,11 @@ export const proxyForms: Dictionary = {
   'Es sind keine Admin-IPs gesetzt. Sie stehen unter Reverse-Proxy, Einstellungen.':
     'No admin IPs are set. They are under Reverse proxy, Settings.',
   'Mit Passwort': 'With password',
-  'Besucher sehen eine Passwortabfrage. Nach richtiger Eingabe kommen sie 30 Tage lang ohne Abfrage durch.':
-    'Visitors see a password prompt. After the correct password they get through without a prompt for 30 days.',
+  'Besucher geben ein Passwort ein und kommen danach 30 Tage lang durch.':
+    'Visitors enter a password and then get through for 30 days.',
   'Braucht HAProxy 2.4 oder neuer. Hier läuft {version}.': 'Needs HAProxy 2.4 or newer. This server runs {version}.',
-  'Gesperrt werden alle {count} Domains des Eintrags. Einzelne Domains sperrt man im Bearbeiten-Dialog.':
-    'All {count} domains of the entry are locked. Lock single domains in the edit dialog.',
-  'Neuen Vorschlag erzeugen': 'Generate new suggestion',
+  'Das sperrt alle {count} Domains. Einzelne sperrt man beim Bearbeiten.':
+    'This locks all {count} domains. Lock single domains when editing.',
   'Mindestens {min} Zeichen. Jetzt kopieren: gespeichert wird nur ein Hash.':
     'At least {min} characters. Copy it now: only a hash is stored.',
 
@@ -138,7 +136,6 @@ export const proxyForms: Dictionary = {
   'TCP-Weiterleitung {id} · Port {port} · Erreichbar von außen nur, wenn der Port auch in der Firewall freigegeben ist':
     'TCP forward {id} · Port {port} · Reachable from outside only if the port is also open in the firewall',
   'Port unbekannt': 'Port unknown',
-  'Der Vorgang läuft. Fortschritt unten rechts.': 'The task is running. Progress at the bottom right.',
   'Wohin die Verbindungen gehen': 'Where the connections go',
   'kein Ziel eingetragen': 'no target configured',
   'Steht außerhalb der Marker-Blöcke. Wo der Abschnitt anfängt, wäre geraten.':
@@ -149,16 +146,16 @@ export const proxyForms: Dictionary = {
   'TCP-Weiterleitung „{id}“ anlegen': 'Create TCP forward “{id}”',
   'TCP-Weiterleitung bearbeiten': 'Edit TCP forward',
   'TCP-Weiterleitung anlegen': 'Create TCP forward',
-  'Ein Port dieses Servers, durchgereicht an ein Ziel dahinter. Kein HTTP, kein Zertifikat: was durchgeht, sieht HAProxy nicht an.':
-    'A port of this server, passed through to a target behind it. No HTTP, no certificate: HAProxy does not look at what passes through.',
+  'Ein Port dieses Servers, durchgereicht an ein Ziel dahinter.':
+    'A port of this server, passed through to a target behind it.',
   'Port auf diesem Server': 'Port on this server',
   'Die Kennung des listen-Abschnitts bleibt, auch wenn sich der Port ändert.':
     'The identifier of the listen section stays the same, even if the port changes.',
   'Aus dem Port ergibt sich die Kennung des listen-Abschnitts, zum Beispiel tcp_5432.':
     'The identifier of the listen section is derived from the port, for example tcp_5432.',
   'Wird auf dem Server geprüft…': 'Checking on the server…',
-  '{min} bis {max}. HAProxy nimmt danach auf diesem Port Verbindungen an, auf allen Adressen dieses Servers.':
-    '{min} to {max}. HAProxy then accepts connections on this port, on all addresses of this server.',
+  '{min} bis {max}. HAProxy lauscht danach auf allen Adressen des Servers.':
+    '{min} to {max}. HAProxy then listens on all addresses of this server.',
   'Frei.': 'Free.',
   'Weder in der Konfiguration noch auf dem Server belegt.': 'Not in use in the configuration or on the server.',
   'Belegt: {reason}': 'In use: {reason}',
@@ -176,24 +173,22 @@ export const proxyForms: Dictionary = {
   'Ein zweiter Abschnitt auf demselben Port kommt durch die Konfigurationsprüfung und scheitert erst beim Neuladen: sie liest die Datei, sie bindet keine Sockets. Der Vorgang wird deshalb hier abgelehnt.':
     'A second section on the same port passes the configuration check and only fails on reload: the check reads the file, it does not bind sockets. That is why the task is refused here.',
   'Erreichbar von': 'Reachable from',
-  'Leer heißt: von jeder Adresse im Internet. Eine eigene Liste je Eintrag und nicht die Admin-IPs. Wer an eine Datenbank darf, ist eine andere Frage als wer eine Verwaltungsoberfläche sehen darf.':
-    'Empty means: from every address on the internet. A separate list per entry, not the admin IPs. Who may access a database is a different question from who may see an admin interface.',
-  'Einzelne Adresse oder CIDR-Bereich, IPv4 und IPv6. Eine Zeile pro Absender.':
-    'A single address or CIDR range, IPv4 and IPv6. One line per source.',
+  'Leer heißt: von jeder Adresse im Internet.':
+    'Empty means: from every address on the internet.',
+  'Adresse oder CIDR-Bereich, IPv4 und IPv6. Eine Zeile pro Absender.':
+    'Address or CIDR range, IPv4 and IPv6. One line per source.',
   'Der Port ist danach von überall erreichbar. Für einen Dienst, der selbst keine Anmeldung verlangt, ist das die Sorte Entscheidung, die man trifft, ohne sie zu treffen.':
     'The port is then reachable from anywhere. For a service that does not ask for a sign-in itself, this is the kind of decision you make without making it.',
   'Abgewiesen wird die Verbindung, bevor ein einziges Byte gelesen wird ({rule}). Für den Absender sieht das aus, als wäre nichts da.':
     'The connection is rejected before a single byte is read ({rule}). To the sender it looks as if nothing is there.',
   'Wohin die Verbindungen gehen. Mehr als eines heißt Lastverteilung.':
     'Where the connections go. More than one means load balancing.',
-  'Adresse und Port, wie HAProxy sie erreicht. Der Port dort muss nicht der gleiche sein wie der hier.':
-    'Address and port as HAProxy reaches them. The port there does not have to match the one here.',
+  'Wie HAProxy das Ziel erreicht. Der Port darf ein anderer sein als hier.':
+    'How HAProxy reaches the target. The port may differ from the one here.',
   'Das Gewicht ist der Anteil eines Ziels im Verhältnis zu den anderen. Leer heißt, dass keine {weight}-Angabe geschrieben wird und HAProxys Vorgabe gilt. {zero} nimmt ein Ziel aus der Verteilung, ohne bestehende Verbindungen zu trennen.':
     'The weight is the share of a target relative to the others. Empty means no {weight} setting is written and the HAProxy default applies. {zero} takes a target out of the rotation without closing existing connections.',
   'Es wird keine balance-Zeile geschrieben. Dann gilt, was im defaults-Block der Konfiguration steht. URI Hash steht hier nicht zur Wahl: es liest den angefragten Pfad, und den gibt es ohne HTTP nicht.':
     'No balance line is written. Then whatever is in the defaults block of the configuration applies. URI hash is not offered here: it reads the requested path, and there is none without HTTP.',
-  'HAProxy baut regelmäßig eine Verbindung auf und nimmt ein totes Ziel aus dem Betrieb.':
-    'HAProxy opens a connection at regular intervals and takes a dead target out of service.',
   'Aus heißt: über den Zustand der Ziele ist nichts bekannt, und die Karte zeigt keine Farbe. HAProxy schickt Verbindungen auch an ein Ziel, das nicht antwortet.':
     'Off means: nothing is known about the state of the targets, and the card shows no color. HAProxy also sends connections to a target that does not respond.',
   'Der Abschnitt landet im BACKENDS-Block der Gruppe. Geprüft wird die neue Konfiguration mit {command}, bevor sie eingesetzt wird; scheitert der Reload, kommt das Backup zurück.':
@@ -225,8 +220,8 @@ export const proxyForms: Dictionary = {
   'Die Domains ändern sich. Dafür wird ein neues Zertifikat beantragt.':
     'The domains change. A new certificate will be requested for this.',
   'Die Adressen des Eintrags und seine Gruppe.': 'The addresses of the entry and its group.',
-  'In der Konfiguration steht kein vollständiger Marker-Block. Gruppen legt man in der Übersicht an.':
-    'The configuration has no complete marker block. Groups are created in the overview.',
+  'Noch keine Gruppe. Gruppen legt man in der Übersicht an.':
+    'No group yet. Groups are created in the overview.',
   'Hauptdomain': 'Primary domain',
   'Nach ihr heißt das Zertifikat, und sie steht im Host-Header des Healthchecks. Die Dienst-ID bleibt, auch wenn sich die Hauptdomain ändert.':
     'The certificate is named after it, and it is the Host header of the healthcheck. The service ID stays the same, even if the primary domain changes.',
@@ -247,8 +242,8 @@ export const proxyForms: Dictionary = {
   'Interne Installation: das Zertifikat wird über DNS ausgestellt.': 'Internal installation: the certificate is issued via DNS.',
   'Interne Installation: ausgestellt wird über {hook}.': 'Internal installation: issued via {hook}.',
   'DNS-Einträge': 'DNS records',
-  'Der Eintrag zeigt auf die Domain der Zone selbst, deren A-Eintrag auf diesen Server zeigt. Beim Löschen des Ziels wird angeboten, ihn mitzunehmen.':
-    'The record points to the domain of the zone itself, whose A record points to this server. When the target is deleted, you are offered to delete it too.',
+  'Der Eintrag zeigt auf die Domain der Zone selbst, deren A-Eintrag auf diesen Server zeigt. Beim Entfernen des Ziels wird angeboten, ihn mitzunehmen.':
+    'The record points to the domain of the zone itself, whose A record points to this server. When the target is removed, you are offered to remove it too.',
   'DNS-Zone {zone}: {fqdn} ist bereits als CNAME auf {zone} eingerichtet.':
     'DNS zone {zone}: {fqdn} is already set up as a CNAME to {zone}.',
   'Dort steht ein {type}-Eintrag auf {content}. Er wird nicht angefasst.':
@@ -275,16 +270,16 @@ export const proxyForms: Dictionary = {
     'Already resolves ({addresses}), but not via {zone}, for example via your network’s DNS server. Switched on, it resolves on the whole internet.',
   'Gilt schon für alle Ziele: „timeout tunnel {value}“ im defaults-Block.':
     'Already applies to all targets: “timeout tunnel {value}” in the defaults block.',
-  'Gilt schon für alle Ziele. Die eigene Zeile dieses Ziels ist doppelt und lässt sich ausschalten.':
-    'Already applies to all targets. This target’s own line is redundant and can be switched off.',
+  'Gilt schon für alle Ziele. Die eigene Zeile ist überflüssig.':
+    'Already applies to all targets. This target’s own line is redundant.',
   'Backend-Server legen Sie auf der Seite Ziele an.': 'Add backend servers on the Targets page.',
   '{host}, Port frei': '{host}, any port',
   'Der Server {name} ist hinterlegt.': 'The server {name} has been added.',
   'Der Server {name} ist geändert.': 'The server {name} has been changed.',
-  'Server {name} löschen?': 'Delete server {name}?',
+  'Server {name} entfernen?': 'Remove server {name}?',
   'Ziele, die diese Adresse benutzen, bleiben unverändert. Der Server steht danach nur nicht mehr zur Auswahl.':
     'Targets that use this address stay as they are. The server is just no longer offered.',
-  'Der Server {name} ist gelöscht.': 'The server {name} has been deleted.',
+  'Der Server {name} ist entfernt.': 'The server {name} is removed.',
   'Name, z. B. NAS': 'Name, e.g. NAS',
   'IP-Adresse oder Hostname': 'IP address or host name',
   'Port (frei)': 'Port (optional)',
@@ -318,11 +313,11 @@ export const proxyForms: Dictionary = {
   'Aus heißt 302: vorübergehend, und jederzeit zurücknehmbar.': 'Off means 302: temporary, and can be reverted at any time.',
   'Ein Browser merkt sich eine 301 und ruft die alte Adresse nicht mehr auf. Wer sie später ändert, erreicht damit niemanden mehr, der schon einmal hier war, bis dessen Cache abläuft.':
     'A browser remembers a 301 and no longer requests the old address. If you change it later, you will not reach anyone who has been here before until their cache expires.',
-  'Adresse und Port, wie HAProxy sie erreicht, üblicherweise die Adresse im privaten Netz.':
-    'Address and port as HAProxy reaches them, usually the address in the private network.',
+  'Adresse und Port, wie HAProxy sie erreicht, meist im privaten Netz.':
+    'Address and port as HAProxy reaches them, usually in the private network.',
   'Zweites Ziel: auf Lastverteilung umstellen': 'Second target: switch to load balancer',
-  'Öffnet dasselbe Ziel im Lastverteilungs-Formular, mit Verfahren, Gewichtung und Sitzungsbindung. Nicht gespeicherte Eingaben in diesem Formular gehen dabei verloren.':
-    'Opens the same target in the load balancer form, with algorithm, weights and session persistence. Unsaved input in this form is lost.',
+  'Öffnet dasselbe Ziel im Lastverteilungs-Formular, mit Verfahren, Gewichtung und Sitzungsbindung.':
+    'Opens the same target in the load balancer form, with algorithm, weights and session persistence.',
   'Das Gewicht ist der Anteil eines Ziels im Verhältnis zu den anderen: 2 gegen 1 heißt doppelt so viele Anfragen. Leer heißt, dass keine {weight}-Angabe geschrieben wird und HAProxys Vorgabe gilt (alle gleich). {zero} nimmt ein Ziel aus der Verteilung, ohne seine gebundenen Sitzungen abzuwerfen: der Weg, einen Server in Ruhe herauszunehmen.':
     'The weight is the share of a target relative to the others: 2 to 1 means twice as many requests. Empty means no {weight} setting is written and the HAProxy default applies (all equal). {zero} takes a target out of the rotation without dropping its persistent sessions: the way to take a server out calmly.',
   'Es wird keine balance-Zeile geschrieben. Dann gilt, was im defaults-Block der Konfiguration steht, üblicherweise Round Robin. Was dort wirklich steht, weiß dieses Formular nicht, deshalb wird nichts hingeschrieben.':
@@ -356,14 +351,14 @@ export const proxyForms: Dictionary = {
   'Alle Domains': 'All domains',
   'Nur einzelne': 'Selected only',
   '{domain} sperren': 'Lock {domain}',
-  'Eine Weiterleitung hat kein Backend. Pfad-Regeln, Header, Healthcheck und Verteilverfahren stehen deshalb nicht in diesem Formular: sie alle gehören zu einem Eintrag mit Zielen. Wer die braucht, legt einen Reverse-Proxy oder eine Lastverteilung an.':
-    'A redirect has no backend. Path rules, headers, healthcheck and balancing algorithm are therefore not in this form: they all belong to an entry with targets. If you need them, create a reverse proxy or a load balancer.',
+  'Eine Weiterleitung hat kein Backend, also weder Pfad-Regeln noch Header.':
+    'A redirect has no backend, so neither path rules nor headers.',
   'Pfad-Regeln': 'Path rules',
   'Alles geht an das Standard-Backend. Das ist der Normalfall.': 'Everything goes to the default backend. This is the usual case.',
   'Einzelne Pfade auf einen anderen Port desselben Ziels.': 'Single paths to another port of the same target.',
   'Keine Pfad-Regeln': 'No path rules',
-  'Alles geht an das Standard-Backend. Der Fall dafür ist Coolify: Oberfläche auf 8000, Terminal auf 6002, Live-Ansicht auf 6001.':
-    'Everything goes to the default backend. The case for this is Coolify: interface on 8000, terminal on 6002, live view on 6001.',
+  'Nötig, wenn ein Pfad auf einen anderen Port desselben Ziels gehört.':
+    'Needed when a path belongs on another port of the same target.',
   'Backend und ACL: {name}': 'Backend and ACL: {name}',
   'Nur a-z, 0-9 und _. Er wird Teil des Backend-Namens.': 'Only a-z, 0-9 and _. It becomes part of the backend name.',
   'Regel entfernen': 'Remove rule',
@@ -372,8 +367,8 @@ export const proxyForms: Dictionary = {
   'Ziele dieser Regel': 'Targets of this rule',
   'Nur `check` auf der server-Zeile, kein HTTP-Check.': 'Only `check` on the server line, no HTTP check.',
   'Pfad-Regel hinzufügen': 'Add path rule',
-  'Verglichen wird der Anfang des Pfads: /app trifft auch /app/socket. Eine WebSocket-Strecke antwortet auf ein GET auf / nicht mit 200. Deshalb hier kein HTTP-Check, sonst nähme HAProxy sie dauerhaft aus dem Betrieb.':
-    'The start of the path is compared: /app also matches /app/socket. A WebSocket endpoint does not answer a GET on / with 200. That is why there is no HTTP check here, otherwise HAProxy would take it out of service for good.',
+  'Verglichen wird der Anfang des Pfads: /app trifft auch /app/socket.':
+    'The start of the path is compared: /app also matches /app/socket.',
   'Header und Verbindung': 'Headers and connection',
   'Nichts gesetzt. Das ist der Normalfall.': 'Nothing set. This is the usual case.',
   'Feste Header und lange Verbindungen für dieses Ziel.': 'Fixed headers and long connections for this target.',
@@ -444,10 +439,10 @@ export const proxyForms: Dictionary = {
   '{time} von {user}': '{time} by {user}',
   '{time}, selbsttätig': '{time}, automatically',
   'Selbsttätig erneuern': 'Renew automatically',
-  'Solange die Tabelle nicht vom laufenden Monat ist, fragt HAPM einmal am Tag bei db-ip.com nach der neuen Datei. DB-IP stellt sie am Monatsanfang ein. Abgeschaltet bleibt die Tabelle auf ihrem Stand, bis sie von Hand erneuert wird.':
-    'As long as the table is not from the current month, HAPM asks db-ip.com for the new file once a day. DB-IP publishes it at the start of the month. When turned off, the table stays at its version until it is renewed manually.',
-  'HAPM lädt einmal im Monat eine Datei von db-ip.com. Besucheradressen verlassen den Server dabei nicht.':
-    'HAPM downloads a file from db-ip.com once a month. Visitor addresses do not leave the server.',
+  'Solange die Tabelle nicht vom laufenden Monat ist, fragt HAPM einmal am Tag bei db-ip.com nach der neuen Datei. DB-IP stellt sie am Monatsanfang ein. Besucheradressen verlassen den Server dabei nicht. Abgeschaltet bleibt die Tabelle auf ihrem Stand, bis sie von Hand erneuert wird.':
+    'As long as the table is not from the current month, HAPM asks db-ip.com for the new file once a day. DB-IP publishes it at the start of the month. Visitor addresses do not leave the server. When turned off, the table stays at its version until it is renewed manually.',
+  'HAPM lädt einmal im Monat eine Datei von db-ip.com.':
+    'HAPM downloads a file from db-ip.com once a month.',
   'Von Hand hochladen': 'Upload manually',
   'Der Datensatz „IP to Country Lite“ von DB-IP, monatlich und kostenlos. Die Datei wird genommen, wie sie kommt: gepackt (.csv.gz) oder ausgepackt. Der Monat muss im Dateinamen stehen, nur dort ist der Stand des Datensatzes vermerkt.':
     'The “IP to Country Lite” dataset from DB-IP, monthly and free. The file is taken as it comes: compressed (.csv.gz) or uncompressed. The month must be in the file name, it is the only place where the version of the dataset is recorded.',
@@ -459,7 +454,7 @@ export const proxyForms: Dictionary = {
   // Zertifikate: hochladen, eigener ACME-Server, eigener DNS-Server
   "Diese Installation stellt keine Zertifikate selbst aus. Laden Sie zuerst unter Reverse-Proxy, Zertifikate eins hoch, das die Domains abdeckt.": "This installation does not issue certificates itself. First upload one under Reverse proxy, Certificates that covers the domains.",
   "Diese Installation stellt keine Zertifikate selbst aus, und für diese Domains liegt keins vor. Laden Sie es zuerst unter {page} hoch.": "This installation does not issue certificates itself, and there is none for these domains. Upload it first under {page}.",
-  "Ein vorhandenes Zertifikat deckt diese Domains ab. Es wird keins beantragt.": "An existing certificate covers these domains. None will be requested.",
+  "Ein Zertifikat für diese Domains liegt vor. Es wird keins beantragt.": "A certificate for these domains exists. None will be requested.",
   // HTTPS zum Ziel (BackendTlsPick, ServiceCard)
   'HTTP': 'HTTP',
   'HTTPS': 'HTTPS',
@@ -469,8 +464,8 @@ export const proxyForms: Dictionary = {
   'Verschlüsselt. Das Zertifikat muss von einer bekannten CA stammen.': 'Encrypted. The certificate must come from a known CA.',
   'Für Ziele, die selbst verschlüsseln, etwa Proxmox auf 8006 oder TrueNAS. Ohne Prüfung passt das für selbst signierte Zertifikate. Mit Prüfung muss das Zertifikat von einer CA stammen, der das System vertraut, und für die aufgerufene Domain gelten. HAProxy schickt die Domain der Anfrage als SNI. In der Konfiguration: „{insecure}“ oder „{verify}“ an jeder server-Zeile.':
     'For targets that encrypt themselves, such as Proxmox on 8006 or TrueNAS. Without verification this works for self-signed certificates. With verification the certificate must come from a CA the system trusts and be valid for the requested domain. HAProxy sends the domain of the request as SNI. In the configuration: "{insecure}" or "{verify}" on every server line.',
-  'Die Prüfung des Zertifikats braucht HAProxy 2.6 oder neuer. Hier läuft {version}.':
-    'Verifying the certificate needs HAProxy 2.6 or newer. This one runs {version}.',
+  'Die Prüfung braucht HAProxy 2.6 oder neuer. Hier läuft {version}.':
+    'Verification needs HAProxy 2.6 or newer. This one runs {version}.',
   'Auf Port {port} spricht ein Ziel meist HTTPS.': 'A target on port {port} usually speaks HTTPS.',
   'HAProxy spricht HTTPS mit dem Ziel, ohne das Zertifikat zu prüfen':
     'HAProxy talks HTTPS to the target without verifying the certificate',
@@ -478,8 +473,15 @@ export const proxyForms: Dictionary = {
   'Ziel spricht': 'Target speaks',
   'Ziele sprechen': 'Targets speak',
   'Ziele dieser Regel sprechen': 'Targets of this rule speak',
-  'acme.sh beantragt ein Zertifikat für {domains} und legt es für HAProxy ab. Ziele mit eigenem Zertifikat behalten es.':
-    'acme.sh requests a certificate for {domains} and places it for HAProxy. Targets with their own certificate keep it.',
+  'Gilt für {domains}. Ziele mit eigenem Zertifikat behalten es.':
+    'Applies to {domains}. Targets with their own certificate keep it.',
   'DNS-Hook': 'DNS hook',
   'Beantragen': 'Request',
+  'Einzelne Adresse oder CIDR-Bereich, IPv4 und IPv6. Leer heißt: von überall.': 'A single address or CIDR range, IPv4 and IPv6. Empty means: from anywhere.',
+  'Für ein Skript auf einem festen Server ist eine Zeile hier der Unterschied zwischen „gestohlen und nutzbar“ und „gestohlen und wertlos“.': 'For a script on a fixed server, one line here is the difference between “stolen and usable” and “stolen and worthless”.',
+  'Pfad-Regeln, Header, Healthcheck und Verteilverfahren gehören zu einem Eintrag mit Zielen. Wer sie braucht, legt einen Reverse-Proxy oder eine Lastverteilung an.': 'Path rules, headers, healthcheck and balancing algorithm belong to an entry with targets. If you need them, create a reverse proxy or a load balancer.',
+  'Nicht gespeicherte Eingaben gehen dabei verloren.': 'Unsaved input is lost.',
+  'Eine WebSocket-Strecke antwortet auf ein GET auf / nicht mit 200. Deshalb hier kein HTTP-Check, sonst nähme HAProxy sie dauerhaft aus dem Betrieb.': 'A WebSocket endpoint does not answer a GET on / with 200. That is why there is no HTTP check here, otherwise HAProxy would take it out of service for good.',
+  'Kein HTTP, kein Zertifikat: was durchgeht, sieht HAProxy nicht an.': 'No HTTP, no certificate: HAProxy does not look at what passes through.',
+  'Eine eigene Liste je Eintrag und nicht die Admin-IPs. Wer an eine Datenbank darf, ist eine andere Frage als wer eine Verwaltungsoberfläche sehen darf.': 'A separate list per entry, not the admin IPs. Who may access a database is a different question from who may see an admin interface.',
 };

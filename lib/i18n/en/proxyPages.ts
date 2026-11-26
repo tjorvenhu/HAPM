@@ -7,15 +7,14 @@ export const proxyPages: Dictionary = {
   'HAProxy antwortet nicht': 'HAProxy is not responding',
   'Der Zustand von HAProxy steht in der {overview}.': 'The {overview} shows the state of HAProxy.',
   'Durchgelaufen, HAProxy hat die neue Konfiguration übernommen.': 'Completed, HAProxy has applied the new configuration.',
-  'Nicht durchgelaufen. Der erste fehlgeschlagene Schritt steht im Protokoll.': 'Did not complete. The log shows the first failed step.',
+  'Nicht durchgelaufen. Der erste fehlgeschlagene Schritt steht im Fenster des Laufs.': 'Did not complete. The run window shows the first failed step.',
   'Schritte ansehen': 'View steps',
   'Ändern fehlgeschlagen': 'Change failed',
-  'Löschen fehlgeschlagen': 'Delete failed',
-  'Die TCP-Weiterleitung konnte nicht gelöscht werden.': 'The TCP forward could not be deleted.',
-  'Das Ziel konnte nicht gelöscht werden.': 'The target could not be deleted.',
+  'Die TCP-Weiterleitung konnte nicht entfernt werden.': 'The TCP forward could not be removed.',
+  'Das Ziel konnte nicht entfernt werden.': 'The target could not be removed.',
   'Ersetzen fehlgeschlagen': 'Replacing failed',
   'Beantragen fehlgeschlagen': 'Request failed',
-  'Endgültig löschen': 'Delete permanently',
+  'Endgültig entfernen': 'Remove permanently',
   'Gruppe anlegen': 'Create group',
   'Gruppe entfernen': 'Remove group',
   'Gruppe von HAPM': 'HAPM group',
@@ -38,8 +37,8 @@ export const proxyPages: Dictionary = {
   'Der Stand des Vorgangs ließ sich nicht abfragen. Die Schritte stehen in den Logs.': 'The state of the task could not be read. The steps are in the logs.',
   'Die Gruppe ist entfernt.': 'The group has been removed.',
   'Die Gruppe konnte nicht angelegt werden.': 'The group could not be created.',
-  'Welche Domain auf welches Ziel zeigt. Gelesen wird direkt aus der HAProxy-Konfiguration, nicht aus einer Kopie.':
-    'Which domain points to which target. Read directly from the HAProxy configuration, not from a copy.',
+  'Welche Domain auf welches Ziel zeigt.':
+    'Which domain points to which target.',
   'HAProxy nicht gefunden': 'HAProxy not found',
   'Diese Seite liest die Konfiguration unter {path}. Ob HAProxy läuft, steht in der {overview}.':
     'This page reads the configuration at {path}. The {overview} shows whether HAProxy is running.',
@@ -62,8 +61,8 @@ export const proxyPages: Dictionary = {
   'Durchgereichte Ports dieses Servers': 'Ports passed through on this server',
   'Ohne acme.sh und Zertifikatsverzeichnis lässt sich kein Ziel mit Domain anlegen. HAPM richtet beides beim Start selbst ein.':
     'Without acme.sh and the certificate directory, no target with a domain can be created. HAPM sets up both itself at startup.',
-  'Nur a-z, 0-9, _ und -. Der Name steht danach im Marker und lässt sich nicht umbenennen: dafür gibt es Anlegen und Entfernen.':
-    'Only a-z, 0-9, _ and -. The name then appears in the marker and cannot be renamed: create and remove the group instead.',
+  'Nur a-z, 0-9, _ und -. Lässt sich danach nicht umbenennen.':
+    'Only a-z, 0-9, _ and -. Cannot be renamed afterwards.',
   'Angelegt werden zwei Marker-Paare in der Konfiguration ({services} und dasselbe für {backends}). Bestehende Einträge werden dabei nicht angefasst.':
     'Two marker pairs are added to the configuration ({services} and the same for {backends}). Existing entries are not touched.',
 
@@ -73,7 +72,7 @@ export const proxyPages: Dictionary = {
   'Sperre von „{id}“ lösen': 'Unlock “{id}”',
   '„{id}“ mit Passwort sperren': 'Lock “{id}” with a password',
   '„{id}“ auf Admin-IPs sperren': 'Lock “{id}” to admin IPs',
-  'Reverse-Proxy-Ziel löschen': 'Delete reverse proxy target',
+  'Reverse-Proxy-Ziel entfernen?': 'Remove reverse proxy target?',
   'Das entfernt die Weiche für {domains} aus der HAProxy-Konfiguration, samt Backend, Zertifikat und dessen automatischer Erneuerung.':
     'This removes the route for {domains} from the HAProxy configuration, along with the backend, the certificate, and its automatic renewal.',
   'Die Pfad-Regel ({paths}) geht mit.': 'The path rule ({paths}) goes with it.',
@@ -81,12 +80,12 @@ export const proxyPages: Dictionary = {
   'Die Domains sind danach nicht mehr erreichbar.': 'The domains will no longer be reachable.',
   'DNS-Einträge ebenfalls entfernen': 'Also remove DNS records',
   'Zum Bestätigen die Dienst-ID abtippen:': 'Type the service ID to confirm:',
-  'Ziel „{id}“ löschen': 'Delete target “{id}”',
-  'TCP-Weiterleitung löschen': 'Delete TCP forward',
+  'Ziel „{id}“ entfernen': 'Remove target “{id}”',
+  'TCP-Weiterleitung entfernen?': 'Remove TCP forward?',
   'Das nimmt den listen-Abschnitt „{id}“ aus der HAProxy-Konfiguration. Port {port} nimmt danach keine Verbindungen mehr an, und was gerade darüber läuft, bricht ab.':
     'This removes the listen section “{id}” from the HAProxy configuration. Port {port} will no longer accept connections, and anything currently running over it is cut off.',
   'Zum Bestätigen die Kennung abtippen:': 'Type the identifier to confirm:',
-  'TCP-Weiterleitung „{id}“ löschen': 'Delete TCP forward “{id}”',
+  'TCP-Weiterleitung „{id}“ entfernen': 'Remove TCP forward “{id}”',
   'Gruppe „{name}“ entfernen?': 'Remove group “{name}”?',
   'Die Marker-Paare werden aus der Konfiguration genommen. Es steht kein Eintrag darin, es geht also nichts offline. Danach lässt sich in dieser Gruppe nichts mehr anlegen.':
     'The marker pairs are taken out of the configuration. There is no entry in them, so nothing goes offline. Afterwards nothing more can be created in this group.',
@@ -152,11 +151,10 @@ export const proxyPages: Dictionary = {
   'Ø Antwortzeit der Ziele': 'Avg. response time of targets',
   'Offene Verbindungen': 'Open connections',
   'Serverfehler (5xx) in {minutes} Min. · 4xx: {share}': 'Server errors (5xx) in {minutes} min · 4xx: {share}',
-  'Reverse-Proxy-Statistik': 'Reverse proxy statistics',
-  'Nur dieser Dienst. Die Zahlen kommen aus HAProxys eigener Statistik, die Zugriffe aus seinem Log.':
-    'This service only. The numbers come from HAProxy’s own statistics, the requests from its log.',
-  'Was über HAProxy läuft: Anfragen, Statuscodes, übertragene Menge, Antwortzeiten und wer zugreift.':
-    'What runs through HAProxy: requests, status codes, transferred volume, response times, and who is accessing.',
+  'Nur dieser Dienst: Zahlen aus HAProxys Statistik, Zugriffe aus dem Log.':
+    'This service only: numbers from HAProxy’s statistics, requests from the log.',
+  'Was über HAProxy läuft: Anfragen, Antwortzeiten, Menge und wer zugreift.':
+    'What runs through HAProxy: requests, response times, volume, and who is accessing.',
   'Die Zeitreihe fängt gerade erst an.': 'The time series is just getting started.',
   'HAProxy liefert Zählerstände seit dem Start seines Prozesses, kein Fenster. Ein Balken ist immer die Differenz zweier Proben. Die gleichzeitigen Sitzungen stehen deshalb schon da, Anfragen, Statuscodes und übertragene Menge ab der zweiten Runde. Erfasst wird jede Minute.':
     'HAProxy reports counters since its process started, not a window. Each value is the difference between two samples. Concurrent sessions are therefore already shown, requests, status codes, and transferred volume from the second round on. Data is collected every minute.',
@@ -188,7 +186,7 @@ export const proxyPages: Dictionary = {
   'Zugriffe': 'Requests',
   'Aus dem Access-Log von HAProxy.': 'From the HAProxy access log.',
   '{parsed} von {lines} gelesenen Zeilen ausgewertet, zuletzt {time}.': '{parsed} of {lines} lines read were analyzed, last at {time}.',
-  'Wird alle zwei Minuten neu ausgewertet, solange die Seite offen ist.': 'Analyzed again every two minutes while the page is open.',
+  'Aus dem Access-Log von HAProxy. Wird alle zwei Minuten neu ausgewertet, solange die Seite offen ist.': 'From the HAProxy access log. Analyzed again every two minutes while the page is open.',
   'Neu auswerten': 'Analyze again',
   'Es wurde kein HAProxy-Log gefunden. HAPM schreibt das Log des HAProxy-Containers mit. Liegt dort nichts, hat HAProxy noch keine Anfrage protokolliert. Die Zahlen oben (aus HAProxys eigener Statistik) stimmen trotzdem.':
     'No HAProxy log was found. HAPM records the log of the HAProxy container. If it is empty, HAProxy has not logged a request yet. The numbers above (from HAProxy’s own statistics) are still correct.',
@@ -197,8 +195,8 @@ export const proxyPages: Dictionary = {
   'Im gelesenen Fenster des Logs stand keine Anfrage, oder das Format ist keines, das sich lesen lässt.':
     'The log window that was read contains no request, or its format cannot be read.',
   'Es ist keine Länder-Tabelle hinterlegt.': 'No country table is installed.',
-  'Aus {share} der Anfragen. Die Auswertung nimmt die häufigsten Adressen, nicht alle.':
-    'From {share} of the requests. The analysis uses the most frequent addresses, not all of them.',
+  'Aus {share} der Anfragen.':
+    'From {share} of the requests.',
   '{count} Adresse im Fenster.': '{count} address in the window.',
   '{count} verschiedene im Fenster.': '{count} different ones in the window.',
   'Statuscodes': 'Status codes',
@@ -216,10 +214,10 @@ export const proxyPages: Dictionary = {
   'Noch keine Messwerte': 'No measurements yet',
   'Die Zeitreihe wird jede Minute erfasst. Nach dem Start von HAPM steht der erste Punkt nach zwei Runden: eine einzelne Probe ist ein Zählerstand, kein Zeitraum.':
     'The time series is collected every minute. After HAPM starts, the first point appears after two rounds: a single sample is a counter reading, not a period.',
-  'Anfragen der letzten Stunde, je Backend. Ein Klick öffnet die Auswertung dieses Dienstes.':
-    'Requests in the last hour, per backend. A click opens the analysis of that service.',
-  'Anfragen der letzten {count} Stunden, je Backend. Ein Klick öffnet die Auswertung dieses Dienstes.':
-    'Requests in the last {count} hours, per backend. A click opens the analysis of that service.',
+  'Anfragen der letzten Stunde, je Backend.':
+    'Requests in the last hour, per backend.',
+  'Anfragen der letzten {count} Stunden, je Backend.':
+    'Requests in the last {count} hours, per backend.',
 
   // Zertifikate (`zertifikate/page.tsx`)
   'Die Zertifikate konnten nicht geladen werden.': 'The certificates could not be loaded.',
@@ -238,18 +236,17 @@ export const proxyPages: Dictionary = {
   'Von keinem Eintrag benutzt': 'Not used by any entry',
 
   // Logs (`logs/page.tsx`)
-  'Die Protokolle konnten nicht geladen werden.': 'The logs could not be loaded.',
-  'Reverse-Proxy-Protokolle': 'Reverse proxy logs',
-  'Jeder Vorgang mit seinen Schritten: angelegt, geändert, gelöscht. Domains und Ziele stehen mit in der Zeile, damit auch ein entferntes Ziel noch lesbar ist.':
-    'Every task with its steps: created, changed, deleted. Domains and targets are part of the row, so a removed target stays readable.',
+  'Die Vorgänge konnten nicht geladen werden.': 'The tasks could not be loaded.',
+  'Was HAPM an HAProxy geändert hat, jeder Vorgang mit seinen Schritten.':
+    'What HAPM changed in HAProxy, every task with its steps.',
   'Alle Vorgänge': 'All tasks',
   'Alle Status': 'All statuses',
-  'Keine Protokolle': 'No logs',
+  'Keine Vorgänge': 'No tasks',
   'Die Einträge enden auf einer früheren Seite.': 'The entries end on an earlier page.',
-  'Keine weiteren Protokolle': 'No more logs',
+  'Keine weiteren Vorgänge': 'No more tasks',
   'Für diesen Filter gibt es keine Einträge.': 'There are no entries for this filter.',
-  'Sobald ein Ziel angelegt, geändert oder gelöscht wurde, steht der Vorgang hier.':
-    'As soon as a target is created, changed, or deleted, the task appears here.',
+  'Sobald ein Ziel angelegt, geändert oder entfernt wurde, steht der Vorgang hier.':
+    'As soon as a target is created, changed, or removed, the task appears here.',
   'Details': 'Details',
   'Seite {page}': 'Page {page}',
 
@@ -259,10 +256,10 @@ export const proxyPages: Dictionary = {
     'Credentials stored. Wildcard certificates can be issued from now on, including for new domains in the same zone.',
   'Die Datei wurde geschrieben, acme.sh erkennt daraus aber keinen Hook. Steht der Token unter dem erwarteten Namen?':
     'The file was written, but acme.sh does not recognize a hook from it. Is the token stored under the expected name?',
-  '{provider}-Zugangsdaten entfernen': 'Remove {provider} credentials',
+  '{provider}-Zugangsdaten entfernen?': 'Remove {provider} credentials?',
   'Der Token wird aus der acme.sh-Konfiguration gestrichen. Bestehende Zertifikate bleiben, aber ihre automatische Erneuerung scheitert ab dann, und eine neue Wildcard lässt sich nicht mehr ausstellen.':
     'The token is deleted from the acme.sh configuration. Existing certificates stay, but their automatic renewal fails from then on, and no new wildcard can be issued.',
-  'Zugangsdaten entfernt.': 'Credentials removed.',
+  'Die Zugangsdaten sind entfernt.': 'The credentials are removed.',
   'Einstellungen speichern': 'Save settings',
   'Was für alle Dienste gilt': 'What applies to all services',
   'Ohne HAProxy gibt es hier nichts einzustellen. Sein Zustand steht in der {overview}.':
@@ -278,8 +275,8 @@ export const proxyPages: Dictionary = {
   'Admin-IPs': 'Admin IPs',
   'Die Adressen, die einen gesperrten Eintrag noch erreichen. Sie stehen einmal in der Konfiguration ({acl}) und gelten für jeden Eintrag, bei dem das Schloss zu ist.':
     'The addresses that can still reach a locked entry. They appear once in the configuration ({acl}) and apply to every entry whose lock is closed.',
-  'Gesperrt sind gerade: {services}. Solange das so ist, lässt sich die Liste nicht leeren: eine Regel auf eine Adressliste, die es nicht mehr gibt, lässt HAProxy beim nächsten Start stehen.':
-    'Currently locked: {services}. While that is the case, the list cannot be emptied: a rule pointing to an address list that no longer exists keeps HAProxy from starting next time.',
+  'Gesperrt sind gerade: {services}. Solange das so ist, lässt sich die Liste nicht leeren.':
+    'Currently locked: {services}. While that is the case, the list cannot be emptied.',
   'Kein Eintrag ist gesperrt. Das Schloss dafür sitzt auf der Karte des jeweiligen Ziels.':
     'No entry is locked. The lock is on the card of each target.',
   '{acl} steht mehr als einmal in der Konfiguration. HAProxy verodert die Zeilen; sie hier zu einer zusammenzuschreiben wäre eine Änderung, die niemand angefordert hat.':
@@ -349,8 +346,8 @@ export const proxyPages: Dictionary = {
   'deploy-skript': 'deploy-script',
   'Optional: wofür wird er benutzt?': 'Optional: what is it used for?',
   'Adressen für „{name}“': 'Addresses for “{name}”',
-  'Wirkt sofort. Der Key bleibt derselbe, er muss also nirgends neu eingetragen werden. Verglichen wird gegen die Adresse, die bei HAPM ankommt. Steht sie nicht auf der Liste, antwortet der Aufruf mit 403 und nennt sie.':
-    'Takes effect immediately. The key stays the same, so it does not need to be entered again anywhere. The check uses the address that reaches HAPM. If it is not on the list, the request gets 403 and names the address.',
+  'Wirkt sofort. Der Key bleibt derselbe.':
+    'Takes effect immediately. The key stays the same.',
   'Key für „{name}“': 'Key for “{name}”',
   'Jetzt kopieren. Gespeichert wird nur ein Hash. Nach dem Schließen ist der Klartext weg, und es bleibt nur, einen neuen Key auszustellen.':
     'Copy it now. Only a hash is stored. After closing, the plain text is gone, and the only option is to issue a new key.',
@@ -383,8 +380,8 @@ export const proxyPages: Dictionary = {
   'Importieren': 'Import',
   'Der Import ließ sich nicht starten.': 'The import could not be started.',
   'Import nicht gestartet': 'Import not started',
-  'Einträge aus einer bestehenden haproxy.cfg übernehmen, statt sie einzeln abzutippen.':
-    'Take over entries from an existing haproxy.cfg instead of typing them one by one.',
+  'Einträge aus einer bestehenden haproxy.cfg übernehmen.':
+    'Take over entries from an existing haproxy.cfg.',
   'Eine haproxy.cfg als Text, höchstens 1 MB. Sie wird nur gelesen und nirgends gespeichert. Übernommen wird erst, was Sie in der Vorschau auswählen und importieren.':
     'A haproxy.cfg as text, at most 1 MB. It is only read and stored nowhere. Only what you select in the preview and import is taken over.',
   'Oder den Text einfügen': 'Or paste the text',
@@ -425,8 +422,8 @@ export const proxyPages: Dictionary = {
   'Einen Eintrag importieren': 'Import one entry',
   '{count} Einträge importieren': 'Import {count} entries',
   'Erst die Vorschau für den geänderten Text berechnen.': 'First compute the preview for the changed text.',
-  'Aus dieser Vorschau wurde schon importiert. Für einen weiteren Durchgang die Vorschau neu berechnen.':
-    'This preview has already been imported. Compute the preview again for another pass.',
+  'Schon importiert. Vor dem nächsten Import die Vorschau neu berechnen.':
+    'Already imported. Compute the preview again before the next import.',
   'Nicht übernommen ({count})': 'Not taken over ({count})',
   'Zeile': 'Line',
   'Inhalt': 'Content',
@@ -439,33 +436,31 @@ export const proxyPages: Dictionary = {
   "Das Zertifikat für {domains} ist ersetzt. HAProxy ist neu geladen.": "The certificate for {domains} is replaced. HAProxy is reloaded.",
   "Das Zertifikat für {domains} ist hochgeladen. HAProxy ist neu geladen.": "The certificate for {domains} is uploaded. HAProxy is reloaded.",
   "Zertifikat entfernen?": "Remove certificate?",
-  "Die Datei {file} wird gelöscht und HAProxy neu geladen. Für {domains} liefert HAProxy danach ein anderes passendes Zertifikat oder den Platzhalter.": "The file {file} is deleted and HAProxy reloaded. For {domains}, HAProxy then serves another matching certificate or the placeholder.",
+  "Die Datei {file} wird entfernt und HAProxy neu geladen. Für {domains} liefert HAProxy danach ein anderes passendes Zertifikat oder den Platzhalter.": "The file {file} is removed and HAProxy reloaded. For {domains}, HAProxy then serves another matching certificate or the placeholder.",
   "Das Zertifikat {file} ist entfernt.": "The certificate {file} is removed.",
   "Das Zertifikat ließ sich nicht entfernen.": "The certificate could not be removed.",
   // Zertifikate von acme.sh löschen, die niemand hält
-  "acme.sh löscht den Antrag für {domains}. Ein Zertifikat gibt es dafür nicht, HAProxy bleibt unverändert.": "acme.sh deletes the request for {domains}. No certificate exists for it, HAProxy stays unchanged.",
-  "acme.sh löscht das Zertifikat für {domains} samt Schlüssel. Ausgerollt ist es nicht, HAProxy bleibt unverändert.": "acme.sh deletes the certificate for {domains} along with its key. It is not deployed, HAProxy stays unchanged.",
-  "acme.sh löscht das Zertifikat für {domains} samt Schlüssel und erneuert es nicht mehr. Die Datei im Zertifikatsverzeichnis wird entfernt und HAProxy neu geladen.": "acme.sh deletes the certificate for {domains} along with its key and stops renewing it. The file in the certificate directory is removed and HAProxy reloaded.",
-  "Das Zertifikat ließ sich nicht löschen.": "The certificate could not be deleted.",
-  "Antrag löschen?": "Delete request?",
-  "Zertifikat löschen?": "Delete certificate?",
-  "Das Zertifikat für {domain} ist gelöscht. HAProxy ist neu geladen.": "The certificate for {domain} is deleted. HAProxy is reloaded.",
-  "Das Zertifikat für {domain} ist gelöscht.": "The certificate for {domain} is deleted.",
-  "Unbenutzte Zertifikate löschen?": "Delete unused certificates?",
-  "acme.sh löscht {count} Zertifikat samt Schlüssel: {list}. Für jede geladene Datei wird HAProxy neu geladen.": "acme.sh deletes {count} certificate along with its key: {list}. HAProxy is reloaded for every loaded file.",
-  "acme.sh löscht {count} Zertifikate samt Schlüssel: {list}. Für jede geladene Datei wird HAProxy neu geladen.": "acme.sh deletes {count} certificates along with their keys: {list}. HAProxy is reloaded for every loaded file.",
-  "Alle löschen": "Delete all",
-  "{count} Zertifikat ist gelöscht.": "{count} certificate is deleted.",
-  "{count} Zertifikate sind gelöscht.": "{count} certificates are deleted.",
-  "Nicht gelöscht: {list}. {reason}": "Not deleted: {list}. {reason}",
-  "Es deckt noch Domains dieser Ziele ab: {list}. Deshalb bleibt es stehen. Löschen lässt es sich, wenn kein Ziel mehr darunter liegt.": "It still covers domains of these targets: {list}. That is why it stays. It can be deleted once no target lies beneath it.",
-  "Unbenutzte löschen ({count})": "Delete unused ({count})",
+  "acme.sh entfernt den Antrag für {domains}. Ein Zertifikat gibt es dafür nicht, HAProxy bleibt unverändert.": "acme.sh removes the request for {domains}. No certificate exists for it, HAProxy stays unchanged.",
+  "acme.sh entfernt das Zertifikat für {domains} samt Schlüssel. Ausgerollt ist es nicht, HAProxy bleibt unverändert.": "acme.sh removes the certificate for {domains} along with its key. It is not deployed, HAProxy stays unchanged.",
+  "acme.sh entfernt das Zertifikat für {domains} samt Schlüssel und erneuert es nicht mehr. Auch die Datei im Zertifikatsverzeichnis wird entfernt, HAProxy wird neu geladen.": "acme.sh removes the certificate for {domains} along with its key and stops renewing it. The file in the certificate directory is removed too, and HAProxy is reloaded.",
+  "Antrag entfernen?": "Remove request?",
+  "Das Zertifikat für {domain} ist entfernt. HAProxy ist neu geladen.": "The certificate for {domain} is removed. HAProxy is reloaded.",
+  "Das Zertifikat für {domain} ist entfernt.": "The certificate for {domain} is removed.",
+  "Unbenutzte Zertifikate entfernen?": "Remove unused certificates?",
+  "acme.sh entfernt {count} Zertifikat samt Schlüssel: {list}. Für jede geladene Datei wird HAProxy neu geladen.": "acme.sh removes {count} certificate along with its key: {list}. HAProxy is reloaded for every loaded file.",
+  "acme.sh entfernt {count} Zertifikate samt Schlüssel: {list}. Für jede geladene Datei wird HAProxy neu geladen.": "acme.sh removes {count} certificates along with their keys: {list}. HAProxy is reloaded for every loaded file.",
+  "Alle entfernen": "Remove all",
+  "{count} Zertifikat ist entfernt.": "{count} certificate is removed.",
+  "{count} Zertifikate sind entfernt.": "{count} certificates are removed.",
+  "Nicht entfernt: {list}. {reason}": "Not removed: {list}. {reason}",
+  "Es deckt noch Domains dieser Ziele ab: {list}. Deshalb bleibt es stehen. Entfernen lässt es sich, wenn kein Ziel mehr darunter liegt.": "It still covers domains of these targets: {list}. That is why it stays. It can be removed once no target lies beneath it.",
+  "Unbenutzte entfernen ({count})": "Remove unused ({count})",
   "Abgelaufen am {date}": "Expired on {date}",
   "Läuft am {date} ab": "Expires on {date}",
-  "Was acme.sh führt und was hochgeladen ist. Gelesen bei jedem Aufruf, nicht aus einer Kopie.": "What acme.sh keeps and what was uploaded. Read on every request, not from a copy.",
+  "Was acme.sh führt und was hochgeladen ist, gelesen bei jedem Aufruf.": "What acme.sh keeps and what was uploaded, read on every request.",
   "Hochladen": "Upload",
   "Diese Installation stellt keine Zertifikate selbst aus. Ein neues Ziel braucht ein hochgeladenes Zertifikat, das seine Domains abdeckt. Umstellen lässt sich das unter {general}.": "This installation does not issue certificates itself. A new target needs an uploaded certificate that covers its domains. You can change this under {general}.",
-  "Zertifikate von acme.sh entstehen mit ihrem Ziel. Eins, das kein Ziel mehr braucht, löschen Sie in seiner Zeile. Hochgeladene ersetzen und entfernen Sie hier, acme.sh beantragt dann für ihre Domains keins.": "Certificates from acme.sh are created with their target. Delete one that no target needs anymore in its row. Uploaded ones you replace and remove here, and acme.sh then requests none for their domains.",
+  "Zertifikate von acme.sh entstehen mit ihrem Ziel. Eins, das kein Ziel mehr braucht, entfernen Sie in seiner Zeile. Hochgeladene ersetzen und entfernen Sie hier, acme.sh beantragt dann für ihre Domains keins.": "Certificates from acme.sh are created with their target. Remove one that no target needs anymore in its row. Uploaded ones you replace and remove here, and acme.sh then requests none for their domains.",
   "Erneuert niemand von selbst. HAPM erinnert vor dem Ablauf.": "Nobody renews these automatically. HAPM reminds you before they expire.",
   "Kein hochgeladenes Zertifikat": "No uploaded certificate",
   "Ein eigenes Zertifikat laden Sie mit dem Knopf oben hoch: PEM mit Kette und den privaten Schlüssel.": "Upload your own certificate with the button above: PEM with chain and the private key.",
@@ -477,7 +472,7 @@ export const proxyPages: Dictionary = {
   "Bitte fügen Sie das Zertifikat ein.": "Please paste the certificate.",
   "Zertifikat ersetzen": "Replace certificate",
   "Es muss {domains} abdecken.": "It must cover {domains}.",
-  "Bisher abgedeckt: {domains}. Was davon ein Ziel braucht, muss das neue auch abdecken.": "Covered so far: {domains}. Whatever a target needs from these, the new one must cover too.",
+  "Bisher abgedeckt: {domains}. Das neue muss abdecken, was Ziele brauchen.": "Covered so far: {domains}. The new one must cover what targets need.",
   "Zertifikat mit Kette (PEM)": "Certificate with chain (PEM)",
   "Zuerst das Zertifikat der Domain, danach die Zwischenzertifikate. Eine fertige PEM-Datei für HAProxy mit dem Schlüssel darin geht auch, dann bleibt das Feld darunter leer.": "First the certificate of the domain, then the intermediate certificates. A complete PEM file for HAProxy with the key inside works too; then leave the field below empty.",
   "Aus Datei laden": "Load from file",
@@ -514,8 +509,8 @@ export const proxyPages: Dictionary = {
   'Erneut beantragen': 'Request again',
   'Nie ausgestellt': 'Never issued',
   'Nicht ausgerollt': 'Not deployed',
-  'acme.sh führt den Antrag, aber er ist nie durchgekommen. Es gibt kein Zertifikat, HAProxy liefert keins dafür aus, und Ziele unter diesen Domains bekommen ein eigenes. Der Grund steht in der Historie beim gescheiterten Lauf.':
-    'acme.sh keeps the order, but it never went through. There is no certificate, HAProxy serves none for it, and targets under these domains get their own. The reason is in the history, at the failed run.',
+  'acme.sh führt den Antrag, aber er ist nie durchgekommen. Es gibt kein Zertifikat, HAProxy liefert keins dafür aus, und Ziele unter diesen Domains bekommen ein eigenes. Der Grund steht unter Logs beim gescheiterten Lauf.':
+    'acme.sh keeps the order, but it never went through. There is no certificate, HAProxy serves none for it, and targets under these domains get their own. The reason is under Logs, at the failed run.',
   'acme.sh hat es ausgestellt, im Zertifikatsverzeichnis von HAProxy liegt es aber nicht. Das nächste Ziel, das es braucht, rollt es aus.':
     'acme.sh issued it, but it is not in the HAProxy certificate directory. The next target that needs it deploys it.',
   'Die Ziele, denen HAProxy dieses Zertifikat ausliefert. Hat eine Domain ein eigenes Zertifikat, bekommt sie das, auch wenn eine Wildcard sie ebenfalls abdeckt.':
@@ -535,36 +530,34 @@ export const proxyPages: Dictionary = {
     'The {marker} block in the configuration is not the way HAPM writes it. It stays in effect but is not edited here, so no manual change gets lost.',
   'Gesperrte Adressen':
     'Blocked addresses',
-  'Einzelne IPs oder Netze, die keinen Dienst erreichen. Gilt auch für Admin-IPs.':
-    'Single IPs or networks that reach no service. Applies to admin IPs as well.',
+  'IPs oder Netze, die keinen Dienst erreichen. Gilt auch für Admin-IPs.':
+    'IPs or networks that reach no service. Applies to admin IPs as well.',
   'Gesperrte Länder':
     'Blocked countries',
   'Besucher aus diesen Ländern bekommen 403. Admin-IPs sind ausgenommen.':
     'Visitors from these countries get 403. Admin IPs are exempt.',
-  'Besucher aus diesen Ländern bekommen 403. Mit Admin-IPs wären diese ausgenommen.':
-    'Visitors from these countries get 403. Admin IPs, once set, are exempt.',
+  'Besucher aus diesen Ländern bekommen 403. Admin-IPs wären ausgenommen.':
+    'Visitors from these countries get 403. Admin IPs would be exempt.',
   'Kein Land gesperrt.':
     'No country blocked.',
-  'Ohne GeoIP-Tabelle lässt sich kein Land sperren. Sie lässt sich oben auf dieser Seite holen.':
-    'Without a GeoIP table no country can be blocked. You can fetch it at the top of this page.',
+  'Ohne Länder-Tabelle lässt sich kein Land sperren. Holen lässt sie sich im Reiter „Länder-Tabelle“.':
+    'Without a country table no country can be blocked. You can fetch it on the “Country table” tab.',
   'Land hinzufügen':
     'Add country',
   'Land suchen':
     'Search country',
   'Ratenbegrenzung':
     'Rate limit',
-  'Zu viele Anfragen von einer Adresse bekommen 429, bis sie wieder unter der Grenze liegt.':
-    'Too many requests from one address get 429 until it is below the limit again.',
+  'Zu viele Anfragen von einer Adresse bekommen 429.':
+    'Too many requests from one address get 429.',
   'Anfragen je Adresse':
     'Requests per address',
   '{min} bis {max}':
     '{min} to {max}',
   'Zeitraum':
     'Period',
-  'Admin-IPs zählen nicht mit. Eine Seite lädt beim ersten Aufruf oft hundert Dateien und mehr, und mehrere Menschen hinter einem Anschluss teilen sich eine Adresse.':
-    'Admin IPs are not counted. A page often loads a hundred files or more on first visit, and several people behind one connection share an address.',
-  'Eine Seite lädt beim ersten Aufruf oft hundert Dateien und mehr, und mehrere Menschen hinter einem Anschluss teilen sich eine Adresse. Das gilt auch für diese Oberfläche.':
-    'A page often loads a hundred files or more on first visit, and several people behind one connection share an address. This applies to this interface as well.',
+  'Eine Seite lädt beim ersten Aufruf oft hundert Dateien und mehr, und mehrere Menschen hinter einem Anschluss teilen sich eine Adresse.':
+    'A page often loads a hundred files or more on first visit, and several people behind one connection share an address.',
   'Gilt im HTTPS-Frontend für jeden Dienst. Ihre Adresse ist {ip} ({country}). Eine Sperre, die Sie selbst träfe, wird abgelehnt.':
     'Applies to every service in the HTTPS frontend. Your address is {ip} ({country}). A block that would hit you is refused.',
   'Gilt im HTTPS-Frontend für jeden Dienst. Ihre Adresse ist {ip}. Eine Sperre, die Sie selbst träfe, wird abgelehnt.':
@@ -579,4 +572,14 @@ export const proxyPages: Dictionary = {
   'Gesperrte Adressen und Länder, Ratenbegrenzung. Gilt für jeden Dienst.':
     'Blocked addresses and countries, rate limit. Applies to every service.',
   'Wird übernommen': 'Applying',
+  'Verglichen wird gegen die Adresse, die bei HAPM ankommt. Steht sie nicht auf der Liste, antwortet der Aufruf mit 403 und nennt sie.': 'The check uses the address that reaches HAPM. If it is not on the list, the request gets 403 and names the address.',
+  'Eine Regel auf eine Adressliste, die es nicht mehr gibt, lässt HAProxy beim nächsten Start stehen.': 'A rule pointing to an address list that no longer exists keeps HAProxy from starting next time.',
+  'Domains und Ziele stehen mit in der Zeile, damit auch ein entferntes Ziel noch lesbar ist.': 'Domains and targets are part of the row, so a removed target stays readable.',
+  'Gelesen wird direkt aus der HAProxy-Konfiguration, nicht aus einer Kopie.': 'Read directly from the HAProxy configuration, not from a copy.',
+  'Der Name steht im Marker der Konfiguration. Zum Umbenennen eine neue Gruppe anlegen und die alte entfernen.': 'The name appears in the marker of the configuration. To rename, create a new group and remove the old one.',
+  'Die Auswertung nimmt die häufigsten Adressen, nicht alle.': 'The analysis uses the most frequent addresses, not all of them.',
+  'Gezählt aus den Zeilen im gelesenen Fenster des Logs.': 'Counted from the lines in the window of the log that was read.',
+  'Ein Klick auf eine Zeile öffnet die Auswertung dieses Dienstes.': 'A click on a row opens the analysis of that service.',
+  'Admin-IPs zählen nicht mit.': 'Admin IPs are not counted.',
+  'Die Grenze gilt auch für diese Oberfläche.': 'The limit applies to this interface as well.',
 };

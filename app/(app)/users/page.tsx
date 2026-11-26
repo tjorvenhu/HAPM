@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import ErrorNote from '@/components/ErrorNote';
 import { Loader2, Plus, Trash2, X } from 'lucide-react';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import { useApp } from '@/components/AppShell';
@@ -86,20 +87,20 @@ export default function UsersPage() {
 
   async function handleDelete(user: PublicUser) {
     await confirm({
-      title: t('Benutzer löschen'),
-      message: t('Soll das Konto von {name} ({email}) gelöscht werden? Die Person ist danach sofort abgemeldet.', {
+      title: t('Benutzer entfernen?'),
+      message: t('Das Konto von {name} ({email}) wird entfernt. Die Person ist danach sofort abgemeldet.', {
         name: user.name,
         email: user.email,
       }),
-      confirmLabel: t('Löschen'),
+      confirmLabel: t('Entfernen'),
       variant: 'danger',
-      failedTitle: t('Löschen fehlgeschlagen'),
+      failedTitle: t('Entfernen fehlgeschlagen'),
       onConfirm: async () => {
         const res = await apiFetch(`/api/users/${user.$id}`, { method: 'DELETE' });
         const data = await res.json();
-        if (!res.ok || !data.success) throw new Error(data.error || t('Das Konto ließ sich nicht löschen.'));
+        if (!res.ok || !data.success) throw new Error(data.error || t('Das Konto ließ sich nicht entfernen.'));
         await load();
-        notify({ variant: 'success', message: t('Das Konto von {name} ist gelöscht.', { name: user.name }) });
+        notify({ variant: 'success', message: t('Das Konto von {name} ist entfernt.', { name: user.name }) });
       },
     });
   }
@@ -119,13 +120,13 @@ export default function UsersPage() {
         </div>
       </div>
 
-      {error && <div className="alert alert-danger sys-block">{error}</div>}
+      {error && <div className="alert alert-danger sys-block"><ErrorNote text={error} /></div>}
 
       {loading ? (
         <SkeletonRows />
       ) : (
         <div className="table-wrap">
-          <table className="table">
+          <table className="table table-cards">
             <thead>
               <tr>
                 <th>{t('E-Mail')}</th>
@@ -142,7 +143,7 @@ export default function UsersPage() {
                 const own = user.$id === session.userId;
                 return (
                   <tr key={user.$id}>
-                    <td>
+                    <td data-label="primary">
                       {user.email}
                       {own && (
                         <span className="badge-status badge-neutral" style={{ marginLeft: 8 }}>
@@ -150,23 +151,23 @@ export default function UsersPage() {
                         </span>
                       )}
                     </td>
-                    <td>{user.name}</td>
-                    <td>
+                    <td data-label={t('Name')}>{user.name}</td>
+                    <td data-label={t('Zweiter Faktor')}>
                       <span className={`badge-status ${user.totpEnabled ? 'badge-success' : 'badge-neutral'}`}>
                         <span className="dot" />
                         {user.totpEnabled ? t('Ja') : t('Nein')}
                       </span>
                     </td>
-                    <td>{user.passkeyCount}</td>
-                    <td>{user.lastLoginAt ? formatDateTimeMedium(locale, user.lastLoginAt) : t('noch nie')}</td>
-                    <td>{formatDate(locale, user.$createdAt)}</td>
-                    <td>
-                      <div className="actions" style={{ justifyContent: 'flex-end' }}>
+                    <td data-label={t('Passkeys')}>{user.passkeyCount}</td>
+                    <td data-label={t('Letzte Anmeldung')}>{user.lastLoginAt ? formatDateTimeMedium(locale, user.lastLoginAt) : t('noch nie')}</td>
+                    <td data-label={t('Angelegt')}>{formatDate(locale, user.$createdAt)}</td>
+                    <td data-label="actions">
+                      <div className="actions hapm-actions-end">
                         <button
                           className="btn btn-ghost btn-icon btn-sm"
-                          data-tooltip={own ? t('Das eigene Konto lässt sich nicht löschen') : t('Löschen')}
+                          data-tooltip={own ? t('Das eigene Konto lässt sich nicht entfernen') : t('Entfernen')}
                           data-tooltip-pos="left"
-                          aria-label={t('{name} löschen', { name: user.name })}
+                          aria-label={t('{name} entfernen', { name: user.name })}
                           disabled={own}
                           onClick={() => handleDelete(user)}
                         >

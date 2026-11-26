@@ -38,6 +38,7 @@ HAProxy, Let's Encrypt, die Grundkonfiguration und CrowdSec als WAF richtet HAPM
 - [Schnellstart](#schnellstart)
 - [Installation](#installation)
   - [Voraussetzungen](#voraussetzungen)
+  - [Arbeitsspeicher und Speicherplatz](#arbeitsspeicher-und-speicherplatz)
   - [Weg 1: Nur mit Docker Compose](#weg-1-nur-mit-docker-compose)
   - [Weg 2: Mit dem Installationsskript](#weg-2-mit-dem-installationsskript)
   - [Weg 3: Portainer, Dockge und andere Oberflächen](#weg-3-portainer-dockge-und-andere-oberflächen)
@@ -162,6 +163,41 @@ durch den Rest.
 | Port **7080** erreichbar | Für die Einrichtung. Danach lässt er sich schließen, siehe [Sicherheit](#sicherheit) |
 | Für Zertifikate von Let's Encrypt: Port 80 aus dem Internet erreichbar | Let's Encrypt prüft jede Domain über Port 80. Steht der Server nur im eigenen Netz, geht es über DNS-01 |
 | Ausgehend HTTPS (TCP 443) | Für Abbilder, Zertifikate, Updates und die Regeln von CrowdSec. Welche Hosts genau: [Firmennetz](#firmennetz-firewall-und-proxy) |
+| **1 GB** Arbeitsspeicher ohne CrowdSec, **2 GB** mit | Der Stack selbst braucht rund 250 MB ohne und rund 390 MB mit CrowdSec, siehe [Arbeitsspeicher und Speicherplatz](#arbeitsspeicher-und-speicherplatz) |
+
+### Arbeitsspeicher und Speicherplatz
+
+Gemessen mit `docker stats` an einer Testinstallation im Leerlauf (amd64,
+November 2026). Die Werte sind Richtwerte, kein Versprechen: sie hängen von
+der Zahl der Verbindungen und vom Verkehr ab.
+
+| Container | Arbeitsspeicher | Ohne CrowdSec | Mit CrowdSec |
+|---|---|:---:|:---:|
+| HAPM (Oberfläche, Zeitplan) | rund 120 MB | ja | ja |
+| HAProxy | rund 95 MB | ja | ja |
+| Postgres | rund 35 MB | ja | ja |
+| CrowdSec (Erkennung, WAF) | 100 bis 130 MB | | ja |
+| CrowdSec-Bouncer | rund 10 MB | | ja |
+| **Summe** | | **rund 250 MB** | **rund 390 MB** |
+
+- **Ohne CrowdSec** (`--no-crowdsec` bei der Installation): rund 250 MB. Ein
+  Server mit 1 GB reicht, Betriebssystem und Docker eingerechnet.
+- **Mit CrowdSec** (die Vorgabe): rund 390 MB, also etwa 140 MB mehr. Ein
+  Server mit 2 GB ist die bequeme Größe. Die beiden Container laufen und
+  belegen ihren Speicher auch dann, wenn CrowdSec noch kein Ziel prüft. In der
+  Oberfläche abgeschaltet („CrowdSec abschalten") stehen sie und belegen
+  nichts.
+- **Was den Bedarf erhöht:** viele gleichzeitige Verbindungen (HAProxy), viel
+  Verkehr und die Sperrliste der Gemeinschaft (CrowdSec), die OWASP-Regeln im
+  Modus „Nur melden" oder „Treffer sperren". Während eines Updates oder einer
+  Sicherung kommt kurz ein Helfer-Container dazu.
+- **Selbst nachmessen:** `docker stats --no-stream` zeigt den Verbrauch jedes
+  Containers.
+
+Auf der Platte belegen die Abbilder rund 1,1 GB ohne und rund 1,7 GB mit
+CrowdSec. Dazu kommen die Daten in `data/` (Datenbank, Zertifikate, Logs,
+Regeln von CrowdSec): frisch installiert rund 100 MB, mit Logs und Statistik
+wird es mehr. Vor einem Update liegt das neue Abbild kurz neben dem alten.
 
 ### Weg 1: Nur mit Docker Compose
 
@@ -581,7 +617,7 @@ Fertige Konfigurationen für weitere Clients stehen in HAPM auf derselben Seite
 zum Kopieren, Einzelheiten in [`docs/mcp.md`](docs/mcp.md).
 
 > [!WARNING]
-> Jedes Werkzeug läuft mit allen Rechten des Keys: es kann Ziele löschen, Updates
+> Jedes Werkzeug läuft mit allen Rechten des Keys: es kann Ziele entfernen, Updates
 > einspielen, HAProxy neu starten und Einstellungen ändern.
 > Geben Sie einen Key nur an Clients, denen Sie das zutrauen.
 

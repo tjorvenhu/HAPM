@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import ErrorNote from '@/components/ErrorNote';
 import { useRouter } from 'next/navigation';
 import {
   Check,
@@ -173,9 +174,7 @@ export default function AppearancePage() {
     <div className="page-header">
       <div>
         <h1 className="page-title">{t('Darstellung')}</h1>
-        <p className="page-subtitle">
-          {t('Logo, Name und Farbe der Oberfläche. So zeigt sich HAPM als eigenes Werkzeug, für Sie oder Ihre Kunden.')}
-        </p>
+        <p className="page-subtitle">{t('Logo, Name und Farbe der Oberfläche.')}</p>
       </div>
     </div>
   );
@@ -184,7 +183,7 @@ export default function AppearancePage() {
     return (
       <>
         {header}
-        {error ? <div className="alert alert-danger sys-block">{error}</div> : <SkeletonDetail />}
+        {error ? <div className="alert alert-danger sys-block"><ErrorNote text={error} /></div> : <SkeletonDetail />}
       </>
     );
   }
@@ -292,7 +291,7 @@ export default function AppearancePage() {
   async function resetAll() {
     const confirmed = await confirm({
       title: t('Darstellung von HAPM wiederherstellen?'),
-      message: t('Logo, helle Fassung, Symbol, Pille, Name und Farbe gehen auf die Vorgabe zurück. Hochgeladene Bilder werden gelöscht.'),
+      message: t('Logo, helle Fassung, Symbol, Pille, Name und Farbe gehen auf die Vorgabe zurück. Hochgeladene Bilder werden entfernt.'),
       confirmLabel: t('Wiederherstellen'),
       variant: 'danger',
     });
@@ -430,8 +429,11 @@ export default function AppearancePage() {
                 <Tag size={17} />
               </span>
               <div>
-                <div className="form-section-title">{t('Pille neben dem Logo')}</div>
-                <div className="form-section-sub">{t('Ein kurzes Wort, etwa RevProxy oder Kunde A. Passt zu jedem Logo, auch zu dem von HAPM.')}</div>
+                <div className="form-section-title">
+                  {t('Pille neben dem Logo')}
+                  <InfoHint text={t('Die Pille passt zu jedem Logo, auch zu dem von HAPM.')} />
+                </div>
+                <div className="form-section-sub">{t('Ein kurzes Wort, etwa RevProxy oder Kunde A.')}</div>
               </div>
             </div>
 
@@ -482,7 +484,7 @@ export default function AppearancePage() {
               </span>
               <div>
                 <div className="form-section-title">{t('Name des Werkzeugs')}</div>
-                <div className="form-section-sub">{t('Steht im Browser-Tab statt HAPM. Vorleser nennen ihn als Namen des Logos.')}</div>
+                <div className="form-section-sub">{t('Steht im Browser-Tab statt HAPM.')}</div>
               </div>
             </div>
             <div className="form-group">
@@ -490,7 +492,7 @@ export default function AppearancePage() {
                 {t('Name')}
                 <InfoHint
                   text={t(
-                    'Name, Logo und Farbe stehen auch in den Mails und auf den Seiten von HAProxy, soweit unter Reverse-Proxy, Fehlerseiten nichts anderes eingestellt ist. Authenticator-Apps und Passkeys zeigen weiter HAPM: ein neuer Name passte dort nicht mehr zu eingerichteten Geräten.'
+                    'Vorleser nennen ihn als Namen des Logos. Name, Logo und Farbe stehen auch in den Mails und auf den Seiten von HAProxy, soweit unter Reverse-Proxy, Fehlerseiten nichts anderes eingestellt ist. Authenticator-Apps und Passkeys zeigen weiter HAPM: ein neuer Name passte dort nicht mehr zu eingerichteten Geräten.'
                   )}
                 />
               </label>

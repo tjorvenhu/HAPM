@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useState, type FormEvent } from 'react';
+import ErrorNote from '@/components/ErrorNote';
 import { Server, Plus, Pencil, Trash2, Loader2, Check, X } from 'lucide-react';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import { useApp } from '@/components/AppShell';
@@ -116,18 +117,18 @@ export default function SavedTargetsPanel() {
 
   async function remove(target: SavedTarget) {
     await confirm({
-      title: t('Server {name} löschen?', { name: target.name }),
+      title: t('Server {name} entfernen?', { name: target.name }),
       message: t('Ziele, die diese Adresse benutzen, bleiben unverändert. Der Server steht danach nur nicht mehr zur Auswahl.'),
-      confirmLabel: t('Löschen'),
+      confirmLabel: t('Entfernen'),
       variant: 'danger',
-      failedTitle: t('Löschen fehlgeschlagen'),
+      failedTitle: t('Entfernen fehlgeschlagen'),
       // Im Dialog und nicht danach: solange er offen ist, liegt er über der
       // Liste, und ein zweiter Klick auf dieselbe Zeile kommt nicht an.
       onConfirm: async () => {
         const res = await apiFetch(`/api/haproxy/targets/${target.$id}`, { method: 'DELETE' });
         const data = await res.json();
         if (!data.success) throw new Error(data.error);
-        notify({ variant: 'success', message: t('Der Server {name} ist gelöscht.', { name: target.name }) });
+        notify({ variant: 'success', message: t('Der Server {name} ist entfernt.', { name: target.name }) });
         await load();
       },
     });
@@ -239,8 +240,8 @@ export default function SavedTargetsPanel() {
                   </button>
                   <button
                     className="btn btn-ghost btn-icon"
-                    data-tooltip={t('Löschen')}
-                    aria-label={t('Löschen')}
+                    data-tooltip={t('Entfernen')}
+                    aria-label={t('Entfernen')}
                     onClick={() => void remove(target)}
                     disabled={editing !== null}
                   >
@@ -251,7 +252,7 @@ export default function SavedTargetsPanel() {
             )
           )}
           {editing === 'new' && <div className="hapm-target-row is-editing">{form}</div>}
-          {formError && <div className="alert alert-danger">{formError}</div>}
+          {formError && <div className="alert alert-danger"><ErrorNote text={formError} /></div>}
         </div>
       )}
     </div>

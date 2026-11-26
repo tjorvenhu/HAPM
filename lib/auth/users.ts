@@ -298,8 +298,8 @@ export async function setUserLocale(userId: string, locale: Locale): Promise<voi
  * die Passkeys hängen am Fremdschlüssel: wer gelöscht wird, ist sofort draußen.
  */
 export async function deleteUser(userId: string, actingUserId: string): Promise<void> {
-  if (userId === actingUserId) throw new ApiError(msg('Das eigene Konto lässt sich nicht löschen.'));
-  if ((await countUsers()) <= 1) throw new ApiError(msg('Das letzte Konto lässt sich nicht löschen.'));
+  if (userId === actingUserId) throw new ApiError(msg('Das eigene Konto lässt sich nicht entfernen.'));
+  if ((await countUsers()) <= 1) throw new ApiError(msg('Das letzte Konto lässt sich nicht entfernen.'));
 
   await (await context()).internalAdapter.deleteUser(userId);
 

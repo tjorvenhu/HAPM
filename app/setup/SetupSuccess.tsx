@@ -71,7 +71,7 @@ export function SetupSuccess({ setup }: { setup: SetupView }) {
         </a>
         {setup.exposure === 'internal' && (
           <p className="auth-hint">
-            {t('Öffnet sich die Adresse nicht, fehlt der Eintrag für {domain} im DNS-Server Ihres Netzes.', { domain })}
+            {t('Öffnet sie sich nicht, fehlt {domain} im DNS-Server Ihres Netzes.', { domain })}
           </p>
         )}
         <p className="auth-footer">

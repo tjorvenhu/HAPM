@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
+import ErrorNote from '@/components/ErrorNote';
 import { CheckCircle2, Loader2, Plus, Unlock } from 'lucide-react';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/ConfirmDialog';
@@ -156,7 +157,7 @@ export default function DecisionsPanel({ onFreed }: { onFreed?: () => void }) {
         {!valid && <p className="form-hint is-error">{t('Das ist keine Adresse und kein Netz.')}</p>}
       </div>
 
-      {error && <div className="alert alert-danger sys-block">{error}</div>}
+      {error && <div className="alert alert-danger sys-block"><ErrorNote text={error} /></div>}
 
       <div className="card sys-block">
         <div className="card-header">
@@ -180,7 +181,7 @@ export default function DecisionsPanel({ onFreed }: { onFreed?: () => void }) {
           </div>
         ) : (
           <div className="table-wrap">
-            <table className="table">
+            <table className="table table-cards">
               <thead>
                 <tr>
                   <th>{t('Adresse')}</th>

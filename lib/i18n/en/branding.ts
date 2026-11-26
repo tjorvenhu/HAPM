@@ -5,11 +5,11 @@ export const branding: Dictionary = {
   // Seite
   "Darstellung": "Appearance",
   "Die Darstellung konnte nicht geladen werden.": "The appearance could not be loaded.",
-  "Logo, Name und Farbe der Oberfläche. So zeigt sich HAPM als eigenes Werkzeug, für Sie oder Ihre Kunden.": "Logo, name and color of the interface. This way HAPM presents itself as your own tool, for you or your customers.",
+  "Logo, Name und Farbe der Oberfläche.": "Logo, name and color of the interface.",
   "Die Darstellung ließ sich nicht speichern.": "The appearance could not be saved.",
   "Die Darstellung ist gespeichert.": "The appearance is saved.",
   "Darstellung von HAPM wiederherstellen?": "Restore the appearance of HAPM?",
-  "Logo, helle Fassung, Symbol, Pille, Name und Farbe gehen auf die Vorgabe zurück. Hochgeladene Bilder werden gelöscht.": "Logo, light version, icon, pill, name and color return to the defaults. Uploaded images are deleted.",
+  "Logo, helle Fassung, Symbol, Pille, Name und Farbe gehen auf die Vorgabe zurück. Hochgeladene Bilder werden entfernt.": "Logo, light version, icon, pill, name and color return to the defaults. Uploaded images are removed.",
   "Wiederherstellen": "Restore",
   "Die Oberfläche zeigt wieder das Aussehen von HAPM.": "The interface shows the appearance of HAPM again.",
   "Aussehen von HAPM": "HAPM appearance",
@@ -38,11 +38,11 @@ export const branding: Dictionary = {
 
   // Pille und Name
   "Pille neben dem Logo": "Pill next to the logo",
-  "Ein kurzes Wort, etwa RevProxy oder Kunde A. Passt zu jedem Logo, auch zu dem von HAPM.": "A short word, such as RevProxy or Customer A. Works with any logo, including the one from HAPM.",
+  "Ein kurzes Wort, etwa RevProxy oder Kunde A.": "A short word, such as RevProxy or Customer A.",
   "Pille zeigen": "Show pill",
   "Text der Pille": "Pill text",
   "Name des Werkzeugs": "Tool name",
-  "Steht im Browser-Tab statt HAPM. Vorleser nennen ihn als Namen des Logos.": "Shown in the browser tab instead of HAPM. Screen readers announce it as the name of the logo.",
+  "Steht im Browser-Tab statt HAPM.": "Shown in the browser tab instead of HAPM.",
 
   // Farbe
   "Akzentfarbe": "Accent color",
@@ -82,8 +82,9 @@ export const branding: Dictionary = {
   // Seiten von HAProxy und Mails folgen der Darstellung
   "In der Seitenleiste, bei der Anmeldung, im Einrichtungsassistenten, in Mails und auf den Seiten von HAProxy. Am besten quer, etwa 4:1, mit durchsichtigem Grund. Ein SVG rechnet HAPM für Mails in ein PNG um, weil Gmail und Outlook dort kein SVG zeigen. Auf den Seiten von HAProxy steht es nur, wenn die ganze Seite samt Logo unter 15.000 Bytes bleibt, sonst steht dort der Name.": "In the sidebar, at sign-in, in the setup wizard, in emails and on the pages served by HAProxy. Best landscape, about 4:1, with a transparent background. HAPM converts an SVG to PNG for emails, because Gmail and Outlook do not show SVG there. On the HAProxy pages it only appears if the whole page including the logo stays below 15,000 bytes, otherwise the name is shown there.",
   "Für dunkle Flächen, etwa ein Logo in Weiß: Mails in dunklem Design und Fehlerseiten im dunklen Modus. Ohne eigene Fassung steht dort das Logo selbst.": "For dark surfaces, for example a white logo: emails in a dark theme and error pages in dark mode. Without a version of its own, the logo itself is shown there.",
-  "Name, Logo und Farbe stehen auch in den Mails und auf den Seiten von HAProxy, soweit unter Reverse-Proxy, Fehlerseiten nichts anderes eingestellt ist. Authenticator-Apps und Passkeys zeigen weiter HAPM: ein neuer Name passte dort nicht mehr zu eingerichteten Geräten.": "Name, logo and color also appear in emails and on the pages served by HAProxy, unless something else is set under Reverse proxy, Error pages. Authenticator apps and passkeys keep showing HAPM: a new name would no longer match devices already set up.",
+  "Vorleser nennen ihn als Namen des Logos. Name, Logo und Farbe stehen auch in den Mails und auf den Seiten von HAProxy, soweit unter Reverse-Proxy, Fehlerseiten nichts anderes eingestellt ist. Authenticator-Apps und Passkeys zeigen weiter HAPM: ein neuer Name passte dort nicht mehr zu eingerichteten Geräten.": "Screen readers announce it as the name of the logo. Name, logo and color also appear in emails and on the pages served by HAProxy, unless something else is set under Reverse proxy, Error pages. Authenticator apps and passkeys keep showing HAPM: a new name would no longer match devices already set up.",
   "Gespeichert, aber die Fehlerseiten blieben, wie sie waren": "Saved, but the error pages stayed as they were",
   "{count} Fehlerseite von HAProxy neu geschrieben.": "{count} HAProxy error page rewritten.",
   "{count} Fehlerseiten von HAProxy neu geschrieben.": "{count} HAProxy error pages rewritten.",
+  'Die Pille passt zu jedem Logo, auch zu dem von HAPM.': 'The pill works with any logo, including the one from HAPM.',
 };

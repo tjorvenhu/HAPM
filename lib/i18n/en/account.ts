@@ -37,10 +37,10 @@ export const account: Dictionary = {
     'Only one recovery code left. Create new ones before it is used up.',
   'Nur noch {count} Wiederherstellungscodes übrig. Erzeugen Sie neue, bevor alle verbraucht sind.':
     'Only {count} recovery codes left. Create new ones before all are used up.',
-  '{count} Wiederherstellungscodes übrig. Jeder ersetzt bei der Anmeldung einmal den Code aus der App.':
-    '{count} recovery codes left. Each one replaces the code from the app once when signing in.',
-  'Bei der Einrichtung entstehen zehn Wiederherstellungscodes für den Fall, dass die App verloren geht.':
-    'Setup creates ten recovery codes in case the app is lost.',
+  '{count} Wiederherstellungscodes übrig.':
+    '{count} recovery codes left.',
+  'Bei der Einrichtung entstehen zehn Wiederherstellungscodes.':
+    'Setup creates ten recovery codes.',
   'Wiederherstellungscodes erzeugen': 'Create recovery codes',
   'Neue Wiederherstellungscodes': 'New recovery codes',
   'Wiederherstellungscodes': 'Recovery codes',
@@ -48,15 +48,15 @@ export const account: Dictionary = {
     'The one remaining code will no longer work. Replace your stored codes with the new ones.',
   'Die {count} verbliebenen Codes gelten danach nicht mehr. Ersetzen Sie die abgelegten Codes durch die neuen.':
     'The {count} remaining codes will no longer work. Replace your stored codes with the new ones.',
-  'Zehn neue Codes entstehen und werden einmal angezeigt. Zur Bestätigung Ihr Passwort.':
-    'Ten new codes are created and shown once. Confirm with your password.',
+  'Zehn neue Codes entstehen und werden einmal angezeigt.':
+    'Ten new codes are created and shown once.',
   'Codes erzeugen': 'Create codes',
   'Die Wiederherstellungscodes ließen sich nicht erzeugen.': 'The recovery codes could not be created.',
   'Neue Wiederherstellungscodes sind erzeugt. Die alten gelten nicht mehr.':
     'New recovery codes are created. The old ones no longer work.',
   'Zweiten Faktor abschalten': 'Turn off second factor',
-  'Danach reicht für die Anmeldung das Passwort. Das hinterlegte Geheimnis wird gelöscht.':
-    'After that, the password is enough to sign in. The stored secret is deleted.',
+  'Danach reicht für die Anmeldung das Passwort. Das hinterlegte Geheimnis wird entfernt.':
+    'After that, the password is enough to sign in. The stored secret is removed.',
   'Der zweite Faktor ist eingerichtet. Alle anderen Sitzungen dieses Kontos sind beendet.':
     'The second factor is set up. All other sessions of this account have ended.',
   'Der zweite Faktor ließ sich nicht abschalten.': 'The second factor could not be turned off.',
@@ -69,12 +69,11 @@ export const account: Dictionary = {
 
   // Passkeys
   'Passkeys': 'Passkeys',
-  'Anmelden ohne Passwort und ohne Code, per Fingerabdruck, Gesicht oder PIN.':
+  'Anmelden ohne Passwort und Code, per Fingerabdruck, Gesicht oder PIN.':
     'Sign in without password or code, by fingerprint, face or PIN.',
-  'Passkey hinzufügen': 'Add passkey',
-  'Passkey anlegen': 'Create passkey',
+  'Passkey hinterlegen': 'Add passkey',
   'Passkey umbenennen': 'Rename passkey',
-  'Passkey entfernen': 'Remove passkey',
+  'Passkey entfernen?': 'Remove passkey?',
   '{name} umbenennen': 'Rename {name}',
   '{name} entfernen': 'Remove {name}',
   'Ablage': 'Storage',
@@ -90,8 +89,8 @@ export const account: Dictionary = {
   'SMTP-Konto': 'SMTP account',
   'HAPM meldet per Mail, wenn an Ihrem Konto ein Passkey dazukommt oder wegfällt.':
     'HAPM sends an email when a passkey is added to or removed from your account.',
-  'Noch kein Passkey hinterlegt. Ein Passkey liegt auf Ihrem Gerät oder in Ihrem Passwortmanager. Geht das Gerät verloren, melden Sie sich wie bisher mit dem Passwort an.':
-    'No passkey added yet. A passkey lives on your device or in your password manager. If the device is lost, sign in with your password as before.',
+  'Noch kein Passkey hinterlegt.':
+    'No passkey added yet.',
   'Ihr Gerät fragt gleich nach Fingerabdruck, Gesicht oder PIN.': 'Your device will ask for your fingerprint, face or PIN.',
   'Der Name steht nur in dieser Liste. Auf dem Gerät ändert sich nichts.':
     'The name only appears in this list. Nothing changes on the device.',
@@ -104,8 +103,8 @@ export const account: Dictionary = {
     'The passkey is added. You can use it the next time you sign in.',
   'Der Name konnte nicht gespeichert werden.': 'The name could not be saved.',
   'Der Name ist gespeichert.': 'The name is saved.',
-  'Mit „{name}“ ist danach keine Anmeldung mehr möglich. Ihr Passwort bleibt bestehen. Auf dem Gerät selbst löschen Sie den Passkey in dessen Einstellungen.':
-    'Signing in with “{name}” will no longer be possible. Your password stays. To delete the passkey on the device itself, use its settings.',
+  'Mit „{name}“ ist danach keine Anmeldung mehr möglich. Ihr Passwort bleibt bestehen. Auf dem Gerät selbst entfernen Sie den Passkey in dessen Einstellungen.':
+    'Signing in with “{name}” will no longer be possible. Your password stays. To remove the passkey on the device itself, use its settings.',
   'Der Passkey ließ sich nicht entfernen.': 'The passkey could not be removed.',
   'Der Passkey ist entfernt.': 'The passkey is removed.',
   'Diesen Passkey gibt es nicht mehr.': 'This passkey no longer exists.',
@@ -137,10 +136,14 @@ export const account: Dictionary = {
   'Der zweite Faktor ist eingerichtet.': 'The second factor is set up.',
   'Dafür braucht HAPM ein SMTP-Konto. Es wird unter Benachrichtigungen eingerichtet.':
     'HAPM needs an SMTP account for this. Set it up under Notifications.',
-  'HAPM läuft jetzt unter seiner Adresse. Hier kann Ihr Passwortmanager die Anmeldung speichern. Sichern Sie das Konto zusätzlich ab:':
-    'HAPM now runs at its own address. Your password manager can save the sign-in here. Secure your account as well:',
+  'HAPM läuft jetzt unter seiner Adresse. Sichern Sie das Konto ab:':
+    'HAPM now runs at its own address. Secure your account:',
   'Anmelden mit Fingerabdruck, Gesicht oder Gerätesperre.': 'Sign in with fingerprint, face or device lock.',
   'Zweiten Faktor einrichten': 'Set up a second factor',
   'Beides geht jederzeit unter Konto.': 'Both are available any time under Account.',
   'Nicht jetzt': 'Not now',
+  'Hinterlegen fehlgeschlagen': 'Adding failed',
+  'Ein Wiederherstellungscode ersetzt bei der Anmeldung einmal den Code aus der App, wenn die App verloren geht.': 'A recovery code replaces the code from the app once when signing in, if the app is lost.',
+  'Ein Passkey liegt auf Ihrem Gerät oder in Ihrem Passwortmanager. Geht das Gerät verloren, melden Sie sich wie bisher mit dem Passwort an.': 'A passkey lives on your device or in your password manager. If the device is lost, sign in with your password as before.',
+  'Unter dieser Adresse kann Ihr Passwortmanager die Anmeldung speichern. Auch ein Passkey hängt an ihr.': 'Your password manager can save the sign-in at this address. A passkey is tied to it as well.',
 };

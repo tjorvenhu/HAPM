@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import ErrorNote from '@/components/ErrorNote';
 import PageHeading from '@/components/PageHeading';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -8,11 +9,13 @@ import {
   ArrowDownUp, Timer, Users, ShieldBan, FileText,
 } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
+import { useTabMotion } from '@/components/AreaTabs';
 import { usePolling } from '@/components/usePolling';
 import { errorText } from '@/components/errorText';
 import { SkeletonRows } from '@/components/Skeleton';
 import Select from '@/components/Select';
 import { BarList } from '@/ui/charts/BarList';
+import { InfoHint } from '@/ui/primitives/InfoHint';
 import CountryFlag from '@/components/CountryFlag';
 import { countryName } from '@/lib/country-flags';
 import MetricChart, { ChartCard } from '@/components/systems/MetricChart';
@@ -232,8 +235,9 @@ function StatsSwitch() {
     [router]
   );
 
+  const motion = useTabMotion(tab);
   const tabs = !crowdsec ? null : (
-    <div className="tabs" role="tablist">
+    <div className={`tabs ${motion}`} role="tablist">
       <button
         type="button"
         role="tab"
@@ -264,10 +268,10 @@ function StatsSwitch() {
           <div>
             <PageHeading
               icon={<BarChart3 size={20} />}
-              title={t('Reverse-Proxy-Statistik')}
-              back={{ label: t('Übersicht'), href: '/reverse-proxy' }}
+              title={t('Statistik')}
+              back={{ label: t('Ziele'), href: '/reverse-proxy' }}
             />
-            <p className="page-subtitle">{t('Was CrowdSec erkannt und abgelehnt hat: WAF-Treffer, Szenarien und Sperren.')}</p>
+            <p className="page-subtitle">{t('Was CrowdSec erkannt und abgelehnt hat: WAF-Treffer, Szenarien, Sperren.')}</p>
           </div>
         </div>
         {tabs}
@@ -468,17 +472,17 @@ function StatsView({ tabs }: { tabs: React.ReactNode }) {
           */}
           <PageHeading
             icon={<BarChart3 size={20} />}
-            title={scope ? t('Statistik: {scope}', { scope }) : t('Reverse-Proxy-Statistik')}
+            title={scope ? t('Statistik: {scope}', { scope }) : t('Statistik')}
             back={
               scope
                 ? { label: t('Alle Dienste'), onClick: () => selectScope('') }
-                : { label: t('Übersicht'), href: '/reverse-proxy' }
+                : { label: t('Ziele'), href: '/reverse-proxy' }
             }
           />
           <p className="page-subtitle">
             {scope
-              ? t('Nur dieser Dienst. Die Zahlen kommen aus HAProxys eigener Statistik, die Zugriffe aus seinem Log.')
-              : t('Was über HAProxy läuft: Anfragen, Statuscodes, übertragene Menge, Antwortzeiten und wer zugreift.')}
+              ? t('Nur dieser Dienst: Zahlen aus HAProxys Statistik, Zugriffe aus dem Log.')
+              : t('Was über HAProxy läuft: Anfragen, Antwortzeiten, Menge und wer zugreift.')}
           </p>
         </div>
         {/* Der Zeitraum steht im Seitenkopf und nicht über den Diagrammen: er
@@ -527,7 +531,7 @@ function StatsView({ tabs }: { tabs: React.ReactNode }) {
 
       {tabs}
 
-      {error && <div className="alert alert-danger sys-block">{error}</div>}
+      {error && <div className="alert alert-danger sys-block"><ErrorNote text={error} /></div>}
 
       {/* Neu eingehängt je Dienst: sonst meldete der Wechsel eine „neue Runde". */}
       <LiveTraffic key={scope} scope={scope || undefined} onRound={onRound} />
@@ -561,7 +565,7 @@ function StatsView({ tabs }: { tabs: React.ReactNode }) {
           <div className="live-kpis-head">
             <strong>{t(RANGES.find((range) => range.value === hours)?.label ?? RANGES[1].label)}</strong>
           </div>
-          <div className="kpi-grid sys-block">
+          <div className="kpi-grid hapm-kpis-8 sys-block">
             <Kpi
               icon={<Activity size={16} />}
               label={t('Anfragen')}
@@ -663,6 +667,7 @@ function StatsView({ tabs }: { tabs: React.ReactNode }) {
                 data={points}
                 series={STATUS_SERIES[locale]}
                 format={fmt.countShort}
+                integers
                 rangeMs={rangeMs}
                 area
               />
@@ -710,6 +715,7 @@ function StatsView({ tabs }: { tabs: React.ReactNode }) {
                 data={points}
                 series={SESSION_SERIES[locale]}
                 format={fmt.count}
+                integers
                 rangeMs={rangeMs}
                 area
               />
@@ -728,6 +734,7 @@ function StatsView({ tabs }: { tabs: React.ReactNode }) {
                 data={points}
                 series={PROBLEM_SERIES[locale]}
                 format={fmt.countShort}
+                integers
                 rangeMs={rangeMs}
                 area
               />
@@ -754,6 +761,7 @@ function StatsView({ tabs }: { tabs: React.ReactNode }) {
                   data={hourPoints}
                   series={REQUEST_SERIES[locale]}
                   format={fmt.countShort}
+                integers
                   rangeMs={24 * 3_600_000}
                   area
                 />
@@ -846,16 +854,20 @@ function TrafficSection({
     <div className="sys-block">
       <div className="card-header" style={{ marginBottom: 12 }}>
         <div>
-          <h2 className="card-title">{t('Zugriffe')}</h2>
+          <h2 className="card-title">
+            {t('Zugriffe')}
+            <InfoHint
+              text={t('Aus dem Access-Log von HAProxy. Wird alle zwei Minuten neu ausgewertet, solange die Seite offen ist.')}
+            />
+          </h2>
           <p className="card-subtitle">
-            {t('Aus dem Access-Log von HAProxy.')}{' '}
             {traffic
               ? t('{parsed} von {lines} gelesenen Zeilen ausgewertet, zuletzt {time}.', {
                   parsed: formatCount(locale, traffic.totals.parsed),
                   lines: formatCount(locale, traffic.totals.lines),
                   time: formatTime(locale, traffic.collectedAt, true),
                 })
-              : t('Wird alle zwei Minuten neu ausgewertet, solange die Seite offen ist.')}
+              : t('Aus dem Access-Log von HAProxy.')}
           </p>
         </div>
         <button className="btn btn-secondary btn-sm" onClick={onReload} disabled={loading}>
@@ -864,7 +876,7 @@ function TrafficSection({
         </button>
       </div>
 
-      {error && <div className="alert alert-danger sys-block">{error}</div>}
+      {error && <div className="alert alert-danger sys-block"><ErrorNote text={error} /></div>}
 
       {failed.map((proxy) => (
         <div className="alert alert-warning sys-block" key={proxy.serverId}>
@@ -898,11 +910,16 @@ function TrafficSection({
             <div className="card">
               <div className="card-header">
                 <div>
-                  <h3 className="card-title">{t('Länder')}</h3>
+                  <h3 className="card-title">
+                    {t('Länder')}
+                    {traffic.geoipAvailable && (
+                      <InfoHint text={t('Die Auswertung nimmt die häufigsten Adressen, nicht alle.')} />
+                    )}
+                  </h3>
                   <p className="card-subtitle">
                     {!traffic.geoipAvailable
                       ? t('Es ist keine Länder-Tabelle hinterlegt.')
-                      : t('Aus {share} der Anfragen. Die Auswertung nimmt die häufigsten Adressen, nicht alle.', {
+                      : t('Aus {share} der Anfragen.', {
                           share: formatShare(locale, traffic.countryCoverage, 1),
                         })}
                   </p>
@@ -1015,12 +1032,15 @@ function TrafficSection({
               <div className="card">
                 <div className="card-header">
                   <div>
-                    <h3 className="card-title">{t('Dieser Dienst im Log')}</h3>
-                    <p className="card-subtitle">
-                      {t(
-                        'Eine andere Zählung als die Zeitreihe oben: hier zählt jede Zeile im gelesenen Fenster, dort HAProxys eigener Zähler über den gewählten Zeitraum. Zwei verschiedene Zahlen sind hier normal und kein Widerspruch.'
-                      )}
-                    </p>
+                    <h3 className="card-title">
+                      {t('Dieser Dienst im Log')}
+                      <InfoHint
+                        text={t(
+                          'Eine andere Zählung als die Zeitreihe oben: hier zählt jede Zeile im gelesenen Fenster, dort HAProxys eigener Zähler über den gewählten Zeitraum. Zwei verschiedene Zahlen sind hier normal und kein Widerspruch.'
+                        )}
+                      />
+                    </h3>
+                    <p className="card-subtitle">{t('Gezählt aus den Zeilen im gelesenen Fenster des Logs.')}</p>
                   </div>
                 </div>
                 {traffic.backends.length === 0 ? (
@@ -1106,11 +1126,14 @@ function ServiceTable({
     <div className="card sys-block">
       <div className="card-header">
         <div>
-          <h3 className="card-title">{t('Dienste')}</h3>
+          <h3 className="card-title">
+            {t('Dienste')}
+            <InfoHint text={t('Ein Klick auf eine Zeile öffnet die Auswertung dieses Dienstes.')} />
+          </h3>
           <p className="card-subtitle">
             {plural(hours, {
-              one: 'Anfragen der letzten Stunde, je Backend. Ein Klick öffnet die Auswertung dieses Dienstes.',
-              other: 'Anfragen der letzten {count} Stunden, je Backend. Ein Klick öffnet die Auswertung dieses Dienstes.',
+              one: 'Anfragen der letzten Stunde, je Backend.',
+              other: 'Anfragen der letzten {count} Stunden, je Backend.',
             })}
           </p>
         </div>

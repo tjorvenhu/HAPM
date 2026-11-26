@@ -24,7 +24,7 @@ Next.js (App Router) mit TypeScript strict, pnpm. Drei Container: HAPM, HAProxy
 | `lib/crowdsec/`, `app/(app)/reverse-proxy/crowdsec/`, `app/api/crowdsec/`, `app/api/internal/crowdsec/` | [`docs/crowdsec.md`](docs/crowdsec.md) |
 | `lib/branding/`, `app/(app)/system/darstellung/`, `app/branding.css`, `ui/primitives/Logo.tsx` | [`docs/betrieb.md`](docs/betrieb.md), Abschnitt „Darstellung" |
 | `lib/auth/`, `lib/session.ts`, `lib/two-factor.ts`, `app/api/auth/`, `app/api/account/` | die Köpfe der Dateien: dort steht zu jeder Stelle, warum sie so ist |
-| `ui/`, `components/`, `app/globals.css`, `app/hapm.css` | unten „Regeln, die überall gelten", Punkte „Oberfläche" und „Design" |
+| `ui/`, `components/`, jede Seite unter `app/`, `app/globals.css`, `app/hapm.css` | [`docs/oberflaeche.md`](docs/oberflaeche.md): Seitenkopf, lange Texte hinter dem „i", Wortwahl, Meldungen, Layout. Dazu unten „Regeln, die überall gelten", Punkte „Oberfläche" und „Design" |
 | `lib/i18n/`, jeder Text für Nutzer (Seiten, Meldungen, Datum, Zahlen) | [`docs/i18n.md`](docs/i18n.md): `t()`, `msg()`, Wörterbuch, Glossar |
 
 ## Wie HAPM gebaut ist
@@ -111,6 +111,19 @@ Next.js (App Router) mit TypeScript strict, pnpm. Drei Container: HAPM, HAProxy
   (`?bereich=` in der Adresse, Punkt für Ungespeichertes). Eine
   Client-Komponente importiert nichts, was `lib/db`, `lib/ssh` oder `lib/docker`
   erreicht (nur `import type`).
+- **Einheitlich, auf jeder Seite** ([`docs/oberflaeche.md`](docs/oberflaeche.md)):
+  Der Titel einer Seite ist ihr Name in der Seitenleiste, Unterseiten nehmen
+  `PageHeading`. Eine Erklärung über 72 Zeichen steht hinter dem „i"
+  (`InfoHint`), sichtbar bleiben nur Warnungen und Folgen
+  (`tests/ui/long-text.test.ts`). Wegnehmen heißt „Entfernen", nie „Löschen".
+  Ein Serverfehler nach dem Absenden ist ein Toast, ein unbekannter Fehler
+  nennt nur eine Kennung mit „Anzeigen": was der Benutzer lesen soll, wirft die
+  Route als `ApiError`.
+- **Layout:** Eine Karte ist so hoch wie ihr Inhalt, eine kurze wird neben
+  einer langen nie gestreckt. Was mit den Daten wächst, steht in der breiten
+  Spalte, kurze Karten übereinander in einer schmalen daneben. Raster brechen
+  nach der Breite um. Vor „fertig" jede geänderte Seite in drei Breiten
+  ansehen (1440, 1024, 400) und mit vielen wie mit wenigen Einträgen.
 - **Design:** `ui/` ist das Design von HAPM: Rahmen (`ToolShell`, Seitenleiste),
   Bausteine (`ui/tool/`, `ui/primitives/`, `ui/charts/`, `ui/auth/`), die
   Stylesheets hinter `ui/css/tool.css`, der Rahmen der Mails (`ui/mail/`) und

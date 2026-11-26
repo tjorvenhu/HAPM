@@ -195,8 +195,8 @@ export const mail: Dictionary = {
     'HAPM only writes files that haproxy.cfg names in an errorfile line and that are located under /etc/haproxy. It creates no file and writes no such line. The status a page carries is in the file itself and stays the same when writing.',
   'Was die Konfiguration von HAProxy an Fehlerdateien nennt.': 'The error files named in the HAProxy configuration.',
   '{count} auf den gespeicherten Stand bringen': 'Bring {count} up to the saved version',
-  'In der Konfiguration steht keine errorfile-Zeile. HAProxy zeigt seine eigenen Seiten, und hier gibt es nichts zu schreiben.':
-    'The configuration has no errorfile line. HAProxy shows its own pages, and there is nothing to write here.',
+  'Keine errorfile-Zeile in haproxy.cfg. HAProxy zeigt eigene Seiten.':
+    'No errorfile line in haproxy.cfg. HAProxy shows its own pages.',
   'Status der Seite': 'Page status',
   'Gezeigt bei': 'Shown for',
 
@@ -209,12 +209,12 @@ export const mail: Dictionary = {
     'The SMTP account is saved. A test email shows whether the server accepts it.',
   'Gespeichert. Ohne Server und Absender wird nichts verschickt.': 'Saved. Without a server and sender, nothing is sent.',
   'Das SMTP-Konto ließ sich nicht speichern.': 'The SMTP account could not be saved.',
-  'SMTP-Passwort löschen?': 'Delete SMTP password?',
+  'SMTP-Passwort entfernen?': 'Remove SMTP password?',
   'HAPM meldet sich danach ohne Passwort am Mailserver an. Verlangt der Server eines, scheitert der Versand.':
     'HAPM will then sign in to the mail server without a password. If the server requires one, sending fails.',
-  'Passwort löschen': 'Delete password',
-  'Das SMTP-Passwort ist gelöscht.': 'The SMTP password is deleted.',
-  'Das Passwort ließ sich nicht löschen.': 'The password could not be deleted.',
+  'Passwort entfernen': 'Remove password',
+  'Das SMTP-Passwort ist entfernt.': 'The SMTP password is removed.',
+  'Das Passwort ließ sich nicht entfernen.': 'The password could not be removed.',
   'Die Testmail ließ sich nicht verschicken.': 'The test email could not be sent.',
   'Der Mailserver hat die Testmail an {to} angenommen.': 'The mail server accepted the test email to {to}.',
   'Testmail nicht verschickt': 'Test email not sent',
@@ -467,7 +467,7 @@ export const mail: Dictionary = {
 
   /* ── Fehlerseiten: was aus der Darstellung kommt ── */
   "Eine Seite von Hand, die von HAProxy oder ein Stand, den HAPM nicht nachziehen konnte. Wird beim Schreiben ersetzt, das Original bleibt daneben liegen.": "A page written by hand, the one from HAProxy or a version HAPM could not update. Replaced when writing, the original stays next to it.",
-  "Leer heißt: die Akzentfarbe aus der Darstellung, sonst die Farbe von HAPM.": "Empty means the accent color from Appearance, otherwise the color from HAPM.",
+  "Leer heißt: Akzent aus der Darstellung, sonst die Farbe von HAPM.": "Empty means the accent from Appearance, otherwise the color from HAPM.",
   "Aus der Darstellung": "From Appearance",
   "Zur Darstellung": "Go to Appearance",
   "Die eigene HTML-Datei bleibt, wie sie ist. Die Passwortabfrage zeigt Logo, Name und Akzentfarbe aus der Darstellung.": "Your own HTML file stays as it is. The password prompt shows logo, name and accent color from Appearance.",

@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useCallback, useEffect, useState, type FormEvent } from 'react';
+import ErrorNote from '@/components/ErrorNote';
 import { BellRing, Languages, Loader2, Mail, Plus, Save, Send, Trash2, Users, X } from 'lucide-react';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import { useApp } from '@/components/AppShell';
@@ -180,9 +181,9 @@ function Notifications() {
 
   async function clearPassword() {
     const confirmed = await confirm({
-      title: t('SMTP-Passwort löschen?'),
+      title: t('SMTP-Passwort entfernen?'),
       message: t('HAPM meldet sich danach ohne Passwort am Mailserver an. Verlangt der Server eines, scheitert der Versand.'),
-      confirmLabel: t('Passwort löschen'),
+      confirmLabel: t('Passwort entfernen'),
       variant: 'danger',
     });
     if (!confirmed) return;
@@ -190,9 +191,9 @@ function Notifications() {
     try {
       await patch({ smtpPass: null });
       if (draft) setDraft({ ...draft, smtpPass: '' });
-      notify({ variant: 'success', message: t('Das SMTP-Passwort ist gelöscht.') });
+      notify({ variant: 'success', message: t('Das SMTP-Passwort ist entfernt.') });
     } catch (err: unknown) {
-      notify({ variant: 'error', message: errorText(err, t('Das Passwort ließ sich nicht löschen.')) });
+      notify({ variant: 'error', message: errorText(err, t('Das Passwort ließ sich nicht entfernen.')) });
     } finally {
       setClearingPassword(false);
     }
@@ -313,7 +314,7 @@ function Notifications() {
       <>
         {header}
         {error ? (
-          <div className="alert alert-danger sys-block">{error}</div>
+          <div className="alert alert-danger sys-block"><ErrorNote text={error} /></div>
         ) : (
           <>
             <div className="sys-block">
@@ -343,7 +344,7 @@ function Notifications() {
     <>
       {header}
 
-      {error && <div className="alert alert-danger sys-block">{error}</div>}
+      {error && <div className="alert alert-danger sys-block"><ErrorNote text={error} /></div>}
 
       <div className="card sys-block">
         <div className="card-header">
@@ -411,7 +412,7 @@ function Notifications() {
 
           <div className="card-body">
           <form className="card-body" onSubmit={saveSmtp}>
-            {formError && <div className="alert alert-danger">{formError}</div>}
+            {formError && <div className="alert alert-danger"><ErrorNote text={formError} /></div>}
 
             <div className="form-row">
               <div className="form-group">
@@ -535,7 +536,7 @@ function Notifications() {
                   disabled={saving || clearingPassword}
                 >
                   {clearingPassword ? <Loader2 size={16} strokeWidth={1.5} className="spin" /> : <Trash2 size={16} strokeWidth={1.5} />}
-                  {t('Passwort löschen')}
+                  {t('Passwort entfernen')}
                 </button>
               )}
             </div>
@@ -596,7 +597,7 @@ function Notifications() {
             </div>
 
             <div className="card-body">
-              {recipientError && <div className="alert alert-danger">{recipientError}</div>}
+              {recipientError && <div className="alert alert-danger"><ErrorNote text={recipientError} /></div>}
 
               {settings.notifyRecipients.length === 0 ? (
                 <p className="form-list-empty">{t('Noch kein Empfänger. Ohne Empfänger wird keine Benachrichtigung verschickt.')}</p>

@@ -163,7 +163,7 @@ export default function StreamCard({
         <div className="rp-tags">
           <span
             className="rp-tag is-pending"
-            data-tooltip={t('Der Vorgang läuft. Fortschritt unten rechts.')}
+            data-tooltip={t('Der Vorgang läuft. Der Fortschritt steht unten rechts.')}
           >
             <Loader2 size={14} className="spin" />
             <span className="rp-tag-label">
@@ -241,12 +241,12 @@ export default function StreamCard({
           className="rp-action is-danger"
           data-tooltip={
             stream.removable
-              ? t('Löschen')
+              ? t('Entfernen')
               : t('Steht außerhalb der Marker-Blöcke. Wo der Abschnitt anfängt, wäre geraten.')
           }
           disabled={!stream.removable || pending}
           onClick={onDelete}
-          aria-label={t('Löschen')}
+          aria-label={t('Entfernen')}
         >
           <Trash2 size={16} />
         </button>

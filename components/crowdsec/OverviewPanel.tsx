@@ -2,7 +2,18 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, Ban, Globe, Loader2, Power, ShieldAlert, ShieldCheck, Users } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowRight,
+  Ban,
+  Loader2,
+  Power,
+  ScrollText,
+  ShieldAlert,
+  ShieldCheck,
+  ShieldOff,
+  Users,
+} from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/ConfirmDialog';
@@ -10,7 +21,7 @@ import { startRun, subscribeRunFinished } from '@/components/runs/runs';
 import { useCrowdsecSwitch } from './CrowdsecSwitch';
 import BrandLogo from '@/components/BrandLogo';
 import { InfoHint } from '@/ui/primitives/InfoHint';
-import { formatDateTime, formatNumber, formatRelative, msgid } from '@/lib/i18n';
+import { MISSING, formatDateTime, formatNumber, formatRelative, msgid } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
 import { useNow } from '@/components/useNow';
 import type { CrowdsecOverview, CrsMode } from './types';
@@ -49,8 +60,9 @@ function ContainerBadge({ info, label }: { info: CrowdsecOverview['status']['cro
 }
 
 /**
- * Der erste Reiter: läuft alles, welche Ziele prüft CrowdSec, und der Schalter
- * für alle Ziele. Der Schalter schreibt `haproxy.cfg` über denselben Vorgang
+ * Der erste Reiter. Links schmal, was kurz ist (Status, Zahlen, System), rechts
+ * breit, was mit den Zielen wächst: die geschützten Ziele mit dem Schalter für
+ * alle im Kopf der Karte. Der Schalter schreibt `haproxy.cfg` über denselben Vorgang
  * wie die Einstellungen (`/api/haproxy/settings`, `crowdsec`).
  */
 export default function OverviewPanel({ data, onChanged }: { data: CrowdsecOverview; onChanged: () => void }) {
@@ -149,9 +161,39 @@ export default function OverviewPanel({ data, onChanged }: { data: CrowdsecOverv
   }
 
   const down = !status.crowdsec?.running || !status.bouncer?.running;
+  const all = protection.global === true;
+  const checked = protection.services.length;
+  const switchLocked = protection.global === null || !!pendingRun || !protection.readable;
+  const eventsOf = (id: string) => `/reverse-proxy/crowdsec?bereich=ereignisse&ziel=${encodeURIComponent(id)}`;
+
+  // Was CrowdSec gerade tut, in einem Wort und einem Satz.
+  const state: { cls: string; label: string; line: string } = down
+    ? { cls: 'badge-danger', label: t('Läuft nicht'), line: t('Anfragen gehen ungeprüft durch.') }
+    : !protection.readable
+      ? { cls: 'badge-warning', label: t('Unbekannt'), line: t('Die HAProxy-Konfiguration ist nicht lesbar.') }
+      : all
+        ? {
+            cls: 'badge-success',
+            label: t('Aktiv'),
+            line: plural(protection.total, { one: 'Prüft das eine Ziel.', other: 'Prüft alle {count} Ziele.' }),
+          }
+        : checked > 0
+          ? {
+              cls: 'badge-success',
+              label: t('Aktiv'),
+              line: t('Prüft {count} von {total} Zielen.', {
+                count: formatNumber(locale, checked),
+                total: formatNumber(locale, protection.total),
+              }),
+            }
+          : protection.inUse
+            ? { cls: 'badge-success', label: t('Aktiv'), line: t('Eingebunden über einen eigenen Block in haproxy.cfg.') }
+            : { cls: 'badge-neutral', label: t('Prüft nichts'), line: t('Läuft, aber kein Ziel ist eingeschaltet.') };
+
+  const count = (value: number | null) => (value === null ? MISSING : formatNumber(locale, value));
 
   return (
-    <>
+    <div className="hapm-fit">
       {down && (
         <div className="alert alert-warning sys-block hapm-flag">
           <AlertTriangle size={16} />
@@ -159,107 +201,182 @@ export default function OverviewPanel({ data, onChanged }: { data: CrowdsecOverv
             <strong>{t('CrowdSec läuft nicht vollständig.')}</strong>
             <span>
               {t(
-                'Solange CrowdSec oder der Bouncer fehlt, gehen alle Anfragen ungeprüft durch. Mehr sagt der Reiter „CrowdSec“ unter Reverse-Proxy, Logs.'
+                'Solange CrowdSec oder der Bouncer fehlt, gehen alle Anfragen ungeprüft durch. Mehr sagt der Reiter „CrowdSec“ unter Logs.'
               )}
             </span>
           </div>
         </div>
       )}
 
-      <div className="kpi-grid cs-kpis sys-block">
-        <div className="kpi">
-          <span className="kpi-icon"><Ban size={16} /></span>
-          <div className="kpi-body">
-            <span className="kpi-value">{summary.activeDecisions === null ? '–' : formatNumber(locale, summary.activeDecisions)}</span>
-            <span className="kpi-label">{t('Aktive Sperren')}</span>
+      <div className="hapm-side-main sys-block">
+        <div className="hapm-side">
+          <div className="card">
+            <div className="card-header">
+              <h2 className="card-title">
+                {t('Status')}
+                <InfoHint
+                  text={t(
+                    'CrowdSec prüft jede Anfrage an ein geschütztes Ziel auf bekannte Angriffe und lehnt sie mit 403 ab (WAF). Es liest das Log von HAProxy und sperrt Adressen, die scannen oder raten. Dazu sperrt es Adressen, die anderen CrowdSec-Installationen aufgefallen sind (Gemeinschaftsliste).'
+                  )}
+                />
+              </h2>
+              <span className={`badge-status ${state.cls}`}>
+                <span className="dot" />
+                {state.label}
+              </span>
+            </div>
+            <p className="cs-state-line">{state.line}</p>
           </div>
-        </div>
-        <div className="kpi">
-          <span className="kpi-icon"><ShieldAlert size={16} /></span>
-          <div className="kpi-body">
-            <span className="kpi-value">{summary.waf24h === null ? '–' : formatNumber(locale, summary.waf24h)}</span>
-            <span className="kpi-label">{t('WAF-Treffer in 24 Stunden')}</span>
-          </div>
-        </div>
-        <div className="kpi">
-          <span className="kpi-icon"><AlertTriangle size={16} /></span>
-          <div className="kpi-body">
-            <span className="kpi-value">{summary.alerts24h === null ? '–' : formatNumber(locale, summary.alerts24h)}</span>
-            <span className="kpi-label">{t('Ereignisse in 24 Stunden')}</span>
-          </div>
-        </div>
-        <div className="kpi">
-          <span className="kpi-icon"><Users size={16} /></span>
-          <div className="kpi-body">
-            <span className="kpi-value">
-              {summary.communityBlocklist === null ? '–' : formatNumber(locale, summary.communityBlocklist)}
-            </span>
-            <span className="kpi-label">{t('Gemeinschaftsliste')}</span>
-          </div>
-        </div>
-      </div>
 
-      <div className="hapm-cols cs-overview sys-block">
-        <div className="cs-stack">
+          <div className="card">
+            <div className="card-header">
+              <h2 className="card-title">{t('Statistik')}</h2>
+              <Link className="btn btn-ghost btn-sm" href="/reverse-proxy/statistiken?ansicht=crowdsec">
+                {t('Verlauf')}
+                <ArrowRight size={14} />
+              </Link>
+            </div>
+            <div className="dash-kv cs-kv">
+              <div className="dash-kv-row">
+                <span className="dash-kv-label">
+                  <ShieldAlert size={14} /> {t('WAF-Treffer (24 h)')}
+                </span>
+                <span className="dash-kv-value">{count(summary.waf24h)}</span>
+              </div>
+              <div className="dash-kv-row">
+                <span className="dash-kv-label">
+                  <ScrollText size={14} /> {t('Ereignisse (24 h)')}
+                </span>
+                <span className="dash-kv-value">{count(summary.alerts24h)}</span>
+              </div>
+              <div className="dash-kv-row">
+                <span className="dash-kv-label">
+                  <Ban size={14} /> {t('Aktive Sperren')}
+                </span>
+                <span className="dash-kv-value">{count(summary.activeDecisions)}</span>
+              </div>
+              <div className="dash-kv-row">
+                <span className="dash-kv-label">
+                  <Users size={14} /> {t('Gemeinschaftsliste')}
+                </span>
+                <span className="dash-kv-value">{count(summary.communityBlocklist)}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="card-header">
+              <h2 className="card-title">{t('System')}</h2>
+            </div>
+            <div className="dash-kv cs-kv">
+              <div className="dash-kv-row">
+                <span className="dash-kv-label">
+                  <BrandLogo brand="crowdsec" size={14} /> CrowdSec
+                </span>
+                <span className="dash-kv-value cs-kv-badge">
+                  {status.version && <span className="hapm-muted">v{status.version}</span>}
+                  <ContainerBadge info={status.crowdsec} label="hapm-crowdsec" />
+                </span>
+              </div>
+              <div className="dash-kv-row">
+                <span className="dash-kv-label">{t('Bouncer für HAProxy')}</span>
+                <span className="dash-kv-value">
+                  <ContainerBadge info={status.bouncer} label="hapm-crowdsec-bouncer" />
+                </span>
+              </div>
+              <div className="dash-kv-row">
+                <span className="dash-kv-label">{t('Lokale API')}</span>
+                <span className="dash-kv-value">
+                  {status.lapi === null ? t('Unbekannt') : status.lapi ? t('Antwortet') : t('Antwortet nicht')}
+                </span>
+              </div>
+              <div className="dash-kv-row">
+                <span className="dash-kv-label">{t('Bouncer angemeldet')}</span>
+                <span className="dash-kv-value">
+                  {status.bouncerRegistered === null
+                    ? t('Unbekannt')
+                    : status.bouncerRegistered
+                      ? status.bouncerLastPull
+                        ? t('Ja, zuletzt {ago}', { ago: formatRelative(locale, now, status.bouncerLastPull) })
+                        : t('Ja')
+                      : t('Nein. HAPM holt das in den nächsten Minuten nach.')}
+                </span>
+              </div>
+              <div className="dash-kv-row">
+                <span className="dash-kv-label">{t('OWASP-Regeln')}</span>
+                <span className="dash-kv-value">{t(CRS_LABELS[data.crs])}</span>
+              </div>
+              <div className="dash-kv-row">
+                <span className="dash-kv-label">{t('Eigene Adresse')}</span>
+                <span className="dash-kv-value mono cs-kv-wrap">{data.client}</span>
+              </div>
+              {status.crowdsec?.startedAt && (
+                <div className="dash-kv-row">
+                  <span className="dash-kv-label">{t('Läuft seit')}</span>
+                  <span className="dash-kv-value">{formatDateTime(locale, status.crowdsec.startedAt)}</span>
+                </div>
+              )}
+            </div>
+            {status.error && <div className="alert alert-warning">{status.error}</div>}
+          </div>
+        </div>
+
         <div className="card">
           <div className="card-header">
             <div>
-              <h2 className="card-title">{t('Welche Ziele CrowdSec prüft')}</h2>
-              <p className="card-subtitle">
-                {protection.global === true
-                  ? t('Alle Ziele, über den Schalter für alle.')
-                  : plural(protection.services.length, {
-                      one: '{count} Ziel mit eigenem Schalter.',
-                      other: '{count} Ziele mit eigenem Schalter.',
-                    })}
-              </p>
+              <h2 className="card-title">
+                {t('Geschützte Ziele')}
+                {protection.readable && <span className="section-count">{formatNumber(locale, checked)}</span>}
+              </h2>
+              <p className="card-subtitle">{t('Die Ziele, deren Anfragen CrowdSec prüft.')}</p>
             </div>
-          </div>
-          <div className="card-body">
-            <div className="form-subsection-head">
-              <div>
-                <div className="form-label-row">
-                  <div className="form-section-title">{t('Alle Ziele prüfen')}</div>
-                  <InfoHint
-                    text={t(
-                      'Steht im HTTPS-Frontend von HAProxy und gilt damit auch für Ziele, die später dazukommen. Ohne den Schalter prüft CrowdSec nur Ziele, bei denen es im Dialog des Ziels eingeschaltet ist.'
-                    )}
-                  />
-                </div>
-                <div className="form-section-sub">
-                  {!protection.readable
-                    ? t('Die HAProxy-Konfiguration ist nicht lesbar.')
-                    : protection.global === null
-                    ? t('Der Block „# CrowdSec“ in haproxy.cfg ist von Hand geändert und wird nicht angefasst.')
-                    : pendingRun
-                      ? t('Wird übernommen.')
-                      : t(protection.global ? 'An. Jede Anfrage geht durch CrowdSec.' : 'Aus.')}
-                </div>
-              </div>
+            <div className="cs-all-switch">
+              {pendingRun && <Loader2 size={14} className="spin" />}
+              <span className="cs-all-switch-label">{t('Alle Ziele prüfen')}</span>
+              <InfoHint
+                text={t(
+                  'Steht im HTTPS-Frontend von HAProxy und gilt damit auch für Ziele, die später dazukommen. Ohne den Schalter prüft CrowdSec nur Ziele, bei denen es im Dialog des Ziels eingeschaltet ist.'
+                )}
+              />
               <label className="toggle-switch">
                 <input
                   type="checkbox"
-                  checked={protection.global === true}
-                  disabled={protection.global === null || !!pendingRun || !protection.readable}
+                  checked={all}
+                  disabled={switchLocked}
                   onChange={(e) => askGlobal(e.target.checked)}
                   aria-label={t('Alle Ziele prüfen')}
                 />
                 <span className="toggle-slider" />
               </label>
             </div>
-            {pendingRun && (
-              <p className="form-hint">
-                <Loader2 size={14} className="spin" /> {t('HAProxy wird neu geladen.')}
-              </p>
-            )}
           </div>
-          {protection.services.length > 0 && (
+
+          {!protection.readable ? (
+            <div className="alert alert-danger">{t('Die HAProxy-Konfiguration ist nicht lesbar.')}</div>
+          ) : protection.global === null ? (
+            <div className="alert alert-warning">
+              <AlertTriangle size={16} />
+              <span>{t('Der Block „# CrowdSec“ in haproxy.cfg ist von Hand geändert. Der Schalter ist deshalb gesperrt.')}</span>
+            </div>
+          ) : pendingRun ? (
+            <div className="alert alert-info">
+              <Loader2 size={16} className="spin" />
+              <span>{t('Wird übernommen. HAProxy wird neu geladen.')}</span>
+            </div>
+          ) : all && checked > 0 ? (
+            /* Woher der Schutz kommt, steht einmal über der Liste und nicht in jeder Zeile. */
+            <div className="alert alert-success">
+              <ShieldCheck size={16} />
+              <span>{t('„Alle Ziele prüfen“ ist an: CrowdSec prüft jedes Ziel, auch jedes neue.')}</span>
+            </div>
+          ) : null}
+
+          {checked > 0 ? (
             <div className="table-wrap">
-              <table className="table">
+              <table className="table cs-targets">
                 <thead>
                   <tr>
                     <th>{t('Ziel')}</th>
-                    <th>{t('Geprüft über')}</th>
                     <th aria-label={t('Aktionen')} />
                   </tr>
                 </thead>
@@ -267,19 +384,34 @@ export default function OverviewPanel({ data, onChanged }: { data: CrowdsecOverv
                   {protection.services.map((service) => (
                     <tr key={service.id}>
                       <td data-label="primary">
-                        <strong>{service.domains[0] ?? service.id}</strong>
-                        {service.domains.length > 1 && <div className="detail-sub">{service.domains.slice(1).join(', ')}</div>}
-                      </td>
-                      <td data-label={t('Geprüft über')}>
-                        {service.own ? t('Eigener Schalter') : t('Schalter für alle')}
+                        <span className="cs-target">
+                          <ShieldCheck size={16} className="cs-target-icon" />
+                          <span className="cs-target-name">
+                            <strong>{service.domains[0] ?? service.id}</strong>
+                            {service.domains.length > 1 && (
+                              <span className="detail-sub">{service.domains.slice(1).join(', ')}</span>
+                            )}
+                          </span>
+                        </span>
                       </td>
                       <td data-label="actions">
                         <div className="actions hapm-actions-end">
+                          {/* Nur wo es etwas sagt: ohne den Schalter für alle hat jedes Ziel der Liste einen eigenen. */}
+                          {all && service.own && (
+                            <span
+                              className="badge-status badge-neutral"
+                              data-tooltip={t('Am Ziel selbst eingeschaltet. Bleibt geprüft, auch wenn der Schalter für alle aus ist.')}
+                            >
+                              {t('Eigener Schalter')}
+                            </span>
+                          )}
                           <Link
-                            className="btn btn-ghost btn-sm"
-                            href={`/reverse-proxy/crowdsec?bereich=ereignisse&ziel=${encodeURIComponent(service.id)}`}
+                            className="btn btn-ghost btn-sm cs-target-link"
+                            href={eventsOf(service.id)}
+                            aria-label={t('Ereignisse von {target}', { target: service.domains[0] ?? service.id })}
                           >
-                            {t('Ereignisse')}
+                            <ScrollText size={14} />
+                            <span>{t('Ereignisse')}</span>
                           </Link>
                         </div>
                       </td>
@@ -288,102 +420,37 @@ export default function OverviewPanel({ data, onChanged }: { data: CrowdsecOverv
                 </tbody>
               </table>
             </div>
-          )}
-          {protection.services.length === 0 && protection.global !== true && (
+          ) : protection.readable && protection.total === 0 ? (
+            <div className="empty-state">
+              <ShieldOff size={36} />
+              <h3>{t('Noch kein Ziel')}</h3>
+              <p>{t('Sobald es Ziele gibt, stehen hier die, die CrowdSec prüft.')}</p>
+              <Link className="btn btn-secondary" href="/reverse-proxy">
+                {t('Zu den Zielen')}
+              </Link>
+            </div>
+          ) : protection.readable && !protection.inUse ? (
+            <div className="empty-state">
+              <ShieldOff size={36} />
+              <h3>{t('Kein Ziel wird geschützt')}</h3>
+              <p>{t('Oben „Alle Ziele prüfen“ einschalten, oder CrowdSec im Dialog eines Ziels.')}</p>
+            </div>
+          ) : null}
+
+          {!all && checked > 0 && checked < protection.total && (
             <p className="form-hint">
-              {t('Noch kein Ziel. Einschalten lässt es sich hier für alle oder im Dialog eines Ziels unter „CrowdSec (WAF)“.')}
+              {plural(protection.total - checked, {
+                one: '{count} weiteres Ziel prüft CrowdSec nicht.',
+                other: '{count} weitere Ziele prüft CrowdSec nicht.',
+              })}
             </p>
           )}
         </div>
-
-        <div className="card">
-          <div className="card-header">
-            <h2 className="card-title">{t('Was CrowdSec hier tut')}</h2>
-          </div>
-          <ul className="cs-how">
-            <li>
-              <span className="kpi-icon"><ShieldCheck size={16} /></span>
-              <span>
-                <strong>{t('WAF')}</strong>
-                <span className="detail-sub">{t('Prüft jede Anfrage auf bekannte Angriffe und lehnt sie mit 403 ab.')}</span>
-              </span>
-            </li>
-            <li>
-              <span className="kpi-icon"><AlertTriangle size={16} /></span>
-              <span>
-                <strong>{t('Erkennung im Log')}</strong>
-                <span className="detail-sub">{t('Liest das Log von HAProxy und sperrt Adressen, die scannen oder raten.')}</span>
-              </span>
-            </li>
-            <li>
-              <span className="kpi-icon"><Globe size={16} /></span>
-              <span>
-                <strong>{t('Gemeinschaftsliste')}</strong>
-                <span className="detail-sub">{t('Sperrt Adressen, die anderen CrowdSec-Installationen aufgefallen sind.')}</span>
-              </span>
-            </li>
-          </ul>
-        </div>
-        </div>
-
-        <div className="card cs-state">
-          <div className="card-header">
-            <h2 className="card-title">{t('Zustand')}</h2>
-          </div>
-          <div className="dash-kv">
-            <div className="dash-kv-row">
-              <span className="dash-kv-label">
-                <BrandLogo brand="crowdsec" size={14} /> CrowdSec
-              </span>
-              <span className="dash-kv-value">
-                <ContainerBadge info={status.crowdsec} label="hapm-crowdsec" /> {status.version ? `v${status.version}` : ''}
-              </span>
-            </div>
-            <div className="dash-kv-row">
-              <span className="dash-kv-label">{t('Bouncer für HAProxy')}</span>
-              <span className="dash-kv-value">
-                <ContainerBadge info={status.bouncer} label="hapm-crowdsec-bouncer" />
-              </span>
-            </div>
-            <div className="dash-kv-row">
-              <span className="dash-kv-label">{t('Lokale API')}</span>
-              <span className="dash-kv-value">
-                {status.lapi === null ? t('Unbekannt') : status.lapi ? t('Antwortet') : t('Antwortet nicht')}
-              </span>
-            </div>
-            <div className="dash-kv-row">
-              <span className="dash-kv-label">{t('Bouncer angemeldet')}</span>
-              <span className="dash-kv-value">
-                {status.bouncerRegistered === null
-                  ? t('Unbekannt')
-                  : status.bouncerRegistered
-                    ? status.bouncerLastPull
-                      ? t('Ja, zuletzt {ago}', { ago: formatRelative(locale, now, status.bouncerLastPull) })
-                      : t('Ja')
-                    : t('Nein. HAPM holt das in den nächsten Minuten nach.')}
-              </span>
-            </div>
-            <div className="dash-kv-row">
-              <span className="dash-kv-label">{t('OWASP-Regeln')}</span>
-              <span className="dash-kv-value">{t(CRS_LABELS[data.crs])}</span>
-            </div>
-            <div className="dash-kv-row">
-              <span className="dash-kv-label">{t('Eigene Adresse')}</span>
-              <span className="dash-kv-value mono">{data.client}</span>
-            </div>
-            {status.crowdsec?.startedAt && (
-              <div className="dash-kv-row">
-                <span className="dash-kv-label">{t('Läuft seit')}</span>
-                <span className="dash-kv-value">{formatDateTime(locale, status.crowdsec.startedAt)}</span>
-              </div>
-            )}
-          </div>
-          {status.error && <p className="form-hint">{status.error}</p>}
-        </div>
       </div>
-    </>
+    </div>
   );
 }
+
 
 /** In der Oberfläche abgeschaltet: hier und unter System, Allgemein wieder einschalten. */
 function DisabledState({ onChanged }: { onChanged: () => void }) {

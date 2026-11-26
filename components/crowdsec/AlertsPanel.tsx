@@ -1,14 +1,17 @@
 'use client';
 
 import { useMemo } from 'react';
-import { CheckCircle2, X } from 'lucide-react';
+import ErrorNote from '@/components/ErrorNote';
+import { CheckCircle2, Eraser, X } from 'lucide-react';
+import { useToast } from '@/components/Toast';
+import { useConfirm } from '@/components/ConfirmDialog';
 import Select from '@/components/Select';
 import CountryFlag from '@/components/CountryFlag';
 import { SkeletonRows } from '@/components/Skeleton';
-import { formatDateTime, formatRelative, msgid } from '@/lib/i18n';
+import { MISSING, formatDateTime, formatNumber, formatRelative, msgid } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
 import { useNow } from '@/components/useNow';
-import { useCrowdsecData } from './useCrowdsecData';
+import { useCrowdsecData, useCrowdsecSend } from './useCrowdsecData';
 import type { CrowdsecAlertRow } from './types';
 
 export const WINDOWS = ['24h', '7d', '30d'] as const;
@@ -39,6 +42,7 @@ export default function AlertsPanel({
   target,
   onTarget,
   targets,
+  onCleared,
 }: {
   period: AlertWindow;
   onPeriod: (next: AlertWindow) => void;
@@ -46,10 +50,15 @@ export default function AlertsPanel({
   onTarget: (next: string | null) => void;
   /** Ziele für die Auswahl: Kennung und Hauptdomain. */
   targets: { id: string; label: string }[];
+  /** Nach dem Leeren: die Seite liest Übersicht und Zahlen neu. */
+  onCleared?: () => void;
 }) {
   const { t, plural, locale } = useT();
   const path = `/api/crowdsec/alerts?window=${period}${target ? `&service=${encodeURIComponent(target)}` : ''}`;
-  const { data, error, loading } = useCrowdsecData<{ alerts: CrowdsecAlertRow[]; truncated?: boolean }>(path, 30_000);
+  const { notify } = useToast();
+  const confirm = useConfirm();
+  const send = useCrowdsecSend();
+  const { data, error, loading, reload } = useCrowdsecData<{ alerts: CrowdsecAlertRow[]; truncated?: boolean }>(path, 30_000);
   const now = useNow(30_000);
   const labelOf = useMemo(() => new Map(targets.map((entry) => [entry.id, entry.label])), [targets]);
   const options = [
@@ -58,6 +67,49 @@ export default function AlertsPanel({
     ...(target && !labelOf.has(target) ? [{ value: target, label: target }] : []),
   ];
   const alerts = data?.alerts ?? [];
+
+  function askClear() {
+    void confirm({
+      title: t('CrowdSec leeren?'),
+      message: t(
+        'Entfernt alle Ereignisse und hebt die Sperren auf, die CrowdSec daraus verhängt hat. Statistik und Zähler beginnen bei null. Sperren von Hand, Freigaben, Regeln und die Gemeinschaftsliste bleiben. Das dauert bis zu einer Minute.'
+      ),
+      confirmLabel: t('Leeren'),
+      variant: 'danger',
+      failedTitle: t('Leeren fehlgeschlagen'),
+      onConfirm: async () => {
+        const result = await send<{ alerts: number; lifted: number; kept: number; lost: string[] }>('/api/crowdsec/alerts', 'DELETE', {});
+        if (result.lost.length > 0) {
+          notify({
+            variant: 'warning',
+            title: t('CrowdSec ist geleert'),
+            message: t('Diese Sperren von Hand ließen sich nicht wieder setzen: {values}', { values: result.lost.join(', ') }),
+          });
+        } else {
+          notify({
+            variant: 'success',
+            title: t('CrowdSec ist geleert'),
+            message: [
+              t('{alerts} Ereignisse entfernt, {bans} Sperren aufgehoben.', {
+                alerts: formatNumber(locale, result.alerts),
+                bans: formatNumber(locale, result.lifted),
+              }),
+              result.kept > 0
+                ? plural(result.kept, {
+                    one: '{count} Sperre von Hand gilt weiter.',
+                    other: '{count} Sperren von Hand gelten weiter.',
+                  })
+                : '',
+            ]
+              .filter(Boolean)
+              .join(' '),
+          });
+        }
+        await reload();
+        onCleared?.();
+      },
+    });
+  }
 
   return (
     <div className="card sys-block">
@@ -73,6 +125,10 @@ export default function AlertsPanel({
               : t('WAF-Treffer, Szenarien aus dem Log von HAProxy und Sperren von Hand.')}
           </p>
         </div>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={askClear}>
+          <Eraser size={14} />
+          {t('CrowdSec leeren')}
+        </button>
       </div>
       <div className="card-body cs-form">
         <div className="form-group">
@@ -102,7 +158,7 @@ export default function AlertsPanel({
         )}
       </div>
 
-      {error && <div className="alert alert-danger cs-card-alert">{error}</div>}
+      {error && <div className="alert alert-danger cs-card-alert"><ErrorNote text={error} /></div>}
       {data?.truncated && (
         <div className="alert alert-info cs-card-alert">
           {t('Im Zeitraum gibt es mehr Ereignisse, als hier Platz haben. Gezeigt sind die neuesten. Ein kürzerer Zeitraum oder ein einzelnes Ziel zeigt alle.')}
@@ -119,7 +175,7 @@ export default function AlertsPanel({
         </div>
       ) : (
         <div className="table-wrap">
-          <table className="table cs-alerts">
+          <table className="table table-cards cs-alerts">
             <thead>
               <tr>
                 <th>{t('Zeitpunkt')}</th>
@@ -138,7 +194,7 @@ export default function AlertsPanel({
                         {formatRelative(locale, now, alert.createdAt)}
                       </span>
                     ) : (
-                      ''
+                      MISSING
                     )}
                   </td>
                   <td data-label={t('Art')}>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import ErrorNote from '@/components/ErrorNote';
 import Link from 'next/link';
 import {
   Network, Globe, Loader2, RefreshCw, ScrollText, ChevronRight, FolderPlus, Info, X, ShieldCheck,
@@ -23,11 +24,12 @@ import { openRun } from '@/components/runs/runs';
 import SavedTargetsPanel from '@/components/reverse-proxy/SavedTargetsPanel';
 import { shortVersion, validateScopeName, scopeLabel } from '@/lib/haproxy/config';
 import { SkeletonCards } from '@/components/Skeleton';
+import { InfoHint } from '@/ui/primitives/InfoHint';
 import { useT } from '@/lib/i18n/react';
 
 /**
- * Die Übersicht des Reverse-Proxys: in welche Gruppen die Einträge zerfallen
- * und was HAProxy über sich sagt.
+ * Die Seite „Ziele“: in welche Gruppen die Einträge zerfallen und was HAProxy
+ * über sich sagt.
  *
  * Die Einträge selbst stehen je Gruppe auf einer eigenen Seite: alle Gruppen
  * untereinander auf dieser einen würden mit jedem Eintrag länger. Diese Seite
@@ -239,10 +241,11 @@ export default function ReverseProxyPage() {
     <>
       <div className="page-header">
         <div>
-          <h1 className="page-title">{t('Reverse-Proxy')}</h1>
-          <p className="page-subtitle">
-            {t('Welche Domain auf welches Ziel zeigt. Gelesen wird direkt aus der HAProxy-Konfiguration, nicht aus einer Kopie.')}
-          </p>
+          <h1 className="page-title">
+            {t('Ziele')}
+            <InfoHint text={t('Gelesen wird direkt aus der HAProxy-Konfiguration, nicht aus einer Kopie.')} />
+          </h1>
+          <p className="page-subtitle">{t('Welche Domain auf welches Ziel zeigt.')}</p>
         </div>
         <div className="page-actions">
           {proxies.length > 0 && (
@@ -268,7 +271,7 @@ export default function ReverseProxyPage() {
         </div>
       </div>
 
-      {error && <div className="alert alert-danger sys-block">{error}</div>}
+      {error && <div className="alert alert-danger sys-block"><ErrorNote text={error} /></div>}
 
       {loading ? (
         <SkeletonCards />
@@ -505,11 +508,21 @@ export default function ReverseProxyPage() {
               }}
             >
               <div className="modal-body">
-                {formError && <div className="alert alert-danger">{formError}</div>}
+                {formError && <div className="alert alert-danger"><ErrorNote text={formError} /></div>}
 
                 <div className="form-group">
-                  <label className="form-label">{t('Name')}</label>
+                  <div className="form-label-row">
+                    <label className="form-label" htmlFor="newScopeName">
+                      {t('Name')}
+                    </label>
+                    <InfoHint
+                      text={t(
+                        'Der Name steht im Marker der Konfiguration. Zum Umbenennen eine neue Gruppe anlegen und die alte entfernen.'
+                      )}
+                    />
+                  </div>
                   <input
+                    id="newScopeName"
                     className="form-input"
                     value={newScope}
                     onChange={(e) => setNewScope(e.target.value)}
@@ -519,7 +532,7 @@ export default function ReverseProxyPage() {
                     required
                   />
                   <span className="form-hint">
-                    {t('Nur a-z, 0-9, _ und -. Der Name steht danach im Marker und lässt sich nicht umbenennen: dafür gibt es Anlegen und Entfernen.')}
+                    {t('Nur a-z, 0-9, _ und -. Lässt sich danach nicht umbenennen.')}
                   </span>
                 </div>
 

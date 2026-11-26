@@ -51,8 +51,10 @@ import {
   ALLOW_DURATIONS,
   BAN_DURATIONS,
   alertTargetId,
+  bansToRestore,
   cleanNote,
   crowdsecStats,
+  isManualBan,
   parseAddress,
   parseAlerts,
   parseAllowlist,
@@ -408,6 +410,145 @@ export async function crowdsecStatistics(window: unknown) {
     activeDecisions: decisions?.length ?? null,
     communityBlocklist: community,
   };
+}
+
+/* ── Leeren ── */
+
+/** So lange wartet das Leeren darauf, dass die Bouncer aufgehobene Sperren abholen (sie fragen alle 10 s). */
+const PULL_WAIT_MS = 25_000;
+/** Ein Bouncer, der länger nicht gefragt hat, läuft nicht und liest beim Start ohnehin alles neu. */
+const BOUNCER_ACTIVE_MS = 90_000;
+/** Quellen eines Ereignisses, die nie geleert werden: die Listen, die CrowdSec von außen bezieht. */
+const KEPT_SCOPES = /^(capi|lists)(:|$)/i;
+
+const clearState = globalThis as unknown as { __hapmCrowdsecClearing?: boolean; __hapmCrowdsecUnpulled?: boolean };
+
+function countIn(result: { stdout: string; stderr: string }, what: 'alert' | 'decision'): number {
+  const pattern = what === 'alert' ? /(\d+) alert\(s\) deleted/ : /(\d+) decision\(s\) deleted/;
+  const found = pattern.exec(`${result.stderr}\n${result.stdout}`);
+  return found ? Number(found[1]) : 0;
+}
+
+/** Wann jeder Bouncer zuletzt Sperren abgeholt hat. `null`: nicht zu erfahren. */
+async function bouncerPulls(): Promise<Map<string, string> | null> {
+  const list = await cscliJson<any[]>(['bouncers', 'list']).catch(() => null);
+  if (!Array.isArray(list)) return null;
+  return new Map(list.map((b) => [String(b?.name ?? ''), String(b?.last_pull ?? '')]));
+}
+
+/**
+ * Wartet, bis jeder laufende Bouncer einmal Sperren abgeholt hat.
+ *
+ * Ein Bouncer erfährt von einer aufgehobenen Sperre nur, solange sie noch in
+ * der Datenbank steht. `cscli alerts delete` nimmt sie mit dem Ereignis ganz
+ * weg: wer vorher nicht abgeholt hat, sperrt die Adresse weiter, obwohl die
+ * Sperrliste leer ist (nachgestellt mit CrowdSec 1.8.2).
+ */
+async function bouncersPulled(): Promise<boolean> {
+  const before = await bouncerPulls();
+  if (!before) return false;
+  const active = [...before]
+    .filter(([, at]) => Date.now() - Date.parse(at) < BOUNCER_ACTIVE_MS)
+    .map(([name]) => name);
+  if (active.length === 0) return true;
+  const deadline = Date.now() + PULL_WAIT_MS;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    const now = await bouncerPulls();
+    if (now && active.every((name) => now.get(name) !== before.get(name))) return true;
+  }
+  return false;
+}
+
+/** Hebt alle Sperren auf, die nicht von Hand gesetzt sind und nicht aus einer bezogenen Liste stammen. */
+async function liftAutomaticBans(): Promise<number> {
+  const origins = new Set((await listDecisions()).filter((d) => !isManualBan(d)).map((d) => d.origin));
+  let lifted = 0;
+  for (const origin of origins) {
+    if (!origin || KEPT_SCOPES.test(origin)) continue;
+    lifted += countIn(await cscliOk(['decisions', 'delete', '--origin', origin]), 'decision');
+  }
+  return lifted;
+}
+
+/**
+ * CrowdSec leeren: alle Ereignisse und die Sperren, die CrowdSec daraus
+ * verhängt hat. Statistik und Zähler beginnen damit bei null. Es bleiben die
+ * Sperren von Hand, die Freigaben, die Regeln und die Gemeinschaftsliste.
+ *
+ * Reihenfolge: Sperren aufheben, auf die Bouncer warten (`bouncersPulled`),
+ * Ereignisse entfernen, Sperren von Hand neu setzen. `cscli alerts delete`
+ * kennt keinen Filter nach Herkunft, nur nach der Art der Quelle (`--scope`):
+ * das trifft auch die Sperren von Hand, lässt aber die Gemeinschaftsliste
+ * stehen (Quelle `CAPI`, `lists`). Ein `--all` nähme sie mit, und CrowdSec
+ * holt sie erst nach einem Neustart wieder vollständig.
+ */
+export async function clearCrowdsec(actor: CrowdsecActor) {
+  if (clearState.__hapmCrowdsecClearing) throw new ApiError(msg('CrowdSec wird gerade geleert.'), 409);
+  clearState.__hapmCrowdsecClearing = true;
+  try {
+    let lifted = 0;
+    // Zwei Durchgänge: was CrowdSec während des Wartens neu sperrt, soll auch abgeholt sein.
+    for (let round = 0; round < 2; round++) {
+      const now = await liftAutomaticBans();
+      lifted += now;
+      if (now > 0) clearState.__hapmCrowdsecUnpulled = true;
+      if (!clearState.__hapmCrowdsecUnpulled) break;
+      if (!(await bouncersPulled())) {
+        throw new ApiError(
+          msg('Die Sperren sind aufgehoben, aber der Bouncer hat sie noch nicht abgeholt. Die Ereignisse stehen noch da. Bitte gleich noch einmal versuchen.'),
+          409
+        );
+      }
+      clearState.__hapmCrowdsecUnpulled = false;
+    }
+
+    const manual = bansToRestore(await listDecisions(), Date.now());
+    let alerts = 0;
+    for (let round = 0; round < 5; round++) {
+      const left = await cscliJson<any[]>(['alerts', 'list', '--limit', '200'], 60_000);
+      const scopes = new Set(
+        (Array.isArray(left) ? left : [])
+          .map((alert) => (typeof alert?.source?.scope === 'string' ? alert.source.scope : ''))
+          .filter((scope) => scope !== '' && !KEPT_SCOPES.test(scope))
+      );
+      if (scopes.size === 0) break;
+      for (const scope of scopes) {
+        alerts += countIn(await cscliOk(['alerts', 'delete', '--scope', scope], 120_000), 'alert');
+      }
+    }
+
+    const lost: string[] = [];
+    for (const ban of manual) {
+      const result = await cscli([
+        'decisions',
+        'add',
+        ban.scope === 'ip' ? '--ip' : '--range',
+        ban.value,
+        '--duration',
+        ban.duration,
+        '--type',
+        'ban',
+        '--reason',
+        ban.reason,
+      ]).catch(() => null);
+      if (!result || result.code !== 0) lost.push(ban.value);
+    }
+    forgetCrowdsecSummary();
+    const kept = manual.length - lost.length;
+    // Eine Sperre von Hand ist selbst ein Ereignis: es wurde entfernt und steht neu da, zählt also nicht.
+    const removed = Math.max(0, alerts - kept);
+    await audit(
+      actor,
+      'crowdsec_cleared',
+      'crowdsec',
+      `${removed} Ereignisse entfernt, ${lifted} Sperren aufgehoben, ${kept} Sperren von Hand behalten.` +
+        (lost.length ? ` Nicht wieder gesetzt: ${lost.join(', ')}.` : '')
+    );
+    return { alerts: removed, lifted, kept, lost };
+  } finally {
+    clearState.__hapmCrowdsecClearing = false;
+  }
 }
 
 /* ── Übersicht für Dashboard und Seite ── */

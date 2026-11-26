@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import ErrorNote from '@/components/ErrorNote';
 import Link from 'next/link';
 import {
   Code, FileWarning, ImageIcon, LayoutTemplate, Loader2, Palette, RefreshCw, RotateCcw, Save, Type,
@@ -570,7 +571,7 @@ export default function ErrorPagesDesignPage() {
         <PageHeading
           icon={<FileWarning size={20} />}
           title={t('Fehlerseiten')}
-          back={{ label: t('Übersicht'), href: '/reverse-proxy' }}
+          back={{ label: t('Ziele'), href: '/reverse-proxy' }}
           note={t('Was Besucher sehen, wenn HAProxy selbst antwortet')}
         />
         <div className="page-actions">
@@ -601,9 +602,9 @@ export default function ErrorPagesDesignPage() {
         </div>
       </div>
 
-      {loadError && <div className="alert alert-danger sys-block">{loadError}</div>}
+      {loadError && <div className="alert alert-danger sys-block"><ErrorNote text={loadError} /></div>}
       {/* Bei eigenem HTML steht die Meldung unter den Feldern, an denen sie hängt. */}
-      {problem && current?.mode !== 'custom' && <div className="alert alert-danger sys-block">{problem}</div>}
+      {problem && current?.mode !== 'custom' && <div className="alert alert-danger sys-block"><ErrorNote text={problem} /></div>}
 
       {!current ? (
         <SkeletonRows />
@@ -727,7 +728,7 @@ export default function ErrorPagesDesignPage() {
                       <div className="form-section-title">{t('Farben')}</div>
                       <div className="form-section-sub">
                         {brand?.accent
-                          ? t('Leer heißt: die Akzentfarbe aus der Darstellung, sonst die Farbe von HAPM.')
+                          ? t('Leer heißt: Akzent aus der Darstellung, sonst die Farbe von HAPM.')
                           : t('Leer heißt: die Farbe von HAPM.')}
                       </div>
                     </div>

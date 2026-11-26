@@ -29,10 +29,10 @@ export const auth: Dictionary = {
 
   // Passwort vergessen und neu festlegen
   'Passwort vergessen': 'Forgot password',
-  'Auf dieser Installation ist das Zurücksetzen per E-Mail nicht eingerichtet.':
-    'Resetting by email is not set up on this installation.',
-  'Geben Sie die E-Mail-Adresse Ihres Kontos ein. Sie erhalten einen Link, über den Sie ein neues Passwort festlegen.':
-    'Enter the email address of your account. You will receive a link to set a new password.',
+  'Das Zurücksetzen per E-Mail ist hier nicht eingerichtet.':
+    'Resetting by email is not set up here.',
+  'Sie erhalten per E-Mail einen Link für ein neues Passwort.':
+    'You will receive a link by email to set a new password.',
   'Ein neues Passwort setzt dieses Kommando auf dem Server:': 'This command on the server sets a new password:',
   'e-mail': 'email',
   'Es schaltet auch den zweiten Faktor des Kontos ab, entfernt seine Passkeys und beendet seine Sitzungen.':
@@ -75,8 +75,8 @@ export const auth: Dictionary = {
   'Die E-Mail-Adresse ist ungültig.': 'The email address is invalid.',
   'Der Name fehlt oder ist zu lang.': 'The name is missing or too long.',
   'Für diese E-Mail-Adresse gibt es schon ein Konto.': 'An account with this email address already exists.',
-  'Das eigene Konto lässt sich nicht löschen.': 'You cannot delete your own account.',
-  'Das letzte Konto lässt sich nicht löschen.': 'The last account cannot be deleted.',
+  'Das eigene Konto lässt sich nicht entfernen.': 'You cannot remove your own account.',
+  'Das letzte Konto lässt sich nicht entfernen.': 'The last account cannot be removed.',
   'Dieses Konto gibt es nicht mehr.': 'This account no longer exists.',
 
   // Fehler des Anmeldedienstes (`lib/auth/errors.ts`)
@@ -94,27 +94,25 @@ export const auth: Dictionary = {
   'Sie benötigen eine Authenticator-App wie:': 'You need an authenticator app such as:',
   'Einrichtung starten': 'Start setup',
   'QR-Code wird generiert…': 'Generating QR code…',
-  'Scannen Sie den QR-Code mit Ihrer Authenticator-App oder geben Sie den Code manuell ein.':
-    'Scan the QR code with your authenticator app or enter the code manually.',
+  'Scannen Sie den QR-Code mit der App oder tippen Sie den Code ab.':
+    'Scan the QR code with the app or type in the code.',
   '2FA QR-Code': '2FA QR code',
   'Code kopieren': 'Copy code',
-  'Geben Sie den 6-stelligen Code aus Ihrer Authenticator-App ein, um die Einrichtung abzuschließen.':
-    'Enter the 6-digit code from your authenticator app to finish setup.',
   'Aktivieren': 'Activate',
   'Wiederherstellungscodes speichern': 'Save recovery codes',
   'Mit diesen Codes können Sie sich anmelden, falls Sie den Zugriff auf Ihre Authenticator-App verlieren. Jeder Code ist einmal verwendbar und wird {onlyNow} angezeigt.':
     'Use these codes to sign in if you lose access to your authenticator app. Each code works once and is shown {onlyNow}.',
   'nur jetzt': 'only now',
   'Codes gespeichert': 'Codes saved',
-  'Legen Sie sie getrennt von diesem Gerät ab, zum Beispiel ausgedruckt oder im Passwortmanager.':
-    'Store them away from this device, for example printed or in your password manager.',
+  'Legen Sie sie getrennt von diesem Gerät ab, etwa im Passwortmanager.':
+    'Store them away from this device, for example in your password manager.',
   'Herunterladen': 'Download',
   'Kopieren nicht möglich. Bitte laden Sie die Codes herunter oder markieren Sie sie von Hand.':
     'Copying is not possible. Please download the codes or select them by hand.',
   'Wiederherstellungscodes für HAPM ({host})': 'Recovery codes for HAPM ({host})',
   'Wiederherstellungscode': 'Recovery code',
-  'Geben Sie einen Ihrer Wiederherstellungscodes ein. Er ist danach verbraucht.':
-    'Enter one of your recovery codes. It is used up afterwards.',
+  'Geben Sie einen Wiederherstellungscode ein. Er ist danach verbraucht.':
+    'Enter a recovery code. It is used up afterwards.',
   'Wiederherstellungscode verwenden': 'Use a recovery code',
   'Code aus der App verwenden': 'Use the code from the app',
   'Ein Wiederherstellungscode hat zehn Buchstaben und Ziffern, zum Beispiel abcde-23456.':

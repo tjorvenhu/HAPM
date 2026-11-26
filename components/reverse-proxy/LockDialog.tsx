@@ -122,7 +122,7 @@ export default function LockDialog({ proxy, service, onPick, onClose }: Props) {
                   <span className="kind-card-title">{t('Mit Passwort')}</span>
                   <span className="kind-card-sub">
                     {passwordPossible
-                      ? t('Besucher sehen eine Passwortabfrage. Nach richtiger Eingabe kommen sie 30 Tage lang ohne Abfrage durch.')
+                      ? t('Besucher geben ein Passwort ein und kommen danach 30 Tage lang durch.')
                       : t('Braucht HAProxy 2.4 oder neuer. Hier läuft {version}.', {
                           version: shortVersion(proxy.version ?? ''),
                         })}
@@ -132,7 +132,7 @@ export default function LockDialog({ proxy, service, onPick, onClose }: Props) {
             </div>
             {service.domains.length > 1 && (
               <p className="form-hint">
-                {t('Gesperrt werden alle {count} Domains des Eintrags. Einzelne Domains sperrt man im Bearbeiten-Dialog.', {
+                {t('Das sperrt alle {count} Domains. Einzelne sperrt man beim Bearbeiten.', {
                   count: service.domains.length,
                 })}
               </p>
@@ -159,10 +159,10 @@ export default function LockDialog({ proxy, service, onPick, onClose }: Props) {
                   <button
                     type="button"
                     className="btn btn-ghost btn-icon"
-                    data-tooltip={t('Neuen Vorschlag erzeugen')}
+                    data-tooltip={t('Vorschlag erzeugen')}
                     data-tooltip-pos="left"
                     onClick={() => setPassword(suggestPassword())}
-                    aria-label={t('Neuen Vorschlag erzeugen')}
+                    aria-label={t('Vorschlag erzeugen')}
                   >
                     <RefreshCw size={16} />
                   </button>

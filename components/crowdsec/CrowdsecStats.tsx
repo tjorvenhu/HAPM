@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import ErrorNote from '@/components/ErrorNote';
 import Link from 'next/link';
 import { AlertTriangle, Ban, Globe, ShieldAlert, Users } from 'lucide-react';
 import Select from '@/components/Select';
@@ -10,7 +11,7 @@ import MetricChart, { ChartCard } from '@/components/systems/MetricChart';
 import { BarList } from '@/ui/charts/BarList';
 import { seriesColor, type ChartPoint, type ChartSeries } from '@/lib/systems/series';
 import { countryName } from '@/lib/country-flags';
-import { formatNumber } from '@/lib/i18n';
+import { MISSING, formatNumber } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
 import { useCrowdsecData } from './useCrowdsecData';
 import { WINDOWS, WINDOW_LABELS, type AlertWindow } from './AlertsPanel';
@@ -43,7 +44,7 @@ export default function CrowdsecStats() {
     [stats]
   );
   const format = useMemo(() => (value: number) => formatNumber(locale, value), [locale]);
-  const number = (value: number | null | undefined) => (value === null || value === undefined ? '–' : formatNumber(locale, value));
+  const number = (value: number | null | undefined) => (value === null || value === undefined ? MISSING : formatNumber(locale, value));
 
   return (
     <>
@@ -64,7 +65,7 @@ export default function CrowdsecStats() {
         </div>
       </div>
 
-      {error && <div className="alert alert-danger sys-block">{error}</div>}
+      {error && <div className="alert alert-danger sys-block"><ErrorNote text={error} /></div>}
       {data?.truncated && (
         <div className="alert alert-info sys-block">
           {t('Im Zeitraum gab es mehr Ereignisse, als sich auswerten lassen. Die Zahlen sind eine Untergrenze und decken nur die neuesten ab.')}
@@ -75,7 +76,7 @@ export default function CrowdsecStats() {
         loading ? <SkeletonRows /> : null
       ) : (
         <>
-          <div className="kpi-grid sys-block">
+          <div className="kpi-grid hapm-kpis-5 sys-block">
             <div className="kpi">
               <span className="kpi-icon"><AlertTriangle size={16} /></span>
               <div className="kpi-body">
@@ -126,6 +127,7 @@ export default function CrowdsecStats() {
                 format={format}
                 rangeMs={Date.parse(stats.to) - Date.parse(stats.from)}
                 bars
+                integers
               />
             </ChartCard>
           </div>

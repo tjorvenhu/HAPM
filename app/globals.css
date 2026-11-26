@@ -363,12 +363,17 @@ a.rp-action { color: var(--text-secondary); text-decoration: none; }
 
 .run-result-meta { display: inline-flex; align-items: center; color: var(--text-secondary); margin-left: 8px; }
 
-/* ── Statistik ── */
+/* ── Statistik ──
+ * Zwei Ranglisten nebeneinander. Jede Karte ist so hoch wie ihr Inhalt: eine
+ * leere („Keine Daten") neben einer langen Liste wird nicht auf deren Höhe
+ * gezogen. `minmax(0, 1fr)`, damit ein langer Eintrag die Spalte nicht
+ * breiter drückt als die andere. */
 .metrics-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 14px;
   margin-bottom: 14px;
+  align-items: start;
 }
 
 /* Eine Adresse oder ein Pfad in einer Rangliste. Dieselbe Schrift wie in der
@@ -408,7 +413,7 @@ button.sys-back:hover { color: var(--accent-hover); }
 }
 
 @media (max-width: 768px) {
-  .metrics-row { grid-template-columns: 1fr; }
+  .metrics-row { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* ── Fehlerseiten: Art der Seiten und eigenes HTML ──

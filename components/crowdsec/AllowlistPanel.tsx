@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
+import ErrorNote from '@/components/ErrorNote';
 import { CheckCircle2, Loader2, Plus, Trash2, UserCheck } from 'lucide-react';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/ConfirmDialog';
@@ -88,7 +89,7 @@ export default function AllowlistPanel({ client }: { client: string | null }) {
           <div>
             <h2 className="card-title">{t('Adresse freigeben')}</h2>
             <p className="card-subtitle">
-              {t('Freigegebene Adressen sperrt CrowdSec nicht, und die WAF prüft sie nicht.')}
+              {t('Freigegebene Adressen sperrt CrowdSec nicht. Die WAF prüft sie nicht.')}
             </p>
           </div>
           {clientUsable && !clientListed && (
@@ -144,7 +145,7 @@ export default function AllowlistPanel({ client }: { client: string | null }) {
         {!valid && <p className="form-hint is-error">{t('Das ist keine Adresse und kein Netz.')}</p>}
       </div>
 
-      {error && <div className="alert alert-danger sys-block">{error}</div>}
+      {error && <div className="alert alert-danger sys-block"><ErrorNote text={error} /></div>}
 
       <div className="card sys-block">
         <div className="card-header">
@@ -165,7 +166,7 @@ export default function AllowlistPanel({ client }: { client: string | null }) {
           </div>
         ) : (
           <div className="table-wrap">
-            <table className="table">
+            <table className="table table-cards">
               <thead>
                 <tr>
                   <th>{t('Adresse')}</th>
@@ -182,7 +183,7 @@ export default function AllowlistPanel({ client }: { client: string | null }) {
                       <strong className="mono">{entry.value}</strong>
                       {entry.value === client && <div className="detail-sub">{t('Eigene Adresse')}</div>}
                     </td>
-                    <td data-label={t('Beschreibung')}>{entry.description}</td>
+                    <td data-label={t('Beschreibung')}>{entry.description || MISSING}</td>
                     <td data-label={t('Seit')}>{entry.createdAt ? formatDateTime(locale, entry.createdAt) : MISSING}</td>
                     <td data-label={t('Gilt bis')}>{entry.expiresAt ? formatDateTime(locale, entry.expiresAt) : t(ALWAYS)}</td>
                     <td data-label="actions">

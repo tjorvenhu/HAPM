@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import ErrorNote from '@/components/ErrorNote';
 import { AlertTriangle, ArrowRightLeft, AtSign, Globe, Home, Loader2, Network, Save, ShieldCheck, ShieldHalf, Trash2 } from 'lucide-react';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import { useApp } from '@/components/AppShell';
@@ -124,7 +125,7 @@ function GeneralSettings() {
     const confirmed = await confirm({
       title: t('Adresse von HAPM entfernen?'),
       message: t(
-        'Alle hinterlegten Passkeys werden gelöscht, sie sind an die Domain gebunden. Links in schon verschickten Mails zeigen weiter auf die alte Adresse. Das Ziel, über das die bisherige Adresse läuft, lässt sich danach wieder entfernen: geschützt ist immer das Ziel der aktuellen Adresse.'
+        'Alle hinterlegten Passkeys werden entfernt, sie sind an die Domain gebunden. Links in schon verschickten Mails zeigen weiter auf die alte Adresse. Das Ziel, über das die bisherige Adresse läuft, lässt sich danach wieder entfernen: geschützt ist immer das Ziel der aktuellen Adresse.'
       ),
       confirmLabel: t('Adresse entfernen'),
       variant: 'danger',
@@ -212,7 +213,7 @@ function GeneralSettings() {
     <div className="page-header">
       <div>
         <h1 className="page-title">{t('Allgemein')}</h1>
-        <p className="page-subtitle">{t('Adresse, Art der Installation, Zertifikate und der Kontakt beim ACME-Server.')}</p>
+        <p className="page-subtitle">{t('Adresse von HAPM, Art der Installation und Zertifikate.')}</p>
       </div>
     </div>
   );
@@ -221,7 +222,7 @@ function GeneralSettings() {
     return (
       <>
         {header}
-        {error ? <div className="alert alert-danger sys-block">{error}</div> : <SkeletonDetail />}
+        {error ? <div className="alert alert-danger sys-block"><ErrorNote text={error} /></div> : <SkeletonDetail />}
       </>
     );
   }
@@ -235,7 +236,7 @@ function GeneralSettings() {
     <>
       {header}
 
-      {error && <div className="alert alert-danger sys-block">{error}</div>}
+      {error && <div className="alert alert-danger sys-block"><ErrorNote text={error} /></div>}
 
       <AreaTabs areas={areas} value={area} onChange={selectArea} dirty={(key) => key === 'zertifikate' && emailChanged} />
 
@@ -249,7 +250,7 @@ function GeneralSettings() {
               <Globe size={17} strokeWidth={1.5} />
               {t('Adresse von HAPM')}
             </h2>
-            <p className="card-subtitle">{t('Sie steht in den Links der Mails, und an ihre Domain werden Passkeys gebunden.')}</p>
+            <p className="card-subtitle">{t('Steht in den Links der Mails. An ihre Domain sind Passkeys gebunden.')}</p>
           </div>
           <span className={`badge-status ${settings.publicUrl ? 'badge-success' : 'badge-neutral'}`}>
             <span className="dot" />
@@ -295,7 +296,7 @@ function GeneralSettings() {
 
           <div className="alert alert-warning">
             <AlertTriangle size={16} strokeWidth={1.5} />
-            <span>{t('Eine Änderung der Domain löscht alle hinterlegten Passkeys.')}</span>
+            <span>{t('Eine Änderung der Domain entfernt alle hinterlegten Passkeys.')}</span>
           </div>
         </div>
       </div>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import ErrorNote from '@/components/ErrorNote';
 import {
   AlertTriangle,
   Archive,
@@ -272,9 +273,7 @@ export default function RestorePanel({ files, filesAsOf, listedPath, hostPath }:
           <RotateCcw size={17} strokeWidth={1.5} />
           {t('Sicherung zurückspielen')}
         </h2>
-        <p className="card-subtitle">
-          {t('Ein Archiv aus dem Ordner oder hochgeladen, etwa beim Umzug von einem anderen Server.')}
-        </p>
+        <p className="card-subtitle">{t('Ein Archiv aus dem Ordner oder ein hochgeladenes.')}</p>
       </div>
     </div>
   );
@@ -290,7 +289,7 @@ export default function RestorePanel({ files, filesAsOf, listedPath, hostPath }:
               <span>{t('HAPM antwortet gerade nicht. Die Seite versucht es weiter.')}</span>
             </div>
           ) : loadError ? (
-            <div className="alert alert-danger">{loadError}</div>
+            <div className="alert alert-danger"><ErrorNote text={loadError} /></div>
           ) : (
             <SkeletonDetail />
           )}
@@ -316,25 +315,21 @@ export default function RestorePanel({ files, filesAsOf, listedPath, hostPath }:
 
         {active && running && (
           <div className="hapm-inline-actions">
-            <span className="form-hint">
-              {t('Gerade wird {name} zurückgespielt. Der Fortschritt steht im Fenster des Laufs.', {
-                name: active.archive.name,
-              })}
-            </span>
+            <span className="form-hint">{t('Gerade wird {name} zurückgespielt.', { name: active.archive.name })}</span>
             <button
               type="button"
               className="btn btn-secondary btn-sm"
               onClick={() => openRun({ kind: 'restore', id: active.runId })}
             >
               <Eye size={14} strokeWidth={1.5} />
-              {t('Fortschritt ansehen')}
+              {t('Schritte ansehen')}
             </button>
           </div>
         )}
 
         {!running && lastRun && <LastRun run={lastRun} />}
 
-        {loadError && !offline && <div className="alert alert-danger">{loadError}</div>}
+        {loadError && !offline && <div className="alert alert-danger"><ErrorNote text={loadError} /></div>}
 
         {!running && staged && (
           <form onSubmit={(event) => void start(event, staged)} className="card-body">
@@ -453,7 +448,7 @@ export default function RestorePanel({ files, filesAsOf, listedPath, hostPath }:
                         : t('Stand nach dem letzten Lauf.')}
                   <InfoHint
                     text={t(
-                      'HAPM liest den Ordner nicht laufend. Die Liste stammt aus dem letzten Lauf. Was danach von Hand gelöscht oder dazugelegt wurde, steht hier nicht.'
+                      'HAPM liest den Ordner nicht laufend. Die Liste stammt aus dem letzten Lauf. Was danach von Hand entfernt oder dazugelegt wurde, steht hier nicht.'
                     )}
                   />
                 </span>
@@ -461,7 +456,7 @@ export default function RestorePanel({ files, filesAsOf, listedPath, hostPath }:
             </div>
             {files && files.length > 0 ? (
               <div className="table-wrap">
-                <table className="table">
+                <table className="table table-cards">
                   <thead>
                     <tr>
                       <th>{t('Name')}</th>
@@ -542,9 +537,10 @@ export default function RestorePanel({ files, filesAsOf, listedPath, hostPath }:
                 {t('Archiv hochladen')}
               </button>
               <span className="form-hint">
-                {t('Ein Archiv von HAPM (.tar.gz), höchstens {max}. Es wird vor allem anderen geprüft.', {
-                  max: formatBytes(locale, data.maxBytes),
-                })}
+                {t('Ein Archiv von HAPM (.tar.gz), höchstens {max}.', { max: formatBytes(locale, data.maxBytes) })}
+                <InfoHint
+                  text={t('Das Archiv wird erst geprüft. Zurückgespielt wird es danach mit einem eigenen Schritt.')}
+                />
               </span>
             </div>
           </>

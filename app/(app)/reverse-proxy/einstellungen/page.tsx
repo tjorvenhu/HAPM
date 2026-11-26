@@ -1,6 +1,7 @@
 'use client';
 
 import { Fragment, Suspense, useEffect, useState, useCallback } from 'react';
+import ErrorNote from '@/components/ErrorNote';
 import Link from 'next/link';
 import {
   ShieldCheck, Loader2, RefreshCw, X, Network, Save, Lock, Plus, Info,
@@ -22,6 +23,7 @@ import { usePolling } from '@/components/usePolling';
 import { openRun } from '@/components/runs/runs';
 import { HTTPS_MARKER, type GlobalSettings } from '@/lib/haproxy/config';
 import { SkeletonRows } from '@/components/Skeleton';
+import { InfoHint } from '@/ui/primitives/InfoHint';
 import AreaTabs, { useArea, type Area as AreaEntry } from '@/components/AreaTabs';
 import GeoipPanel from '@/components/reverse-proxy/GeoipPanel';
 import BaseConfigPanel from '@/components/reverse-proxy/BaseConfigPanel';
@@ -229,8 +231,8 @@ function SettingsPage() {
           title: pendingRun.label,
           message: ok
             ? t('Durchgelaufen, HAProxy hat die neue Konfiguration übernommen.')
-            : t('Nicht durchgelaufen. Der erste fehlgeschlagene Schritt steht im Protokoll.'),
-          action: { label: t('Protokoll'), onClick: () => openRun({ kind: 'haproxy', id: pendingRun.id }) },
+            : t('Nicht durchgelaufen. Der erste fehlgeschlagene Schritt steht im Fenster des Laufs.'),
+          action: { label: t('Schritte ansehen'), onClick: () => openRun({ kind: 'haproxy', id: pendingRun.id }) },
         });
       } finally {
         busy = false;
@@ -389,7 +391,7 @@ function SettingsPage() {
 
   async function removeCredentials(row: SettingsRow, provider: DnsProvider) {
     const ok = await confirm({
-      title: t('{provider}-Zugangsdaten entfernen', { provider: provider.label }),
+      title: t('{provider}-Zugangsdaten entfernen?', { provider: provider.label }),
       message: t(
         'Der Token wird aus der acme.sh-Konfiguration gestrichen. Bestehende Zertifikate bleiben, aber ihre automatische Erneuerung scheitert ab dann, und eine neue Wildcard lässt sich nicht mehr ausstellen.'
       ),
@@ -414,7 +416,7 @@ function SettingsPage() {
       notify({
         variant: 'success',
         title: provider.label,
-        message: t('Zugangsdaten entfernt.'),
+        message: t('Die Zugangsdaten sind entfernt.'),
       });
     } catch (err: unknown) {
       notify({
@@ -467,7 +469,7 @@ function SettingsPage() {
         <PageHeading
           icon={<ShieldCheck size={20} />}
           title={t('Einstellungen')}
-          back={{ label: t('Übersicht'), href: '/reverse-proxy' }}
+          back={{ label: t('Ziele'), href: '/reverse-proxy' }}
           note={t('Was für alle Dienste gilt')}
         />
         <div className="page-actions">
@@ -494,7 +496,7 @@ function SettingsPage() {
         </div>
       </div>
 
-      {error && <div className="alert alert-danger sys-block">{error}</div>}
+      {error && <div className="alert alert-danger sys-block"><ErrorNote text={error} /></div>}
 
       <AreaTabs areas={AREAS} value={area} onChange={select} dirty={(key) => !pendingRun && rows.some((row) => areaDirty(row, key))} />
 
@@ -535,7 +537,7 @@ function SettingsPage() {
 
             return (
               <Fragment key={row.$id}>
-                {row.error && <div className="alert alert-danger sys-block">{row.error}</div>}
+                {row.error && <div className="alert alert-danger sys-block"><ErrorNote text={row.error} /></div>}
 
                 {area === 'https' && (
                   <>
@@ -694,9 +696,14 @@ function SettingsPage() {
                                 <Lock size={14} />
                                 <span>
                                   {t(
-                                    'Gesperrt sind gerade: {services}. Solange das so ist, lässt sich die Liste nicht leeren: eine Regel auf eine Adressliste, die es nicht mehr gibt, lässt HAProxy beim nächsten Start stehen.',
+                                    'Gesperrt sind gerade: {services}. Solange das so ist, lässt sich die Liste nicht leeren.',
                                     { services: row.settings.lockedServices.join(', ') }
                                   )}
+                                  <InfoHint
+                                    text={t(
+                                      'Eine Regel auf eine Adressliste, die es nicht mehr gibt, lässt HAProxy beim nächsten Start stehen.'
+                                    )}
+                                  />
                                 </span>
                               </div>
                             ) : (

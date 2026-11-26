@@ -88,7 +88,7 @@ export default function BackendTlsPick({ value, onChange, label, targets, verify
       <span className="form-hint">{t(SUMMARIES[value])}</span>
       {verifyUnsupported !== null && (
         <span className="form-hint">
-          {t('Die Prüfung des Zertifikats braucht HAProxy 2.6 oder neuer. Hier läuft {version}.', {
+          {t('Die Prüfung braucht HAProxy 2.6 oder neuer. Hier läuft {version}.', {
             version: verifyUnsupported,
           })}
         </span>

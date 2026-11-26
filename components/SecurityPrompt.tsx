@@ -7,6 +7,7 @@ import { useApp } from './AppShell';
 import { useMountedLoad } from './useMountedLoad';
 import TwoFactorSetup from './TwoFactorSetup';
 import { useToast } from './Toast';
+import { InfoHint } from '@/ui/primitives/InfoHint';
 import { useT } from '@/lib/i18n/react';
 
 /**
@@ -93,14 +94,17 @@ export default function SecurityPrompt() {
         <div className="modal-header">
           <h2 className="modal-title" id="security-prompt-title">
             {t('Konto absichern')}
+            <InfoHint
+              text={t('Unter dieser Adresse kann Ihr Passwortmanager die Anmeldung speichern. Auch ein Passkey hängt an ihr.')}
+            />
           </h2>
-          <button className="modal-close" type="button" onClick={() => void dismiss()} aria-label={t('Schließen')}>
+          <button className="modal-close" type="button" onClick={() => void dismiss()} aria-label={t('Dialog schließen')}>
             <X size={18} />
           </button>
         </div>
         <div className="modal-body">
           <p className="security-prompt-lead">
-            {t('HAPM läuft jetzt unter seiner Adresse. Hier kann Ihr Passwortmanager die Anmeldung speichern. Sichern Sie das Konto zusätzlich ab:')}
+            {t('HAPM läuft jetzt unter seiner Adresse. Sichern Sie das Konto ab:')}
           </p>
           <div className="hapm-choices">
             <button
@@ -109,7 +113,7 @@ export default function SecurityPrompt() {
               disabled={!state.passkeysAvailable}
               data-tooltip={passkeyReason ?? undefined}
               onClick={() => {
-                // Das Anlegen steht auf der Kontoseite, mit Name und Liste;
+                // Das Hinterlegen steht auf der Kontoseite, mit Name und Liste;
                 // dorthin, und der Dialog geht dort gleich auf.
                 setOpen(false);
                 void dismiss();
@@ -118,7 +122,7 @@ export default function SecurityPrompt() {
             >
               <KeyRound size={18} strokeWidth={1.5} />
               <span className="hapm-choice-text">
-                <strong>{t('Passkey anlegen')}</strong>
+                <strong>{t('Passkey hinterlegen')}</strong>
                 <span>{passkeyReason ?? t('Anmelden mit Fingerabdruck, Gesicht oder Gerätesperre.')}</span>
               </span>
             </button>

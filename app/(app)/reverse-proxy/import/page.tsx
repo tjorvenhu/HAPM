@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useRef, useState, useCallback } from 'react';
+import ErrorNote from '@/components/ErrorNote';
 import Link from 'next/link';
 import PageHeading from '@/components/PageHeading';
 import {
@@ -288,11 +289,9 @@ export default function ReverseProxyImportPage() {
           <PageHeading
             icon={<FileInput size={20} />}
             title={t('Konfiguration importieren')}
-            back={{ label: t('Übersicht'), href: '/reverse-proxy' }}
+            back={{ label: t('Ziele'), href: '/reverse-proxy' }}
           />
-          <p className="page-subtitle">
-            {t('Einträge aus einer bestehenden haproxy.cfg übernehmen, statt sie einzeln abzutippen.')}
-          </p>
+          <p className="page-subtitle">{t('Einträge aus einer bestehenden haproxy.cfg übernehmen.')}</p>
         </div>
       </div>
 
@@ -308,7 +307,7 @@ export default function ReverseProxyImportPage() {
           </h2>
         </div>
         <div className="card-body">
-          {inputError && <div className="alert alert-danger">{inputError}</div>}
+          {inputError && <div className="alert alert-danger"><ErrorNote text={inputError} /></div>}
           <div className="hapm-inline-actions">
             <button
               type="button"
@@ -560,7 +559,7 @@ export default function ReverseProxyImportPage() {
                 importedFrom === preview &&
                 !running && (
                   <span className="form-hint">
-                    {t('Aus dieser Vorschau wurde schon importiert. Für einen weiteren Durchgang die Vorschau neu berechnen.')}
+                    {t('Schon importiert. Vor dem nächsten Import die Vorschau neu berechnen.')}
                   </span>
                 )
               )}

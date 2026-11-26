@@ -38,6 +38,7 @@ HAPM sets up HAProxy, Let's Encrypt, the base configuration and CrowdSec as a WA
 - [Quick start](#quick-start)
 - [Installation](#installation)
   - [Requirements](#requirements)
+  - [Memory and disk space](#memory-and-disk-space)
   - [Option 1: Docker Compose only](#option-1-docker-compose-only)
   - [Option 2: Install script](#option-2-install-script)
   - [Option 3: Portainer, Dockge and other UIs](#option-3-portainer-dockge-and-other-uis)
@@ -166,6 +167,40 @@ the rest.
 | Port **7080** reachable | For the setup. You can close it afterwards, see [Security](#security) |
 | For Let's Encrypt certificates: port 80 reachable from the internet | Let's Encrypt validates every domain over port 80. On a private network, certificates use DNS-01 instead |
 | Outbound HTTPS (TCP 443) | For images, certificates, updates and the CrowdSec rules. The exact hosts: [Corporate networks](#corporate-networks-firewall-and-proxy) |
+| **1 GB** of memory without CrowdSec, **2 GB** with | The stack itself needs about 250 MB without and about 390 MB with CrowdSec, see [Memory and disk space](#memory-and-disk-space) |
+
+### Memory and disk space
+
+Measured with `docker stats` on an idle test installation (amd64, November
+2026). The figures are guidance, not a promise: they depend on the number of
+connections and on traffic.
+
+| Container | Memory | Without CrowdSec | With CrowdSec |
+|---|---|:---:|:---:|
+| HAPM (web interface, scheduler) | about 120 MB | yes | yes |
+| HAProxy | about 95 MB | yes | yes |
+| Postgres | about 35 MB | yes | yes |
+| CrowdSec (detection, WAF) | 100 to 130 MB | | yes |
+| CrowdSec bouncer | about 10 MB | | yes |
+| **Total** | | **about 250 MB** | **about 390 MB** |
+
+- **Without CrowdSec** (`--no-crowdsec` at install time): about 250 MB. A
+  server with 1 GB is enough, operating system and Docker included.
+- **With CrowdSec** (the default): about 390 MB, roughly 140 MB more. A server
+  with 2 GB is the comfortable size. Both containers run and hold their memory
+  even while CrowdSec checks no target yet. Switched off in the web interface
+  ("Switch off CrowdSec") they are stopped and use nothing.
+- **What raises the need:** many concurrent connections (HAProxy), heavy
+  traffic and the community blocklist (CrowdSec), the OWASP rules in "Report
+  only" or "Block hits" mode. During an update or a backup a helper container
+  runs briefly.
+- **Measure it yourself:** `docker stats --no-stream` shows the usage of every
+  container.
+
+On disk the images take about 1.1 GB without and about 1.7 GB with CrowdSec.
+On top comes the data in `data/` (database, certificates, logs, CrowdSec
+rules): about 100 MB freshly installed, growing with logs and statistics.
+Before an update the new image briefly sits next to the old one.
 
 ### Option 1: Docker Compose only
 

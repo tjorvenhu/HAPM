@@ -295,9 +295,13 @@ anspringt.
 ## Oberfläche, API, MCP
 
 - **Reverse-Proxy, CrowdSec** (`/reverse-proxy/crowdsec`), Reiter: Übersicht
-  (Zustand, globaler Schalter, geschützte Ziele), Sperren (aktive
+  (links schmal Status, Statistik und System, rechts breit die geschützten
+  Ziele mit dem Schalter für alle im Kopf der Karte), Sperren (aktive
   Entscheidungen, aufheben, Adresse von Hand sperren), Freigaben (hinzufügen,
-  entfernen, eigene Adresse), Ereignisse (Filter nach Ziel), Regeln.
+  entfernen, eigene Adresse), Ereignisse (Filter nach Ziel, „CrowdSec leeren"),
+  Regeln. Woher der Schutz eines Ziels kommt, steht einmal über der Liste
+  („Alle Ziele prüfen ist an"), nicht in jeder Zeile. Prüft CrowdSec kein
+  Ziel, steht das mittig in der Karte.
 - **Je Ziel** der Schalter „CrowdSec (WAF)" im Dialog des Ziels, eine Marke auf
   der Karte und die Ereignisse des Ziels.
 - **Logs:** dritter Reiter „CrowdSec", das Log des Containers von CrowdSec oder
@@ -316,16 +320,46 @@ anspringt.
   an, Tagesbericht aus (`lib/notifications/checks.ts`).
 - **Interne API** unter `/api/internal/crowdsec`: `GET /`, `GET`/`POST`/`DELETE`
   `decisions`, `GET`/`POST`/`DELETE` `allowlist`,
-  `GET alerts?window=24h|7d|30d&service=`, `GET stats?window=`,
+  `GET alerts?window=24h|7d|30d&service=`, `DELETE alerts` (leeren),
+  `GET stats?window=`,
   `GET`/`PATCH` `rules`. Siehe [`hapm-api.md`](hapm-api.md).
 - **MCP:** `get_crowdsec`, `list_crowdsec_decisions`, `add_crowdsec_decision`,
   `remove_crowdsec_decision`, `list_crowdsec_allowlist`,
   `add_crowdsec_allowlist`, `remove_crowdsec_allowlist`,
-  `list_crowdsec_alerts`, `get_crowdsec_stats`, `get_crowdsec_rules`,
-  `update_crowdsec_rules`. Siehe [`mcp.md`](mcp.md).
+  `list_crowdsec_alerts`, `clear_crowdsec`, `get_crowdsec_stats`,
+  `get_crowdsec_rules`, `update_crowdsec_rules`. Siehe [`mcp.md`](mcp.md).
 
 Alle drei rufen dieselben Funktionen in `lib/crowdsec/actions.ts`, die auch das
 Audit schreiben.
+
+## Leeren
+
+„CrowdSec leeren" (Reiter Ereignisse, `DELETE alerts`, `clear_crowdsec`,
+`clearCrowdsec` in `lib/crowdsec/actions.ts`) ist der frische Start: alle
+Ereignisse weg, die Sperren, die CrowdSec daraus verhängt hat, aufgehoben,
+Statistik und Zähler bei null. Es bleiben die Sperren von Hand, die Freigaben,
+die Regeln und die Gemeinschaftsliste. Die Reihenfolge ist nicht beliebig:
+
+1. **Sperren aufheben** (`cscli decisions delete --origin crowdsec`, je
+   Herkunft außer `cscli`, `cscli-import`, `CAPI`, `lists`). Das setzt nur
+   ihr Ende auf jetzt, die Zeile bleibt in der Datenbank.
+2. **Warten, bis jeder laufende Bouncer abgeholt hat** (`last_pull` in
+   `cscli bouncers list`, der Bouncer fragt alle 10 s, gewartet wird bis 25 s).
+   Ein Bouncer erfährt von einer aufgehobenen Sperre nur, solange ihre Zeile
+   noch da ist. Der nächste Schritt nimmt sie ganz weg: wer vorher nicht
+   abgeholt hat, sperrt die Adresse weiter, obwohl die Sperrliste leer ist
+   (nachgestellt mit 1.8.2 über `/v1/decisions/stream`). Holt der Bouncer
+   nicht ab, bricht das Leeren mit 409 ab, die Ereignisse stehen noch da, und
+   der nächste Versuch wartet wieder.
+3. **Ereignisse entfernen** mit `cscli alerts delete --scope Ip` (und
+   `Range`, je nachdem, was noch da ist). `alerts delete` kennt keinen Filter
+   nach Herkunft. `--all` nähme auch die Ereignisse mit, an denen die
+   Gemeinschaftsliste hängt (Quelle `CAPI`, `lists`), und die holt CrowdSec
+   erst nach einem Neustart wieder vollständig.
+4. **Sperren von Hand neu setzen.** Schritt 3 nimmt sie mit ihrem Ereignis
+   weg, deshalb merkt sich HAPM sie vorher (`bansToRestore`) und setzt sie mit
+   Restdauer und Grund neu. In der Liste stehen sie danach mit dem Zeitpunkt
+   des Leerens. Was sich nicht neu setzen ließ, nennt die Antwort (`lost`).
 
 ## Die Central API von CrowdSec
 
