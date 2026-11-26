@@ -25,6 +25,9 @@ export const crowdsec: Readonly<Record<string, string>> = {
   Freigaben: 'Allowlist',
   Regeln: 'Rules',
   Sperrliste: 'Bans',
+  // Reiter im Dialog eines Ziels
+  'Zugriff und Schutz': 'Access and protection',
+  Erweitert: 'Advanced',
   'Treffer sperren': 'Block hits',
   'WAF, Sperren und Freigaben': 'WAF, bans and allowlist',
   'CrowdSec ist nicht erreichbar.': 'CrowdSec is not reachable.',
@@ -41,6 +44,9 @@ export const crowdsec: Readonly<Record<string, string>> = {
   'Bei der Installation wurde CrowdSec abgewählt. Einschalten: die Zeile HAPM_CROWDSEC_OFF in der Datei .env neben docker-compose.yml entfernen und docker compose up -d ausführen, oder install.sh mit --crowdsec erneut starten.':
     'CrowdSec was deselected at installation. To turn it on, remove the HAPM_CROWDSEC_OFF line from the .env file next to docker-compose.yml and run docker compose up -d, or run install.sh again with --crowdsec.',
   'CrowdSec läuft nicht vollständig.': 'CrowdSec is not fully running.',
+  'CrowdSec ist auf diesem Server noch nicht eingerichtet': 'CrowdSec is not set up on this server yet',
+  'Die Installation stammt von vor CrowdSec: ihre docker-compose.yml kennt die beiden Container noch nicht. Nachrüsten mit dem Installationsskript, es holt die neue Datei und startet CrowdSec mit. Daten und Einstellungen bleiben.':
+    'This installation predates CrowdSec: its docker-compose.yml does not know the two containers yet. Add it with the install script, which fetches the new file and starts CrowdSec as well. Data and settings stay.',
   'Solange CrowdSec oder der Bouncer fehlt, gehen alle Anfragen ungeprüft durch. Mehr sagt der Reiter „CrowdSec“ unter Reverse-Proxy, Logs.':
     'While CrowdSec or the bouncer is missing, all requests pass unchecked. More in the "CrowdSec" tab under Reverse proxy, Logs.',
   'Welche Ziele CrowdSec prüft': 'Which targets CrowdSec checks',

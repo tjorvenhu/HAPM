@@ -1,4 +1,4 @@
-import { crowdsecInStack } from '../crowdsec/paths';
+import { crowdsecInstalled } from '../crowdsec/paths';
 import { localServer } from '../helpers';
 import { probeProxy, readCertificateInventory } from '../haproxy/provision';
 import { findCertificateFor } from '../haproxy/certs';
@@ -111,7 +111,7 @@ export async function readSetupView(): Promise<SetupView> {
     publicUrl: publicOrigin(settings),
     listenPort: listenPort(process.env.PORT),
     serverAddresses: serverAddresses(),
-    crowdsecInStack: crowdsecInStack(),
+    crowdsecInStack: crowdsecInstalled(),
     dnsApi: Boolean(access && access.hook === state.dnsHook && dnsProviderForHook(access.hook)),
     dnsZone: zone?.name ?? null,
     certificateSource: settings.certificateSource,

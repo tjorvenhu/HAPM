@@ -107,12 +107,15 @@ export function DashSection({
 export function LayoutDialog<K extends string>({
   layout,
   labels,
+  unavailable = [],
   onChange,
   onReset,
   onClose,
 }: {
   layout: DashLayout<K>;
   labels: Record<K, string>;
+  /** Bereiche, die es auf dieser Installation nicht gibt (CrowdSec abgewählt). */
+  unavailable?: K[];
   onChange: (next: DashLayout<K>) => void;
   onReset: () => void;
   onClose: () => void;
@@ -144,7 +147,7 @@ export function LayoutDialog<K extends string>({
         <div className="modal-body">
           <p className="form-hint">{t('Reihenfolge und sichtbare Bereiche gelten für diesen Browser.')}</p>
           <div className="dash-layout-list">
-            {layout.order.map((key, index) => (
+            {layout.order.map((key, index) => unavailable.includes(key) ? null : (
               <div key={key} className="dash-layout-row">
                 <label className="toggle-switch">
                   <input

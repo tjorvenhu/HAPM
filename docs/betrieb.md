@@ -488,8 +488,16 @@ Beim Ersetzen bleibt nur, was am Container eingestellt wurde, nicht was sein
 Abbild vorgab (`recreateBody`): sonst stünde im neuen Container
 `HAPROXY_VERSION` des alten Abbilds.
 
-HAProxy lässt sich zu einer Uhrzeit selbsttätig aktualisieren (Einstellung unter
-„Updates"). Für HAPM selbst gibt es das mit Absicht nicht.
+**Selbsttätig** aktualisiert HAPM einmal am Tag zur eingestellten Uhrzeit, was
+unter „Updates" angekreuzt ist (`Settings.autoUpdate`, eine Liste von
+Bestandteilen). Vorgabe: HAProxy, acme.sh, CrowdSec und der Bouncer, also alles
+außer HAPM selbst: HAPM ersetzt dabei den eigenen Container, die Oberfläche ist
+eine Minute weg, und ein Fehler dort trifft genau das Werkzeug, mit dem man ihn
+beheben würde. Es lässt sich trotzdem ankreuzen. Gibt es für mehrere etwas
+Neues, laufen die Updates nacheinander (`runAutoUpdates` im Scheduler), HAPM
+zuletzt (`AUTO_UPDATE_ORDER`). Eine Einstellung von vor der Auswahl behält ihren
+Wert für HAProxy (`autoUpdateHaproxy`), die übrigen bekommen die Vorgabe. Die
+API nimmt `autoUpdateHaproxy` weiter an und setzt damit nur HAProxy in der Liste.
 
 **In der Oberfläche** steht ein laufendes Update nicht auf der Seite, sondern im
 Fenster der Läufe (siehe unten, „Läufe im Hintergrund“). Auf der Karte des

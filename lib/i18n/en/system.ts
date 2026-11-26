@@ -282,8 +282,6 @@ export const system: Dictionary = {
   'Jetzt aktualisieren': 'Update now',
   'Das Update ließ sich nicht starten.': 'The update could not be started.',
   'Die Einstellung ließ sich nicht speichern.': 'The setting could not be saved.',
-  'HAProxy wird täglich um {time} Uhr selbsttätig aktualisiert.': 'HAProxy is updated automatically every day at {time}.',
-  'HAProxy wird nicht selbsttätig aktualisiert.': 'HAProxy is not updated automatically.',
   'HAPM antwortet gerade nicht. Die Seite versucht es weiter.': 'HAPM is not responding right now. The page keeps trying.',
   'HAPM wird ersetzt': 'HAPM is being replaced',
   'Ein Helfer aus dem neuen Abbild tauscht gerade den Container. Die Oberfläche ist kurz nicht erreichbar. Diese Seite lädt neu, sobald HAPM wieder antwortet.':
@@ -303,10 +301,6 @@ export const system: Dictionary = {
   'Noch nie. Die erste Prüfung läuft kurz nach dem Start.': 'Never. The first check runs shortly after startup.',
   'Die letzte Prüfung ist gescheitert. Die Angabe stammt aus der Prüfung davor.': 'The last check failed. This information comes from the check before.',
   'Selbsttätig aktualisieren': 'Automatic updates',
-  'HAProxy selbsttätig aktualisieren': 'Update HAProxy automatically',
-  'Zur eingestellten Uhrzeit prüft HAPM, ob es ein neues Abbild gibt, und spielt es ein. Vorher prüft das neue Abbild die Konfiguration. Startet der neue Container nicht, kommt der bisherige zurück. HAPM selbst und acme.sh werden nur auf Klick aktualisiert.':
-    'At the set time, HAPM checks whether there is a new image and applies it. The new image checks the configuration first. If the new container does not start, the previous one comes back. HAPM itself and acme.sh are only updated on click.',
-  'Beim Tausch ist HAProxy für wenige Sekunden nicht erreichbar.': 'During the swap, HAProxy is unreachable for a few seconds.',
   'Es gilt die Zeitzone des Containers, gesetzt über die Variable TZ. Geprüft wird einmal am Tag zu dieser Minute.':
     "The container's time zone applies, set through the TZ variable. The check runs once a day at this minute.",
   'Noch kein Update eingespielt': 'No update applied yet',
@@ -824,4 +818,16 @@ export const system: Dictionary = {
     'Test mail sent',
   'DNS-Eintrag angelegt':
     'DNS record created',
+  // Selbsttätige Updates je Bestandteil
+  'Das neue Abbild prüft vorher die Konfiguration. HAProxy ist beim Tausch wenige Sekunden nicht erreichbar.':
+    'The new image checks the configuration first. HAProxy is unreachable for a few seconds during the swap.',
+  'acme.sh aktualisiert sich selbst. Nichts wird unterbrochen.': 'acme.sh updates itself. Nothing is interrupted.',
+  'Während des Tauschs gehen Anfragen ungeprüft durch.': 'During the swap, requests pass unchecked.',
+  'HAPM ersetzt sich selbst, die Oberfläche ist etwa eine Minute weg. Vorgabe: nur auf Klick.':
+    'HAPM replaces itself, the interface is gone for about a minute. Default: only on click.',
+  'Selbsttätig aktualisiert wird täglich um {time} Uhr: {components}.': 'Updated automatically every day at {time}: {components}.',
+  'Nichts wird selbsttätig aktualisiert.': 'Nothing is updated automatically.',
+  'Zur eingestellten Uhrzeit prüft HAPM, ob es Neues gibt, und spielt es für die gewählten Bestandteile nacheinander ein, HAPM selbst zuletzt.':
+    'At the set time, HAPM checks for new versions and installs them for the selected components one after another, HAPM itself last.',
+  'Selbsttätige Updates sind eine Liste aus {components}.': 'Automatic updates are a list of {components}.',
 };

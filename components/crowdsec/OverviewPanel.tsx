@@ -130,7 +130,18 @@ export default function OverviewPanel({ data, onChanged }: { data: CrowdsecOverv
   }
 
   if (!status.inStack) {
-    return (
+    return status.missing === 'not-installed' ? (
+      <div className="empty-state sys-block">
+        <BrandLogo brand="crowdsec" size={40} />
+        <h3>{t('CrowdSec ist auf diesem Server noch nicht eingerichtet')}</h3>
+        <p>
+          {t(
+            'Die Installation stammt von vor CrowdSec: ihre docker-compose.yml kennt die beiden Container noch nicht. Nachrüsten mit dem Installationsskript, es holt die neue Datei und startet CrowdSec mit. Daten und Einstellungen bleiben.'
+          )}
+        </p>
+        <pre className="cs-command">sh /opt/hapm/install.sh</pre>
+      </div>
+    ) : (
       <div className="empty-state sys-block">
         <BrandLogo brand="crowdsec" size={40} />
         <h3>{t('CrowdSec ist bei dieser Installation abgeschaltet')}</h3>
@@ -139,6 +150,7 @@ export default function OverviewPanel({ data, onChanged }: { data: CrowdsecOverv
             'Bei der Installation wurde CrowdSec abgewählt. Einschalten: die Zeile HAPM_CROWDSEC_OFF in der Datei .env neben docker-compose.yml entfernen und docker compose up -d ausführen, oder install.sh mit --crowdsec erneut starten.'
           )}
         </p>
+        <pre className="cs-command">sh /opt/hapm/install.sh --crowdsec</pre>
       </div>
     );
   }

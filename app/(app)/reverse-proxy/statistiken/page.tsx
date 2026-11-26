@@ -217,7 +217,9 @@ function StatsSwitch() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { t } = useT();
-  const [tab, setTab] = useState<StatsTab>(() => (searchParams.get('ansicht') === 'crowdsec' ? 'crowdsec' : 'verkehr'));
+  const crowdsec = useApp().session.features?.crowdsec === true;
+  const [chosen, setTab] = useState<StatsTab>(() => (searchParams.get('ansicht') === 'crowdsec' ? 'crowdsec' : 'verkehr'));
+  const tab: StatsTab = crowdsec ? chosen : 'verkehr';
 
   const choose = useCallback(
     (next: StatsTab) => {
@@ -229,7 +231,7 @@ function StatsSwitch() {
     [router]
   );
 
-  const tabs = (
+  const tabs = !crowdsec ? null : (
     <div className="tabs" role="tablist">
       <button
         type="button"

@@ -17,6 +17,8 @@ export interface SessionData {
   csrfToken: string;
   /** Die gewählte Sprache der Oberfläche, `null` ohne Wahl. Nur in `/api/auth/me`. */
   locale?: 'de' | 'en' | null;
+  /** Was diese Installation mitbringt. Nur in `/api/auth/me`. */
+  features?: { crowdsec: boolean };
 }
 
 /* ── Konten ──
@@ -220,8 +222,11 @@ export interface Settings extends DbDoc {
    * hängen Links in Mails und die Domain, an die Passkeys gebunden werden.
    */
   publicUrl: string | null;
-  /** HAProxy von selbst auf ein neues Abbild heben. */
+  /** Abgeleitet: ob `autoUpdate` HAProxy enthält. Bleibt für Aufrufer der API
+   *  von vor der Auswahl je Bestandteil. */
   autoUpdateHaproxy: boolean;
+  /** Was HAPM zur Uhrzeit `autoUpdateTime` selbst aktualisiert, je Bestandteil. */
+  autoUpdate: UpdateComponent[];
   /** Uhrzeit (HH:MM, Ortszeit des Containers) für selbsttätige Updates. */
   autoUpdateTime: string;
   /** SMTP-Konto für alle Mails von HAPM. Ohne Host und Absender wird nichts verschickt. */

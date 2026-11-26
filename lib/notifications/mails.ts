@@ -36,6 +36,8 @@ export interface NotificationMailContext extends MailInstallation {
   /** Ob „Ziele antworten wieder" eingeschaltet ist: nur dann kündigt die Ausfallmail es an. */
   recoveryEnabled: boolean;
   autoUpdateHaproxy: boolean;
+  /** Was selbsttätig aktualisiert wird. Fehlt es, gilt `autoUpdateHaproxy` für HAProxy. */
+  autoUpdate?: UpdateComponent[];
   autoUpdateTime: string;
 }
 
@@ -386,7 +388,9 @@ function draft(event: NotificationEvent, ctx: NotificationMailContext, w: Writer
     case 'update_available': {
       const component = COMPONENT_LABELS[event.component];
       const newVersion = event.latestVersion && event.latestVersion !== event.currentVersion ? event.latestVersion : null;
-      const automatic = event.component === 'haproxy' && ctx.autoUpdateHaproxy;
+      const automatic = ctx.autoUpdate
+        ? ctx.autoUpdate.includes(event.component)
+        : event.component === 'haproxy' && ctx.autoUpdateHaproxy;
       return {
         subject: newVersion
           ? t('Update verfügbar: {component} {version}', { component, version: newVersion })

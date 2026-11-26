@@ -507,6 +507,29 @@ etwa für WordPress.
 > Das ist das Verhalten von CrowdSec selbst. Wie man es abschaltet, steht in
 > [`docs/crowdsec.md`](docs/crowdsec.md).
 
+### CrowdSec nachrüsten
+
+Wer HAPM vor CrowdSec installiert hat, hat eine `docker-compose.yml` ohne die
+beiden Container. Die Oberfläche blendet CrowdSec dann aus. Nachrüsten:
+
+```bash
+sh /opt/hapm/install.sh
+```
+
+Das Skript holt die neue `docker-compose.yml`, lässt `.env` und alle Daten, wie
+sie sind, und startet die Container neu, jetzt mit CrowdSec. Ohne Skript, mit
+Weg 1:
+
+```bash
+cd /opt/hapm
+curl -fsSLO https://raw.githubusercontent.com/tjorvenhu/HAPM/main/docker-compose.yml
+docker compose pull && docker compose up -d
+```
+
+Danach steht CrowdSec unter „Reverse-Proxy, CrowdSec“ und prüft noch nichts,
+bis Sie es einschalten. Mit Portainer oder Dockge (Weg 3): den Inhalt der neuen
+`docker-compose.yml` in den Stack übernehmen und neu bereitstellen.
+
 **Ohne CrowdSec installieren:**
 
 ```bash
@@ -621,6 +644,16 @@ In der Oberfläche unter **„Updates“**. HAPM meldet neue Abbilder von sich
 selbst, von HAProxy und von CrowdSec, dazu ein neues acme.sh. Ein neues
 HAProxy prüft vor dem Tausch die vorhandene Konfiguration. Startet es nicht,
 läuft das alte weiter.
+
+**Selbsttätig:** Einmal am Tag zu einer festen Uhrzeit spielt HAPM ein, was Sie
+dort ankreuzen. Vorgabe ist alles außer HAPM selbst (HAProxy, acme.sh,
+CrowdSec und der Bouncer). HAPM lässt sich dazunehmen, ist beim Tausch aber
+etwa eine Minute nicht erreichbar.
+
+**Eine ältere Installation bekommt neue Container** (etwa CrowdSec) nicht über
+die Updates-Seite: die tauscht nur Abbilder bestehender Container. Dafür das
+Installationsskript erneut ausführen, siehe
+[CrowdSec nachrüsten](#crowdsec-nachrüsten).
 
 Von Hand:
 

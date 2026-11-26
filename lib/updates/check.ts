@@ -18,7 +18,7 @@
 
 import { createDocument, getDocument, listAll, updateDocument, NotFoundError } from '../db';
 import { msgid } from '../i18n';
-import { bouncerContainerName, crowdsecContainerName, crowdsecInStack } from '../crowdsec/paths';
+import { bouncerContainerName, crowdsecContainerName, crowdsecInstalled } from '../crowdsec/paths';
 import { COLLECTIONS, type UpdateComponent, type UpdateState } from '../types';
 import { containerInfo, haproxyContainerName, ownContainer, registryArchitecture } from '../docker';
 import { remoteDetails, remoteDigest } from '../docker/registry';
@@ -150,7 +150,7 @@ export function checkUpdates(): Promise<UpdateState[]> {
         checkAcme(),
         // CrowdSec nur, wenn der Stack es mitbringt: sonst stünde dort ein
         // Fehler über einen Container, den es mit Absicht nicht gibt.
-        ...(crowdsecInStack()
+        ...(crowdsecInstalled()
           ? [checkImage('crowdsec', crowdsecContainerName()), checkImage('crowdsec-bouncer', bouncerContainerName())]
           : []),
       ]);
@@ -224,7 +224,11 @@ const ORDER: UpdateComponent[] = ['haproxy', 'hapm', 'acme', 'crowdsec', 'crowds
 
 export async function readUpdateStates(): Promise<UpdateState[]> {
   const rows = await listAll<UpdateState>(COLLECTIONS.UPDATE_STATE);
-  return rows.sort((a, b) => ORDER.indexOf(a.component) - ORDER.indexOf(b.component));
+  // Ein Stand von CrowdSec aus der Zeit, als es noch dazugehörte, zählt nicht mehr.
+  const crowdsec = crowdsecInstalled();
+  return rows
+    .filter((row) => crowdsec || (row.component !== 'crowdsec' && row.component !== 'crowdsec-bouncer'))
+    .sort((a, b) => ORDER.indexOf(a.component) - ORDER.indexOf(b.component));
 }
 
 export async function pendingUpdateCount(): Promise<number> {

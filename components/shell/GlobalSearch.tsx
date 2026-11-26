@@ -19,9 +19,9 @@ export { openGlobalSearch } from '@/ui/shell/GlobalSearch';
  * Die Seiten aus der Navigation, im Browser gefiltert: sie stehen sofort da.
  * Gesucht wird in den Namen der gewählten Sprache, denn die stehen in der Leiste.
  */
-function pagesFor(query: string, t: (text: string) => string): GlobalSearchGroup[] {
+function pagesFor(query: string, t: (text: string) => string, crowdsec: boolean): GlobalSearchGroup[] {
   const words = searchWords(query);
-  const pages = NAV_PAGES.map((page) => ({
+  const pages = NAV_PAGES.filter((page) => !page.feature || (page.feature === 'crowdsec' && crowdsec)).map((page) => ({
     ...page,
     title: t(page.title),
     subtitle: page.subtitle ? t(page.subtitle) : undefined,
@@ -41,7 +41,8 @@ function pagesFor(query: string, t: (text: string) => string): GlobalSearchGroup
 export default function GlobalSearch() {
   const { apiFetch } = useApp();
   const { t } = useT();
-  const localGroups = useCallback((query: string) => pagesFor(query, t), [t]);
+  const crowdsec = useApp().session.features?.crowdsec === true;
+  const localGroups = useCallback((query: string) => pagesFor(query, t, crowdsec), [t, crowdsec]);
 
   const search = useCallback(
     async (query: string): Promise<GlobalSearchGroup[]> => {

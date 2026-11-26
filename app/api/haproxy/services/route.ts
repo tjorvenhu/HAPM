@@ -32,7 +32,7 @@ import type { HeaderDirection } from '@/lib/haproxy/config';
 import type { HaproxyStream } from '@/lib/haproxy/streams';
 import { surfaceTarget, type SurfaceTarget } from '@/lib/haproxy/protected';
 import { LOCAL_SERVER_ID, localServer } from '@/lib/helpers';
-import { crowdsecInStack } from '@/lib/crowdsec/paths';
+import { crowdsecInstalled } from '@/lib/crowdsec/paths';
 import type { CertificateSource, Exposure } from '@/lib/types';
 
 /**
@@ -149,7 +149,7 @@ export async function GET() {
               globalHeaders: { request: [], response: [] },
               defaultsTunnel: null,
               crowdsecGlobal: null,
-              crowdsecInStack: crowdsecInStack(),
+              crowdsecInStack: crowdsecInstalled(),
               health: {},
               baseConfigMissing: 0,
               error: t('Die HAProxy-Konfiguration ist nicht lesbar.'),
@@ -171,7 +171,7 @@ export async function GET() {
             globalHeaders: parseGlobalHeaders(probe.raw),
             defaultsTunnel: parseDefaultsTunnel(probe.raw),
             crowdsecGlobal: parseCrowdsecGlobal(probe.raw),
-            crowdsecInStack: crowdsecInStack(),
+            crowdsecInStack: crowdsecInstalled(),
             health: Object.fromEntries([
               ...probe.services.map((service) => [
                 service.id,
@@ -204,7 +204,7 @@ export async function GET() {
             globalHeaders: { request: [], response: [] },
               defaultsTunnel: null,
             crowdsecGlobal: null,
-            crowdsecInStack: crowdsecInStack(),
+            crowdsecInStack: crowdsecInstalled(),
             health: {},
             baseConfigMissing: 0,
             error: err instanceof Error ? err.message : t('HAProxy ist nicht erreichbar.'),

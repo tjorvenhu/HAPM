@@ -7,8 +7,10 @@
  * sie nicht abgewählt hat (`HAPM_CROWDSEC_OFF=1` in `.env`, dann sind beide
  * Dienste für Compose nicht da).
  *
- * Rein bis auf `process.env`, damit Seiten und Tests die Namen kennen.
+ * Nur Server: `crowdsecInstalled` sieht im Dateisystem nach.
  */
+
+import { existsSync } from 'node:fs';
 
 export function crowdsecContainerName(): string {
   return process.env.HAPM_CROWDSEC_CONTAINER || 'hapm-crowdsec';
@@ -21,6 +23,17 @@ export function bouncerContainerName(): string {
 /** Ob der Stack CrowdSec mitbringt. Gesetzt heißt: bei der Installation abgewählt. */
 export function crowdsecInStack(): boolean {
   return !process.env.HAPM_CROWDSEC_OFF;
+}
+
+/**
+ * Ob CrowdSec auf dieser Installation da ist: nicht abgewählt UND der Ordner
+ * eingebunden. Ohne Ordner läuft HAPM mit einer `docker-compose.yml` von vor
+ * CrowdSec; dann gibt es auch die Container nicht, und die Oberfläche blendet
+ * CrowdSec aus wie bei einer abgewählten Installation. Nachrüsten:
+ * `install.sh` erneut ausführen (docs/crowdsec.md).
+ */
+export function crowdsecInstalled(): boolean {
+  return crowdsecInStack() && existsSync(crowdsecDir());
 }
 
 /** Der Ordner im HAPM-Container, in dem die Dateien für beide Container liegen

@@ -28,7 +28,11 @@ export async function updatesOverview() {
   return {
     states,
     runs: runs.map((run) => ({ ...run, steps: parseSteps(run.steps) })),
-    settings: { autoUpdateHaproxy: settings.autoUpdateHaproxy, autoUpdateTime: settings.autoUpdateTime },
+    settings: {
+      autoUpdate: settings.autoUpdate,
+      autoUpdateHaproxy: settings.autoUpdateHaproxy,
+      autoUpdateTime: settings.autoUpdateTime,
+    },
     // Aus der Historie und nicht aus dem Prozess: bei der Übergabe von HAPM
     // bleibt der Lauf offen, bis der neue Container ihn schließt.
     running: runs.some((run) => run.status === 'running'),

@@ -19,6 +19,8 @@
  * Beim ACME-Server ebenso der EAB-Schlüssel (`changeCertificateSettings`).
  */
 
+import { UPDATE_COMPONENTS } from './updates/actions';
+import type { UpdateComponent } from './types';
 import { ApiError } from './api';
 import { msg } from './i18n';
 import { logAudit } from './audit';
@@ -51,6 +53,7 @@ const FIELD_LABELS: Record<keyof SettingsInput, string> = {
   acmeEmail: 'E-Mail für Let\'s Encrypt',
   publicUrl: 'Adresse von HAPM',
   autoUpdateHaproxy: 'Selbsttätiges Update von HAProxy',
+  autoUpdate: 'Selbsttätige Updates',
   autoUpdateTime: 'Uhrzeit für selbsttätige Updates',
   smtpHost: 'SMTP-Server',
   smtpPort: 'SMTP-Port',
@@ -84,6 +87,15 @@ export function readSettingsInput(body: Record<string, unknown>): SettingsInput 
       throw new ApiError(msg('Der Schalter für selbsttätige Updates kennt nur an und aus.'));
     }
     input.autoUpdateHaproxy = body.autoUpdateHaproxy;
+  }
+  if ('autoUpdate' in body) {
+    const list = body.autoUpdate;
+    if (!Array.isArray(list) || !list.every((entry) => UPDATE_COMPONENTS.includes(entry as UpdateComponent))) {
+      throw new ApiError(
+        msg('Selbsttätige Updates sind eine Liste aus {components}.', { components: UPDATE_COMPONENTS.join(', ') })
+      );
+    }
+    input.autoUpdate = list as UpdateComponent[];
   }
   if ('autoUpdateTime' in body) {
     if (typeof body.autoUpdateTime !== 'string') throw new ApiError(msg('Die Uhrzeit hat nicht die Form HH:MM.'));

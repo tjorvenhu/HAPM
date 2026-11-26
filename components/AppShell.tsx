@@ -44,6 +44,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
           userEmail={session.email}
           apiFetch={apiFetch}
           onSearch={openGlobalSearch}
+          features={session.features}
         />
       )}
       after={

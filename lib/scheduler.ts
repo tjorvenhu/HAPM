@@ -9,13 +9,13 @@
  *  - einmal am Tag: Zertifikate erneuern und Altes aufräumen
  */
 
-import { deleteWhere, Query } from './db';
-import { COLLECTIONS } from './types';
+import { deleteWhere, getDocument, Query } from './db';
+import { COLLECTIONS, type UpdateComponent, type UpdateRun } from './types';
 import { systemActor } from './audit';
-import { getSettings } from './settings';
+import { AUTO_UPDATE_ORDER, getSettings } from './settings';
 import { renewCertificates } from './acme';
 import { pruneExpiredSessions } from './session';
-import { checkUpdates, readUpdateStates } from './updates/check';
+import { checkUpdates } from './updates/check';
 import { expireStaleUpdateRuns, reconcileUpdateRuns, startUpdate } from './updates/apply';
 import { reconcileOrphanedHaproxyRuns } from './haproxy/reconcile';
 import {
@@ -175,16 +175,43 @@ async function tickMinute(): Promise<void> {
 
   try {
     const settings = await getSettings();
-    if (!settings.autoUpdateHaproxy || time !== settings.autoUpdateTime || s.lastAutoUpdateDay === day) return;
+    if (settings.autoUpdate.length === 0 || time !== settings.autoUpdateTime || s.lastAutoUpdateDay === day) return;
     s.lastAutoUpdateDay = day;
-    await checkUpdates();
-    const haproxy = (await readUpdateStates()).find((entry) => entry.component === 'haproxy');
-    if (haproxy?.updateAvailable) {
-      log('Selbsttätiges Update von HAProxy beginnt');
-      await startUpdate('haproxy', systemActor());
-    }
+    await runAutoUpdates(settings.autoUpdate);
   } catch (err) {
     log(`Selbsttätiges Update nicht gestartet: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/**
+ * Die gewählten Bestandteile nacheinander aktualisieren, nur wo es ein neues
+ * Abbild gibt. Immer nur ein Update gleichzeitig (`startUpdate` lehnt sonst
+ * ab), deshalb wartet jedes auf das Ende des vorigen. HAPM kommt zuletzt
+ * (`AUTO_UPDATE_ORDER`): es ersetzt den Prozess, in dem diese Schleife läuft.
+ */
+async function runAutoUpdates(components: readonly UpdateComponent[]): Promise<void> {
+  const states = await checkUpdates();
+  for (const component of AUTO_UPDATE_ORDER) {
+    if (!components.includes(component)) continue;
+    const state = states.find((entry) => entry.component === component);
+    if (state?.updateAvailable !== true) continue;
+    log(`Selbsttätiges Update von ${component} beginnt`);
+    try {
+      const run = await startUpdate(component, systemActor());
+      await waitForUpdateRun(run.$id);
+    } catch (err) {
+      log(`Selbsttätiges Update von ${component} nicht gestartet: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+}
+
+/** Bis ein Update-Lauf endet, höchstens 20 Minuten. */
+async function waitForUpdateRun(runId: string): Promise<void> {
+  const until = Date.now() + 20 * 60_000;
+  while (Date.now() < until) {
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+    const run = await getDocument<UpdateRun>(COLLECTIONS.UPDATE_RUNS, runId).catch(() => null);
+    if (!run || run.status !== 'running') return;
   }
 }
 

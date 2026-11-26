@@ -4,7 +4,7 @@ import { Fragment, useEffect, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import {
   Plus, Trash2, Loader2, X, Server, Waypoints, Info, Globe, Lock,
-  ChevronDown, ChevronRight, CornerUpRight, Scale, RefreshCw, ShieldCheck, SlidersHorizontal,
+  ChevronDown, ChevronRight, CornerUpRight, Scale, RefreshCw, ShieldCheck, SlidersHorizontal, Shield,
   CircleCheck, CircleDashed, CircleAlert,
 } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
@@ -116,6 +116,15 @@ const KIND_TITLES: Record<ServiceKind, { create: string; edit: string }> = {
  * gesperrt war.
  */
 type Access = 'open' | 'ip' | 'password';
+
+type FormTab = 'domains' | 'ziel' | 'schutz' | 'erweitert';
+
+const FORM_TABS: { key: FormTab; label: string; icon: typeof Globe }[] = [
+  { key: 'domains', label: msgid('Domains'), icon: Globe },
+  { key: 'ziel', label: msgid('Ziel'), icon: Server },
+  { key: 'schutz', label: msgid('Zugriff und Schutz'), icon: Shield },
+  { key: 'erweitert', label: msgid('Erweitert'), icon: SlidersHorizontal },
+];
 
 const ACCESS_LABELS: Record<Access, string> = {
   open: msgid('Offen'),
@@ -308,7 +317,7 @@ export default function ServiceFormModal({
   /** Zugeklappt, auch wenn es Regeln gibt: der Abschnitt ist aufgeklappt so
    *  lang wie der Rest des Formulars, und die meisten Änderungen betreffen ihn
    *  nicht. Die Anzahl in der Überschrift sagt, dass es dort etwas gibt. */
-  const [routesOpen, setRoutesOpen] = useState(false);
+  const [routesOpen, setRoutesOpen] = useState(true);
   /**
    * Das Verteilverfahren und die Sitzungsbindung.
    *
@@ -331,11 +340,13 @@ export default function ServiceFormModal({
     response: edit?.service.responseHeaders.map((rule) => ({ ...rule })) ?? [],
     request: edit?.service.requestHeaders.map((rule) => ({ ...rule })) ?? [],
   });
+  /** Der Reiter des Dialogs. Beginnt bei den Domains, beim Bearbeiten auch. */
+  const [tab, setTab] = useState<FormTab>('domains');
   const [tunnel, setTunnel] = useState(edit?.service.tunnel ?? false);
   /** CrowdSec für dieses Ziel. Gilt es global, ist der Schalter an und gesperrt. */
   const [crowdsec, setCrowdsec] = useState(edit?.service.crowdsec ?? false);
   /** Zugeklappt wie die Pfad-Regeln, aus demselben Grund. */
-  const [addonsOpen, setAddonsOpen] = useState(false);
+  const [addonsOpen, setAddonsOpen] = useState(true);
   const [healthcheck, setHealthcheck] = useState(edit?.service.healthcheck ?? true);
   /** Wie HAProxy mit den Zielen spricht. Beim Bearbeiten aus der Datei gelesen
    *  (`readServerParams`), sonst HTTP. */
@@ -553,6 +564,14 @@ export default function ServiceFormModal({
   // der etwas durchlässt, was der Server danach ablehnt.
   const inputError = editingId ? validateCreateInput(input) : validateNewService(input);
   const addonCount = input.responseHeaders.length + input.requestHeaders.length + (input.tunnel ? 1 : 0);
+  /** Was in einem Reiter eingestellt ist, als Zahl an seinem Namen: so sieht
+   *  man von außen, dass dort etwas steht. */
+  const tabCounts: Record<FormTab, number> = {
+    domains: 0,
+    ziel: 0,
+    schutz: (input.lockedDomains.length > 0 ? 1 : 0) + (input.crowdsec ? 1 : 0),
+    erweitert: input.routes.length + addonCount,
+  };
 
   /* Das Ziel, über das die Adresse von HAPM läuft, behält deren Domain
    * (`lib/haproxy/protected.ts`). Dieselbe Funktion wie in der Route, hier
@@ -908,8 +927,32 @@ export default function ServiceFormModal({
             </div>
           )}
 
+          {/* Vier Reiter statt einer langen Seite, wie unter Einstellungen.
+              Alles bleibt im Zustand des Formulars: ein Wechsel verliert
+              nichts, und gespeichert wird immer der ganze Eintrag. */}
+          <div className="tabs form-tabs" role="tablist">
+            {FORM_TABS.filter((entry) => !(redirecting && entry.key === 'erweitert')).map((entry) => {
+              const Icon = entry.icon;
+              return (
+                <button
+                  key={entry.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === entry.key}
+                  className={`tab ${tab === entry.key ? 'active' : ''}`}
+                  onClick={() => setTab(entry.key)}
+                >
+                  <Icon size={15} />
+                  {t(entry.label)}
+                  {tabCounts[entry.key] > 0 && <span className="section-count">{tabCounts[entry.key]}</span>}
+                </button>
+              );
+            })}
+          </div>
+
           <div className="form-columns">
             <div className="form-col">
+              {tab === 'domains' && (<>
               {/* ── Domains ──
                   Die Gruppe steht hier mit drin. Eine eigene Karte „Allgemein"
                   trug zuletzt nur noch dieses eine Feld: die Dienst-ID ergibt
@@ -1246,7 +1289,9 @@ export default function ServiceFormModal({
                   </div>
                 )}
               </section>
+              </>)}
 
+              {tab === 'ziel' && (<>
               {/* ── Wohin ──
                   Der Abschnitt, in dem sich die drei Formulare unterscheiden.
                   Es gibt keinen Umschalter mehr: was für eine Sorte Eintrag das
@@ -1609,7 +1654,9 @@ export default function ServiceFormModal({
                 </>
                 )}
               </section>
+              </>)}
 
+              {tab === 'schutz' && (<>
               {/* ── Zugriff ──
                   Eine Karte mit einer Frage zuerst. Was die gewählte Antwort
                   braucht (Adressen, ein Passwort, die Auswahl der Domains),
@@ -1772,9 +1819,11 @@ export default function ServiceFormModal({
                   </div>
                 )}
               </section>
+              </>)}
             </div>
 
             <div className="form-col">
+              {tab === 'ziel' && (<>
               {/* Bei einer Weiterleitung gibt es kein Backend, auf das eine
                   Pfad-Regel zeigen könnte. Der Abschnitt fällt deshalb weg,
                   statt gesperrt dazustehen: gesperrt läse er sich wie ein
@@ -1788,6 +1837,8 @@ export default function ServiceFormModal({
                   </span>
                 </div>
               )}
+              </>)}
+              {tab === 'erweitert' && (<>
               {/* ── Pfad-Regeln ──
                   Zugeklappt, bis jemand sie braucht: der Normalfall ist eine
                   Domain auf ein Ziel, und aufgeklappt ist dieser Abschnitt so
@@ -2042,6 +2093,7 @@ export default function ServiceFormModal({
                 )}
               </section>
               )}
+              </>)}
 
               {/* ── Header und Verbindung ──
                   Was früher ein Preset war, einzeln: jede Zeile hier ist eine
@@ -2049,7 +2101,11 @@ export default function ServiceFormModal({
                   Pfad-Regeln. Bei einer Weiterleitung fehlt die Karte: ihre
                   Antwort erzeugt HAProxy selbst, und darauf wirken diese
                   Zeilen nicht. */}
-              {!redirecting && (
+              {tab === 'schutz' && (<>
+              {/* Ohne CrowdSec auf dieser Installation gibt es die Frage nicht.
+                  Ein Ziel, das die Zeilen trotzdem trägt (Datei von früher),
+                  zeigt den Schalter, damit es sie loswerden kann. */}
+              {!redirecting && (selectedProxy?.crowdsecInStack || edit?.service.crowdsec) && (
                 <section className="form-section">
                   <div className="form-subsection-head">
                     <div>
@@ -2089,7 +2145,9 @@ export default function ServiceFormModal({
                   </div>
                 </section>
               )}
+              </>)}
 
+              {tab === 'erweitert' && (<>
               {!redirecting && (
               <section className="form-section">
                 <button
@@ -2267,6 +2325,7 @@ export default function ServiceFormModal({
                 )}
               </section>
               )}
+              </>)}
 
               {/* Die Meldung der Validierung steht am Fuß des Formulars, wo der
                   Blick beim Ausfüllen ohnehin endet. Hier standen einmal eine

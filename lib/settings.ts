@@ -18,6 +18,7 @@ import {
   type SetupStatus,
   type Settings,
   type SmtpSecurity,
+  type UpdateComponent,
 } from './types';
 
 type SettingsData = Omit<Settings, '$id' | '$createdAt' | '$updatedAt'>;
@@ -29,10 +30,33 @@ function allEvents(enabled: boolean): Record<NotificationEventType, boolean> {
   >;
 }
 
+/**
+ * Was eine neue Installation selbst aktualisiert: alles außer HAPM. HAProxy
+ * prüft vorher die Konfiguration und kommt zurück, wenn der neue Container
+ * nicht steht; acme.sh und CrowdSec tragen Fehlerbehebungen und neue Regeln.
+ * HAPM ersetzt dabei sich selbst, das bleibt ein Klick.
+ */
+export const DEFAULT_AUTO_UPDATE: readonly UpdateComponent[] = ['acme', 'crowdsec', 'crowdsec-bouncer', 'haproxy'];
+
+/** Die Reihenfolge der selbsttätigen Updates: HAPM zuletzt, es übergibt sich selbst. */
+export const AUTO_UPDATE_ORDER: readonly UpdateComponent[] = ['acme', 'crowdsec', 'crowdsec-bouncer', 'haproxy', 'hapm'];
+
+function readAutoUpdate(row: Partial<Settings>): UpdateComponent[] {
+  if (Array.isArray(row.autoUpdate)) {
+    return AUTO_UPDATE_ORDER.filter((component) => row.autoUpdate!.includes(component));
+  }
+  // Eine Zeile von vor der Auswahl: HAProxy nur, wenn es eingeschaltet war.
+  // Die übrigen bekommen die neue Vorgabe.
+  return DEFAULT_AUTO_UPDATE.filter(
+    (component) => component !== 'haproxy' || row.autoUpdateHaproxy === undefined || row.autoUpdateHaproxy === true
+  );
+}
+
 const DEFAULTS: SettingsData = {
   acmeEmail: null,
   publicUrl: null,
-  autoUpdateHaproxy: false,
+  autoUpdateHaproxy: true,
+  autoUpdate: [...DEFAULT_AUTO_UPDATE],
   autoUpdateTime: '04:00',
   smtpHost: null,
   smtpPort: DEFAULT_SMTP_PORT,
@@ -65,9 +89,11 @@ const SETUP_STATUSES: readonly SetupStatus[] = ['open', 'done', 'skipped'];
  */
 export function withDefaults(row: Partial<Settings>): SettingsData {
   const merged = { ...DEFAULTS, ...row } as SettingsData;
+  const autoUpdate = readAutoUpdate(row);
   return {
     ...merged,
-    autoUpdateHaproxy: merged.autoUpdateHaproxy ?? DEFAULTS.autoUpdateHaproxy,
+    autoUpdate,
+    autoUpdateHaproxy: autoUpdate.includes('haproxy'),
     autoUpdateTime: merged.autoUpdateTime ?? DEFAULTS.autoUpdateTime,
     smtpPort: merged.smtpPort ?? DEFAULTS.smtpPort,
     smtpSecurity: merged.smtpSecurity ?? DEFAULTS.smtpSecurity,
@@ -109,6 +135,7 @@ export function settingsView(settings: Settings): SettingsView {
     acmeEmail: settings.acmeEmail,
     publicUrl: settings.publicUrl,
     autoUpdateHaproxy: settings.autoUpdateHaproxy,
+    autoUpdate: settings.autoUpdate,
     autoUpdateTime: settings.autoUpdateTime,
     smtpHost: settings.smtpHost,
     smtpPort: settings.smtpPort,
@@ -208,6 +235,7 @@ export interface SettingsInput {
   acmeEmail?: string | null;
   publicUrl?: string | null;
   autoUpdateHaproxy?: boolean;
+  autoUpdate?: UpdateComponent[];
   autoUpdateTime?: string;
   smtpHost?: string | null;
   smtpPort?: number;
@@ -269,7 +297,7 @@ export function readSmtpInput(body: Record<string, unknown>): SettingsInput {
  */
 export function settingsPatch(
   input: SettingsInput,
-  current: Pick<Settings, 'notifyEvents'>,
+  current: Pick<Settings, 'notifyEvents'> & Partial<Pick<Settings, 'autoUpdate'>>,
   encryptPass: (plaintext: string) => string
 ): Partial<SettingsData> {
   const patch: Partial<SettingsData> = {};
@@ -283,7 +311,17 @@ export function settingsPatch(
     const value = input.publicUrl?.trim() || null;
     patch.publicUrl = value ? normalizePublicUrl(value) : null;
   }
-  if (input.autoUpdateHaproxy !== undefined) patch.autoUpdateHaproxy = Boolean(input.autoUpdateHaproxy);
+  // Die Liste gewinnt. Der alte Schalter nimmt HAProxy dazu oder heraus.
+  if (input.autoUpdate !== undefined || input.autoUpdateHaproxy !== undefined) {
+    let list: UpdateComponent[] = input.autoUpdate ?? current.autoUpdate ?? [...DEFAULT_AUTO_UPDATE];
+    if (input.autoUpdate === undefined && input.autoUpdateHaproxy !== undefined) {
+      list = input.autoUpdateHaproxy
+        ? [...list.filter((c) => c !== 'haproxy'), 'haproxy']
+        : list.filter((c) => c !== 'haproxy');
+    }
+    patch.autoUpdate = AUTO_UPDATE_ORDER.filter((component) => list.includes(component));
+    patch.autoUpdateHaproxy = patch.autoUpdate.includes('haproxy');
+  }
   if (input.autoUpdateTime !== undefined) {
     if (!validateTime(input.autoUpdateTime)) throw new ApiError(msg('Die Uhrzeit hat nicht die Form HH:MM.'));
     patch.autoUpdateTime = input.autoUpdateTime;

@@ -506,6 +506,29 @@ or allow addresses by hand and add rule sets, for example for WordPress.
 > is how CrowdSec itself behaves. How to turn it off is described in
 > [`docs/crowdsec.md`](docs/crowdsec.md) (German).
 
+### Adding CrowdSec later
+
+If you installed HAPM before CrowdSec, your `docker-compose.yml` lacks the two
+containers. The web interface then hides CrowdSec. To add it:
+
+```bash
+sh /opt/hapm/install.sh
+```
+
+The script fetches the new `docker-compose.yml`, keeps `.env` and all data as
+they are, and restarts the containers, now with CrowdSec. Without the script,
+with option 1:
+
+```bash
+cd /opt/hapm
+curl -fsSLO https://raw.githubusercontent.com/tjorvenhu/HAPM/main/docker-compose.yml
+docker compose pull && docker compose up -d
+```
+
+Afterwards CrowdSec is under "Reverse proxy, CrowdSec" and checks nothing until
+you switch it on. With Portainer or Dockge (option 3): paste the content of the
+new `docker-compose.yml` into the stack and redeploy.
+
 **Install without CrowdSec:**
 
 ```bash
@@ -618,6 +641,15 @@ flowchart LR
 In the web interface under **"Updates"**. HAPM reports new images of itself, of
 HAProxy and of CrowdSec, and a new acme.sh. A new HAProxy checks the existing configuration
 before the switch. If it does not start, the old one keeps running.
+
+**Automatically:** once a day at a fixed time, HAPM installs what you tick
+there. The default is everything except HAPM itself (HAProxy, acme.sh, CrowdSec
+and the bouncer). HAPM can be added, but is unreachable for about a minute
+during the swap.
+
+**An older installation does not get new containers** (such as CrowdSec)
+through the Updates page: it only swaps images of existing containers. Run the
+install script again instead, see [Adding CrowdSec later](#adding-crowdsec-later).
 
 Manually:
 

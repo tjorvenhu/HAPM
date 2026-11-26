@@ -20,6 +20,8 @@ interface NavItem {
   label: string;
   href: string;
   icon: LucideIcon;
+  /** Nur zu sehen, wenn die Installation das mitbringt (`SessionData.features`). */
+  feature?: 'crowdsec';
   badge?: NavCount;
 }
 
@@ -49,7 +51,7 @@ const NAV_SECTIONS: NavSection[] = [
       { label: msgid('Zertifikate'), href: '/reverse-proxy/zertifikate', icon: ShieldCheck },
       { label: msgid('DNS'), href: '/dns', icon: Globe },
       { label: msgid('Fehlerseiten'), href: '/reverse-proxy/fehlerseiten', icon: FileWarning },
-      { label: msgid('CrowdSec'), href: '/reverse-proxy/crowdsec', icon: ShieldAlert },
+      { label: msgid('CrowdSec'), href: '/reverse-proxy/crowdsec', icon: ShieldAlert, feature: 'crowdsec' },
       { label: msgid('API und MCP'), href: '/reverse-proxy/api', icon: Plug },
       { label: msgid('Einstellungen'), href: '/reverse-proxy/einstellungen', icon: SlidersHorizontal },
     ],
@@ -86,13 +88,14 @@ const ACCOUNT_PAGE: NavItem = { label: msgid('Konto'), href: '/konto', icon: Use
  * Jede Seite der Navigation als Suchtreffer, mit ihrem Bereich als Nebenzeile.
  * Speist die Gruppe „Seiten" der globalen Suche.
  */
-export const NAV_PAGES: { title: string; subtitle?: string; href: string }[] = [
+export const NAV_PAGES: { title: string; subtitle?: string; href: string; feature?: 'crowdsec' }[] = [
   ...NAV_SECTIONS.flatMap((section) =>
     section.items.map((item) => ({
       title: item.label,
       // „Übersicht" unter „Übersicht" sagt nichts.
       subtitle: section.title === item.label ? undefined : section.title,
       href: item.href,
+      ...(item.feature ? { feature: item.feature } : {}),
     }))
   ),
   { title: ACCOUNT_PAGE.label, href: ACCOUNT_PAGE.href },
@@ -121,7 +124,10 @@ function slug(value: string): string {
 }
 
 /** Aus den Bereichen wird die Gliederung für `ShellSidebar`: je Bereich eine Gruppe mit Überschrift. */
-function buildNavigation(t: (text: string) => string): { groups: ShellNavGroup[]; areas: ShellNavArea[] } {
+function buildNavigation(
+  t: (text: string) => string,
+  features: Partial<Record<'crowdsec', boolean>>
+): { groups: ShellNavGroup[]; areas: ShellNavArea[] } {
   const groups: ShellNavGroup[] = [];
   const areas: ShellNavArea[] = [];
 
@@ -134,6 +140,7 @@ function buildNavigation(t: (text: string) => string): { groups: ShellNavGroup[]
       label: t(section.title),
     });
     for (const item of section.items) {
+      if (item.feature && !features[item.feature]) continue;
       areas.push({
         key: `seite${slug(item.href)}`,
         href: item.href,
@@ -154,6 +161,8 @@ interface SidebarProps {
   apiFetch: (url: string, init?: RequestInit) => Promise<Response>;
   /** Öffnet die globale Suche. Zeigt den Knopf „Suchen". */
   onSearch?: () => void;
+  /** Was die Installation mitbringt. Fehlt etwas, fehlt sein Eintrag. */
+  features?: Partial<Record<'crowdsec', boolean>>;
 }
 
 /**
@@ -161,11 +170,12 @@ interface SidebarProps {
  * `ui/shell/ShellSidebar.tsx`. Hier steht nur, was HAPM hereingibt: Gliederung,
  * Zähler, Logo und Abmelden.
  */
-export default function Sidebar({ userName, userEmail, apiFetch, onSearch }: SidebarProps) {
+export default function Sidebar({ userName, userEmail, apiFetch, onSearch, features = {} }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { t } = useT();
-  const navigation = useMemo(() => buildNavigation(t), [t]);
+  const crowdsec = features.crowdsec === true;
+  const navigation = useMemo(() => buildNavigation(t, { crowdsec }), [t, crowdsec]);
   const [counts, setCounts] = useState<Partial<Record<NavCount, number>>>({});
 
   useEffect(() => {

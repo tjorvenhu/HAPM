@@ -39,7 +39,7 @@ import type { HaproxyStep, UpdateComponent, UpdateRun, UpdateState } from '@/lib
 type RunView = Omit<UpdateRun, 'steps'> & { steps: HaproxyStep[] };
 
 interface UpdateSettings {
-  autoUpdateHaproxy: boolean;
+  autoUpdate: UpdateComponent[];
   autoUpdateTime: string;
 }
 
@@ -82,6 +82,15 @@ const CONSEQUENCES: Record<UpdateComponent, string> = {
   'crowdsec-bouncer': msgid(
     'Der Bouncer wird durch das neue Abbild ersetzt. Während des Tauschs gehen Anfragen ungeprüft durch.'
   ),
+};
+
+/** Was beim selbsttätigen Update geschieht, je Bestandteil in einem Satz. */
+const AUTO_HINTS: Record<UpdateComponent, string> = {
+  haproxy: msgid('Das neue Abbild prüft vorher die Konfiguration. HAProxy ist beim Tausch wenige Sekunden nicht erreichbar.'),
+  acme: msgid('acme.sh aktualisiert sich selbst. Nichts wird unterbrochen.'),
+  crowdsec: msgid('Während des Tauschs gehen Anfragen ungeprüft durch.'),
+  'crowdsec-bouncer': msgid('Während des Tauschs gehen Anfragen ungeprüft durch.'),
+  hapm: msgid('HAPM ersetzt sich selbst, die Oberfläche ist etwa eine Minute weg. Vorgabe: nur auf Klick.'),
 };
 
 const POLL_IDLE_MS = 30_000;
@@ -293,16 +302,20 @@ export default function UpdatesPage() {
         current
           ? {
               ...current,
-              settings: { autoUpdateHaproxy: saved.autoUpdateHaproxy, autoUpdateTime: saved.autoUpdateTime },
+              settings: { autoUpdate: saved.autoUpdate, autoUpdateTime: saved.autoUpdateTime },
             }
           : current
       );
       setTimeDraft(null);
       notify({
         variant: 'success',
-        message: saved.autoUpdateHaproxy
-          ? t('HAProxy wird täglich um {time} Uhr selbsttätig aktualisiert.', { time: saved.autoUpdateTime })
-          : t('HAProxy wird nicht selbsttätig aktualisiert.'),
+        message:
+          saved.autoUpdate.length > 0
+            ? t('Selbsttätig aktualisiert wird täglich um {time} Uhr: {components}.', {
+                time: saved.autoUpdateTime,
+                components: saved.autoUpdate.map((component) => COMPONENT_LABELS[component]).join(', '),
+              })
+            : t('Nichts wird selbsttätig aktualisiert.'),
       });
     } catch {
       notify({ variant: 'error', message: t('Die Einstellung ließ sich nicht speichern.') });
@@ -363,6 +376,9 @@ export default function UpdatesPage() {
   }
 
   const timeValue = timeDraft ?? data.settings.autoUpdateTime;
+  const autoComponents = COMPONENTS.filter(
+    (component) => !OPTIONAL.includes(component) || data.states.some((state) => state.component === component)
+  );
 
   return (
     <>
@@ -519,32 +535,42 @@ export default function UpdatesPage() {
           <h2 className="card-title">{t('Selbsttätig aktualisieren')}</h2>
         </div>
         <div className="hapm-auto">
-          <label className="form-subsection hapm-auto-switch">
-            <div className="form-subsection-head">
-              <div>
-                <div className="form-section-title">
-                  {t('HAProxy selbsttätig aktualisieren')}
-                  <InfoHint
-                    text={t(
-                      'Zur eingestellten Uhrzeit prüft HAPM, ob es ein neues Abbild gibt, und spielt es ein. Vorher prüft das neue Abbild die Konfiguration. Startet der neue Container nicht, kommt der bisherige zurück. HAPM selbst und acme.sh werden nur auf Klick aktualisiert.'
-                    )}
-                  />
+          <div className="hapm-auto-list">
+            <p className="form-hint">
+              {t(
+                'Zur eingestellten Uhrzeit prüft HAPM, ob es Neues gibt, und spielt es für die gewählten Bestandteile nacheinander ein, HAPM selbst zuletzt.'
+              )}
+            </p>
+            {autoComponents.map((component) => (
+              <label key={component} className="form-subsection hapm-auto-switch">
+                <div className="form-subsection-head">
+                  <div>
+                    <div className="form-section-title">
+                      <span className="hapm-auto-icon">{COMPONENT_ICONS[component]}</span>
+                      {COMPONENT_LABELS[component]}
+                    </div>
+                    <div className="form-section-sub">{t(AUTO_HINTS[component])}</div>
+                  </div>
+                  <span className="toggle-switch">
+                    <input
+                      type="checkbox"
+                      checked={data.settings.autoUpdate.includes(component)}
+                      disabled={savingSettings}
+                      aria-label={COMPONENT_LABELS[component]}
+                      onChange={(event) =>
+                        void saveSettings({
+                          autoUpdate: event.target.checked
+                            ? [...data.settings.autoUpdate, component]
+                            : data.settings.autoUpdate.filter((entry) => entry !== component),
+                        })
+                      }
+                    />
+                    <span className="toggle-slider" />
+                  </span>
                 </div>
-                <div className="form-section-sub">
-                  {t('Beim Tausch ist HAProxy für wenige Sekunden nicht erreichbar.')}
-                </div>
-              </div>
-              <span className="toggle-switch">
-                <input
-                  type="checkbox"
-                  checked={data.settings.autoUpdateHaproxy}
-                  disabled={savingSettings}
-                  onChange={(event) => void saveSettings({ autoUpdateHaproxy: event.target.checked })}
-                />
-                <span className="toggle-slider" />
-              </span>
-            </div>
-          </label>
+              </label>
+            ))}
+          </div>
           <div className="form-group hapm-auto-time">
             <label className="form-label" htmlFor="auto-update-time">
               {t('Uhrzeit')}
@@ -559,7 +585,7 @@ export default function UpdatesPage() {
               type="time"
               className="form-input"
               value={timeValue}
-              disabled={savingSettings || !data.settings.autoUpdateHaproxy}
+              disabled={savingSettings || data.settings.autoUpdate.length === 0}
               onChange={(event) => setTimeDraft(event.target.value)}
               onBlur={() => {
                 if (timeDraft && timeDraft !== data.settings.autoUpdateTime) {

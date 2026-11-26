@@ -1011,7 +1011,11 @@ export const TOOLS: ToolDefinition[] = [
     input: {
       acmeEmail: z.string().nullable().optional().describe('Contact address for the ACME account (Let\'s Encrypt).'),
       exposure: z.enum(EXPOSURES as [string, ...string[]]).optional().describe('"internal" or "public".'),
-      autoUpdateHaproxy: z.boolean().optional().describe('Install HAProxy updates automatically once a day.'),
+      autoUpdate: z
+        .array(z.enum(UPDATE_COMPONENTS as [string, ...string[]]))
+        .optional()
+        .describe('Components updated automatically once a day at autoUpdateTime, e.g. ["haproxy","acme","crowdsec","crowdsec-bouncer"]. [] turns it off.'),
+      autoUpdateHaproxy: z.boolean().optional().describe('Older switch: adds HAProxy to autoUpdate or removes it.'),
       autoUpdateTime: z.string().optional().describe('Time for automatic updates, HH:MM.'),
       smtpHost: z.string().nullable().optional(),
       smtpPort: z.number().int().optional().describe('1 to 65535.'),

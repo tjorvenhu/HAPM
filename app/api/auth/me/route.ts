@@ -2,6 +2,7 @@ import { getSession } from '@/lib/session';
 import { getUserLocale } from '@/lib/auth/users';
 import { ok, handleError, ApiError } from '@/lib/api';
 import { msg } from '@/lib/i18n';
+import { crowdsecInstalled } from '@/lib/crowdsec/paths';
 
 /**
  * Die Sitzung, in der Form, die `ToolShell` (`ui/tool/ToolShell.tsx`) liest: ohne
@@ -21,6 +22,8 @@ export async function GET() {
       twoFactorSetupRequired: false,
       csrfToken: session.csrfToken,
       locale: await getUserLocale(session.userId),
+      // Abgewählt oder von vor CrowdSec: dann blendet die Oberfläche es aus.
+      features: { crowdsec: crowdsecInstalled() },
     });
   } catch (err) {
     return handleError(err);

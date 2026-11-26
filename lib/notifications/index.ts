@@ -61,6 +61,7 @@ function mailContext(settings: Settings, now: Date): NotificationMailContext {
     now,
     recoveryEnabled: settings.notifyEvents.backend_recovered,
     autoUpdateHaproxy: settings.autoUpdateHaproxy,
+    autoUpdate: settings.autoUpdate,
     autoUpdateTime: settings.autoUpdateTime,
   };
 }

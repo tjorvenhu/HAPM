@@ -277,6 +277,24 @@ Regeln (`cdn-hub.crowdsec.net`, `hub-data.crowdsec.net`) wird trotzdem
 gebraucht. Welche Hosts das sind und wie es durch einen Proxy geht, steht in
 [`betrieb.md`](betrieb.md), „Ausgehende Verbindungen".
 
+## Nachrüsten
+
+Eine Installation von vor CrowdSec hat eine `docker-compose.yml` ohne die beiden
+Dienste und ohne den Ordner `/crowdsec` in HAPM. HAPM erkennt das am fehlenden
+Ordner (`crowdsecInstalled()` in `lib/crowdsec/paths.ts`) und blendet CrowdSec
+aus wie bei einer abgewählten Installation: kein Eintrag in der Seitenleiste,
+kein Reiter unter Logs und Statistik, kein Schalter im Ziel-Dialog, kein
+Bereich in der Übersicht, keine Updates dafür. Die Seite selbst (direkt
+aufgerufen) nennt den Befehl zum Nachrüsten: `install.sh` erneut ausführen, es
+holt die neue `docker-compose.yml` und startet mit. Über „Updates" geht das
+nicht: das tauscht nur Abbilder bestehender Container und behält deren
+Einrichtung (`recreateBody`), ein neuer Container oder ein neuer Ordner kommt so
+nicht dazu.
+
+Abgewählt (`HAPM_CROWDSEC_OFF=1`) sieht für die Oberfläche genauso aus; die
+Seite nennt dann `install.sh --crowdsec`. Ein Ziel, das die Zeilen von früher
+noch trägt, zeigt seinen Schalter weiter, damit es sie loswerden kann.
+
 ## Abschalten
 
 **Für alle Ziele, Stack bleibt:** in der Oberfläche den globalen Schalter und

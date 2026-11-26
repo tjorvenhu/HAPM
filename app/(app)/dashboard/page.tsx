@@ -1366,6 +1366,7 @@ export default function DashboardPage() {
         <LayoutDialog
           layout={layout}
           labels={SECTION_LABELS}
+          unavailable={crowdsec.summary?.inStack ? [] : ['security']}
           onChange={setLayout}
           onReset={resetLayout}
           onClose={() => setLayoutOpen(false)}

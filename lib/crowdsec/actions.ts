@@ -31,6 +31,7 @@ import {
   bouncerContainerName,
   crowdsecContainerName,
   crowdsecInStack,
+  crowdsecInstalled,
   BOUNCER_NAME,
 } from './paths';
 import {
@@ -105,8 +106,11 @@ export function protection(text: string | null = readConfig()) {
 /* ── Zustand ── */
 
 export interface CrowdsecStatus {
-  /** Ob der Stack CrowdSec mitbringt (nicht `HAPM_CROWDSEC_OFF`). */
+  /** Ob CrowdSec auf dieser Installation da ist (`crowdsecInstalled`). */
   inStack: boolean;
+  /** Warum nicht: bei der Installation abgewählt, oder die Installation stammt
+   *  von vor CrowdSec und hat weder Ordner noch Container. */
+  missing: 'off' | 'not-installed' | null;
   crowdsec: ContainerInfo | null;
   bouncer: ContainerInfo | null;
   /** `cscli version`, oder `null`, wenn nicht zu erfahren. */
@@ -122,7 +126,8 @@ export interface CrowdsecStatus {
 /* eslint-disable @typescript-eslint/no-explicit-any -- Ausgabe von cscli */
 export async function crowdsecStatus(): Promise<CrowdsecStatus> {
   const status: CrowdsecStatus = {
-    inStack: crowdsecInStack(),
+    inStack: crowdsecInstalled(),
+    missing: !crowdsecInStack() ? 'off' : crowdsecInstalled() ? null : 'not-installed',
     crowdsec: null,
     bouncer: null,
     version: null,
@@ -370,7 +375,7 @@ export async function crowdsecSummary(): Promise<CrowdsecSummary> {
 
   const prot = protection();
   const value: CrowdsecSummary = {
-    inStack: crowdsecInStack(),
+    inStack: crowdsecInstalled(),
     running: false,
     bouncerRunning: false,
     activeDecisions: null,

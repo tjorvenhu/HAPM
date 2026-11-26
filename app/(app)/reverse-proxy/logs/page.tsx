@@ -10,6 +10,7 @@ import RunsView from './RunsView';
 import HaproxyLogView from './HaproxyLogView';
 import CrowdsecLogView from '@/components/crowdsec/CrowdsecLogView';
 import BrandLogo from '@/components/BrandLogo';
+import { useApp } from '@/components/AppShell';
 import '../../../logs.css';
 
 /**
@@ -40,6 +41,7 @@ function LogsPage() {
   const { t } = useT();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const crowdsec = useApp().session.features?.crowdsec === true;
   const [view, setView] = useState<View>(() => {
     const wanted = searchParams.get('ansicht');
     return wanted === 'haproxy' || wanted === 'crowdsec' ? wanted : 'runs';
@@ -98,6 +100,7 @@ function LogsPage() {
           <BrandLogo brand="haproxy" size={15} />
           {t('HAProxy-Log')}
         </button>
+        {crowdsec && (
         <button
           type="button"
           role="tab"
@@ -108,9 +111,10 @@ function LogsPage() {
           <BrandLogo brand="crowdsec" size={15} />
           CrowdSec
         </button>
+        )}
       </div>
 
-      {view === 'runs' ? <RunsView /> : view === 'haproxy' ? <HaproxyLogView /> : <CrowdsecLogView />}
+      {view === 'runs' ? <RunsView /> : view === 'haproxy' || !crowdsec ? <HaproxyLogView /> : <CrowdsecLogView />}
     </>
   );
 }
