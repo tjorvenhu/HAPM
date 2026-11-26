@@ -4,6 +4,8 @@ import type { Dictionary } from './index';
 export const common: Dictionary = {
   // Knöpfe und kurze Wörter
   'Abbrechen': 'Cancel',
+  'HAProxy hat die Anfrage abgewiesen, meist die WAF (CrowdSec). Den Grund nennen die Ereignisse unter CrowdSec.':
+    'HAProxy rejected the request, usually the WAF (CrowdSec). The events under CrowdSec give the reason.',
   'Bestätigen': 'Confirm',
   'Speichern': 'Save',
   'Speichern…': 'Saving…',

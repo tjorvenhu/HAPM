@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { ShellFrame, ShellPageSkeleton, ShellSidebarSkeleton } from "../shell/ShellFrame"
 import { ToastProvider } from "./Toast"
 import { ConfirmProvider } from "./ConfirmDialog"
+import { useT } from "@/lib/i18n/react"
 
 /** Was der Rahmen von einer Sitzung braucht. Weitere Felder legt `SessionData` in `lib/types.ts` fest. */
 export interface ToolSession {
@@ -63,6 +64,7 @@ export function ToolShell<S extends ToolSession>({
   children,
 }: ToolShellProps<S>): ReactElement | null {
   const router = useRouter()
+  const { t } = useT()
   const [session, setSession] = useState<S | null>(null)
   // Der Token als eigener Zustand: `apiFetch` hängt nur an ihm und nicht an der ganzen
   // Sitzung, sonst entstünde die Funktion bei jeder Aktualisierung neu, und jede Seite,
@@ -93,9 +95,20 @@ export function ToolShell<S extends ToolSession>({
     async (url: string, init?: RequestInit) => {
       const headers = new Headers(init?.headers)
       if (csrfToken) headers.set("X-CSRF-Token", csrfToken)
-      return fetch(url, { ...init, headers })
+      const res = await fetch(url, { ...init, headers })
+      // Jede Route antwortet mit JSON. Eine HTML-Seite mit 403 kommt von
+      // HAProxy davor, meist von der WAF (CrowdSec, OWASP-Regeln). Ohne das
+      // hier stand auf jeder Seite nur „Unbekannter Fehler.“
+      if (res.status === 403 && (res.headers.get("content-type") ?? "").includes("text/html")) {
+        const error = t("HAProxy hat die Anfrage abgewiesen, meist die WAF (CrowdSec). Den Grund nennen die Ereignisse unter CrowdSec.")
+        return new Response(JSON.stringify({ success: false, error }), {
+          status: 403,
+          headers: { "content-type": "application/json" },
+        })
+      }
+      return res
     },
-    [csrfToken]
+    [csrfToken, t]
   )
 
   const reload = useCallback(async () => {
