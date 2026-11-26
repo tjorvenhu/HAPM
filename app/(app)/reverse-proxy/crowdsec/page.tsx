@@ -111,7 +111,7 @@ function CrowdsecView() {
         />
         <div className="page-actions">
           {inStack && data && (
-            <button className="btn btn-ghost" onClick={() => power.ask(false)} disabled={power.busy}>
+            <button className="btn btn-secondary btn-hover-danger" onClick={() => power.ask(false)} disabled={power.busy}>
               {power.busy ? <Loader2 size={16} className="spin" /> : <Power size={16} />}
               {t('CrowdSec abschalten')}
             </button>

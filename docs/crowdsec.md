@@ -374,6 +374,14 @@ Regeln (`cdn-hub.crowdsec.net`, `hub-data.crowdsec.net`) wird trotzdem
 gebraucht. Welche Hosts das sind und wie es durch einen Proxy geht, steht in
 [`betrieb.md`](betrieb.md), „Ausgehende Verbindungen".
 
+**Die Community-Blocklist ist bei einer neuen Installation leer.** Die Central
+API liefert sie nicht sofort: im Log von CrowdSec steht dann
+`capi/community-blocklist : received 0 new entries (expected if you just installed crowdsec)`,
+und `cscli decisions list -a --origin CAPI` zeigt nichts, obwohl
+`cscli capi status` in Ordnung ist. CrowdSec fragt alle zwei Stunden erneut.
+Die Oberfläche zeigt solange 0 und sagt das hinter dem „i" an der Zahl. Mit
+„CrowdSec leeren" hat es nichts zu tun: das lässt die Liste stehen.
+
 ## Nachrüsten
 
 Eine Installation von vor CrowdSec hat eine `docker-compose.yml` ohne die beiden

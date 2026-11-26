@@ -428,4 +428,6 @@ export const crowdsec: Readonly<Record<string, string>> = {
   'Oben „Alle Ziele prüfen“ einschalten, oder CrowdSec im Dialog eines Ziels.': 'Switch on "Check all targets" above, or CrowdSec in the dialog of a target.',
   '{count} weiteres Ziel prüft CrowdSec nicht.': 'CrowdSec does not check {count} other target.',
   '{count} weitere Ziele prüft CrowdSec nicht.': 'CrowdSec does not check {count} other targets.',
+  'Adressen, die bei vielen CrowdSec-Installationen aufgefallen sind. CrowdSec bezieht sie von seiner Zentrale und sperrt sie vorab. Eine neue Installation bekommt die Liste erst nach einiger Zeit: 0 ist am Anfang normal.':
+    'Addresses that many CrowdSec installations have noticed. CrowdSec gets them from its central service and bans them in advance. A new installation only receives the list after some time: 0 is normal at the start.',
 };

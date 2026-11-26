@@ -181,6 +181,12 @@ a:hover { color: var(--accent-hover); }
 
 .btn-danger:hover:not(:disabled) { background: var(--danger); color: var(--primary-fg); }
 
+/* Ein grauer Knopf, der beim Überfahren sagt, dass er etwas abschaltet oder
+   wegnimmt. Für Handlungen im Seitenkopf, die selten und folgenreich sind: rot
+   im Ruhezustand zöge den Blick auf sich, grau ohne Hinweis sähe aus wie
+   „Aktualisieren" daneben. */
+.btn-hover-danger:hover:not(:disabled) { background: var(--danger-light); color: var(--danger-fg); }
+
 .btn-ghost { background: none; color: var(--text); }
 
 .btn-ghost:hover:not(:disabled) { background: var(--secondary); color: var(--text); }

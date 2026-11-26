@@ -197,13 +197,17 @@ describe('clearCrowdsec', () => {
       decision(2, 'lists', '203.0.113.10', '24h0m0s', 'firehol'),
       decision(3, 'cscli', '192.0.2.44', '23h0m0s', 'Von Hand'),
     ];
-    world.alerts = [{ source: { scope: 'CAPI' } }, { source: { scope: 'lists:firehol' } }, { source: { scope: 'Ip' } }];
+    world.alerts = [
+      { source: { scope: 'crowdsecurity/community-blocklist' } },
+      { source: { scope: 'lists:firehol' } },
+      { source: { scope: 'Ip' } },
+    ];
     world.failAdd.add('192.0.2.44');
 
     const result = await clearCrowdsec(actor);
     expect(result).toEqual({ alerts: 1, lifted: 0, kept: 0, lost: ['192.0.2.44'] });
     expect(world.calls.filter((call) => call[1] === 'delete')).toEqual([['alerts', 'delete', '--scope', 'Ip']]);
-    expect(world.alerts.map((alert) => alert.source.scope)).toEqual(['CAPI', 'lists:firehol']);
+    expect(world.alerts.map((alert) => alert.source.scope)).toEqual(['crowdsecurity/community-blocklist', 'lists:firehol']);
     expect(world.audits[0].details).toContain('Nicht wieder gesetzt: 192.0.2.44.');
   });
 

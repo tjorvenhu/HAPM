@@ -258,6 +258,11 @@ export default function OverviewPanel({ data, onChanged }: { data: CrowdsecOverv
               <div className="dash-kv-row">
                 <span className="dash-kv-label">
                   <Users size={14} /> {t('Gemeinschaftsliste')}
+                  <InfoHint
+                    text={t(
+                      'Adressen, die bei vielen CrowdSec-Installationen aufgefallen sind. CrowdSec bezieht sie von seiner Zentrale und sperrt sie vorab. Eine neue Installation bekommt die Liste erst nach einiger Zeit: 0 ist am Anfang normal.'
+                    )}
+                  />
                 </span>
                 <span className="dash-kv-value">{count(summary.communityBlocklist)}</span>
               </div>

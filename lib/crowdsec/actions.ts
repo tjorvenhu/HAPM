@@ -418,8 +418,13 @@ export async function crowdsecStatistics(window: unknown) {
 const PULL_WAIT_MS = 25_000;
 /** Ein Bouncer, der länger nicht gefragt hat, läuft nicht und liest beim Start ohnehin alles neu. */
 const BOUNCER_ACTIVE_MS = 90_000;
-/** Quellen eines Ereignisses, die nie geleert werden: die Listen, die CrowdSec von außen bezieht. */
-const KEPT_SCOPES = /^(capi|lists)(:|$)/i;
+/**
+ * Quellen eines Ereignisses und Herkünfte einer Sperre, die nie geleert werden:
+ * die Listen, die CrowdSec von außen bezieht. Das Ereignis, an dem die
+ * Gemeinschaftsliste hängt, trägt als Quelle `crowdsecurity/community-blocklist`,
+ * ihre Sperren die Herkunft `CAPI`, eine abonnierte Liste `lists:<Name>`.
+ */
+const KEPT_SCOPES = /^(capi|lists|crowdsecurity\/community-blocklist)(:|$)/i;
 
 const clearState = globalThis as unknown as { __hapmCrowdsecClearing?: boolean; __hapmCrowdsecUnpulled?: boolean };
 
