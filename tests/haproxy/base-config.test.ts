@@ -77,6 +77,7 @@ describe('renderBaseConfig', () => {
       'http-response set-header Strict-Transport-Security "max-age=31536000"',
       'http-response set-header X-Content-Type-Options "nosniff"',
       'http-request set-header X-Forwarded-For %[src]',
+      'http-request set-header X-Real-IP %[src]',
       'http-request set-header X-Forwarded-Proto https',
       'http-request set-header X-Forwarded-Port 443',
       'http-request set-header X-Forwarded-Host %[req.hdr(host)]',

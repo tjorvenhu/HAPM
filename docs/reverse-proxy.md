@@ -41,10 +41,17 @@ Backend-Adresse (`matchesSearch`, rein und getestet).
   Timeouts, errorfiles, Umleitung auf HTTPS mit Ausnahme für ACME,
   `strict-sni`, HTTP/3 mit `alt-svc` und `limited-quic`, die globalen Header,
   dazu Healthcheck, Sperren, Wildcards und Pfad-Regeln je Ziel. Was HAPM
-  schreibt, soll dort genauso stehen. Bewusst anders sind nur zwei Zeilen im
+  schreibt, soll dort genauso stehen. Bewusst anders sind zwei Zeilen im
   `global`-Block, beide wegen des Containers: kein `daemon` (HAProxy läuft im
   Vordergrund unter dem Master-Socket) und `log stdout format raw` statt
-  `short` (HAPM schreibt das Log selbst mit, `lib/haproxy-log.ts`). Eine
+  `short` (HAPM schreibt das Log selbst mit, `lib/haproxy-log.ts`). Dazu kommt
+  eine Zeile mehr unter den globalen Headern:
+  `http-request set-header X-Real-IP %[src]`. HAProxy setzt `X-Real-IP` nie von
+  selbst und reicht eines vom Aufrufer unverändert durch. Ein Ziel, das die
+  Kopfzeile liest (Konvention von nginx, Vorgabe bei Vaultwarden), glaubte ihm
+  sonst die Adresse, und Anmeldebegrenzung wie IP-Sperre dort wären zu umgehen.
+  Geprüft gegen HAProxy 2.4, 2.8, 3.0 und lts: mit der Zeile kommt genau eine
+  Kopfzeile mit der echten Adresse an, auch wenn der Client zwei mitschickt. Eine
   bestehende `haproxy.cfg` fasst das nicht an: die Grundkonfiguration entsteht
   nur, wenn die Datei fehlt.
 - **acme.sh richtet HAPM ein und hält es aktuell** (`lib/acme.ts`): installiert
@@ -1591,8 +1598,8 @@ oben in der Kopfzeile, und ein Reiter mit ungespeicherten Änderungen trägt
 einen Punkt.
 
 Was keinem Dienst gehört, sondern HAProxy als Ganzem: der Block unter
-`# Globale HTTPS-Settings` im Frontend (HSTS, `option forwardfor`, die
-`X-Forwarded-*`-Header), die Admin-Adressliste und der Zugriffsschutz (eigener
+`# Globale HTTPS-Settings` im Frontend (HSTS, die `X-Forwarded-*`-Header,
+`X-Real-IP`), die Admin-Adressliste und der Zugriffsschutz (eigener
 Abschnitt weiter unten). Sie stehen deshalb auf einer
 eigenen Seite und nicht im Dienst-Dialog.
 

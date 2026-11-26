@@ -20,8 +20,8 @@
  *
  * ── Woher die Adresse kommt ──
  *
- * Aus `getClientIP` und damit aus dem **rechtesten** X-Forwarded-For-Eintrag
- * bzw. dem X-Real-IP, den Traefik setzt. Der linkeste Eintrag ist vom Aufrufer
+ * Aus `getClientIP` und damit aus dem **rechtesten** X-Forwarded-For-Eintrag,
+ * nie aus X-Real-IP. Der linkeste Eintrag ist vom Aufrufer
  * frei wählbar — eine Freigabe, die sich mit einem Header umgehen lässt, ist
  * keine Freigabe, sondern eine Anzeige. Steht so schon in `lib/audit.ts` und
  * gilt hier aus demselben Grund.

@@ -1,8 +1,8 @@
 ---
 title: "Referenz-HAProxy-Konfiguration (Best Practice für Standardwerte, Sperren, Wildcards, Pfad-Regeln)"
-summary: "Eine produktiv bewährte haproxy.cfg als Vorgabe für die Standardwerte von HAPM: Grundaufbau, TLS, Header, Healthchecks, Sperren, Wildcards, Pfad-Regeln, Weiterleitung. Vor Änderungen an base-config.ts, config.ts oder dem Import danach richten."
+summary: "Eine produktiv bewährte haproxy.cfg als Vorgabe für die Standardwerte von HAPM: Grundaufbau, TLS, Header (auch X-Real-IP), Healthchecks, Sperren, Wildcards, Pfad-Regeln, Weiterleitung. Vor Änderungen an base-config.ts, config.ts oder dem Import danach richten."
 tags: ["haproxy","konvention","reverse-proxy","referenz"]
-updated: "2026-11-25T17:48:58.820Z"
+updated: "2026-11-26T21:54:43.256Z"
 ---
 
 Entscheidung vom 2026-11-25: Die Einstellungen einer produktiv betriebenen, ausgearbeiteten haproxy.cfg sind die Standardwerte von HAPM. Sie gelten als die besten Einstellungen für die meisten Nutzer.
@@ -18,13 +18,22 @@ Geprüft am 2026-11-25: Die Blöcke, die `config.ts` für Dienst mit Healthcheck
 
 | Zeile | Referenz | HAPM `base-config.ts` | Bewertung |
 |---|---|---|---|
-| `limited-quic` (global) | vorhanden | seit 2026-11-25 auch bei HAPM | Laut Handbuch (`limited-quic`): schaltet QUIC-Listener frei, wenn die TLS-Bibliothek keine QUIC-API hat, sonst wirkungslos. Bestehende `haproxy.cfg` bekommen die Zeile nur über den Abgleich der Grundkonfiguration. |
+| `limited-quic` (global) | vorhanden | seit 2026-11-25 auch bei HAPM | Laut Handbuch: schaltet QUIC-Listener frei, wenn die TLS-Bibliothek keine QUIC-API hat, sonst wirkungslos. Bestehende `haproxy.cfg` bekommen die Zeile nur über den Abgleich der Grundkonfiguration. |
+| `http-request set-header X-Real-IP %[src]` (globale HTTPS-Zeilen) | fehlt | seit 2026-11-26 bei HAPM, direkt hinter `X-Forwarded-For` | **Absicht bei HAPM**, siehe unten. |
 | `daemon` (global) | vorhanden | fehlt | **Absicht bei HAPM**: im Container läuft HAProxy im Vordergrund (master-worker mit `-S`). Nicht übernehmen. |
 | `log stdout format short daemon` | short | `raw local0 info` | **Absicht bei HAPM:** `lib/haproxy-log.ts` schreibt das Log mit und setzt den Kopf selbst, `short` brächte ein `<PRI>` vor jede Zeile. |
-| Sperre per Passwort | anderer Präfix | `hapm_lock_…`, `/etc/haproxy/hapm-lock/` | Aufbau der Regeln identisch, im Beispiel unten schon mit den Namen von HAPM. Kennungen auf der Platte nie umbenennen (CLAUDE.md). |
+| Sperre per Passwort | anderer Präfix | `hapm_lock_…`, `/etc/haproxy/hapm-lock/` | Aufbau der Regeln identisch. Kennungen auf der Platte nie umbenennen (CLAUDE.md). |
 | IPv6-Binds | keine | nur mit Option `ipv6` | passt |
 
 Im HTTPS-Frontend steht `acl admin_ips src …` unter `# Admin-IPs` direkt vor `# Globale HTTPS-Settings`.
+
+### X-Real-IP (2026-11-26)
+- Anlass: Vaultwarden meldet auf der Diagnoseseite „IP header No Match“ (seine Vorgabe ist `IP_HEADER=X-Real-IP`, HAPM schickte nur `X-Forwarded-For`).
+- HAProxy setzt `X-Real-IP` nie von selbst (automatisch gibt es nur `X-Forwarded-For` über `option forwardfor`) und reicht eines vom Client unverändert durch. Ein Ziel, das die Kopfzeile liest, glaubt dann dem Aufrufer.
+- Gemessen mit HAProxy 2.4, 2.8, 3.0 und lts: mit `set-header` kommt genau eine Kopfzeile mit `src` an, auch wenn der Client zwei in gemischter Schreibweise mitschickt. Ohne die Zeile kommt der gefälschte Wert an.
+- **Stolperfalle:** Der Abgleich der Grundkonfiguration (`base-config-diff.ts`) schlägt Zeilen unter `# Globale HTTPS-Settings` nie vor (`managedIndexes`). Eine neue Vorgabe dort erreicht bestehende Installationen nicht. Sie tragen die Zeile unter Reverse-Proxy, Einstellungen selbst ein (oder per MCP `update_proxy_settings`).
+- Je Ziel geht die Zeile nicht über die Maske: Kopfzeilen eines Ziels sind fester Text, `%[src]` würde zu `%%[src]` (`readHeaderLine`, `tests/haproxy/addons.test.ts`).
+- HAPM selbst liest `X-Real-IP` nie (`getClientIP` in `lib/audit.ts`, `tests/security/client-ip.test.ts`).
 
 ## Fälle, die als Vorbild gelten
 - **Einfacher Dienst mit Healthcheck:** `option httpchk`, `http-check send meth GET uri / ver HTTP/1.1 hdr Host <hauptdomain>`, `http-check expect status 200-399`, Leerzeile, `server <name> <ip>:<port> check`.
@@ -34,7 +43,7 @@ Im HTTPS-Frontend steht `acl admin_ips src …` unter `# Admin-IPs` direkt vor `
 - **Zusätzliche Antwort-Header je Dienst** (z. B. Nextcloud): `http-response set-header X-Robots-Tag "noindex,nofollow"` und `X-Permitted-Cross-Domain-Policies "none"` vor dem Healthcheck.
 - **Pfad-Regeln mit WebSocket** (z. B. Coolify): eigene Backends `<id>_<regel>`, `acl path_<id>_<regel> path_beg …`, `use_backend` der Regeln vor dem des Dienstes, `timeout tunnel 1h` in jedem Backend des Eintrags, Pfad-Backends mit `check` ohne `option httpchk`.
 - **HTTP-Weiterleitung:** Backend nur mit `http-request redirect location <url> code 302`.
-- **Passwortsperre:** `stick-table type ipv6 size 10k expire 10m store http_req_rate(10m)` im Backend, im Frontend `track-sc2`, Drosselung mit 429 ab mehr als 10 POST, `wait-for-body`, Cookie-Prüfung über `sha2(256)` eines gesalzenen Passworts, Seiten aus Dateien (`lock.html`, `lock-wrong.html`, `lock-throttled.html`). Die Zeilen schreibt `passwordLockRules` in `config.ts` genau so.
+- **Passwortsperre:** `stick-table type ipv6 size 10k expire 10m store http_req_rate(10m)` im Backend, im Frontend `track-sc2`, Drosselung mit 429 ab mehr als 10 POST, `wait-for-body`, Cookie-Prüfung über `sha2(256)` eines gesalzenen Passworts, Seiten aus Dateien (`lock.html`, `lock-wrong.html`, `lock-throttled.html`). Die Zeilen schreibt `passwordLockRules` in `config.ts` genau so, dort nachlesen.
 - **Gruppen:** `# BEGIN AUTO <GRUPPE> SERVICES` / `… BACKENDS`, je Eintrag `# AUTO: <id>`. Mehrere Gruppen nebeneinander, Backends einer Gruppe unter einer Kommentar-Überschrift.
 - **Backend-Ziele:** HTTP auf `:80` oder App-Port, Servername frei (z. B. `app-host`, `coolify-ui`, `server1`).
 
@@ -61,18 +70,6 @@ Im HTTPS-Frontend steht `acl admin_ips src …` unter `# Admin-IPs` direkt vor `
     acl host_api_wildcard hdr(host),lower -m end -i .api.example.com
     use_backend api_wildcard if host_api_wildcard
     # END AUTO APPS SERVICES
-    # BEGIN AUTO TEST SERVICES
-    # AUTO: websites_test
-    acl host_websites_test hdr(host),lower -m end -i .test.example.com
-    acl pass_websites_test req.cook(hapm_lock_websites_test) -m str <COOKIE_HASH>
-    http-request track-sc2 src table websites_test if host_websites_test !pass_websites_test METH_POST
-    http-request return status 429 content-type "text/html; charset=utf-8" hdr Cache-Control no-store file /etc/haproxy/hapm-lock/lock-throttled.html if host_websites_test !pass_websites_test METH_POST { sc_http_req_rate(2,websites_test) gt 10 }
-    http-request wait-for-body time 5s at-least 4k if host_websites_test !pass_websites_test METH_POST
-    http-request return status 303 hdr Location https://%[req.hdr(host)]%[pathq] hdr Cache-Control no-store hdr Set-Cookie "hapm_lock_websites_test=<COOKIE_HASH>; Path=/; Max-Age=2592000; HttpOnly; Secure; SameSite=Lax" if host_websites_test !pass_websites_test METH_POST { req.body_param(hapm_lock_password),url_dec(1),concat(<SALT>),sha2(256),hex,lower -m str <PASSWORD_HASH> }
-    http-request return status 401 content-type "text/html; charset=utf-8" hdr Cache-Control no-store file /etc/haproxy/hapm-lock/lock-wrong.html if host_websites_test !pass_websites_test METH_POST
-    http-request return status 401 content-type "text/html; charset=utf-8" hdr Cache-Control no-store file /etc/haproxy/hapm-lock/lock.html if host_websites_test !pass_websites_test
-    use_backend websites_test if host_websites_test
-    # END AUTO TEST SERVICES
 # BEGIN AUTO APPS BACKENDS
 # AUTO: paperless_app
 backend paperless_app
@@ -105,10 +102,5 @@ backend api_wildcard
 backend redirect_mail
     http-request redirect location https://webmail.example.net/ code 302
 # END AUTO APPS BACKENDS
-# BEGIN AUTO TEST BACKENDS
-# AUTO: websites_test
-backend websites_test
-    stick-table type ipv6 size 10k expire 10m store http_req_rate(10m)
-    server web-host 10.0.0.4:80
-# END AUTO TEST BACKENDS
 ```
+Eine zweite Gruppe (`TEST`) mit Passwortsperre steht im Original daneben, ihre Zeilen entsprechen `passwordLockRules`; das Backend dazu ist nur `stick-table …` und `server web-host 10.0.0.4:80`.

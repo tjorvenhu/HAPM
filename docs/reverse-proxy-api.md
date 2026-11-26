@@ -61,12 +61,13 @@ Adresse, die angekommen ist:
 Zwei Dinge sind dabei zu wissen, bevor man eine Liste einträgt:
 
 - **Verglichen wird die Adresse, die bei HAPM ankommt** (`getClientIP` in
-  `lib/audit.ts`): `X-Real-IP`, falls der Header gesetzt ist, sonst der
-  **rechteste** `X-Forwarded-For`-Eintrag. Der linkeste Eintrag ist vom Aufrufer
-  frei wählbar; eine Freigabe, die sich mit einem Header umgehen lässt, wäre
-  keine. Daraus folgt eine Bedingung an den Proxy vor HAPM: er muss
-  `X-Forwarded-For` anhängen (`option forwardfor`) und ein vom Client
-  mitgeschicktes `X-Real-IP` überschreiben oder entfernen. Wenn unklar ist,
+  `lib/audit.ts`): über das eigene HAProxy der **rechteste**
+  `X-Forwarded-For`-Eintrag, direkt über den Port von HAPM die Gegenstelle der
+  Verbindung. Der linkeste Eintrag ist vom Aufrufer frei wählbar; eine Freigabe,
+  die sich mit einem Header umgehen lässt, wäre keine. `X-Real-IP` liest HAPM
+  nie. Daraus folgt eine Bedingung an die globalen HTTPS-Zeilen: sie müssen
+  `X-Forwarded-For` setzen (so die Grundkonfiguration) oder anhängen
+  (`option forwardfor`). Wenn unklar ist,
   welche Adresse ankommt: einmal aufrufen und auf der Karte unter „Zuletzt
   benutzt" nachsehen.
 - **IPv4 und IPv6 sind zwei Einträge.** Eine Freigabe `203.0.113.7` trifft keine

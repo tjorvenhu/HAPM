@@ -15,7 +15,7 @@
  * globalen Einstellungen ab.
  *
  * Die Vorgaben: TLS ab 1.2 und nur mit Forward Secrecy, HTTP/3, HSTS, die
- * `X-Forwarded-*`-Kopfzeilen, `strict-sni`, `chroot`. Zwei Dinge folgen aus dem
+ * `X-Forwarded-*`-Kopfzeilen und `X-Real-IP`, `strict-sni`, `chroot`. Zwei Dinge folgen aus dem
  * Container: kein `daemon` (HAProxy läuft im Vordergrund) und `log … format
  * raw` statt `short`.
  *
@@ -153,6 +153,10 @@ export function renderBaseConfig(options: BaseConfigOptions): string {
     '    http-response set-header Strict-Transport-Security "max-age=31536000"',
     '    http-response set-header X-Content-Type-Options "nosniff"',
     '    http-request set-header X-Forwarded-For %[src]',
+    // Ohne die Zeile reicht HAProxy ein X-Real-IP des Aufrufers unverändert ans
+    // Ziel durch, und wer die Kopfzeile liest (Vorgabe bei Vaultwarden), glaubt
+    // ihm die Adresse. HAProxy setzt sie nie von selbst.
+    '    http-request set-header X-Real-IP %[src]',
     '    http-request set-header X-Forwarded-Proto https',
     '    http-request set-header X-Forwarded-Port 443',
     '    http-request set-header X-Forwarded-Host %[req.hdr(host)]',
