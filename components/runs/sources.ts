@@ -54,6 +54,7 @@ const ENDPOINTS: Record<RunKind, string> = {
   update: '/api/updates/runs',
   backup: '/api/backup/runs',
   restore: '/api/backup/restore/runs',
+  crowdsec: '/api/crowdsec/rules/runs',
 };
 
 interface RawRun {
@@ -71,6 +72,8 @@ interface RawRun {
   toVersion?: string | null;
   hostPath?: string;
   fileName?: string | null;
+  /** Nur Regeln von CrowdSec: was noch wartet, vom Server schon übersetzt. */
+  pending?: string[];
 }
 
 function toView(kind: RunKind, raw: RawRun): RunView {
@@ -92,6 +95,9 @@ function toView(kind: RunKind, raw: RawRun): RunView {
     if (running && !steps.some((step) => !step.ok)) {
       pending = RESTORE_PLAN.slice(steps.length).map((step) => RESTORE_STEP_LABELS[step]);
     }
+  } else if (kind === 'crowdsec') {
+    // Die Schlange wächst, während der Lauf arbeitet: es gibt keinen festen Plan.
+    if (running) pending = raw.pending ?? [];
   }
   return {
     kind,
@@ -161,6 +167,12 @@ export function runTitle(view: RunView | null, ref: RunRef, t: Translator['t']):
         : failed
           ? t('Zurückspielen fehlgeschlagen: {name}', { name: subject })
           : t('Zurückgespielt: {name}', { name: subject });
+    case 'crowdsec':
+      return running
+        ? t('CrowdSec-Regeln werden geändert')
+        : failed
+          ? t('CrowdSec-Regeln: Änderung fehlgeschlagen')
+          : t('CrowdSec-Regeln geändert');
     default: {
       const noun = ref.label ?? (view?.action === 'settings' ? t('Globale Einstellungen') : t('Reverse-Proxy'));
       const head = running
@@ -231,6 +243,19 @@ export function finishedToast(view: RunView, ref: RunRef, t: Translator['t']): F
             variant: view.status === 'warning' ? 'warning' : 'success',
             title: t('Zurückgespielt'),
             message: view.status === 'warning' && view.error ? t(view.error) : (view.subject ?? ''),
+          };
+    case 'crowdsec':
+      // Ein Lauf trägt mehrere Änderungen: die Meldung nennt die gescheiterte, der Grund steht im Fenster.
+      return failed
+        ? {
+            variant: 'error',
+            title: t('CrowdSec-Regeln: Änderung fehlgeschlagen'),
+            message: failedStep ? t('Fehlgeschlagen bei: {step}', { step: t(failedStep.label) }) : failure,
+          }
+        : {
+            variant: 'success',
+            title: t('CrowdSec-Regeln geändert'),
+            message: t('CrowdSec hat die Regeln neu geladen.'),
           };
     default:
       return failed

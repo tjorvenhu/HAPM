@@ -165,6 +165,45 @@ dieser Datei zurück (`readCrsMode`), es gibt keine Kopie in der Datenbank.
 
 „Regeln aktualisieren" ist `cscli hub update` und `cscli hub upgrade`.
 
+### Änderungen laufen in einer Warteschlange
+
+Eine Änderung holt Regeln aus dem Hub und braucht danach einen Neustart von
+CrowdSec. Das dauert länger, als eine Anfrage warten soll, und solange die
+Seite darauf wartete, war jeder andere Schalter gesperrt. Jede Änderung reiht
+sich deshalb ein (`lib/crowdsec/rule-jobs.ts`, im Speicher des Prozesses):
+
+- **Die Oberfläche wartet nicht.** `PATCH /api/crowdsec/rules` prüft die
+  Änderung, reiht sie ein und antwortet sofort mit `{ runId, key }`
+  (`queueRuleChange`). Der Lauf steht in der Pille unten rechts, sein Ende
+  kommt als Meldung, die Schritte liest das Fenster der Läufe unter
+  `GET /api/crowdsec/rules/runs/<id>`. Ein Fenster je Klick geht nicht auf
+  (`watchRun` statt `startRun`).
+- **Es arbeitet immer nur ein Lauf, und was dazukommt, hängt sich an.** Die
+  Änderungen laufen nacheinander: zwei `cscli` nebeneinander schrieben in
+  denselben Hub. Wartet schon eine Änderung für denselben Schalter, tritt die
+  spätere an ihre Stelle.
+- **CrowdSec lädt je Lauf einmal neu, am Ende.** Jeder Neustart lässt für
+  Sekunden Anfragen ungeprüft durch, drei Schalter hintereinander sollen das
+  nicht dreimal tun. Neu geladen wird auch nach einem Fehler mittendrin: was
+  schon installiert ist, soll gelten. Scheitert eine Änderung, laufen die
+  übrigen weiter, und der Lauf endet als fehlgeschlagen. Was sich während des
+  Neuladens einreiht, beginnt den nächsten Lauf.
+- **Was aussteht, sagt `GET rules` in `pending`** (`crs`, `app:<id>`, Name der
+  Sammlung, `hub`, jeweils mit dem gewünschten Zustand). Der Schalter zeigt
+  danach sofort den Wunsch und ist gesperrt, bis CrowdSec neu geladen hat: erst
+  dann gilt die Änderung. Die übrigen Schalter bleiben bedienbar. Während des
+  Neustarts liefert `GET rules` den letzten Stand von `cscli hub list` statt
+  eines Fehlers.
+- **Interne API und MCP warten weiter auf das Ergebnis** (`changeRules`), mit
+  derselben Antwort wie zuvor, gehen aber durch dieselbe Schlange: die Antwort
+  kommt, wenn die eigene Änderung gelaufen ist und CrowdSec neu geladen hat.
+- Der Abgleich im Scheduler setzt aus, solange ein Lauf arbeitet. Er startete
+  CrowdSec nach einem Wechsel der OWASP-Regeln sonst mitten im Lauf neu.
+
+Nach einem Neustart von HAPM ist die Schlange leer und die Läufe sind vergessen:
+eine wartende Änderung hätte ihn ohnehin nicht überlebt. Das Audit steht je
+Änderung im Protokoll.
+
 ## HAProxy: die Datei ist die Wahrheit
 
 <img src="../public/brands/haproxy.png" alt="" width="16" height="16"> HAProxy
@@ -259,6 +298,8 @@ als Fehler in dessen Log.
 einer Sammlung startet HAPM den Container von CrowdSec neu, statt ihm nur ein
 Signal zu schicken: neue Quellen der WAF übernimmt er so sicher. In den
 Sekunden des Neustarts gehen Anfragen ungeprüft durch, wie bei jedem Ausfall.
+Mehrere Änderungen hintereinander teilen sich deshalb einen Neustart (siehe
+„Änderungen laufen in einer Warteschlange").
 
 ## Freigaben
 

@@ -366,7 +366,12 @@
  * statt des Schalters ein Zeichen, gleich breit, damit die Texte untereinander beginnen. */
 .hapm-dns-text { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; overflow-wrap: anywhere; }
 
-.hapm-dns-state { display: inline-flex; flex-shrink: 0; justify-content: center; width: 44px; color: var(--text-tertiary); }
+.hapm-dns-state { display: inline-flex; flex-shrink: 0; justify-content: center; width: 28px; color: var(--text-tertiary); }
+/* Je Domain eine Zeile mit Linie dazwischen: Zustand, Name mit Satz, Schalter. */
+.hapm-dns-rows { gap: 0; padding-block: 2px; }
+.hapm-dns-rows > .form-list-row { padding: 10px 2px; gap: 10px; }
+.hapm-dns-rows > .form-list-row + .form-list-row { border-top: 1px solid var(--border); }
+.hapm-dns-rows strong { font-weight: 600; }
 
 .hapm-dns-state.is-matches { color: var(--success); }
 

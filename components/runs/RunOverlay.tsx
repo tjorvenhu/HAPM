@@ -27,7 +27,8 @@ interface Props {
 }
 
 /**
- * Das Fenster eines Laufs: Reverse-Proxy, Update, Sicherung, Zurückspielen.
+ * Das Fenster eines Laufs: Reverse-Proxy, Update, Sicherung, Zurückspielen,
+ * Regeln von CrowdSec.
  *
  * Es holt sich den Lauf selbst und fragt, bis er fertig ist. Ein Reverse-Proxy-
  * Vorgang zeigt seine Phasen als Reihe aus Kreisen und das Protokoll darunter,

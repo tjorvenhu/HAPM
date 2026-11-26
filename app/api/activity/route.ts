@@ -5,6 +5,8 @@ import { ok, handleError } from '@/lib/api';
 import { componentLabel } from '@/lib/updates/apply';
 import { BACKUP_RUNS } from '@/lib/backup/settings';
 import { activeRestore } from '@/lib/backup/restore';
+import { activeRuleRuns } from '@/lib/crowdsec/rule-jobs';
+import { getT } from '@/lib/i18n/server';
 import type { BackupRun } from '@/lib/backup/run';
 import type { HaproxyRun, UpdateComponent, UpdateRun } from '@/lib/types';
 import type { RunKind } from '@/components/runs/runs';
@@ -18,13 +20,16 @@ export interface ActivityJob {
   phase: string | null;
   /** Der Bestandteil eines Updates: beim Tausch von HAPM ist die Oberfläche kurz weg. */
   component?: UpdateComponent;
+  /** Nur Regeln von CrowdSec: der Schritt, der gerade läuft, schon übersetzt. */
+  step?: string | null;
   startedAt: string;
 }
 
 /**
  * Alles, was gerade im Hintergrund läuft: Vorgänge am Reverse-Proxy, Updates,
- * Sicherungen und das Zurückspielen. Das ist die Quelle der Pille unten
- * rechts, also gehört hier alles hinein, was länger läuft als eine Anfrage.
+ * Sicherungen, das Zurückspielen und Änderungen an den Regeln von CrowdSec.
+ * Das ist die Quelle der Pille unten rechts, also gehört hier alles hinein,
+ * was länger läuft als eine Anfrage.
  *
  * Ein Lauf, dessen treibender Prozess gestorben ist (Neustart, Absturz), steht
  * hier bis zum nächsten Abgleich weiter als `running`: sichtbar statt
@@ -41,6 +46,7 @@ export async function GET() {
       listDocuments<BackupRun>(BACKUP_RUNS, running),
     ]);
     const restore = activeRestore();
+    const { t } = await getT();
 
     const jobs: ActivityJob[] = [
       // Dieselbe Beschriftung wie die Überschrift des Overlays (`/api/haproxy/runs/[id]`).
@@ -69,6 +75,14 @@ export async function GET() {
       ...(restore
         ? [{ id: restore.runId, kind: 'restore' as const, name: restore.name, phase: null, startedAt: restore.startedAt }]
         : []),
+      ...activeRuleRuns(t).map((run) => ({
+        id: run.id,
+        kind: 'crowdsec' as const,
+        name: t('CrowdSec-Regeln'),
+        phase: null,
+        step: run.step,
+        startedAt: run.startedAt,
+      })),
     ].sort((a, b) => b.startedAt.localeCompare(a.startedAt));
 
     return ok({ jobs });

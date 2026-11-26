@@ -2,7 +2,8 @@
 
 import { useEffect, useState, type FormEvent } from 'react';
 import ErrorNote from '@/components/ErrorNote';
-import { Plus, Loader2, X, Cable, Server, ShieldAlert, Info, Check } from 'lucide-react';
+import FormHint from '@/components/FormHint';
+import { Plus, Loader2, X, Cable, Server, ShieldAlert, Info, Check, Shield } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
 import { errorText } from '@/components/errorText';
@@ -25,6 +26,8 @@ import {
 import { useT } from '@/lib/i18n/react';
 import type { ProxyRow } from './types';
 import SavedTargetPick, { useSavedTargets } from './SavedTargetPick';
+import { FormSteps, FormWizardFooter, type FormStep } from './FormWizard';
+import { msgid } from '@/lib/i18n';
 
 /**
  * Anlegen und Bearbeiten einer TCP-Weiterleitung.
@@ -77,6 +80,15 @@ function readPortField(raw: string, previous: string): string {
   return Number(digits) > STREAM_PORT_MAX ? previous : digits;
 }
 
+type StreamTab = 'port' | 'ziel' | 'zugriff';
+
+/** Dieselbe Führung wie im Dialog der Ziele: erst der Port, dann wohin, dann wer darf. */
+const STREAM_TABS: FormStep<StreamTab>[] = [
+  { key: 'port', label: msgid('Port'), next: msgid('Weiter zum Port'), icon: Cable },
+  { key: 'ziel', label: msgid('Ziel'), next: msgid('Weiter zum Ziel'), icon: Server },
+  { key: 'zugriff', label: msgid('Zugriff'), next: msgid('Weiter zum Zugriff'), icon: Shield },
+];
+
 interface Props {
   /** Die Antwort von `/api/haproxy/services`: in HAPM genau ein Eintrag. */
   proxies: ProxyRow[];
@@ -122,6 +134,8 @@ export default function StreamFormModal({
   const [saving, setSaving] = useState(false);
   /** Nur die Prüfung vor dem Absenden. Was die Route antwortet, ist eine Meldung. */
   const [formError, setFormError] = useState('');
+  /** Der Schritt des Dialogs. Beginnt beim Port, beim Bearbeiten auch. */
+  const [tab, setTab] = useState<StreamTab>('port');
   /** Es gibt genau einen HAProxy. Die Kennung geht weiter im Rumpf mit, weil
    *  die Routen und die Historie sie tragen. */
   const serverId = edit?.proxy.$id ?? usable[0]?.$id ?? '';
@@ -306,11 +320,19 @@ export default function StreamFormModal({
       onClick={(e) => e.target === e.currentTarget && !saving && onClose()}
     >
       <div className="modal modal-form">
-        <div className="modal-header">
-          <h2 className="modal-title">
-            {t(editingId ? 'TCP-Weiterleitung bearbeiten' : 'TCP-Weiterleitung anlegen')}
-            {editingId && <span className="modal-subject">{editingId}</span>}
-          </h2>
+        {/* Derselbe Kopf wie der Dialog der Ziele (`form-wizard-*`): Symbol,
+            Titel, ein Satz. Schritte hat dieser Dialog keine, er passt auf eine Seite. */}
+        <div className="modal-header form-wizard-head">
+          <span className="form-wizard-icon">
+            <Cable size={22} />
+          </span>
+          <div className="form-wizard-titles">
+            <h2 className="modal-title">
+              {t(editingId ? 'TCP-Weiterleitung bearbeiten' : 'TCP-Weiterleitung anlegen')}
+              {editingId && <span className="modal-subject">{editingId}</span>}
+            </h2>
+            <p className="form-wizard-sub">{t('Ein Port dieses Servers an ein Ziel dahinter.')}</p>
+          </div>
           <button
             type="button"
             className="modal-close"
@@ -324,11 +346,12 @@ export default function StreamFormModal({
 
         <form onSubmit={handleSubmit}>
           <div className="modal-body">
-            {formError && <div className="alert alert-danger"><ErrorNote text={formError} /></div>}
+            <FormSteps steps={STREAM_TABS} value={tab} onChange={setTab} />
 
             <div className="form-columns">
               <div className="form-col">
-                <section className="form-section">
+                {tab === 'port' && (
+<section className="form-section">
                   <div className="form-section-head">
                     <span className="form-section-icon">
                       <Cable size={17} />
@@ -446,9 +469,11 @@ export default function StreamFormModal({
                     </div>
                   )}
                 </section>
+)}
 
                 {/* ── Wer darf ── */}
-                <section className="form-section">
+                {tab === 'zugriff' && (
+<section className="form-section">
                   <div className="form-section-head">
                     <span className="form-section-icon">
                       <ShieldAlert size={17} />
@@ -494,11 +519,13 @@ export default function StreamFormModal({
                     </div>
                   )}
                 </section>
+)}
               </div>
 
               <div className="form-col">
                 {/* ── Wohin ── */}
-                <section className="form-section">
+                {tab === 'ziel' && (
+<section className="form-section">
                   <div className="form-section-head">
                     <span className="form-section-icon">
                       <Server size={17} />
@@ -651,7 +678,9 @@ export default function StreamFormModal({
                     )}
                   </div>
                 </section>
+)}
 
+                {tab === 'ziel' && (
                 <div className="form-note">
                   <Info size={14} />
                   <span>
@@ -661,34 +690,35 @@ export default function StreamFormModal({
                     )}
                   </span>
                 </div>
-
-                {/* Der Grund, aus dem der Knopf unten gesperrt ist. Am Fuß wie
-                    in `ServiceFormModal`. */}
-                {inputError && started && (
-                  <div className="alert alert-warning">{t(inputError)}</div>
                 )}
+
               </div>
             </div>
           </div>
 
-          <div className="modal-footer">
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => onClose()}
-              disabled={saving}
-            >
-              {t('Abbrechen')}
-            </button>
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={saving || !!inputError || portCheck?.free === false}
-            >
-              {saving ? <Loader2 size={16} className="spin" /> : <Cable size={16} />}
-              {t(editingId ? 'Speichern' : 'Anlegen')}
-            </button>
-          </div>
+          {/* Der Grund, aus dem der Knopf unten gesperrt ist, als Zeile über dem
+              Fuß wie in `ServiceFormModal`. Nach einem Absenden, das die
+              Prüfung beanstandet hat, deren Meldung. */}
+          {(formError || (inputError && started)) && (
+            <div className="form-wizard-hint">
+              {formError ? (
+                <FormHint tone="danger"><ErrorNote text={formError} /></FormHint>
+              ) : (
+                <FormHint>{inputError ? t(inputError) : ''}</FormHint>
+              )}
+            </div>
+          )}
+
+          <FormWizardFooter
+            steps={STREAM_TABS}
+            value={tab}
+            onChange={setTab}
+            onClose={onClose}
+            saving={saving}
+            submitReady={!inputError && portCheck?.free !== false}
+            submitLabel={t(editingId ? 'Speichern' : 'Anlegen')}
+            submitIcon={<Cable size={16} />}
+          />
         </form>
       </div>
     </div>

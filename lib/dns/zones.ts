@@ -279,3 +279,46 @@ export function validateZoneName(value: string): string | null {
   if (name.length > 253) return msgid('Die Domain ist zu lang.');
   return null;
 }
+
+/**
+ * Vorschläge für ein Domainfeld aus den angebundenen Zonen.
+ *
+ * Wer `app` tippt, meint fast immer `app.<eine seiner Zonen>`: der Vorschlag
+ * spart die Zone und vor allem den Tippfehler darin. Vorgeschlagen wird, was
+ * zum Getippten passt:
+ *
+ * - ohne Punkt: der Name vor jeder Zone (`app` → `app.kunde.example`), und die
+ *   Zone selbst, wenn das Getippte ihr Anfang ist (`kun` → `kunde.example`),
+ * - mit Punkt: nur Zonen, die mit dem Teil nach einem Punkt beginnen
+ *   (`app.ku` → `app.kunde.example`). Sonst hinge an `app.other` jede Zone.
+ * - leer: jede Zone mit führendem Punkt (`.kunde.example`), der Name fehlt noch.
+ *
+ * Was schon vollständig in einer Zone liegt, bekommt keinen Vorschlag. Rein,
+ * damit `tests/dns/zones.test.ts` es nachrechnen kann.
+ */
+export function suggestDomains(typed: string, zones: readonly string[], limit = 6): string[] {
+  const raw = typed.trim().toLowerCase();
+  const names = [...new Set(zones.map(normalizeDomain).filter(Boolean))];
+  if (raw === '') return names.slice(0, limit).map((zone) => `.${zone}`);
+  if (/[^a-z0-9.*_-]/.test(raw)) return [];
+
+  const apex: string[] = [];
+  const below: string[] = [];
+  const cuts: number[] = [];
+  for (let at = 0; at < raw.length; at++) if (raw[at] === '.') cuts.push(at);
+  if (cuts.length === 0) cuts.push(raw.length);
+
+  for (const zone of names) {
+    if (raw === zone || raw.endsWith(`.${zone}`)) continue;
+    if (zone.startsWith(raw)) apex.push(zone);
+    for (const cut of cuts) {
+      const head = raw.slice(0, cut);
+      const rest = raw.slice(cut + 1);
+      if (head === '' || head.endsWith('.') || head.startsWith('.')) continue;
+      if (!zone.startsWith(rest)) continue;
+      below.push(`${head}.${zone}`);
+      break;
+    }
+  }
+  return [...new Set([...apex, ...below])].filter((entry) => entry !== raw).slice(0, limit);
+}

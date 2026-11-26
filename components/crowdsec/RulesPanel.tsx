@@ -1,12 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import ErrorNote from '@/components/ErrorNote';
 import { Check, ChevronDown, ChevronUp, Download, Loader2 } from 'lucide-react';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/ConfirmDialog';
 import Select from '@/components/Select';
 import { SkeletonRows } from '@/components/Skeleton';
+import { usePolling } from '@/components/usePolling';
+import { subscribeRunFinished, watchRun } from '@/components/runs/runs';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import { MISSING, msgid } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
@@ -30,6 +32,9 @@ const COLLAPSED_APPS = 4;
 /** Womit die zugeklappte Liste aufgefüllt wird: was hinter HAPM am häufigsten läuft. */
 const FEATURED_APPS = ['nextcloud', 'wordpress', 'jellyfin', 'immich'];
 
+/** So oft liest die Seite nach, solange eine Änderung aussteht. */
+const PENDING_POLL_MS = 4000;
+
 const KIND_LABELS: Record<CrowdsecAppRules['kinds'][number], { label: string; hint: string }> = {
   log: { label: msgid('Log'), hint: msgid('Ausnahmen für die Erkennung im Log von HAProxy') },
   waf: { label: msgid('WAF'), hint: msgid('Virtuelle Patches in der WAF') },
@@ -41,6 +46,12 @@ const KIND_LABELS: Record<CrowdsecAppRules['kinds'][number], { label: string; hi
  * dazuschalten lassen sich das OWASP Core Rule Set, Regeln je Anwendung
  * (`APP_RULES`) und eine feste Auswahl weiterer Sammlungen
  * (`OPTIONAL_COLLECTIONS`).
+ *
+ * Eine Änderung holt Regeln aus dem Hub und dauert. Sie reiht sich deshalb als
+ * Lauf im Hintergrund ein (`lib/crowdsec/rule-jobs.ts`): der Schalter zeigt
+ * sofort den gewünschten Zustand und ist gesperrt, bis CrowdSec neu geladen
+ * hat, die übrigen bleiben bedienbar. Den Stand zeigt die Pille unten rechts,
+ * das Ende meldet der Rahmen.
  */
 export default function RulesPanel() {
   const { notify } = useToast();
@@ -48,25 +59,49 @@ export default function RulesPanel() {
   const send = useCrowdsecSend();
   const { t, locale } = useT();
   const { data, error, loading, reload } = useCrowdsecData<CrowdsecRules>('/api/crowdsec/rules', 120_000);
-  const [busy, setBusy] = useState<string | null>(null);
+  // Eben geklickt, die Route hat noch nicht geantwortet: der Schalter zeigt den Wunsch schon.
+  const [sent, setSent] = useState<Record<string, boolean | string>>({});
   const [allApps, setAllApps] = useState(false);
   // Was hier geschaltet wurde, bleibt sichtbar, auch wenn es wieder aus ist:
   // sonst verschwindet die Zeile unter dem Mauszeiger.
   const [touched, setTouched] = useState<ReadonlySet<string>>(new Set());
 
-  async function change(key: string, body: unknown, done: string) {
-    setBusy(key);
+  // Was aussteht, weiß der Server (`pending`), auch nach einem Neuladen der
+  // Seite. Nach einem Fehler beim Lesen ist der Stand alt: dann gilt er nicht.
+  const pending: Record<string, boolean | string> = { ...(error ? null : data?.pending), ...sent };
+  const waiting = Object.keys(pending).length > 0;
+
+  usePolling(() => void reload(), waiting ? PENDING_POLL_MS : 0);
+
+  useEffect(
+    () =>
+      subscribeRunFinished((run) => {
+        if (run.kind === 'crowdsec') void reload();
+      }),
+    [reload]
+  );
+
+  async function change(key: string, body: unknown, wanted: boolean | string) {
+    setSent((prev) => ({ ...prev, [key]: wanted }));
     try {
-      await send('/api/crowdsec/rules', 'PATCH', body);
-      notify({ variant: 'success', message: done });
+      const queued = await send<{ runId: string }>('/api/crowdsec/rules', 'PATCH', body);
+      watchRun({ kind: 'crowdsec', id: queued.runId });
     } catch (err) {
       notify({ variant: 'error', title: t('Ändern fehlgeschlagen'), message: err instanceof Error ? err.message : String(err) });
     } finally {
-      // Auch nach einem Fehler: ein Teil kann schon installiert sein, und die
-      // Anfrage kann abgeschnitten worden sein, während CrowdSec fertig wurde.
+      // Erst lesen, dann den eigenen Merker fallen lassen: sonst spränge der Schalter kurz zurück.
       await reload();
-      setBusy(null);
+      setSent((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
     }
+  }
+
+  /** Der Zustand eines Schalters: der gewünschte, solange seine Änderung aussteht. */
+  function shown(key: string, installed: boolean): boolean {
+    return key in pending ? pending[key] === true : installed;
   }
 
   function setCrs(mode: CrsMode) {
@@ -78,16 +113,16 @@ export default function RulesPanel() {
         ),
         confirmLabel: t('Sperren lassen'),
         variant: 'warning',
-        onConfirm: () => change('crs', { crs: mode }, t('Die OWASP-Regeln sperren jetzt.')),
+        onConfirm: () => change('crs', { crs: mode }, mode),
       });
       return;
     }
-    void change('crs', { crs: mode }, t('Gespeichert. CrowdSec lädt die Regeln neu.'));
+    void change('crs', { crs: mode }, mode);
   }
 
-  function switchApp(id: string, body: unknown, done: string) {
+  function switchApp(id: string, on: boolean) {
     setTouched((prev) => new Set(prev).add(id));
-    return change(`app:${id}`, body, done);
+    return change(`app:${id}`, { app: id, installed: on }, on);
   }
 
   if (loading && !data) return <SkeletonRows />;
@@ -95,7 +130,11 @@ export default function RulesPanel() {
   const sortedApps = [...(data?.apps ?? [])].sort((a, b) => t(a.label).localeCompare(t(b.label), locale));
   // Zugeklappt: was an ist oder gerade geschaltet wurde, aufgefüllt mit den
   // häufigsten bis COLLAPSED_APPS. Die Reihenfolge bleibt alphabetisch.
-  const pinned = new Set(sortedApps.filter((app) => app.installed || app.partial || touched.has(app.id)).map((app) => app.id));
+  const pinned = new Set(
+    sortedApps
+      .filter((app) => app.installed || app.partial || touched.has(app.id) || `app:${app.id}` in pending)
+      .map((app) => app.id)
+  );
   for (const id of [...FEATURED_APPS, ...sortedApps.map((app) => app.id)]) {
     if (pinned.size >= COLLAPSED_APPS) break;
     pinned.add(id);
@@ -125,13 +164,13 @@ export default function RulesPanel() {
               <div className="form-group cs-form-wide">
                 <label className="form-label form-label-row" htmlFor="cs-crs">
                   {t('Modus')}
-                  {busy === 'crs' && <Loader2 size={14} className="spin" />}
+                  {'crs' in pending && <Loader2 size={14} className="spin" />}
                 </label>
                 <Select<CrsMode>
                   id="cs-crs"
-                  value={data.crs}
+                  value={CRS_OPTIONS.find((o) => o.value === pending.crs)?.value ?? data.crs}
                   onChange={setCrs}
-                  disabled={busy !== null}
+                  disabled={'crs' in pending}
                   options={CRS_OPTIONS.map((o) => ({ value: o.value, label: t(o.label), hint: t(o.hint) }))}
                 />
               </div>
@@ -192,23 +231,15 @@ export default function RulesPanel() {
                           <label className="toggle-switch">
                             <input
                               type="checkbox"
-                              checked={app.installed}
-                              disabled={busy !== null}
-                              onChange={(e) =>
-                                switchApp(
-                                  app.id,
-                                  { app: app.id, installed: e.target.checked },
-                                  e.target.checked
-                                    ? t('Die Regeln für {name} sind an.', { name: t(app.label) })
-                                    : t('Die Regeln für {name} sind aus.', { name: t(app.label) })
-                                )
-                              }
+                              checked={shown(`app:${app.id}`, app.installed)}
+                              disabled={`app:${app.id}` in pending}
+                              onChange={(e) => switchApp(app.id, e.target.checked)}
                               aria-label={t(app.label)}
                             />
                             <span className="toggle-slider" />
                           </label>
-                          {busy === `app:${app.id}` && <Loader2 size={14} className="spin" />}
-                          {app.partial && busy !== `app:${app.id}` && (
+                          {`app:${app.id}` in pending && <Loader2 size={14} className="spin" />}
+                          {app.partial && !(`app:${app.id}` in pending) && (
                             <span className="badge-status badge-warning" data-tooltip={t('Nur ein Teil ist installiert. Einschalten holt den Rest.')}>
                               {t('Teilweise')}
                             </span>
@@ -241,10 +272,10 @@ export default function RulesPanel() {
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"
-                disabled={busy !== null}
-                onClick={() => change('hub', { upgrade: true }, t('Die Regeln sind auf dem neuesten Stand.'))}
+                disabled={'hub' in pending}
+                onClick={() => change('hub', { upgrade: true }, true)}
               >
-                {busy === 'hub' ? <Loader2 size={14} className="spin" /> : <Download size={14} />}
+                {'hub' in pending ? <Loader2 size={14} className="spin" /> : <Download size={14} />}
                 {t('Regeln aktualisieren')}
               </button>
             </div>
@@ -288,22 +319,19 @@ export default function RulesPanel() {
                       </td>
                       <td data-label={t('Version')}>{entry.version ?? MISSING}</td>
                       <td data-label={t('Aktiv')}>
-                        <label className="toggle-switch">
-                          <input
-                            type="checkbox"
-                            checked={entry.installed}
-                            disabled={busy !== null}
-                            onChange={(e) =>
-                              change(
-                                entry.name,
-                                { name: entry.name, installed: e.target.checked },
-                                e.target.checked ? t('{name} ist an.', { name: t(entry.label) }) : t('{name} ist aus.', { name: t(entry.label) })
-                              )
-                            }
-                            aria-label={t(entry.label)}
-                          />
-                          <span className="toggle-slider" />
-                        </label>
+                        <span className="cs-kinds">
+                          <label className="toggle-switch">
+                            <input
+                              type="checkbox"
+                              checked={shown(entry.name, entry.installed)}
+                              disabled={entry.name in pending}
+                              onChange={(e) => change(entry.name, { name: entry.name, installed: e.target.checked }, e.target.checked)}
+                              aria-label={t(entry.label)}
+                            />
+                            <span className="toggle-slider" />
+                          </label>
+                          {entry.name in pending && <Loader2 size={14} className="spin" />}
+                        </span>
                       </td>
                     </tr>
                   ))}

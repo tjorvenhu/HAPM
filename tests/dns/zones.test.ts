@@ -11,6 +11,7 @@ import {
   validateZoneName,
   isWildcardDomain,
   selectedDnsDomains,
+  suggestDomains,
 } from '@/lib/dns/zones';
 
 /**
@@ -145,5 +146,46 @@ describe('validateZoneName', () => {
     expect(validateZoneName('de')).toMatch(/Punkt fehlt/);
     expect(validateZoneName('*.kunde.example')).toMatch(/Wildcard/);
     expect(validateZoneName('kunde.example/pfad')).toMatch(/Erlaubt sind/);
+  });
+});
+
+describe('suggestDomains', () => {
+  const zones = ['kunde.example', 'huether.example'];
+
+  it('hängt an einen Namen ohne Punkt jede Zone', () => {
+    expect(suggestDomains('app', zones)).toEqual(['app.kunde.example', 'app.huether.example']);
+  });
+
+  it('schlägt die Zone selbst vor, wenn das Getippte ihr Anfang ist', () => {
+    expect(suggestDomains('kun', zones)).toEqual(['kunde.example', 'kun.kunde.example', 'kun.huether.example']);
+  });
+
+  it('nimmt mit Punkt nur Zonen, die mit dem Teil dahinter beginnen', () => {
+    expect(suggestDomains('app.hu', zones)).toEqual(['app.huether.example']);
+    expect(suggestDomains('app.', zones)).toEqual(['app.kunde.example', 'app.huether.example']);
+    expect(suggestDomains('a.b.kunde.ex', zones)).toEqual(['a.b.kunde.example']);
+    expect(suggestDomains('app.other', zones)).toEqual([]);
+  });
+
+  it('schlägt nichts vor, was schon vollständig in einer Zone liegt', () => {
+    expect(suggestDomains('app.kunde.example', zones)).toEqual([]);
+    expect(suggestDomains('kunde.example', ['kunde.example'])).toEqual([]);
+  });
+
+  it('leeres Feld: jede Zone mit führendem Punkt, der Name fehlt noch', () => {
+    expect(suggestDomains('', zones)).toEqual(['.kunde.example', '.huether.example']);
+    expect(suggestDomains('  ', [])).toEqual([]);
+  });
+
+  it('kennt Wildcards und Groß- und Kleinschreibung, und lässt Unsinn aus', () => {
+    expect(suggestDomains('*', ['kunde.example'])).toEqual(['*.kunde.example']);
+    expect(suggestDomains('APP', ['Kunde.Example.'])).toEqual(['app.kunde.example']);
+    expect(suggestDomains('app kunde', zones)).toEqual([]);
+    expect(suggestDomains('https://app', zones)).toEqual([]);
+  });
+
+  it('begrenzt die Liste', () => {
+    const many = Array.from({ length: 20 }, (_, i) => `zone${i}.example`);
+    expect(suggestDomains('app', many)).toHaveLength(6);
   });
 });

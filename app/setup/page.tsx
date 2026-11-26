@@ -32,6 +32,7 @@ import { InfoHint } from '@/ui/primitives/InfoHint';
 import BrandLogo from '@/components/BrandLogo';
 import Select from '@/components/Select';
 import IpAllowList from '@/components/IpAllowList';
+import FormHint from '@/components/FormHint';
 import { LONG_TEXT } from '@/ui/primitives/hint-text';
 import { usePolling } from '@/components/usePolling';
 import CertificateUploadDialog, { type UploadBody } from '@/components/reverse-proxy/CertificateUploadDialog';
@@ -482,7 +483,7 @@ function AccountStep({
           autoComplete="email"
         />
       </div>
-      {error && <div className="auth-error" role="alert">{error}</div>}
+      {error && <FormHint>{error}</FormHint>}
       <button className="auth-submit" type="submit" disabled={loading}>
         {loading ? <span className="btn-spinner" aria-hidden="true" /> : <UserPlus size={15} />}
         {loading ? t('Konto wird angelegt…') : t('Konto anlegen')}
@@ -595,7 +596,7 @@ function ExposureStep({
           </span>
         </label>
       )}
-      {error && <div className="auth-error" role="alert">{error}</div>}
+      {error && <FormHint>{error}</FormHint>}
       <div className="hapm-setup-nav">
         {later}
         <button className="auth-submit" type="button" disabled={saving || !choice} onClick={save}>
@@ -796,7 +797,7 @@ function DnsStep({
         </>
       )}
 
-      {error && <div className="auth-error" role="alert">{error}</div>}
+      {error && <FormHint>{error}</FormHint>}
 
       <div className="hapm-setup-nav">
         {back}
@@ -1056,7 +1057,7 @@ function CertificatesStep({
         <p className="auth-hint">{t('Das Zertifikat der Oberfläche laden Sie im letzten Schritt hoch.')}</p>
       )}
 
-      {error && <div className="auth-error" role="alert">{error}</div>}
+      {error && <FormHint>{error}</FormHint>}
 
       <div className="hapm-setup-nav">
         {back}
@@ -1275,7 +1276,7 @@ function MailStep({
         ) : (
           <div className="alert alert-danger">{testResult.error ?? t('Die Testmail wurde nicht verschickt.')}</div>
         ))}
-      {error && <div className="auth-error" role="alert">{error}</div>}
+      {error && <FormHint>{error}</FormHint>}
 
       <div className="hapm-setup-nav">
         {back}
@@ -1785,7 +1786,7 @@ function AddressStep({
       {recordUnused && <div className="alert alert-warning">{recordUnused}</div>}
       {waitingRow && <DnsWaiting domain={domain} firstAnswer={check !== null} />}
       {verdict && <div className={`alert ${verdict.tone}`}>{verdict.text}</div>}
-      {error && <div className="auth-error" role="alert">{error}</div>}
+      {error && <FormHint>{error}</FormHint>}
 
       <div className="hapm-setup-nav">
         {back}
@@ -1989,7 +1990,7 @@ function RunStep({
           )}
         </div>
       )}
-      {error && <div className="auth-error" role="alert">{error}</div>}
+      {error && <FormHint>{error}</FormHint>}
 
       {outcome !== 'running' && (
         <>

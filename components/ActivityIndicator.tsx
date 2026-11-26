@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { Archive, ChevronUp, Loader2, Network, RefreshCw, RotateCcw } from 'lucide-react';
+import { Archive, ChevronUp, Loader2, Network, RefreshCw, RotateCcw, ShieldAlert } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
 import { useNow } from '@/components/useNow';
@@ -15,6 +15,7 @@ import {
   reloadKeepingRun,
   runKey,
   subscribeOpenRun,
+  subscribeWatchRun,
   type RunKind,
   type RunRef,
   type RunRequest,
@@ -29,6 +30,7 @@ const KIND_ICONS: Record<RunKind, ReactNode> = {
   update: <RefreshCw size={15} className="spin" />,
   backup: <Archive size={15} />,
   restore: <RotateCcw size={15} />,
+  crowdsec: <ShieldAlert size={15} />,
 };
 
 function elapsedLabel(startedAt: string, now: number): string {
@@ -43,13 +45,15 @@ function elapsedLabel(startedAt: string, now: number): string {
  *
  * Die Pille zeigt, was gerade im Hintergrund läuft, ein Klick auf einen Lauf
  * öffnet sein Fenster. Eine Seite, die einen Lauf startet, ruft `startRun`:
- * das Fenster geht auf, und sein Ende kommt als Meldung. Ein Neuladen der Seite
- * öffnet kein Fenster von selbst, wie beim Reverse-Proxy: dann zeigt die Pille
- * den Lauf.
+ * das Fenster geht auf, und sein Ende kommt als Meldung. Mit `watchRun` bleibt
+ * das Fenster zu (Regeln von CrowdSec: ein Schalter, an den sich weitere
+ * hängen). Ein Neuladen der Seite öffnet kein Fenster von selbst, wie beim
+ * Reverse-Proxy: dann zeigt die Pille den Lauf.
  *
  * Gemeldet wird das Ende eines Laufs, den diese Seite gestartet hat, und das
- * jedes Updates, jeder Sicherung und jedes Zurückspielens, das die Pille hat
- * laufen sehen. Vorgänge am Reverse-Proxy melden ihre Seiten selbst.
+ * jedes Updates, jeder Sicherung, jedes Zurückspielens und jeder Änderung an
+ * den Regeln von CrowdSec, die die Pille hat laufen sehen. Vorgänge am
+ * Reverse-Proxy melden ihre Seiten selbst.
  *
  * Beim Tausch von HAPM und beim Zurückspielen antwortet danach ein anderer
  * Prozess: die Seite lädt neu, sobald HAPM wieder antwortet, und das Fenster
@@ -99,6 +103,15 @@ export default function ActivityIndicator() {
           watched.current.set(runKey(request), request);
           setRefreshKey((key) => key + 1);
         }
+      }),
+    []
+  );
+
+  useEffect(
+    () =>
+      subscribeWatchRun((ref) => {
+        watched.current.set(runKey(ref), ref);
+        setRefreshKey((key) => key + 1);
       }),
     []
   );
@@ -233,6 +246,8 @@ export default function ActivityIndicator() {
         return t('Sicherung');
       case 'restore':
         return t('Zurückspielen');
+      case 'crowdsec':
+        return job.step ?? t('Regeln');
       default:
         return job.phase && HAPROXY_PHASE_LABELS[job.phase] ? t(HAPROXY_PHASE_LABELS[job.phase]) : t('Reverse-Proxy');
     }

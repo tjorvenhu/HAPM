@@ -79,6 +79,12 @@ Das Glossar steht in [`i18n.md`](i18n.md). Für die Oberfläche zusätzlich:
   lesen soll, wirft die Route als `ApiError`**, nicht als `Error`.
 - Laden prüft `if (!res.ok || !body.success) throw`. Sonst zeigt die Seite
   einen leeren Zustand, der etwas Falsches behauptet („Noch keine Domain").
+- **Ein Schalter, dessen Wirkung dauert, sperrt nicht die Seite.** Er zeigt
+  sofort den gewünschten Zustand mit einem Spinner daneben, die Änderung läuft
+  im Hintergrund, und jeder andere Schalter bleibt bedienbar (Regeln von
+  CrowdSec, `lib/crowdsec/rule-jobs.ts`). Der Lauf steht in der Pille unten
+  rechts und wird nur verfolgt (`watchRun`), nicht als Fenster aufgerissen:
+  an ihn hängen sich weitere Klicks an, und ein Fenster je Klick stünde im Weg.
 - Ein Lauf am Reverse-Proxy meldet sein Ende über `startRun`
   (`components/runs/runs.ts`), nicht über einen eigenen Timer der Seite.
 
@@ -143,6 +149,32 @@ Jede Seite wird vor „fertig" in drei Breiten angesehen: breit (1440), schmal
   Inhalt wird nicht neu aufgebaut (getippte Eingaben bleiben).
 - Animiert werden nur `transform` und `opacity`, 120/200/300 ms, ohne
   Füllmodus. Mit `prefers-reduced-motion` fällt die Bewegung weg.
+
+## Geführte Dialoge und die Hinweiszeile
+
+- **Ein Dialog, der etwas in mehreren Teilen anlegt, führt durch Schritte**
+  (Ziel, TCP-Weiterleitung): im Kopf ein Symbol mit Titel und einem Satz,
+  darunter die Schritte über die ganze Breite, im Fuß links „Schritt 2 von 4"
+  und rechts der Knopf, der den nächsten Schritt beim Namen nennt („Weiter zum
+  Ziel"). Die Bausteine sind `FormSteps` und `FormWizardFooter`
+  (`components/reverse-proxy/FormWizard.tsx`), das Aussehen steht unter
+  „Geführter Dialog" in `ui/css/tool-vocabulary.css` (`form-wizard-*`).
+- Die Schritte sind Reiter: springen ist erlaubt, alles bleibt im Zustand des
+  Formulars. **Anlegen und Speichern gehen aus jedem Schritt, sobald nichts
+  mehr fehlt.** Spätere Schritte sind oft Zusätze, durch die niemand klicken
+  muss. Solange etwas fehlt, ist „Weiter zu …" der eine betonte Knopf.
+- **Was noch fehlt, steht als eine Zeile über dem Fuß** (`FormHint`,
+  `components/FormHint.tsx`): mit Symbol, in einer Zeile, außerhalb des
+  scrollenden Teils, also in jedem Schritt zu sehen. `warning` für das, was
+  noch fehlt, `danger` für eine Eingabe, die so nicht geht. Dieselbe Zeile
+  nimmt der Assistent der Einrichtung für seine Prüfung vor dem Absenden. Keine
+  rote Meldung am Kopf eines Formulars und kein zweiter Kasten in einer Spalte.
+- Auf dem Handy steht der Kopf in einer Zeile (ohne den Satz), die Schritte
+  sind eine Reihe aus Symbolen, und nur der gewählte trägt seinen Namen. Die
+  Knöpfe im Fuß teilen sich die ganze Breite.
+- **Ein Domainfeld schlägt die angebundenen DNS-Zonen vor** (`DomainInput`,
+  `suggestDomains` in `lib/dns/zones.ts`): wer `app` tippt, bekommt
+  `app.<Zone>`. Die Liste sieht aus wie die der Auswahlliste.
 
 ## Knöpfe und Rückfragen
 

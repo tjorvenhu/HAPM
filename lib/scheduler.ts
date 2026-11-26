@@ -40,6 +40,7 @@ import { notify } from './notifications';
 import { keepCrowdsecStopped, reconcileCrowdsec } from './crowdsec/setup';
 import { crowdsecDisabled, crowdsecInStack } from './crowdsec/paths';
 import { dropOrphanedCrowdsec } from './crowdsec/actions';
+import { ruleRunActive } from './crowdsec/rule-jobs';
 import { timeReached } from './schedule-time';
 
 /** CrowdSec startet nach HAPM. Angemeldet wird der Bouncer danach, und
@@ -56,6 +57,9 @@ async function tickCrowdsec(): Promise<void> {
     for (const name of await keepCrowdsecStopped()) log(`CrowdSec ist abgeschaltet, ${name} angehalten`);
     return;
   }
+  // Der Abgleich startete CrowdSec nach einem Wechsel der OWASP-Regeln neu,
+  // mitten im Lauf: das nächste `cscli` scheiterte. Der Lauf lädt selbst neu.
+  if (ruleRunActive()) return;
   const notes = await reconcileCrowdsec();
   for (const note of notes) log(note);
 }

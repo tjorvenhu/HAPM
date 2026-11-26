@@ -23,12 +23,15 @@ export function useCrowdsecData<T>(path: string, pollMs = 30_000) {
   const { t } = useT();
   const [state, setState] = useState<Loaded<T>>({ path: null, data: null, error: '' });
   const latest = useRef(path);
+  const started = useRef(0);
+  const applied = useRef(0);
 
   useEffect(() => {
     latest.current = path;
   }, [path]);
 
   const load = useCallback(async () => {
+    const turn = ++started.current;
     let next: Loaded<T>;
     try {
       const res = await apiFetch(path);
@@ -39,7 +42,10 @@ export function useCrowdsecData<T>(path: string, pollMs = 30_000) {
     } catch {
       next = { path, data: null, error: t('CrowdSec ist nicht erreichbar.') };
     }
-    if (latest.current !== path) return;
+    // Ist schon die Antwort eines späteren Abrufs da, zeigte diese einen Stand
+    // von vor der letzten Änderung (ein Schalter spränge zurück).
+    if (latest.current !== path || turn < applied.current) return;
+    applied.current = turn;
     // Bei einem Fehler bleibt stehen, was zu DIESEM Pfad schon da war. Die
     // Daten eines anderen (voriger Zeitraum, anderer Container) nicht: sie
     // stünden sonst unter der neuen Auswahl.

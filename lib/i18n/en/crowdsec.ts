@@ -147,8 +147,6 @@ export const crowdsec: Readonly<Record<string, string>> = {
   'Das OWASP Core Rule Set ist streng und sperrt auch harmlose Anfragen, etwa Formulare mit Code oder SQL im Text. Besser erst einige Tage „Nur melden“ und die Ereignisse ansehen.':
     'The OWASP Core Rule Set is strict and also blocks harmless requests, such as forms with code or SQL in the text. Better run "Report only" for a few days first and look at the events.',
   'Sperren lassen': 'Let it block',
-  'Die OWASP-Regeln sperren jetzt.': 'The OWASP rules now block.',
-  'Gespeichert. CrowdSec lädt die Regeln neu.': 'Saved. CrowdSec reloads the rules.',
   'OWASP Core Rule Set': 'OWASP Core Rule Set',
   'Zusätzliche, strengere Prüfung jeder Anfrage auf typische Angriffe.': 'Additional, stricter check of every request for typical attacks.',
   'Eine freie Regelsammlung für Web Application Firewalls, gepflegt vom OWASP-Projekt. Sie prüft jede Anfrage auf typische Angriffsmuster: SQL-Injection, Cross-Site-Scripting (XSS), Zugriffe auf Systemdateien, Befehle im Text. Die virtuellen Patches, die immer an sind, fangen nur bekannte Lücken bestimmter Programme ab. Das Rule Set erkennt auch Angriffe, für die es noch keinen Patch gibt, trifft dafür aber manchmal harmlose Anfragen, etwa ein Formular mit Code im Text. Deshalb ist es aus, bis Sie es einschalten. Empfehlung: einige Tage „Nur melden“ und unter Ereignisse ansehen, was es fände. Dann für Anwendungen mit Fehltreffern die Ausnahmen unten einschalten und erst danach „Treffer sperren“.':
@@ -158,12 +156,9 @@ export const crowdsec: Readonly<Record<string, string>> = {
   Modus: 'Mode',
   Regelsammlungen: 'Rule collections',
   'Aus dem Hub von CrowdSec.': 'From the CrowdSec hub.',
-  'Die Regeln sind auf dem neuesten Stand.': 'The rules are up to date.',
   'Regeln aktualisieren': 'Update rules',
   Sammlung: 'Collection',
   'Immer an': 'Always on',
-  '{name} ist an.': '{name} is on.',
-  '{name} ist aus.': '{name} is off.',
   'HTTP-Flut': 'HTTP flood',
   'Erkennt Adressen, die in kurzer Zeit sehr viele Anfragen schicken, und sperrt sie. Vorsicht bei Diensten, die viele Anfragen von einer Adresse bekommen, etwa Apps zum Abgleich hinter einem gemeinsamen Ausgang (Firmennetz, Mobilfunk). Solche Adressen gehören in die Freigaben.':
     'Detects addresses that send very many requests in a short time and bans them. Take care with services that get many requests from one address, such as sync apps behind a shared exit (company network, mobile carrier). Such addresses belong in the allowlist.',
@@ -255,11 +250,24 @@ export const crowdsec: Readonly<Record<string, string>> = {
   'Virtuelle Patches in der WAF': 'Virtual patches in the WAF',
   'Ausnahmen für die OWASP-Regeln': 'Exclusions for the OWASP rules',
   'Wirkt erst, wenn die OWASP-Regeln an sind.': 'Only takes effect when the OWASP rules are on.',
-  'Die Regeln für {name} sind an.': 'The rules for {name} are on.',
-  'Die Regeln für {name} sind aus.': 'The rules for {name} are off.',
   'Nur ein Teil ist installiert. Einschalten holt den Rest.': 'Only part is installed. Switching on fetches the rest.',
   Teilweise: 'Partial',
   'Overseerr und Jellyseerr': 'Overseerr and Jellyseerr',
+
+  // Regeln ändern: der Lauf im Hintergrund (`lib/crowdsec/rule-jobs.ts`), Pille und Fenster
+  'CrowdSec-Regeln': 'CrowdSec rules',
+  'CrowdSec-Regeln werden geändert': 'Changing CrowdSec rules',
+  'CrowdSec-Regeln geändert': 'CrowdSec rules changed',
+  'CrowdSec-Regeln: Änderung fehlgeschlagen': 'CrowdSec rules: change failed',
+  'CrowdSec hat die Regeln neu geladen.': 'CrowdSec has reloaded the rules.',
+  'OWASP-Regeln: aus': 'OWASP rules: off',
+  'OWASP-Regeln: nur melden': 'OWASP rules: report only',
+  'OWASP-Regeln: Treffer sperren': 'OWASP rules: block hits',
+  '{name} einschalten': 'Switch on {name}',
+  '{name} ausschalten': 'Switch off {name}',
+  'CrowdSec neu laden': 'Reload CrowdSec',
+  'Eine spätere Änderung hat diese ersetzt, bevor sie an der Reihe war.':
+    'A later change replaced this one before its turn came.',
   'Matrix (Synapse, Element)': 'Matrix (Synapse, Element)',
   'Git-Server (GitLab, Gitea, Forgejo)': 'Git server (GitLab, Gitea, Forgejo)',
   'Nextcloud lädt Vorschaubilder, Avatare und Dateien über WebDAV in schneller Folge und antwortet dabei oft mit 403 oder 404, etwa für fehlende Vorschauen oder beim Hochladen. CrowdSec hält das für einen Scanner und sperrt die eigenen Nutzer. Die Ausnahmen aus dem Hub nehmen WebDAV, Vorschauen, Fotos, Memories, Mail, Text und Lesezeichen aus. HAPM ergänzt Fälle, die dort noch fehlen: den Abgleich der Mobil-App (HEAD auf WebDAV), Kalender und Kontakte mit 403, abgelaufene Sitzungen im Text-Editor, Karten in Deck, die Anmeldung neuer Geräte und Talk. Dazu kommen Ausnahmen für die OWASP-Regeln, die sonst Dateinamen, Kalender und Kontakte als Angriff lesen. Die wirken nur, wenn die OWASP-Regeln an sind.':

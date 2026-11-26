@@ -40,6 +40,12 @@ export interface CrowdsecRules {
   apps: CrowdsecAppRules[];
   base: { name: string; installed: boolean; version: string | null }[];
   optional: { name: string; label: string; hint: string; installed: boolean; version: string | null }[];
+  /**
+   * Änderungen, die warten, gerade laufen oder auf das Neuladen von CrowdSec
+   * warten: `crs`, `app:<id>`, der Name einer Sammlung oder `hub`, mit dem
+   * gewünschten Zustand (bei `crs` der Modus).
+   */
+  pending: Record<string, boolean | string>;
 }
 
 export interface CrowdsecStatsResponse {

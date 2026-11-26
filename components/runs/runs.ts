@@ -2,17 +2,18 @@
  * Die Läufe im Hintergrund und ihr eines Fenster.
  *
  * Ein Vorgang, der länger dauert als eine Anfrage (Reverse-Proxy, Update,
- * Sicherung, Zurückspielen), steht nie als Kasten in einer Seite, sondern im
- * Fenster `RunOverlay`. Es hängt am Rahmen (`ActivityIndicator`), nicht an der
- * Seite: so übersteht es einen Seitenwechsel, und die Pille unten rechts öffnet
- * dasselbe Fenster wieder.
+ * Sicherung, Zurückspielen, Regeln von CrowdSec), steht nie als Kasten in einer
+ * Seite, sondern im Fenster `RunOverlay`. Es hängt am Rahmen
+ * (`ActivityIndicator`), nicht an der Seite: so übersteht es einen
+ * Seitenwechsel, und die Pille unten rechts öffnet dasselbe Fenster wieder.
  *
  * Geöffnet wird von außen über `openRun` und `startRun`, wie die globale Suche
  * (`openGlobalSearch`): ein Context um den ganzen Rahmen wäre für zwei Aufrufe
- * zu viel. Kein React und kein `lib/db` hier, die Seiten importieren es.
+ * zu viel. `watchRun` verfolgt nur, ohne das Fenster zu öffnen. Kein React und
+ * kein `lib/db` hier, die Seiten importieren es.
  */
 
-export type RunKind = 'haproxy' | 'update' | 'backup' | 'restore';
+export type RunKind = 'haproxy' | 'update' | 'backup' | 'restore' | 'crowdsec';
 
 export interface RunRef {
   kind: RunKind;
@@ -45,6 +46,25 @@ export function subscribeOpenRun(listener: Listener): () => void {
   openListeners.add(listener);
   return () => {
     openListeners.delete(listener);
+  };
+}
+
+type WatchListener = (ref: RunRef) => void;
+const watchListeners = new Set<WatchListener>();
+
+/**
+ * Ein eben gestarteter Lauf, ohne Fenster: die Pille zeigt ihn, sein Ende
+ * kommt als Meldung. Für Läufe, die ein Schalter nebenbei auslöst und an die
+ * sich weitere hängen (Regeln von CrowdSec): ein Fenster je Klick stünde im Weg.
+ */
+export function watchRun(ref: RunRef): void {
+  for (const listener of watchListeners) listener(ref);
+}
+
+export function subscribeWatchRun(listener: WatchListener): () => void {
+  watchListeners.add(listener);
+  return () => {
+    watchListeners.delete(listener);
   };
 }
 

@@ -441,6 +441,11 @@ a:hover { color: var(--accent-hover); }
   margin-bottom: 20px; gap: 12px;
 }
 
+/* Eine Karte, die nur aus ihrem Kopf besteht (ein Schalter mit seinem Namen):
+   der Abstand nach unten gälte einem Inhalt, den es nicht gibt, und stünde als
+   leerer Streifen unter dem Kopf. */
+.card-header:last-child { margin-bottom: 0; }
+
 .card-title {
   font-size: 1rem; font-weight: 600; line-height: 1.25; letter-spacing: -0.015em;
   color: var(--text); display: flex; align-items: center; gap: 8px;
@@ -893,6 +898,115 @@ a.kpi { color: inherit; }
 .modal-footer {
   padding: 1rem 1.75rem 1.25rem; border-top: 1px solid var(--border);
   display: flex; justify-content: flex-end; gap: 0.5rem; flex-shrink: 0;
+}
+
+/* ── Geführter Dialog (`form-wizard-*`, `form-steps`) ──
+   Ein Dialog, der etwas in mehreren Schritten anlegt (ein Ziel): im Kopf ein
+   Symbol mit Titel und einem Satz, darunter die Schritte über die ganze Breite,
+   über dem Fuß die Zeile mit dem, was noch fehlt, im Fuß links „Schritt 2 von
+   4" und rechts der Knopf zum nächsten Schritt. Die Schritte sind Reiter
+   (`.tabs`), man darf springen. */
+.form-wizard-head { justify-content: flex-start; gap: 0.875rem; }
+
+/* Ein kurzer Schritt soll den Dialog nicht zusammenziehen: beim Weitergehen
+   spränge sonst der Fuß mit dem Knopf unter dem Zeiger weg. */
+.modal-form > form > .modal-body { min-height: min(24rem, 50vh); }
+
+.form-wizard-icon {
+  display: grid; place-items: center; flex-shrink: 0;
+  width: 2.75rem; height: 2.75rem; border-radius: var(--radius-panel);
+  background: var(--accent-glow); color: var(--accent);
+}
+
+.form-wizard-titles { flex: 1 1 auto; min-width: 0; }
+
+.form-wizard-sub { margin-top: 0.25rem; font-size: 0.875rem; line-height: 1.4; color: var(--text-secondary); }
+
+/* Die Schritte: gleich breite Felder über die ganze Breite statt einer Gruppe
+   am linken Rand. Der gewählte trägt die Akzentfarbe, nicht nur eine Fläche:
+   er sagt, wo man im Ablauf steht. */
+.tabs.form-steps {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr);
+  width: 100%; margin-bottom: 0;
+}
+
+.form-steps .tab { justify-content: center; min-height: 2.75rem; padding: 0 0.75rem; white-space: nowrap; }
+
+.form-steps .tab.active {
+  background: var(--accent-light); color: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent) 45%, transparent);
+}
+
+/* Ein zweiter Teil im selben Abschnitt (die DNS-Einträge unter den Domains):
+   eine Linie und sein eigener Kopf, keine zweite Karte. */
+.form-section-part { margin-top: 0.25rem; padding-top: 1.125rem; border-top: 1px solid var(--border); }
+
+/* Was noch fehlt, über dem Fuß und außerhalb des scrollenden Teils. */
+.form-wizard-hint { flex-shrink: 0; padding: 0 1.75rem 1rem; }
+
+.form-hint-bar { align-items: center; }
+
+.form-hint-bar > span { flex: 1 1 auto; min-width: 0; }
+
+.form-wizard-foot { justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem 1rem; }
+
+.form-wizard-progress { display: flex; align-items: center; gap: 0.75rem; font-size: 0.875rem; color: var(--text-secondary); white-space: nowrap; }
+
+.form-wizard-bars { display: inline-flex; gap: 0.25rem; }
+
+.form-wizard-bar { width: 2rem; height: 0.3125rem; border-radius: var(--radius-full); background: var(--secondary); transition: background-color var(--shell-base); }
+
+.form-wizard-bar.is-done { background: var(--accent); }
+
+.form-wizard-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.5rem; margin-left: auto; }
+
+/* Das Domainfeld mit Vorschlägen: füllt die Zeile wie ein gewöhnliches Feld. */
+.hapm-domain-input { flex: 1 1 auto; min-width: 0; }
+
+.hapm-domain-input > .form-input { width: 100%; background: var(--surface); }
+
+@media (max-width: 640px) {
+  /* Der Kopf in einer Zeile: Symbol, Titel, Schließen. Der Satz darunter fällt
+     weg, er wiederholt die Auswahl von eben und kostet hier zwei Zeilen. */
+  .form-wizard-head { padding: 0.875rem 1rem; gap: 0.625rem; }
+
+  .form-wizard-icon { width: 2.25rem; height: 2.25rem; border-radius: var(--radius); }
+
+  .form-wizard-icon > svg { width: 18px; height: 18px; }
+
+  .form-wizard-head .modal-title { font-size: 1.0625rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .form-wizard-sub { display: none; }
+
+  /* Vier Namen passen nicht nebeneinander. Eine Reihe aus Symbolen, und nur
+     der gewählte Schritt trägt seinen Namen und nimmt den Platz dafür. Zwei
+     Reihen aus Pillen läsen sich als vier Knöpfe, nicht als Ablauf. */
+  .tabs.form-steps { display: flex; flex-wrap: nowrap; }
+
+  .form-steps .tab { flex: 0 0 auto; min-width: 2.75rem; padding: 0 0.75rem; gap: 0.375rem; }
+
+  .form-steps .tab.active { flex: 1 1 auto; min-width: 0; }
+
+  .form-steps .tab:not(.active) .form-step-label { display: none; }
+
+  .form-steps .tab.active .form-step-label { overflow: hidden; text-overflow: ellipsis; }
+
+  .form-steps .tab > svg { flex-shrink: 0; }
+
+  .modal-form > form > .modal-body { padding: 1rem; }
+
+  .form-wizard-hint { padding: 0 1rem 0.75rem; }
+
+  /* Fortschritt in einer Zeile, darunter die Knöpfe über die ganze Breite. */
+  .form-wizard-foot { padding: 0.75rem 1rem 1rem; }
+
+  .form-wizard-progress { width: 100%; justify-content: space-between; }
+
+  .form-wizard-actions { margin-left: 0; width: 100%; flex-wrap: nowrap; }
+
+  .form-wizard-actions > .btn { flex: 1 1 0; min-width: 0; justify-content: center; padding-inline: 0.75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .form-wizard-bar { width: 1.5rem; }
 }
 
 /* Der Name des Dings neben dem Titel, statt in ihm. „Ziel bearbeiten ·

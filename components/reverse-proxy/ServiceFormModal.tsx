@@ -6,10 +6,9 @@ import Link from 'next/link';
 import {
   Plus, Trash2, Loader2, X, Server, Waypoints, Info, Globe, Lock,
   ChevronDown, ChevronRight, CornerUpRight, Scale, RefreshCw, ShieldCheck, SlidersHorizontal, Shield,
-  CircleCheck, CircleDashed, CircleAlert,
+  CircleCheck, CircleDashed, CircleAlert, Database,
 } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
-import { useTabMotion } from '@/components/AreaTabs';
 import { useToast } from '@/components/Toast';
 import { errorText } from '@/components/errorText';
 import { suggestPassword } from '@/components/suggestPassword';
@@ -59,6 +58,9 @@ import { msgid } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
 import type { ProxyRow } from './types';
 import SavedTargetPick, { useSavedTargets } from './SavedTargetPick';
+import DomainInput, { useZoneNames } from './DomainInput';
+import { FormSteps, FormWizardFooter, type FormStep } from './FormWizard';
+import FormHint from '@/components/FormHint';
 import BackendTlsPick from './BackendTlsPick';
 
 /**
@@ -112,6 +114,13 @@ interface RouteRow {
 /** Die Wörter aus `TargetKindDialog`, damit die Überschrift dieselben trägt.
  *  Die TCP-Weiterleitung fehlt hier: sie ist kein Dienst und hat ein eigenes
  *  Formular. */
+/** Symbol und ein Satz unter dem Titel: dieselben wie in der Auswahl davor (`TargetKindDialog`). */
+const KIND_HEAD: Record<ServiceKind, { icon: typeof Globe; sub: string }> = {
+  proxy: { icon: Globe, sub: msgid('Eine Domain auf ein Ziel, mit Zertifikat.') },
+  balance: { icon: Scale, sub: msgid('Eine Domain auf mehrere Ziele verteilt.') },
+  redirect: { icon: CornerUpRight, sub: msgid('Eine Domain antwortet mit einer Weiterleitung.') },
+};
+
 const KIND_TITLES: Record<ServiceKind, { create: string; edit: string }> = {
   proxy: { create: msgid('Reverse-Proxy anlegen'), edit: msgid('Reverse-Proxy bearbeiten') },
   balance: { create: msgid('Lastverteilung anlegen'), edit: msgid('Lastverteilung bearbeiten') },
@@ -128,11 +137,12 @@ type Access = 'open' | 'ip' | 'password';
 
 type FormTab = 'domains' | 'ziel' | 'schutz' | 'erweitert';
 
-const FORM_TABS: { key: FormTab; label: string; icon: typeof Globe }[] = [
-  { key: 'domains', label: msgid('Domains'), icon: Globe },
-  { key: 'ziel', label: msgid('Ziel'), icon: Server },
-  { key: 'schutz', label: msgid('Zugriff und Schutz'), icon: Shield },
-  { key: 'erweitert', label: msgid('Erweitert'), icon: SlidersHorizontal },
+/** Die Schritte des Dialogs. `next` ist der Knopf, der zu dem Schritt führt. */
+const FORM_TABS: FormStep<FormTab>[] = [
+  { key: 'domains', label: msgid('Domains'), next: msgid('Weiter zu den Domains'), icon: Globe },
+  { key: 'ziel', label: msgid('Ziel'), next: msgid('Weiter zum Ziel'), icon: Server },
+  { key: 'schutz', label: msgid('Zugriff und Schutz'), next: msgid('Weiter zu Zugriff und Schutz'), icon: Shield },
+  { key: 'erweitert', label: msgid('Erweitert'), next: msgid('Weiter zu Erweitert'), icon: SlidersHorizontal },
 ];
 
 const ACCESS_LABELS: Record<Access, string> = {
@@ -262,6 +272,8 @@ export default function ServiceFormModal({
   const [saving, setSaving] = useState(false);
   /** Nur die Prüfung vor dem Absenden. Was die Route antwortet, ist eine Meldung. */
   const [formError, setFormError] = useState('');
+  /** Zu welcher Eingabe `formError` gehört. Ändert sie sich, gilt die Meldung nicht mehr. */
+  const [formErrorFor, setFormErrorFor] = useState('');
   /** Es gibt genau einen HAProxy. Die Kennung geht weiter im Rumpf mit, weil
    *  die Routen und die Historie sie tragen. */
   const serverId = edit?.proxy.$id ?? usable[0]?.$id ?? '';
@@ -295,6 +307,8 @@ export default function ServiceFormModal({
     edit && edit.service.domains.length > 0 ? [...edit.service.domains] : ['']
   );
   const savedTargets = useSavedTargets();
+  /** Die angebundenen DNS-Zonen, als Vorschläge in den Domainfeldern. */
+  const zoneNames = useZoneNames();
   const [backends, setBackends] = useState<ServerRow[]>(
     edit && edit.service.servers.length > 0
       ? edit.service.servers.map((s) => ({ name: s.name, target: s.target, weight: s.weight === null ? '' : String(s.weight) }))
@@ -353,7 +367,6 @@ export default function ServiceFormModal({
   });
   /** Der Reiter des Dialogs. Beginnt bei den Domains, beim Bearbeiten auch. */
   const [tab, setTab] = useState<FormTab>('domains');
-  const motion = useTabMotion(tab);
   const [tunnel, setTunnel] = useState(edit?.service.tunnel ?? false);
   /** CrowdSec für dieses Ziel. Gilt es global, ist der Schalter an und gesperrt. */
   const [crowdsec, setCrowdsec] = useState(edit?.service.crowdsec ?? false);
@@ -572,6 +585,8 @@ export default function ServiceFormModal({
     // Das Weiterleitungs-Formular zeigt die Frage nicht, also schickt es HTTP.
     backendTls: redirecting ? 'off' : backendTls,
   };
+  /** Die Eingabe als ein Wert: woran eine Meldung der Prüfung hängt (`formErrorFor`). */
+  const inputKey = JSON.stringify([input, lockPassword, dnsHook]);
   // Dieselbe Funktion, die die Route aufruft. Zwei Regelwerke wären ein Dialog,
   // der etwas durchlässt, was der Server danach ablehnt.
   const inputError = editingId ? validateCreateInput(input) : validateNewService(input);
@@ -807,7 +822,7 @@ export default function ServiceFormModal({
         return t('Zeigt auf {addresses}. Das ist keine Adresse dieses Servers.', { addresses });
       case 'unresolved':
         return match.zone && match.plan && !match.existing && !match.error
-          ? t('Löst noch nicht auf. Der Schalter legt den Eintrag beim Speichern an.')
+          ? t('Löst noch nicht auf.')
           : t('Löst noch nicht auf. Der DNS-Eintrag fehlt.');
       default:
         return t('Die DNS-Abfrage ist gescheitert.');
@@ -820,6 +835,7 @@ export default function ServiceFormModal({
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    setFormErrorFor(inputKey);
     if (inputError) {
       setFormError(t(inputError));
       return;
@@ -906,6 +922,36 @@ export default function ServiceFormModal({
     }
   }
 
+  /* ── Die Schritte des Dialogs ──
+   * Dieselben Reiter wie bisher, in ihrer Reihenfolge als Schritte gelesen:
+   * oben die Leiste über die ganze Breite, unten „Schritt 2 von 4" und der
+   * Knopf zum nächsten. Springen darf man weiterhin, die Reiter sind Knöpfe. */
+  const steps = FORM_TABS.filter((entry) => !(redirecting && entry.key === 'erweitert')).map((entry) => ({
+    ...entry,
+    count: tabCounts[entry.key],
+  }));
+  const KindIcon = KIND_HEAD[kind].icon;
+
+  /**
+   * Was noch fehlt, das Erste davon. Die Reihenfolge ist die von `handleSubmit`.
+   * Nach einem Absenden, das die Prüfung beanstandet hat, steht deren Meldung
+   * da (`formError`), bis sich an der Eingabe etwas ändert.
+   */
+  const missing: string | null = inputError
+    ? t(inputError)
+    : accessError || lockPasswordError
+      ? accessError || lockPasswordError
+      : surfaceError
+        ? t(surfaceError)
+        : null;
+  const hint: { tone: 'warning' | 'danger'; text: string } | null = formError && formErrorFor === inputKey
+    ? { tone: 'danger', text: formError }
+    : missing
+      ? { tone: 'warning', text: missing }
+      : null;
+  /** Ob der Knopf zum Anlegen oder Speichern frei ist: dieselbe Bedingung wie bisher. */
+  const submitReady = !inputError && !surfaceError && !accessError && dnsPending.length === 0;
+
   return (
   <div
     className="modal-overlay"
@@ -915,15 +961,21 @@ export default function ServiceFormModal({
         und bei 1040px stand in jeder Zeile ein Eingabefeld auf halber Breite
         neben viel Nichts. Die Grenze ist der Bildschirm, nicht eine Zahl. */}
     <div className="modal modal-form">
-      <div className="modal-header">
+      <div className="modal-header form-wizard-head">
+        <span className="form-wizard-icon">
+          <KindIcon size={22} />
+        </span>
         {/* Die Überschrift nennt die gewählte Art. Sie ist die Antwort auf die
             Frage, die eine Stufe vorher gestellt wurde — stünde hier für alle
             drei dasselbe, wäre die Auswahl davor folgenlos. Beim Bearbeiten
             steht die Art des Eintrags da und nicht die eines Klicks. */}
-        <h2 className="modal-title">
-          {t(edit ? KIND_TITLES[kind].edit : KIND_TITLES[kind].create)}
-          {editingId && <span className="modal-subject">{editingId}</span>}
-        </h2>
+        <div className="form-wizard-titles">
+          <h2 className="modal-title">
+            {t(edit ? KIND_TITLES[kind].edit : KIND_TITLES[kind].create)}
+            {editingId && <span className="modal-subject">{editingId}</span>}
+          </h2>
+          <p className="form-wizard-sub">{t(KIND_HEAD[kind].sub)}</p>
+        </div>
         <button
           type="button"
           className="modal-close"
@@ -936,8 +988,6 @@ export default function ServiceFormModal({
       </div>
       <form onSubmit={handleSubmit}>
         <div className="modal-body">
-          {formError && <div className="alert alert-danger"><ErrorNote text={formError} /></div>}
-
           {/* Dass der Eintrag in einem Zug ersetzt wird, stand hier als Satz —
               er beschrieb, wie das Werkzeug arbeitet, und nicht, was jemand
               entscheiden muss. Übrig bleibt der Hinweis, der eine Folge hat:
@@ -951,25 +1001,7 @@ export default function ServiceFormModal({
           {/* Vier Reiter statt einer langen Seite, wie unter Einstellungen.
               Alles bleibt im Zustand des Formulars: ein Wechsel verliert
               nichts, und gespeichert wird immer der ganze Eintrag. */}
-          <div className={`tabs form-tabs ${motion}`} role="tablist">
-            {FORM_TABS.filter((entry) => !(redirecting && entry.key === 'erweitert')).map((entry) => {
-              const Icon = entry.icon;
-              return (
-                <button
-                  key={entry.key}
-                  type="button"
-                  role="tab"
-                  aria-selected={tab === entry.key}
-                  className={`tab ${tab === entry.key ? 'active' : ''}`}
-                  onClick={() => setTab(entry.key)}
-                >
-                  <Icon size={15} />
-                  {t(entry.label)}
-                  {tabCounts[entry.key] > 0 && <span className="section-count">{tabCounts[entry.key]}</span>}
-                </button>
-              );
-            })}
-          </div>
+          <FormSteps steps={steps} value={tab} onChange={setTab} />
 
           <div className="form-columns">
             <div className="form-col">
@@ -990,6 +1022,7 @@ export default function ServiceFormModal({
                   </div>
                 </div>
 
+                <div className="form-row">
                 <div className="form-group">
                   <label className="form-label">{t('Gruppe')}</label>
                   <Select
@@ -1024,14 +1057,12 @@ export default function ServiceFormModal({
                     />
                   </label>
                   <div className="form-list-row">
-                    <input
-                      className="form-input"
+                    <DomainInput
                       value={domains[0] ?? ''}
-                      onChange={(e) =>
-                        setDomains(domains.map((d, i) => (i === 0 ? e.target.value : d)))
-                      }
+                      onChange={(next) => setDomains(domains.map((d, i) => (i === 0 ? next : d)))}
+                      zones={zoneNames}
                       placeholder={'kunde.example'}
-                      autoComplete="off"
+                      ariaLabel={t('Hauptdomain')}
                     />
                     {renderLockMark(domains[0] ?? '')}
                   </div>
@@ -1044,6 +1075,7 @@ export default function ServiceFormModal({
                     </span>
                   )}
                 </div>
+                </div>
 
                 <div className="form-group">
                   <label className="form-label">{t('Weitere Domains')}</label>
@@ -1053,16 +1085,12 @@ export default function ServiceFormModal({
                         const index = i + 1;
                         return (
                           <div className="form-list-row" key={index}>
-                            <input
-                              className="form-input"
+                            <DomainInput
                               value={domain}
-                              onChange={(e) =>
-                                setDomains(
-                                  domains.map((d, j) => (j === index ? e.target.value : d))
-                                )
-                              }
+                              onChange={(next) => setDomains(domains.map((d, j) => (j === index ? next : d)))}
+                              zones={zoneNames}
                               placeholder={'www.kunde.example'}
-                              autoComplete="off"
+                              ariaLabel={t('Weitere Domain')}
                             />
                             {renderLockMark(domain)}
                             <button
@@ -1171,32 +1199,36 @@ export default function ServiceFormModal({
                     für den Eintrag. Eine Wildcard ohne Zone fehlt: sie hat
                     keine eigene Adresse, und es gäbe nichts zu entscheiden. */}
                 {(dnsShown.length > 0 || dnsPending.length > 0) && (
-                  <div className="form-group">
-                    {/* Flex und nicht einfach nebeneinander: das Icon säße
-                        sonst auf der Textgrundlinie und hinge unter der
-                        Beschriftung heraus. Dasselbe Muster wie in
-                        BackupCheckSchedule. */}
-                    <label
-                      className="form-label"
-                      style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-                    >
-                      {t('DNS-Einträge')}
-                      {dnsRows.length > 0 && (
-                        <InfoHint
-                          text={t(
-                            'Der Eintrag zeigt auf die Domain der Zone selbst, deren A-Eintrag auf diesen Server zeigt. Beim Entfernen des Ziels wird angeboten, ihn mitzunehmen.'
+                  <div className="form-group form-section-part">
+                    {/* Ein eigener Kopf wie der des Abschnitts: die Einträge
+                        sind die zweite Frage dieses Schritts, nicht ein Feld
+                        der ersten. */}
+                    <div className="form-section-head">
+                      <span className="form-section-icon">
+                        <Database size={17} />
+                      </span>
+                      <div>
+                        <div className="form-section-title">
+                          {t('DNS-Einträge')}
+                          {dnsRows.length > 0 && (
+                            <InfoHint
+                              text={t(
+                                'Der Eintrag zeigt auf die Domain der Zone selbst, deren A-Eintrag auf diesen Server zeigt. Beim Entfernen des Ziels wird angeboten, ihn mitzunehmen.'
+                              )}
+                            />
                           )}
-                        />
-                      )}
-                    </label>
-                    <div className="form-list">
+                        </div>
+                        <div className="form-section-sub">{t('Worauf jede Domain zeigt, und ob HAPM den Eintrag setzt.')}</div>
+                      </div>
+                    </div>
+                    <div className="form-list hapm-dns-rows">
                       {dnsPending.map((domain) => (
                         <div className="form-list-row" key={domain}>
                           <span className="hapm-dns-state is-checking">
                             <Loader2 size={16} className="spin" />
                           </span>
                           <span className="hapm-dns-text">
-                            <span>{domain}</span>
+                            <strong>{domain}</strong>
                             <span className="form-hint">{t('DNS wird abgefragt…')}</span>
                           </span>
                         </div>
@@ -1217,7 +1249,7 @@ export default function ServiceFormModal({
                                 )}
                               </span>
                               <span className="hapm-dns-text">
-                                <span>{match.domain}</span>
+                                <strong>{match.domain}</strong>
                                 {resolution && <span className="form-hint">{resolution}</span>}
                               </span>
                             </div>
@@ -1252,12 +1284,35 @@ export default function ServiceFormModal({
                                   ? t('Legt {fqdn} als CNAME auf {zone} an, ohne Cloudflare-Proxy.', { fqdn, zone: zoneName })
                                   : t('Legt {fqdn} als CNAME auf {zone} an.', { fqdn, zone: zoneName });
 
+                        // Links der Zustand als Symbol, in der Mitte die Domain und
+                        // ein Satz, rechts der Schalter: so liest sich jede Zeile
+                        // gleich, ob es etwas zu entscheiden gibt oder nicht.
+                        const chosen = settled || (!locked && dnsChosen(match));
+                        const state = settled
+                          ? t('Der Eintrag steht schon in {zone}.', { zone: zoneName })
+                          : foreign
+                            ? t('Dort steht ein {type}-Eintrag, er bleibt.', { type: match.existing?.type ?? '' })
+                            : unreadable
+                              ? t('Die Zone {zone} ist nicht lesbar.', { zone: zoneName })
+                              : impossible
+                                ? t('Hier ist kein Eintrag möglich.')
+                                : chosen
+                                  ? t('Wird als CNAME in {zone} angelegt.', { zone: zoneName })
+                                  : t('Es wird kein Eintrag angelegt.');
+
                         return (
                           <label className="form-list-row" key={match.domain} data-tooltip={tooltip}>
+                            <span className={settled ? DNS_STATE_CLASS.matches : locked ? DNS_STATE_CLASS.elsewhere : DNS_STATE_CLASS.unresolved}>
+                              {settled ? <CircleCheck size={16} /> : locked ? <CircleAlert size={16} /> : <CircleDashed size={16} />}
+                            </span>
+                            <span className="hapm-dns-text">
+                              <strong>{match.domain}</strong>
+                              <span className="form-hint">{[resolution, state].filter(Boolean).join(' ')}</span>
+                            </span>
                             <span className="toggle-switch">
                               <input
                                 type="checkbox"
-                                checked={settled || (!locked && dnsChosen(match))}
+                                checked={chosen}
                                 disabled={locked}
                                 onChange={(e) => {
                                   // Den Wert JETZT lesen, nicht in der Update-Funktion: React setzt das
@@ -1270,23 +1325,6 @@ export default function ServiceFormModal({
                                 aria-label={t('DNS-Eintrag für {domain}', { domain: match.domain })}
                               />
                               <span className="toggle-slider" />
-                            </span>
-                            <span className="hapm-dns-text">
-                              <span>
-                                {settled
-                                  ? t('{domain} steht bereits in {zone}', { domain: match.domain, zone: zoneName })
-                                  : foreign
-                                    ? t('{domain}: dort steht ein {type}-Eintrag', {
-                                        domain: match.domain,
-                                        type: match.existing?.type ?? '',
-                                      })
-                                    : unreadable
-                                      ? t('{domain}: Zone {zone} nicht lesbar', { domain: match.domain, zone: zoneName })
-                                      : impossible
-                                        ? t('{domain}: hier nicht möglich', { domain: match.domain })
-                                        : t('{domain} als CNAME in Zone {zone} setzen', { domain: match.domain, zone: zoneName })}
-                              </span>
-                              {resolution && <span className="form-hint">{resolution}</span>}
                             </span>
                           </label>
                         );
@@ -2350,41 +2388,32 @@ export default function ServiceFormModal({
                   wiederholt, was in den Feldern darüber schon steht. */}
               {/* Erst, wenn eine Domain dasteht: ein leeres Formular ist nicht
                   falsch ausgefüllt, sondern noch gar nicht. */}
-              {inputError && domainList.length > 0 && (
-                <div className="alert alert-warning">{t(inputError)}</div>
-              )}
-              {!inputError && surfaceError && (
-                <div className="alert alert-warning">{t(surfaceError)}</div>
-              )}
-              {/* Hier und nicht bei der Auswahl der Domains: die verschwindet,
-                  sobald nur noch eine Domain zur Wahl steht, und der Knopf
-                  unten wäre ohne Grund gesperrt. */}
-              {!inputError && !surfaceError && accessError && (
-                <div className="alert alert-warning">{accessError}</div>
-              )}
             </div>
           </div>
         </div>
-        <div className="modal-footer">
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => onClose()}
-            disabled={saving}
-          >
-            {t('Abbrechen')}
-          </button>
-          <button
-            type="submit"
-            className="btn btn-primary"
-            // Solange die DNS-Abfrage läuft, stammt `dnsDomains` von der vorigen
-            // Eingabe: der Eintrag einer eben getippten Domain fiele beim Speichern weg.
-            disabled={saving || !!inputError || !!surfaceError || !!accessError || dnsPending.length > 0}
-          >
-            {saving && <Loader2 size={16} className="spin" />}
-            {t(editingId ? 'Speichern' : 'Anlegen')}
-          </button>
-        </div>
+        {/* Was noch fehlt, in einer Zeile über dem Fuß: dort endet der Blick
+            beim Ausfüllen, und dort sitzt der Knopf zum Weitergehen. Sie steht
+            außerhalb des scrollenden Teils und ist deshalb in jedem Schritt zu
+            sehen, auch wenn das Fehlende in einem anderen steht. */}
+        {hint && (
+          <div className="form-wizard-hint">
+            <FormHint tone={hint.tone}>{hint.tone === 'danger' ? <ErrorNote text={hint.text} /> : hint.text}</FormHint>
+          </div>
+        )}
+        {/* Anlegen und Speichern gehen aus jedem Schritt, sobald nichts mehr
+            fehlt: Zugriff und Erweitert sind Zusätze, durch die niemand klicken
+            muss. Solange die DNS-Abfrage läuft, stammt `dnsDomains` von der
+            vorigen Eingabe (`submitReady`): der Eintrag einer eben getippten
+            Domain fiele beim Speichern weg. */}
+        <FormWizardFooter
+          steps={steps}
+          value={tab}
+          onChange={setTab}
+          onClose={onClose}
+          saving={saving}
+          submitReady={submitReady}
+          submitLabel={t(editingId ? 'Speichern' : 'Anlegen')}
+        />
       </form>
     </div>
   </div>

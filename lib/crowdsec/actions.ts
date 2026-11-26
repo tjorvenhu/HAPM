@@ -14,7 +14,7 @@
 
 import fs from 'node:fs';
 import { ApiError } from '../api';
-import { msg } from '../i18n';
+import { msg, msgid } from '../i18n';
 import { logAudit, type AuditAction } from '../audit';
 import { containerInfo, engine, type ContainerInfo } from '../docker';
 import {
@@ -73,8 +73,9 @@ import {
 } from './setup';
 import { localServer } from '../helpers';
 import { startHaproxyRun, waitForRun } from '../haproxy/runner';
-import { APP_RULES } from './apps';
+import { APP_RULES, type AppRules } from './apps';
 import { syncAllowFile } from './allow-file';
+import { enqueueRuleChange, pendingRuleChanges, ruleRunActive, type RuleJob } from './rule-jobs';
 
 export interface CrowdsecActor {
   userId: string;
@@ -648,9 +649,30 @@ export function forgetCrowdsecSummary(): void {
 
 /* ── Regeln ── */
 
+const hubCache = globalThis as unknown as { __hapmCrowdsecHubList?: { json: any } };
+
+/**
+ * `cscli hub list`. Ohne `-a` nennt es nur, was installiert ist, aus allen Arten.
+ *
+ * Am Ende eines Laufs an den Regeln startet CrowdSec neu und antwortet für
+ * Sekunden nicht, während die Seite im kurzen Takt nachfragt. Solange ein Lauf
+ * arbeitet, bekommt sie deshalb den letzten Stand statt eines Fehlers: was der
+ * Lauf geändert hat, sagt ihr `pending`.
+ */
+async function hubList(): Promise<any> {
+  try {
+    const json = await cscliJson<any>(['hub', 'list']);
+    hubCache.__hapmCrowdsecHubList = { json };
+    return json;
+  } catch (err) {
+    const last = hubCache.__hapmCrowdsecHubList;
+    if (last && ruleRunActive()) return last.json;
+    throw err;
+  }
+}
+
 export async function crowdsecRules() {
-  // Ohne `-a` nennt `hub list` nur, was installiert ist, aus allen Arten.
-  const json = await cscliJson<any>(['hub', 'list']);
+  const json = await hubList();
   const items = (type: string): any[] => (Array.isArray(json?.[type]) ? json[type] : []);
   const enabled = (type: string) =>
     new Set<string>(
@@ -686,7 +708,42 @@ export async function crowdsecRules() {
       installed: installed.has(entry.name),
       version: versions.get(entry.name) || null,
     })),
+    /** Was in der Warteschlange steht oder gerade läuft: Schlüssel und gewünschter Zustand. */
+    pending: pendingRuleChanges(),
   };
+}
+
+/**
+ * `reload: false` lässt das Neuladen aus. Nur für die Warteschlange
+ * (`rule-jobs.ts`): sie lädt einmal am Ende des Laufs.
+ */
+export interface RuleChangeOptions {
+  reload?: boolean;
+}
+
+function wantedCrs(body: unknown): CrsMode {
+  const mode = (body as Record<string, unknown> | null)?.crs;
+  if (typeof mode !== 'string' || !CRS_MODES.includes(mode as CrsMode)) {
+    throw new ApiError(msg('Diesen Modus gibt es nicht.'));
+  }
+  return mode as CrsMode;
+}
+
+function wantedCollection(body: unknown): { entry: (typeof OPTIONAL_COLLECTIONS)[number]; on: boolean } {
+  const raw = (body ?? {}) as Record<string, unknown>;
+  const entry = OPTIONAL_COLLECTIONS.find((c) => c.name === raw.name);
+  if (!entry) throw new ApiError(msg('Diese Regelsammlung lässt sich hier nicht schalten.'), 404);
+  // Fehlte das Feld, hieße das sonst „entfernen".
+  if (typeof raw.installed !== 'boolean') throw new ApiError(msg('Erwartet wird installed: true oder false.'));
+  return { entry, on: raw.installed };
+}
+
+function wantedApp(body: unknown): { app: AppRules; on: boolean } {
+  const raw = (body ?? {}) as Record<string, unknown>;
+  const app = APP_RULES.find((entry) => entry.id === raw.app);
+  if (!app) throw new ApiError(msg('Für diese Anwendung gibt es hier keine Regeln.'), 404);
+  if (typeof raw.installed !== 'boolean') throw new ApiError(msg('Erwartet wird installed: true oder false.'));
+  return { app, on: raw.installed };
 }
 
 /**
@@ -694,32 +751,23 @@ export async function crowdsecRules() {
  * laden. Die Sammlung des anderen Modus bleibt liegen: sie wirkt nur, wenn die
  * Quellen sie nennen.
  */
-export async function setCrsMode(body: unknown, actor: CrowdsecActor) {
-  const mode = (body as Record<string, unknown> | null)?.crs;
-  if (typeof mode !== 'string' || !CRS_MODES.includes(mode as CrsMode)) {
-    throw new ApiError(msg('Diesen Modus gibt es nicht.'));
-  }
-  const crs = mode as CrsMode;
+export async function setCrsMode(body: unknown, actor: CrowdsecActor, options: RuleChangeOptions = {}) {
+  const crs = wantedCrs(body);
   if (crs !== 'off') {
     await cscliOk(['collections', 'install', CRS_COLLECTIONS[crs]], 180_000);
   }
   const files = writeCrowdsecFiles(crs);
   if (!files.mounted) throw new CrowdsecUnavailable();
-  await reloadCrowdsec();
+  if (options.reload !== false) await reloadCrowdsec();
   forgetCrowdsecSummary();
   await audit(actor, 'crowdsec_rules_updated', 'crs', `OWASP-Regeln: ${crs}`);
   return { crs };
 }
 
-export async function setCollection(body: unknown, actor: CrowdsecActor) {
-  const raw = (body ?? {}) as Record<string, unknown>;
-  const entry = OPTIONAL_COLLECTIONS.find((c) => c.name === raw.name);
-  if (!entry) throw new ApiError(msg('Diese Regelsammlung lässt sich hier nicht schalten.'), 404);
-  // Fehlte das Feld, hieße das sonst „entfernen".
-  if (typeof raw.installed !== 'boolean') throw new ApiError(msg('Erwartet wird installed: true oder false.'));
-  const on = raw.installed;
+export async function setCollection(body: unknown, actor: CrowdsecActor, options: RuleChangeOptions = {}) {
+  const { entry, on } = wantedCollection(body);
   await cscliOk(['collections', on ? 'install' : 'remove', entry.name], 180_000);
-  await reloadCrowdsec();
+  if (options.reload !== false) await reloadCrowdsec();
   await audit(actor, 'crowdsec_rules_updated', entry.name, `${entry.name}: ${on ? 'an' : 'aus'}`);
   return { name: entry.name, installed: on };
 }
@@ -730,12 +778,8 @@ export async function setCollection(body: unknown, actor: CrowdsecActor) {
  * Beim Entfernen bleibt, was noch eine andere Sammlung braucht (das regelt
  * `cscli`).
  */
-export async function setApp(body: unknown, actor: CrowdsecActor) {
-  const raw = (body ?? {}) as Record<string, unknown>;
-  const app = APP_RULES.find((entry) => entry.id === raw.app);
-  if (!app) throw new ApiError(msg('Für diese Anwendung gibt es hier keine Regeln.'), 404);
-  if (typeof raw.installed !== 'boolean') throw new ApiError(msg('Erwartet wird installed: true oder false.'));
-  const on = raw.installed;
+export async function setApp(body: unknown, actor: CrowdsecActor, options: RuleChangeOptions = {}) {
+  const { app, on } = wantedApp(body);
   if (!crowdsecInstalled()) throw new CrowdsecUnavailable();
   try {
     for (const item of app.hub) {
@@ -745,17 +789,17 @@ export async function setApp(body: unknown, actor: CrowdsecActor) {
   } finally {
     // Auch nach einem Fehler mittendrin: was schon installiert oder entfernt
     // ist, soll geladen sein und nicht erst beim nächsten Neustart wirken.
-    await reloadCrowdsec().catch(() => undefined);
+    if (options.reload !== false) await reloadCrowdsec().catch(() => undefined);
   }
   await audit(actor, 'crowdsec_rules_updated', `app:${app.id}`, `${app.label}: ${on ? 'an' : 'aus'}`);
   return { app: app.id, installed: on };
 }
 
 /** Hub und Sammlungen auf den neuesten Stand bringen (`cscli hub update`, `hub upgrade`). */
-export async function upgradeHub(actor: CrowdsecActor) {
+export async function upgradeHub(actor: CrowdsecActor, options: RuleChangeOptions = {}) {
   await cscliOk(['hub', 'update'], 120_000);
   const result = await cscliOk(['hub', 'upgrade'], 300_000);
-  await reloadCrowdsec();
+  if (options.reload !== false) await reloadCrowdsec();
   await audit(actor, 'crowdsec_rules_updated', 'hub', 'Regeln aktualisiert.');
   return { output: `${result.stdout}${result.stderr}`.trim().slice(-2000) };
 }
@@ -983,12 +1027,74 @@ export async function dropOrphanedCrowdsec(actor: CrowdsecActor): Promise<string
   }
 }
 
-/** Eine Änderung an den Regeln: OWASP-Modus, eine Sammlung oder der Hub. */
-export async function changeRules(body: unknown, actor: CrowdsecActor) {
+/* ── Regeln ändern: über die Warteschlange ── */
+
+type RuleChangeResult =
+  | Awaited<ReturnType<typeof setCrsMode>>
+  | Awaited<ReturnType<typeof upgradeHub>>
+  | Awaited<ReturnType<typeof setApp>>
+  | Awaited<ReturnType<typeof setCollection>>;
+
+const CRS_STEPS: Record<CrsMode, string> = {
+  off: msgid('OWASP-Regeln: aus'),
+  detect: msgid('OWASP-Regeln: nur melden'),
+  block: msgid('OWASP-Regeln: Treffer sperren'),
+};
+
+/**
+ * Eine Änderung prüfen und als Auftrag für die Warteschlange fassen. Was hier
+ * abgelehnt wird, kommt gar nicht erst in einen Lauf: die Route antwortet
+ * damit sofort.
+ */
+function planRuleChange(body: unknown, actor: CrowdsecActor): RuleJob<RuleChangeResult> {
   const raw = (body ?? {}) as Record<string, unknown>;
-  if ('crs' in raw) return setCrsMode(raw, actor);
-  if (raw.upgrade === true) return upgradeHub(actor);
-  if (typeof raw.app === 'string') return setApp(raw, actor);
-  if (typeof raw.name === 'string') return setCollection(raw, actor);
-  throw new ApiError(msg('Was soll sich ändern? Erwartet wird crs, app oder name mit installed, oder upgrade.'));
+  // Neu geladen wird einmal am Ende des Laufs, nicht nach jeder Änderung.
+  const late: RuleChangeOptions = { reload: false };
+  let job: RuleJob<RuleChangeResult>;
+  if ('crs' in raw) {
+    const crs = wantedCrs(raw);
+    job = { key: 'crs', wanted: crs, label: { text: CRS_STEPS[crs] }, run: () => setCrsMode(raw, actor, late) };
+  } else if (raw.upgrade === true) {
+    job = { key: 'hub', wanted: true, label: { text: msgid('Regeln aktualisieren') }, run: () => upgradeHub(actor, late) };
+  } else if (typeof raw.app === 'string') {
+    const { app, on } = wantedApp(raw);
+    job = {
+      key: `app:${app.id}`,
+      wanted: on,
+      label: { text: on ? msgid('{name} einschalten') : msgid('{name} ausschalten'), name: app.label },
+      run: () => setApp(raw, actor, late),
+    };
+  } else if (typeof raw.name === 'string') {
+    const { entry, on } = wantedCollection(raw);
+    job = {
+      key: entry.name,
+      wanted: on,
+      label: { text: on ? msgid('{name} einschalten') : msgid('{name} ausschalten'), name: entry.label },
+      run: () => setCollection(raw, actor, late),
+    };
+  } else {
+    throw new ApiError(msg('Was soll sich ändern? Erwartet wird crs, app oder name mit installed, oder upgrade.'));
+  }
+  if (!crowdsecInstalled()) throw new CrowdsecUnavailable();
+  return job;
+}
+
+/**
+ * Eine Änderung an den Regeln: OWASP-Modus, eine Anwendung, eine Sammlung oder
+ * der Hub. Wartet, bis sie gelaufen ist und CrowdSec neu geladen hat (interne
+ * API, MCP). Auch sie geht durch die Warteschlange, damit nie zwei
+ * `cscli`-Läufe nebeneinander arbeiten.
+ */
+export async function changeRules(body: unknown, actor: CrowdsecActor): Promise<RuleChangeResult> {
+  return enqueueRuleChange(planRuleChange(body, actor)).done;
+}
+
+/**
+ * Dieselbe Änderung, ohne zu warten: nur für die Oberfläche. Die Antwort nennt
+ * den Lauf, den die Pille unten rechts verfolgt (`/api/crowdsec/rules/runs/<id>`),
+ * und den Schlüssel des Schalters.
+ */
+export function queueRuleChange(body: unknown, actor: CrowdsecActor): { runId: string; key: string } {
+  const job = planRuleChange(body, actor);
+  return { runId: enqueueRuleChange(job).runId, key: job.key };
 }
