@@ -620,6 +620,25 @@ function draft(event: NotificationEvent, ctx: NotificationMailContext, w: Writer
           mailText(t('Was zu tun ist: Unter „Protokoll“, Reiter „Weiterleitung an SIEM“, stehen Rückstand und der letzte Fehler. Eine Testnachricht zeigt, ob der Empfänger wieder antwortet.')),
         action: { label: t('Protokoll ansehen'), path: '/protokoll?bereich=weiterleitung' },
       };
+
+    case 'sync_failed':
+      return {
+        subject: t('Abgleich mit {peer} gescheitert', { peer: event.peer }),
+        eyebrow: t('Abgleich'),
+        heading: t('Abgleich gescheitert'),
+        body:
+          mailText(
+            t('Der Folgeknoten {peer} hat am {when} den Stand von {node} nicht übernommen. Er trägt weiter seinen letzten Stand.', {
+              peer: strong(event.peer),
+              node,
+              when: w.when(ctx.now),
+            })
+          ) +
+          mailFacts([{ label: t('Adresse'), value: event.url }]) +
+          mailNote(machineHead(event.error, w), 'danger', t('Fehler')) +
+          mailText(t('Was zu tun ist: Unter „Abgleich“ steht der Zustand jedes Folgeknotens und der letzte Lauf mit seinen Schritten.')),
+        action: { label: t('Abgleich ansehen'), path: '/abgleich' },
+      };
   }
 }
 

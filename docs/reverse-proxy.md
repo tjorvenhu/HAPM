@@ -2568,6 +2568,11 @@ gehört (siehe [`betrieb.md`](betrieb.md)): eine Zeile in `haproxy_runs`, ein Ei
   `preflight`. Vorher sah ein wartender Lauf minutenlang aus wie einer, der
   gerade die Konfiguration liest. `queued` steht nicht in `HAPROXY_PHASES`:
   Warten ist kein Schritt des Ablaufs, das Fenster zeigt es nur als Zeile.
+- **An demselben Lock hängt der Abgleich zwischen Knoten**
+  ([`hochverfuegbarkeit.md`](hochverfuegbarkeit.md)): auf einem Folgeknoten
+  lehnt `withProxyLock` jeden Vorgang ab, und nach jedem Vorgang stößt es den
+  Abgleich an. Ein neuer Schreibweg, der den Lock nimmt, hat damit beides. Was
+  ein Knoten nur an sich selbst tut, nimmt `withProxyLockLocal`.
 
 ### Derselbe Vorgang ohne Dialog: `/api/internal/haproxy/**`
 

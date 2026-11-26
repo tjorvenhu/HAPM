@@ -19,6 +19,7 @@ Next.js (App Router) mit TypeScript strict, pnpm. Drei Container: HAPM, HAProxy
 | `app/api/internal/` außerhalb von `haproxy/`, die `actions.ts`/`*-actions.ts` in `lib/` | [`docs/hapm-api.md`](docs/hapm-api.md), dazu [`docs/mcp.md`](docs/mcp.md), „Keine eigene Logik in den Werkzeugen" und „Was es bewusst nicht gibt" |
 | `app/api/mcp/`, `lib/mcp/`, `lib/haproxy/api-actions.ts` | [`docs/mcp.md`](docs/mcp.md), dazu [`docs/reverse-proxy-api.md`](docs/reverse-proxy-api.md) und [`docs/hapm-api.md`](docs/hapm-api.md) |
 | `lib/docker/`, `lib/updates/`, `lib/bootstrap.ts`, `Dockerfile`, Compose, `install.sh` | [`docs/betrieb.md`](docs/betrieb.md) |
+| `lib/sync/`, `app/api/sync/`, `app/(app)/abgleich/`, `withProxyLock` in `lib/haproxy/provision.ts` | [`docs/hochverfuegbarkeit.md`](docs/hochverfuegbarkeit.md): Hauptknoten und Folgeknoten, was übertragen wird, warum ein Folgeknoten nichts ändert |
 | `app/setup/`, `app/api/setup/`, `lib/setup/`, `lib/address-move/`, `lib/haproxy/challenge.ts` | [`docs/betrieb.md`](docs/betrieb.md), Abschnitt „Ersteinrichtung", und [`docs/reverse-proxy.md`](docs/reverse-proxy.md), „Interne Installation" |
 | `lib/db/`, `lib/setup-db.ts`, `bin/hapm-admin.mjs` | [`docs/betrieb.md`](docs/betrieb.md), Abschnitt „Postgres" |
 | `lib/crowdsec/`, `app/(app)/reverse-proxy/crowdsec/`, `app/api/crowdsec/`, `app/api/internal/crowdsec/` | [`docs/crowdsec.md`](docs/crowdsec.md) |
@@ -30,6 +31,12 @@ Next.js (App Router) mit TypeScript strict, pnpm. Drei Container: HAPM, HAProxy
 
 ## Wie HAPM gebaut ist
 
+- **Hochverfügbarkeit ist ein Abgleich, keine Serverliste** (`lib/sync/`,
+  abschaltbar, Vorgabe aus): zwei vollständige Installationen, der Hauptknoten
+  überträgt `/etc/haproxy` und den Stand von acme.sh an die Folgeknoten. Ein
+  Folgeknoten ändert daran nichts, gesperrt in `withProxyLock` und
+  `startHaproxyRun`. Was nur dieser Knoten an sich tut, nimmt
+  `withProxyLockLocal`.
 - **Eine Maschine, und zwar diese.** Es gibt keine Serverliste und kein SSH.
   `lib/ssh.ts` führt Kommandos lokal im eigenen Container aus und heißt nur so,
   weil `lib/haproxy/` die Funktion unter diesem Namen aufruft (`sshExec`).
@@ -156,5 +163,6 @@ sagen das. Wie man eines startet, steht in `tests/helpers/test-database.ts`.
 Was nur ein echtes HAProxy zeigen kann (Passwortsperre, Fehlerseiten), prüft
 `pnpm haproxy:verify-pages` mit Docker, HTTPS zum Ziel `pnpm haproxy:verify-tls`,
 CrowdSec (WAF, Sperren, Freigaben) gegen echtes HAProxy, CrowdSec und Bouncer
-`pnpm crowdsec:verify`. Den ganzen Stack lokal:
+`pnpm crowdsec:verify`, den Abgleich zwischen Knoten (anwenden, ablehnen,
+zurücktauschen) `pnpm sync:verify`. Den ganzen Stack lokal:
 `docker compose -f docker-compose.dev.yml up -d --build`.

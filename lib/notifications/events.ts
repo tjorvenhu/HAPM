@@ -110,6 +110,13 @@ export type NotificationEvent =
       error: string;
     }
   | {
+      type: 'sync_failed';
+      /** Name und Adresse des Folgeknotens. */
+      peer: string;
+      url: string;
+      error: string;
+    }
+  | {
       type: 'crowdsec_down';
       /** `bouncer`: HAProxy erreicht niemanden, der fragt. `crowdsec`: niemand prüft. */
       role: 'crowdsec' | 'bouncer';
@@ -215,6 +222,11 @@ export const NOTIFICATION_EVENT_GROUPS: NotificationEventGroup[] = [
         label: msgid('Sicherung gescheitert'),
         description: msgid('Eine Sicherung endet mit einem Fehler.'),
       },
+      {
+        type: 'sync_failed',
+        label: msgid('Abgleich gescheitert'),
+        description: msgid('Ein Folgeknoten antwortet nicht oder übernimmt den Stand nicht.'),
+      },
     ],
   },
   {
@@ -284,6 +296,9 @@ export function eventSubject(event: NotificationEvent): string {
       return 'backup';
     case 'audit_forward_failed':
       return `audit:${event.destination}`;
+    // Je Folgeknoten eine Sache: fallen zwei aus, sind es zwei Meldungen.
+    case 'sync_failed':
+      return `sync:${event.peer}`;
     case 'crowdsec_down':
       return event.container;
     // Einer am Tag; die Dämpfung von 23 Stunden fängt einen zweiten Lauf ab.

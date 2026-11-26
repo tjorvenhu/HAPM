@@ -2,7 +2,7 @@
  * Die Läufe im Hintergrund und ihr eines Fenster.
  *
  * Ein Vorgang, der länger dauert als eine Anfrage (Reverse-Proxy, Update,
- * Sicherung, Zurückspielen, Regeln von CrowdSec), steht nie als Kasten in einer
+ * Sicherung, Zurückspielen, Regeln von CrowdSec, Abgleich zwischen Knoten), steht nie als Kasten in einer
  * Seite, sondern im Fenster `RunOverlay`. Es hängt am Rahmen
  * (`ActivityIndicator`), nicht an der Seite: so übersteht es einen
  * Seitenwechsel, und die Pille unten rechts öffnet dasselbe Fenster wieder.
@@ -13,7 +13,7 @@
  * kein `lib/db` hier, die Seiten importieren es.
  */
 
-export type RunKind = 'haproxy' | 'update' | 'backup' | 'restore' | 'crowdsec';
+export type RunKind = 'haproxy' | 'update' | 'backup' | 'restore' | 'crowdsec' | 'sync';
 
 export interface RunRef {
   kind: RunKind;

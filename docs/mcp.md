@@ -121,6 +121,9 @@ Stunde (`429`), zurückgezogen heißt `401`.
 | `update_backup_settings` | schreiben | Teil-Patch der Sicherung |
 | `start_backup` | schreiben | Sicherung jetzt → `runId` |
 | `get_backup_run` | lesen | Stand eines Sicherungslaufs, mit `waitSeconds` |
+| `get_sync` | lesen | Abgleich zwischen Knoten: Rolle, Folgeknoten mit Zustand, Läufe |
+| `start_sync` | schreiben | „Jetzt abgleichen", nur auf einem Hauptknoten → `runId` |
+| `get_sync_run` | lesen | Stand eines Laufs des Abgleichs, mit `waitSeconds` |
 | `get_settings` | lesen | Einstellungen von HAPM und Stand des Mailversands |
 | `update_settings` | schreiben | Teil-Patch, ohne Adresse, SMTP-Server (`smtpHost`, `smtpPort`, `smtpSecurity`, `smtpUser`) und SMTP-Passwort. Wer den Server umstellt, bekommt die Mails zum Zurücksetzen eines Passworts, also ein Konto. |
 | `update_certificate_settings` | schreiben | Herkunft der Zertifikate, ACME-Server, ohne EAB |
@@ -151,6 +154,7 @@ Welche Route zu welchem Werkzeug gehört:
 | DNS | `GET dns/zones` | `list_dns_zones` |
 | Updates | `GET updates` (`?check=1`), `POST updates/<component>`, `GET updates/runs/<id>` | `get_updates`, `start_update`, `get_update_run` |
 | Sicherung | `GET`/`PATCH`/`POST backup`, `GET backup/runs/<id>` | `get_backup`, `update_backup_settings`, `start_backup`, `get_backup_run` |
+| Abgleich zwischen Knoten | `GET`/`POST sync`, `GET sync/runs/<id>` | `get_sync`, `start_sync`, `get_sync_run` |
 | Einstellungen | `GET`/`PATCH settings`, `PUT settings/certificates` | `get_settings`, `update_settings`, `update_certificate_settings` |
 | Benachrichtigungen | `POST mail/test` (Stand in `GET settings`) | `send_test_mail` |
 | Adresse von HAPM | `GET settings/address?domain=` | `check_address` |
@@ -234,6 +238,7 @@ Gilt für API und MCP gleich; die Funktionen lehnen es ab, nicht die Werkzeuge.
 | Fehlgeschlagene Läufe als gesehen markieren | Ein Zustand der Anzeige in der Oberfläche, kein Zustand des Proxys. |
 | Live-Kennzahlen (Sekundenwerte) | Noch nicht: daran wird parallel gearbeitet. `get_traffic_stats` liefert die gespeicherte Zeitreihe. |
 | Einrichtungsassistent | Läuft einmal, vor dem ersten Key. |
+| Abgleich zwischen Knoten: Rolle, Kopplungsschlüssel, Folgeknoten eintragen und entfernen | Der Kopplungsschlüssel ist ein Geheimnis, mit dem sich die Konfiguration samt Zertifikaten eines Knotens ersetzen lässt. Und wer die Rolle umstellt, entscheidet, welcher Knoten den anderen überschreibt. Lesen und „Jetzt abgleichen" gehen (`get_sync`, `start_sync`). Siehe [`hochverfuegbarkeit.md`](hochverfuegbarkeit.md). |
 
 ### Anmeldung (`app/api/mcp/route.ts`)
 

@@ -6,6 +6,7 @@ import { componentLabel } from '@/lib/updates/apply';
 import { BACKUP_RUNS } from '@/lib/backup/settings';
 import { activeRestore } from '@/lib/backup/restore';
 import { activeRuleRuns } from '@/lib/crowdsec/rule-jobs';
+import type { SyncRun } from '@/lib/sync/store';
 import { getT } from '@/lib/i18n/server';
 import type { BackupRun } from '@/lib/backup/run';
 import type { HaproxyRun, UpdateComponent, UpdateRun } from '@/lib/types';
@@ -27,7 +28,8 @@ export interface ActivityJob {
 
 /**
  * Alles, was gerade im Hintergrund läuft: Vorgänge am Reverse-Proxy, Updates,
- * Sicherungen, das Zurückspielen und Änderungen an den Regeln von CrowdSec.
+ * Sicherungen, das Zurückspielen, Änderungen an den Regeln von CrowdSec und der
+ * Abgleich zwischen Knoten.
  * Das ist die Quelle der Pille unten rechts, also gehört hier alles hinein,
  * was länger läuft als eine Anfrage.
  *
@@ -40,10 +42,11 @@ export async function GET() {
     await requireSession();
 
     const running = [Query.equal('status', 'running'), Query.orderDesc('startedAt'), Query.limit(50)];
-    const [haproxy, updates, backups] = await Promise.all([
+    const [haproxy, updates, backups, syncs] = await Promise.all([
       listDocuments<HaproxyRun>(COLLECTIONS.HAPROXY_RUNS, running),
       listDocuments<UpdateRun>(COLLECTIONS.UPDATE_RUNS, running),
       listDocuments<BackupRun>(BACKUP_RUNS, running),
+      listDocuments<SyncRun>(COLLECTIONS.SYNC_RUNS, running),
     ]);
     const restore = activeRestore();
     const { t } = await getT();
@@ -75,6 +78,13 @@ export async function GET() {
       ...(restore
         ? [{ id: restore.runId, kind: 'restore' as const, name: restore.name, phase: null, startedAt: restore.startedAt }]
         : []),
+      ...syncs.map((run) => ({
+        id: run.$id,
+        kind: 'sync' as const,
+        name: run.peers,
+        phase: null,
+        startedAt: run.startedAt,
+      })),
       ...activeRuleRuns(t).map((run) => ({
         id: run.id,
         kind: 'crowdsec' as const,

@@ -23,6 +23,7 @@ import { audit } from './audit';
 import { mcp } from './mcp';
 import { branding } from './branding';
 import { crowdsec } from './crowdsec';
+import { sync } from './sync';
 
 export type Dictionary = Readonly<Record<string, string>>;
 
@@ -44,6 +45,7 @@ export const PARTS: Readonly<Record<string, Dictionary>> = {
   mcp,
   branding,
   crowdsec,
+  sync,
 };
 
 export const en: Dictionary = Object.freeze(Object.assign({}, ...Object.values(PARTS)));

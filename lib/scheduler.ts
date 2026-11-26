@@ -8,6 +8,7 @@
  *  - alle sechs Stunden: nach neuen Abbildern und einem neuen acme.sh sehen
  *  - einmal am Tag: Zertifikate erneuern und Altes aufräumen
  *  - jede Minute: das Protokoll an ein SIEM nachliefern, falls eines eingerichtet ist
+ *  - alle fünf Minuten: tragen die Folgeknoten den Stand von hier (`lib/sync/`)
  */
 
 import { deleteWhere, getDocument, Query } from './db';
@@ -45,6 +46,11 @@ import { ruleRunActive } from './crowdsec/rule-jobs';
 import { timeReached } from './schedule-time';
 import { AUDIT_RETENTION_DEFAULT, getAuditSettings } from './audit-log/settings';
 import { onForwardingFailing, runAuditForwarding, startAuditForwarding } from './audit-log/forward';
+import { onProxyChange } from './haproxy/provision';
+import { checkPeers, requestSyncSoon } from './sync/send';
+import { reconcileSync } from './sync/apply';
+import { isReplica } from './sync/role';
+import { pruneSyncRuns } from './sync/store';
 
 /** CrowdSec startet nach HAPM. Angemeldet wird der Bouncer danach, und
  *  nachgesehen wird regelmäßig, falls jemand den Container neu angelegt hat. */
@@ -79,6 +85,8 @@ async function tickCrowdsec(): Promise<void> {
 const crowdsecTick = globalThis as unknown as { appsChecked?: boolean };
 
 const UPDATE_CHECK_MS = 6 * 60 * 60 * 1000;
+/** So oft fragt ein Hauptknoten seine Folgeknoten, welchen Stand sie tragen. */
+const SYNC_CHECK_MS = 5 * 60_000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Wie lange Historie und Protokoll aufgehoben werden. */
@@ -161,7 +169,12 @@ export async function runDaily(): Promise<void> {
     // Die Länder-Tabelle, falls ein neuer Monat begonnen hat. Wirft nie.
     void maybeRefreshGeoip();
 
-    const renewal = await renewCertificates();
+    // Auf einem Folgeknoten erneuert niemand: Zertifikate und Erneuerungseinträge
+    // kommen vom Hauptknoten, und zwei Knoten, die dasselbe Zertifikat beantragen,
+    // stünden sich bei der Zertifizierungsstelle im Weg.
+    const renewal = (await isReplica()) ? { ok: true, output: '' } : await renewCertificates();
+    // Ein erneuertes Zertifikat ist ein neuer Stand: an die Folgeknoten damit.
+    requestSyncSoon();
     s.lastRenewal = { at: new Date().toISOString(), ok: renewal.ok, output: renewal.output };
     if (!renewal.ok) log(`Erneuerung der Zertifikate meldet einen Fehler:\n${renewal.output}`);
     // Benachrichtigen, ohne den Lauf aufzuhalten. Wirft nie.
@@ -178,6 +191,7 @@ export async function runDaily(): Promise<void> {
       .catch(() => AUDIT_RETENTION_DEFAULT);
     await deleteWhere(COLLECTIONS.AUDIT_LOGS, [Query.lessThan('timestamp', daysAgo(auditDays))]);
     await pruneBackupRuns(daysAgo(RUN_RETENTION_DAYS));
+    await pruneSyncRuns(daysAgo(RUN_RETENTION_DAYS));
     await pruneExpiredSessions();
     s.lastDailyRun = new Date().toISOString();
   } catch (err) {
@@ -301,6 +315,10 @@ export async function initializeScheduler(): Promise<void> {
       .catch(() => undefined);
   });
   startAuditForwarding();
+  // Der Abgleich zwischen Knoten: was der vorige Prozess offen ließ, und der
+  // Anstoß nach jedem Vorgang am Proxy.
+  await reconcileSync().catch((err) => log(`Abgleich der Knoten nicht aufgeräumt: ${err}`));
+  onProxyChange(requestSyncSoon);
 
   startLogFollower();
 
@@ -309,6 +327,7 @@ export async function initializeScheduler(): Promise<void> {
   s.timers.push(setInterval(() => void checkUpdates().catch(() => undefined), UPDATE_CHECK_MS));
   s.timers.push(setInterval(() => void runHealthChecks(), HEALTH_CHECK_INTERVAL_MS));
   s.timers.push(setInterval(() => void tickCrowdsec(), CROWDSEC_RECONCILE_MS));
+  s.timers.push(setInterval(() => void checkPeers('schedule'), SYNC_CHECK_MS));
 
   // Die erste Prüfung kurz nach dem Start, damit die Übersicht nicht sechs Stunden leer ist.
   setTimeout(() => void checkUpdates().catch(() => undefined), 20_000);

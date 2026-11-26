@@ -24,7 +24,10 @@ export async function register() {
     const { getSettings } = await import('./lib/settings');
     const { runBootstrap } = await import('./lib/bootstrap');
     const settings = await getSettings().catch(() => null);
-    await runBootstrap(settings?.acmeEmail ?? null);
+    // Ein Folgeknoten bekommt das Konto von acme.sh mit dem Abgleich: er meldet
+    // dort keine eigene Adresse an (docs/hochverfuegbarkeit.md).
+    const { isReplica } = await import('./lib/sync/role');
+    await runBootstrap((await isReplica()) ? null : (settings?.acmeEmail ?? null));
 
     const { initializeScheduler } = await import('./lib/scheduler');
     await initializeScheduler();

@@ -397,6 +397,13 @@ HAProxy schickt Anfragen von dort gar nicht erst an CrowdSec. Nach jeder
 Änderung lädt HAProxy neu. Abgelaufene Einträge nimmt der Scheduler alle
 15 Minuten aus der Datei; CrowdSec selbst wertet das Ablaufdatum ohnehin aus.
 
+**Auf einem Folgeknoten** ([`hochverfuegbarkeit.md`](hochverfuegbarkeit.md))
+kommt `allow.lst` mit dem Abgleich vom Hauptknoten und wird dort nicht aus der
+eigenen Liste geschrieben. Freigaben lassen sich dort nicht ändern. Sperren,
+Regeln und der Schalter für OWASP bleiben je Knoten. Ist CrowdSec dort nicht
+eingeschaltet, nimmt der Folgeknoten die Zeilen beim Anwenden aus seiner
+`haproxy.cfg`.
+
 ## Wie HAPM mit CrowdSec spricht: `cscli`
 
 HAPM ruft `docker exec hapm-crowdsec cscli … -o json` über die Engine auf
