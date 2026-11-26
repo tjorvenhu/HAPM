@@ -191,6 +191,29 @@ done
 
 [ "$(id -u)" -eq 0 ] || fail "Bitte als root ausführen (oder mit sudo)."
 
+# Wo die Shell des Aufrufers steht. Leer, wenn es den Ordner nicht mehr gibt:
+# wer nach dem Entfernen noch in /opt/hapm steht und neu installiert, steht in
+# einem gelöschten Ordner. Die Shell meldet das selbst beim Start
+# ("getcwd() failed"), bevor dieses Skript etwas tun kann. Es arbeitet dann von
+# / aus weiter, damit kein Aufruf darunter an derselben Stelle scheitert, und
+# sagt, woher die Zeile kommt.
+START_DIR="$(pwd -P 2>/dev/null || true)"
+GONE_DIR=0
+if [ -z "$START_DIR" ]; then
+  GONE_DIR=1
+  cd /
+fi
+
+# Der Hinweis dazu, nach der Überschrift des Laufs.
+note_gone_dir() {
+  [ "$GONE_DIR" = 1 ] || return 0
+  printf '
+'
+  warn "Der Ordner, in dem Ihre Shell steht, existiert nicht mehr."
+  note "Daher die Zeile \"getcwd() failed\" oben. Das Skript läuft normal weiter."
+  note "Danach bitte mit \"cd\" in einen vorhandenen Ordner wechseln."
+}
+
 # Gefragt wird am Terminal, auch wenn das Skript über eine Pipe kommt
 # (`curl … | sh`): die Standardeingabe ist dann das Skript selbst.
 can_ask() {
@@ -378,6 +401,7 @@ remove_dir_if_empty() {
 
 uninstall() {
   title "HAPM entfernen"
+  note_gone_dir
 
   DOCKER=0
   if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
@@ -535,6 +559,14 @@ uninstall() {
   fi
 
   printf '\n%s%sHAPM ist entfernt.%s Docker läuft weiter.\n\n' "$GREEN" "$BOLD" "$RESET"
+
+  # Die Shell des Aufrufers steht noch in einem Ordner, den es nicht mehr gibt.
+  # Herausholen kann sie nur der Aufrufer selbst.
+  if [ -n "$START_DIR" ] && [ ! -d "$START_DIR" ]; then
+    warn "Ihre Shell steht noch in $START_DIR. Den Ordner gibt es nicht mehr."
+    note "Bitte mit \"cd\" herauswechseln, bevor Sie etwas anderes aufrufen."
+    printf '\n'
+  fi
   exit 0
 }
 
@@ -543,6 +575,7 @@ uninstall() {
 # ══ 5. Installieren ═══════════════════════════════════════════════════════════
 
 title "HAPM installieren"
+note_gone_dir
 
 LOG="$(mktemp)"
 trap 'rm -f "$LOG"' EXIT

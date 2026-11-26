@@ -59,6 +59,13 @@ Abbild entfernt `--uninstall` nur, wenn kein anderer Container daraus läuft,
 und fragt das vorher ab: trägt ein Abbild zwei Namen, löst `docker image rm`
 den einen auch dann, wenn ein fremder Container unter ihm läuft.
 
+**Wer beim Entfernen im Ordner der Installation steht**, steht danach in einem
+Ordner, den es nicht mehr gibt. Das Skript sagt das am Ende („bitte mit `cd`
+herauswechseln"): herausholen kann es die Shell des Aufrufers nicht. Wird es
+von dort aus erneut gestartet, meldet die Shell `getcwd() failed`, bevor das
+Skript beginnt. Es arbeitet dann von `/` aus weiter und erklärt die Zeile
+(`START_DIR`, `note_gone_dir`).
+
 **Umzug aus 0.2.0.** Bis dahin lagen die Daten in Docker-Volumes (`hapm_data`,
 `hapm_haproxy-etc`, …). Findet `install.sh` das Volume `hapm_postgres-data` und
 noch keine Datenbank im Ordner, hält es den Stack an und kopiert die Volumes
