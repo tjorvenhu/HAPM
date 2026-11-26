@@ -1,5 +1,6 @@
 import { createDocument } from './db';
 import { COLLECTIONS } from './types';
+import { auditWritten } from './audit-log/kick';
 
 export type AuditAction =
   | 'login'
@@ -86,6 +87,10 @@ export type AuditAction =
   | 'branding_updated'
   | 'mail_test_sent'
   | 'mail_test_failed'
+  | 'audit_exported'
+  | 'audit_settings_updated'
+  | 'audit_forward_test_sent'
+  | 'audit_forward_test_failed'
   | 'crowdsec_decision_added'
   | 'crowdsec_decision_removed'
   | 'crowdsec_allowlist_added'
@@ -117,6 +122,8 @@ export async function logAudit(params: AuditParams): Promise<void> {
       ip: params.ip || null,
       timestamp: new Date().toISOString(),
     });
+    // Die Weiterleitung an ein SIEM, falls eine eingerichtet ist. Wartet auf nichts.
+    auditWritten();
   } catch {
     console.error(`[audit] Eintrag nicht geschrieben: ${params.action} von ${params.userEmail}`);
   }

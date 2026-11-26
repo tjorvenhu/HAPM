@@ -103,6 +103,7 @@ Jede Seite wird vor „fertig" in drei Breiten angesehen: breit (1440), schmal
   einer eigenen halben Seite: `.hapm-main-side` (schmale Spalte rechts) oder
   `.hapm-side-main` (links, wie CrowdSec, Übersicht), die Karten der schmalen
   Spalte in `.hapm-side`, alles in einem `.hapm-fit` (`app/hapm.css`).
+  Mehrere Karten in der Hauptspalte stehen in einem `.hapm-stack`.
   Umgebrochen wird nach dem Platz des Bereichs (Container-Abfrage), nicht nach
   der Breite des Fensters.
 - **Was für alle Zeilen einer Liste gilt, steht einmal über der Liste**, nicht

@@ -126,6 +126,8 @@ has HAProxy check it, reloads and fetches the certificates.
 - Statistics: requests, status codes, response times, countries, plus CrowdSec
 - History of every operation with its steps
 - The HAProxy and CrowdSec logs in your browser, with search and filters
+- Audit log: who changed what and when, with filters and export (CSV, JSON Lines)
+- Audit log forwarding to a SIEM: syslog (UDP, TCP, TLS) and HTTP, for example Splunk HEC
 - One-click updates for HAPM, HAProxy, acme.sh and CrowdSec
 - Daily backups and restore from the web interface
 - Email alerts on outages, expiring certificates and errors
@@ -445,8 +447,9 @@ needs HTTPS (TCP 443) to these hosts:
 - **CrowdSec:** `cdn-hub.crowdsec.net`, `hub-data.crowdsec.net`, and for the
   community blocklist `api.crowdsec.net` and `blocklists.api.crowdsec.net`
 
-Plus DNS (53), NTP (123 UDP) and, if mail is set up, the SMTP server (587 or
-465). Allow hosts by name, not by IP address: they sit behind CDNs with
+Plus DNS (53), NTP (123 UDP), if mail is set up, the SMTP server (587 or
+465), and if the audit log is forwarded, the syslog server or endpoint of the
+SIEM. Allow hosts by name, not by IP address: they sit behind CDNs with
 changing addresses.
 
 Behind a proxy, the Docker engine needs it for the images, and the `hapm` and
@@ -900,6 +903,7 @@ explains for almost every decision why it was made.
 | [`docs/mcp.md`](docs/mcp.md) | The MCP server for Claude and other clients |
 | [`docs/dns.md`](docs/dns.md) | DNS at Cloudflare and Hetzner |
 | [`docs/crowdsec.md`](docs/crowdsec.md) | CrowdSec: architecture, rules, allowlist, limits, troubleshooting |
+| [`docs/protokoll.md`](docs/protokoll.md) | Audit log: reading, export, forwarding to a SIEM (syslog, HTTP), retention |
 | [`docs/i18n.md`](docs/i18n.md) | Translations of the web interface |
 
 ## Contributing

@@ -1,8 +1,8 @@
 # Die interne API außerhalb des Reverse-Proxys
 
 `/api/internal/**` ohne `haproxy/`: Updates, Sicherung, Einstellungen von
-HAPM, GeoIP-Tabelle, Systemstatus, der Container von HAProxy und die
-DNS-Zonen. Dazu unter `/api/internal/haproxy/` die Teile, die nicht zu einem
+HAPM, GeoIP-Tabelle, Systemstatus, der Container von HAProxy, die
+DNS-Zonen und das Protokoll. Dazu unter `/api/internal/haproxy/` die Teile, die nicht zu einem
 Ziel gehören: Grundkonfiguration, Fehlerseiten, Log, Statistik, Zertifikate
 entfernen und erneut beantragen.
 
@@ -35,6 +35,7 @@ hier, die Tabelle dort sagt, welche.
 | `PATCH /geoip` | `{ "autoRefresh": true }` |
 | `POST /geoip/refresh` | jetzt von db-ip.com holen, wartet (Sekunden) |
 | `GET /dns/zones` | angebundene Zonen und ob ihr Zugang geht |
+| `GET /audit` | das Protokoll: `?from=` `?to=` `?actor=` `?area=` `?q=` `?limit=`, weiter mit `?before=` oder `?after=` |
 | `GET /haproxy/stats` | Zeitreihe aus der Datenbank, `?hours=` `?scope=` |
 | `GET /haproxy/log` | letzte Zeilen des Logs, `?lines=` `?filter=` `?q=` |
 | `GET /haproxy/base-config` | Abgleich mit der Grundkonfiguration |
@@ -47,6 +48,25 @@ hier, die Tabelle dort sagt, welche.
 Die Antworten sind Feld für Feld die der Routen hinter der Oberfläche
 (`/api/updates`, `/api/backup`, `/api/settings`, …). Wer die Form eines Feldes
 sucht, findet sie in der jeweiligen Funktion.
+
+## Das Protokoll abholen
+
+`GET /audit` liefert `{ entries, cursor, more }`, ohne Angaben das Neueste
+zuerst. Ein SIEM, das nichts verpassen will, liest aufsteigend:
+
+```bash
+# Erster Abruf: vom Ältesten an (oder ab einem Zeitpunkt mit ?from=).
+curl -H "Authorization: Bearer $KEY" "https://hapm.example.org/api/internal/audit?order=asc&limit=500"
+# Jeder weitere: was seit dem letzten cursor dazukam.
+curl -H "Authorization: Bearer $KEY" "https://hapm.example.org/api/internal/audit?after=$CURSOR&limit=500"
+```
+
+Aufsteigend endet die Antwort anderthalb Sekunden vor jetzt, damit jeder
+Eintrag genau einmal kommt. Kam nichts Neues, ist `cursor` der alte. Die
+Felder eines Eintrags, die Bereiche und der Grund für die Lücke am Rand
+stehen in [`protokoll.md`](protokoll.md), „Lesen". Statt abzuholen kann HAPM
+auch selbst schicken (Syslog, HTTP-Endpunkt): das wird in der Oberfläche
+eingerichtet.
 
 ## Update von HAPM
 
@@ -77,6 +97,9 @@ Die Gründe stehen in [`mcp.md`](mcp.md), „Was es bewusst nicht gibt". Kurz:
 - `GET /settings/address` prüft nur. Den Stand eines laufenden Umzugs liest
   die API nicht: wer ihn liest, gibt das alte Ziel zum Entfernen frei
   (`readAddressMoveView`), und das soll das Fenster tun, das umzieht.
+- Das Protokoll nur lesen: Aufbewahrung, Weiterleitung an ein SIEM und Export
+  gibt es nur in der Oberfläche. Ein Key, der sie ändern könnte, räumte hinter
+  sich auf.
 - Kein Zurückspielen einer Sicherung, keine Benutzer, Passwörter, Passkeys,
   zweiter Faktor, API-Keys, DNS-Tokens, Design der Fehlerseiten, Darstellung.
 
@@ -86,8 +109,8 @@ Die Gründe stehen in [`mcp.md`](mcp.md), „Was es bewusst nicht gibt". Kurz:
   schreibende Funktion schreibt ihr Protokoll selbst. Sie stehen in
   `lib/updates/actions.ts`, `lib/backup/actions.ts`, `lib/settings-actions.ts`,
   `lib/haproxy/certificate-actions.ts`, `lib/haproxy/maintenance-actions.ts`,
-  `lib/haproxy/log-read.ts`, `lib/system/haproxy-container.ts` und
-  `lib/geoip/actions.ts`. Vorher stand die Logik in den Routen unter
+  `lib/haproxy/log-read.ts`, `lib/system/haproxy-container.ts`,
+  `lib/geoip/actions.ts` und `lib/audit-log/read.ts`. Vorher stand die Logik in den Routen unter
   `app/api/`; dort steht jetzt nur noch Anmeldung, Rumpf und Aufruf.
 - **Der Actor ist `{ ...serviceActor(service), ip: getClientIP(request) }`**,
   bei Läufen am Reverse-Proxy `haproxyActor(serviceActor(service), request)`.

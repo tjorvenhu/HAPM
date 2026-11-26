@@ -89,6 +89,15 @@ export type NotificationEvent =
     }
   | { type: 'backup_failed'; detail: string }
   | {
+      type: 'audit_forward_failed';
+      destination: 'syslog' | 'http';
+      /** Wohin weitergeleitet wird, etwa `tls://siem.example.org:6514`. */
+      target: string;
+      /** Seit wann das Ziel nichts annimmt. */
+      since: string;
+      error: string;
+    }
+  | {
       type: 'crowdsec_down';
       /** `bouncer`: HAProxy erreicht niemanden, der fragt. `crowdsec`: niemand prüft. */
       role: 'crowdsec' | 'bouncer';
@@ -192,6 +201,16 @@ export const NOTIFICATION_EVENT_GROUPS: NotificationEventGroup[] = [
     ],
   },
   {
+    title: msgid('Protokoll'),
+    events: [
+      {
+        type: 'audit_forward_failed',
+        label: msgid('Weiterleitung gescheitert'),
+        description: msgid('Syslog-Server oder HTTP-Endpunkt nimmt seit 15 Minuten nichts an.'),
+      },
+    ],
+  },
+  {
     title: 'CrowdSec',
     events: [
       {
@@ -243,6 +262,8 @@ export function eventSubject(event: NotificationEvent): string {
       return event.component;
     case 'backup_failed':
       return 'backup';
+    case 'audit_forward_failed':
+      return `audit:${event.destination}`;
     case 'crowdsec_down':
       return event.container;
     // Einer am Tag; die Dämpfung von 23 Stunden fängt einen zweiten Lauf ab.

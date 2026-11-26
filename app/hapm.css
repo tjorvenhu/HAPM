@@ -648,6 +648,9 @@
 .hapm-side-main { display: grid; grid-template-columns: clamp(260px, 30%, 340px) minmax(0, 1fr); gap: 16px; align-items: start; }
 .hapm-side-main > .hapm-side { grid-template-columns: minmax(0, 1fr); }
 .hapm-main-side > .card, .hapm-side-main > .card, .hapm-side > .card { margin: 0; min-width: 0; }
+/* Mehrere Karten in der Hauptspalte, untereinander (Protokoll, Weiterleitung). */
+.hapm-stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; min-width: 0; }
+.hapm-stack > .card { margin: 0; min-width: 0; }
 @container (max-width: 980px) { .hapm-main-side { grid-template-columns: minmax(0, 1fr); } }
 /* Schmal: alles untereinander. Die erste kurze Karte (Status) bleibt oben,
    dann die Hauptkarte, dann der Rest. Sonst stünde die Liste unter drei Karten. */

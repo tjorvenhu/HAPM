@@ -18,6 +18,7 @@ const OWN_SOLUTION: { file: string; why: string }[] = [
   { file: 'app/(app)/reverse-proxy/logs/RunsView.tsx', why: 'eigene Karten nach der Breite des Bereichs (app/logs.css)' },
   { file: 'app/(app)/reverse-proxy/logs/HaproxyLogView.tsx', why: 'eigene Karten nach der Breite des Bereichs (app/logs.css)' },
   { file: 'components/crowdsec/CrowdsecLogView.tsx', why: 'eigene Karten nach der Breite des Bereichs (app/logs.css)' },
+  { file: 'app/(app)/protokoll/EntriesView.tsx', why: 'dieselben Karten wie die Vorgänge (logs-runs in app/logs.css)' },
   { file: 'components/crowdsec/RulesPanel.tsx', why: 'drei schmale Spalten mit Schalter, bleiben sichtbar (.cs-rules)' },
   { file: 'app/(app)/dashboard/page.tsx', why: 'blendet Spalten aus, die Karten daneben zeigen dasselbe' },
   { file: 'app/(app)/reverse-proxy/import/page.tsx', why: 'Vorschau einer Konfiguration, wird am Schreibtisch gelesen' },

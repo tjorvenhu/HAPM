@@ -120,6 +120,18 @@ const SAMPLES: { event: NotificationEvent; subject: string; text: string[]; path
   },
   {
     event: {
+      type: 'audit_forward_failed',
+      destination: 'syslog',
+      target: 'tls://siem.example.org:6514',
+      since: '2026-11-24T11:40:00.000Z',
+      error: 'siem.example.org:6514: connect ECONNREFUSED',
+    },
+    subject: 'Weiterleitung des Protokolls gescheitert',
+    text: ['proxy01', 'tls://siem.example.org:6514', 'connect ECONNREFUSED', 'Die Einträge bleiben in HAPM', 'Was zu tun ist'],
+    path: '/protokoll?bereich=weiterleitung',
+  },
+  {
+    event: {
       type: 'crowdsec_down',
       role: 'bouncer',
       container: 'hapm-crowdsec-bouncer',
