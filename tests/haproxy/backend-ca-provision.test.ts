@@ -33,6 +33,10 @@ function words(command: string): string[] {
   return [...command.matchAll(/'((?:[^']|'\\'')*)'/g)].map((match) => match[1].replace(/'\\''/g, "'"));
 }
 
+// Die Sperre fragt die Rolle des Knotens aus der Datenbank (`tests/sync/guard.test.ts`).
+// Hier geht es um die Dateien der Zertifizierungsstellen.
+vi.mock('@/lib/sync/role', () => ({ assertProxyWritable: async () => undefined, isReplica: async () => false }));
+
 vi.mock('@/lib/ssh', () => ({
   sshExec: vi.fn(async (_ssh: unknown, command: string) => {
     const out = (stdout: string, code = 0) => ({ code, stdout, stderr: code === 0 ? '' : stdout });
