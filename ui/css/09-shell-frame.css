@@ -253,14 +253,75 @@
   padding: 0.75rem 0.75rem 1rem;
 }
 
+/* Die Überschrift einer Gruppe ist der Knopf, der sie auf- und zuklappt. Das Zeichen
+   steht in der Flucht der Zeichen an den Einträgen (`.shell-nav__toggle`). */
 .shell-nav__heading {
-  margin: 0;
-  padding: 0 0.875rem 0.375rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 1.75rem;
+  margin: 0 0 0.125rem;
+  padding: 0 0.8125rem 0 0.875rem;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: none;
   color: var(--text-secondary);
+  font: inherit;
   font-size: 0.6875rem;
   font-weight: 600;
   letter-spacing: 0.08em;
+  text-align: left;
   text-transform: uppercase;
+  cursor: pointer;
+  transition: background-color var(--shell-fast), color var(--shell-fast);
+}
+
+.shell-nav__heading:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.shell-nav__heading-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.shell-nav__heading svg {
+  flex-shrink: 0;
+  transform: rotate(-90deg);
+  transition: transform var(--shell-base) var(--shell-ease);
+}
+
+.shell-nav__heading[aria-expanded="true"] svg {
+  transform: none;
+}
+
+.shell-nav__heading .shell-count {
+  letter-spacing: 0;
+}
+
+/* Zugeklappt mit der aktuellen Seite darin: ein Punkt in der Farbe des aktiven Eintrags. */
+.shell-nav__heading--current {
+  color: var(--text);
+}
+
+.shell-nav__heading--current .shell-nav__heading-text::after {
+  content: "";
+  display: inline-block;
+  width: 0.375rem;
+  height: 0.375rem;
+  margin-left: 0.5rem;
+  border-radius: 50%;
+  background: var(--primary);
+  vertical-align: 0.0625rem;
+}
+
+/* Der Ausschnitt einer Gruppe reicht 4 px über die Liste hinaus: so viel braucht der
+   Fokusring eines Eintrags, den `overflow: hidden` sonst abschnitte. */
+.shell-nav__clip {
+  margin: -0.25rem;
+  padding: 0.25rem;
 }
 
 .shell-nav__list {
@@ -409,9 +470,11 @@
   color: var(--primary-fg);
 }
 
-/* Unterseiten klappen auf und zu: die Zeile wächst von 0fr auf 1fr, der Inhalt blendet
-   dabei ein. Eingeklappt ist der Block unsichtbar und per `inert` nicht erreichbar. */
-.shell-subnav-wrap {
+/* Unterseiten und Gruppen klappen auf und zu: die Zeile wächst von 0fr auf 1fr, der
+   Inhalt blendet dabei ein. Eingeklappt ist der Block unsichtbar und per `inert` nicht
+   erreichbar. */
+.shell-subnav-wrap,
+.shell-nav__fold {
   display: grid;
   grid-template-rows: 0fr;
   opacity: 0;
@@ -422,7 +485,8 @@
     visibility 0s var(--shell-base);
 }
 
-.shell-subnav-wrap--open {
+.shell-subnav-wrap--open,
+.shell-nav__fold--open {
   grid-template-rows: 1fr;
   opacity: 1;
   visibility: visible;
@@ -431,7 +495,8 @@
     opacity var(--shell-base) var(--shell-ease);
 }
 
-.shell-subnav-clip {
+.shell-subnav-clip,
+.shell-nav__clip {
   min-height: 0;
   overflow: hidden;
 }

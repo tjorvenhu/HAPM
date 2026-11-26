@@ -57,6 +57,9 @@ html:has(.app-shell) .dns-select__list.is-closing,
 
   .shell-subnav-wrap,
   .shell-subnav-wrap--open,
+  .shell-nav__fold,
+  .shell-nav__fold--open,
+  .shell-nav__heading svg,
   .shell-overlay,
   .shell-overlay--open {
     transition: none;

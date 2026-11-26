@@ -1,11 +1,12 @@
 "use client"
 
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type TransitionEvent } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { ChevronDown, Search, type LucideIcon } from "lucide-react"
 import { useT } from "@/lib/i18n/react"
+import { navGroupClosed, openNavGroupOf, setNavGroupClosed, useNavGroups } from "./useNavGroups"
 
 export interface ShellNavSection {
   href: string
@@ -37,7 +38,7 @@ export interface ShellNavArea {
 
 export interface ShellNavGroup {
   key: string
-  /** Sichtbare Überschrift. Die erste Gruppe hat keine. */
+  /** Sichtbare Überschrift, zugleich der Knopf zum Auf- und Zuklappen. Die erste Gruppe hat keine und klappt nicht. */
   heading?: string
   /** Name der Navigation für Screenreader. */
   label: string
@@ -102,10 +103,18 @@ function activeHref(pathname: string, areas: ShellNavArea[], root: string): stri
   return best
 }
 
+/** Wo die Markierung des aktiven Eintrags in der scrollenden Liste liegt. */
+function pillPlace(box: HTMLElement, pill: HTMLElement): { top: number; left: number } {
+  const frame = box.getBoundingClientRect()
+  const rect = pill.getBoundingClientRect()
+  return { top: rect.top - frame.top + box.scrollTop, left: rect.left - frame.left }
+}
+
 /**
- * Inhalt der Seitenleiste: Logo, Suche, Bereiche mit aufklappbaren Unterseiten und
- * Zählern, Fuß. **Die eine Quelle für das Menü**: `ShellSidebar` zeigt sie ab 1024 px
- * als Leiste und darunter in der Schublade. Was hier steht, gilt für beide.
+ * Inhalt der Seitenleiste: Logo, Suche, Gruppen zum Zuklappen, Bereiche mit
+ * aufklappbaren Unterseiten und Zählern, Fuß. **Die eine Quelle für das Menü**:
+ * `ShellSidebar` zeigt sie ab 1024 px als Leiste und darunter in der Schublade.
+ * Was hier steht, gilt für beide.
  */
 export function ShellSidebarPanel({
   root,
@@ -125,10 +134,12 @@ export function ShellSidebarPanel({
 
   // Bei geringer Höhe liegt der aktive Eintrag sonst unter dem Fuß der Leiste.
   const contentRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
+  const showActive = useCallback(() => {
     const box = contentRef.current
     const active = box?.querySelector<HTMLElement>('[aria-current="page"]')
     if (!box || !active) return
+    // Zugeklappte Gruppe: der Eintrag ist nicht zu sehen und taugt nicht als Ziel.
+    if (active.closest(".shell-nav__fold[inert]")) return
     const frame = box.getBoundingClientRect()
     const item = active.getBoundingClientRect()
     // Eingeklappte Unterseite: sie hat keine Höhe und taugt nicht als Ziel.
@@ -136,12 +147,29 @@ export function ShellSidebarPanel({
     // Unten liegt ein Verlauf über der Liste, dort gilt ein Eintrag nicht als sichtbar.
     if (item.top >= frame.top && item.bottom <= frame.bottom - 24) return
     box.scrollTop += item.top - frame.top - (frame.height - item.height) / 2
-  }, [pathname])
+  }, [])
+  useEffect(() => {
+    showActive()
+  }, [pathname, showActive])
 
   const current = activeHref(pathname, areas, root)
   const BadgeIcon = badge?.icon
-  const activeKey =
-    areas.find((area) => !area.external && current !== null && areaHrefs(area).includes(current))?.key ?? null
+  const activeArea = areas.find((area) => !area.external && current !== null && areaHrefs(area).includes(current))
+  const activeKey = activeArea?.key ?? null
+  const activeGroup = activeArea?.group ?? null
+
+  // Wer zu einer Seite wechselt (Link, Suche, direkter Aufruf), findet ihre Gruppe
+  // offen. Zu sehen ist das schon beim Rendern (`groupClosed`), hier wird es nur
+  // gemerkt: die Gruppe bleibt offen, wenn man sie wieder verlässt.
+  const navGroups = useNavGroups()
+  useEffect(() => {
+    openNavGroupOf(activeGroup, current)
+  }, [activeGroup, current])
+
+  function groupClosed(group: ShellNavGroup): boolean {
+    return group.heading !== undefined && navGroupClosed(navGroups, group.key, activeGroup, current)
+  }
+  const closedGroups = groups.filter(groupClosed).map((group) => group.key).join(" ")
 
   // Die Markierung gleitet vom alten zum neuen Bereich. Sie ist ein Kind der aktiven
   // Zeile und wandert deshalb bei jedem Umbruch der Liste von selbst mit. Animiert wird
@@ -154,9 +182,7 @@ export function ShellSidebarPanel({
       pillSeen.current = null
       return
     }
-    const frame = box.getBoundingClientRect()
-    const rect = pill.getBoundingClientRect()
-    const now = { key: activeKey, top: rect.top - frame.top + box.scrollTop, left: rect.left - frame.left }
+    const now = { key: activeKey, ...pillPlace(box, pill) }
     const before = pillSeen.current
     pillSeen.current = now
     if (!before || before.key === now.key) return
@@ -168,7 +194,18 @@ export function ShellSidebarPanel({
       // Ältere Browser kennen `linear()` nicht.
       pill.animate([from, { transform: "none" }], { duration: 300, easing: "cubic-bezier(0.22, 1, 0.36, 1)" })
     }
-  }, [activeKey, toggled])
+  }, [activeKey, toggled, closedGroups])
+
+  // Während eine Gruppe auf- oder zuklappt, rutscht alles darunter: gemessen wurde
+  // am Anfang der Bewegung. Am Ende stimmt die Stelle der Markierung wieder, und der
+  // aktive Eintrag einer gerade aufgeklappten Gruppe kann noch unter dem Fuß liegen.
+  function onFoldSettled(event: TransitionEvent<HTMLDivElement>) {
+    if (event.target !== event.currentTarget || event.propertyName !== "grid-template-rows") return
+    const box = contentRef.current
+    const pill = box?.querySelector<HTMLElement>(".shell-nav__pill")
+    if (box && pill && pillSeen.current) pillSeen.current = { key: pillSeen.current.key, ...pillPlace(box, pill) }
+    showActive()
+  }
 
   function countFor(prefixes: string[] | undefined): number {
     if (!prefixes) return 0
@@ -187,12 +224,16 @@ export function ShellSidebarPanel({
     )
   }
 
+  function countOf(area: ShellNavArea): number {
+    return countFor(area.counts) + (area.sections ?? []).reduce((sum, s) => sum + countFor(s.counts), 0)
+  }
+
   function renderArea(area: ShellNavArea) {
     const sections = area.sections ?? []
     const active = !area.external && current !== null && areaHrefs(area).includes(current)
     const expanded = sections.length > 0 && (toggled[area.key] ?? active)
     const Icon = area.icon
-    const areaCount = countFor(area.counts) + sections.reduce((sum, s) => sum + countFor(s.counts), 0)
+    const areaCount = countOf(area)
     const subnavId = `shell-subnav-${area.key}`
     const toggle = () => setToggled((prev) => ({ ...prev, [area.key]: !expanded }))
     const itemClass = [
@@ -281,6 +322,48 @@ export function ShellSidebarPanel({
     )
   }
 
+  function renderGroup(group: ShellNavGroup) {
+    const members = areas.filter((area) => area.group === group.key)
+    if (!group.heading) {
+      return (
+        <nav key={group.key} className="shell-nav" aria-label={group.label}>
+          <ul className="shell-nav__list">{members.map(renderArea)}</ul>
+        </nav>
+      )
+    }
+
+    const closed = groupClosed(group)
+    const holdsActive = group.key === activeGroup
+    const listId = `shell-group-${group.key}`
+    return (
+      <nav key={group.key} className="shell-nav" aria-label={group.label}>
+        <button
+          type="button"
+          className={closed && holdsActive ? "shell-nav__heading shell-nav__heading--current" : "shell-nav__heading"}
+          aria-expanded={!closed}
+          aria-controls={listId}
+          onClick={() => setNavGroupClosed(group.key, !closed, holdsActive ? current : null)}
+        >
+          <span className="shell-nav__heading-text">{group.heading}</span>
+          {closed && holdsActive && <span className="sr-only">{t("Enthält die aktuelle Seite")}</span>}
+          {closed && countBadge(members.reduce((sum, area) => sum + countOf(area), 0), false)}
+          <ChevronDown size={14} strokeWidth={1.5} aria-hidden="true" />
+        </button>
+        <div
+          className={closed ? "shell-nav__fold" : "shell-nav__fold shell-nav__fold--open"}
+          inert={closed}
+          onTransitionEnd={onFoldSettled}
+        >
+          <div className="shell-nav__clip">
+            <ul className="shell-nav__list" id={listId}>
+              {members.map(renderArea)}
+            </ul>
+          </div>
+        </div>
+      </nav>
+    )
+  }
+
   return (
     <div className="shell-sidebar">
       <div className="shell-sidebar__header">
@@ -305,16 +388,7 @@ export function ShellSidebarPanel({
       </div>
 
       <div className="shell-sidebar__content" ref={contentRef}>
-        {groups.map((group) => (
-          <nav key={group.key} className="shell-nav" aria-label={group.label}>
-            {group.heading && (
-              <p className="shell-nav__heading" aria-hidden="true">
-                {group.heading}
-              </p>
-            )}
-            <ul className="shell-nav__list">{areas.filter((area) => area.group === group.key).map(renderArea)}</ul>
-          </nav>
-        ))}
+        {groups.map(renderGroup)}
       </div>
 
       {footer && <div className="shell-sidebar__footer">{footer}</div>}

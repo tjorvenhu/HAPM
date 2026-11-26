@@ -26,6 +26,7 @@ export const shell: Dictionary = {
   'Navigation öffnen': 'Open navigation',
   'Navigation schließen': 'Close navigation',
   'Seiten im Bereich {area}': 'Pages in {area}',
+  'Enthält die aktuelle Seite': 'Contains the current page',
   '{count} offen': '{count} pending',
   'Abmelden': 'Sign out',
   'Zum Inhalt springen': 'Skip to content',

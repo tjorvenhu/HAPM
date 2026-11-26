@@ -19,6 +19,17 @@ sie nur.
 - Der Knopf zum Neuladen heißt „Aktualisieren" (`btn btn-secondary`,
   `RefreshCw`) und steht rechts im Kopf.
 
+## Seitenleiste
+
+- **Eine Gruppe mit Überschrift klappt zu**, die Überschrift ist der Knopf
+  (`ui/shell/ShellSidebarPanel.tsx`, der Stand in `ui/shell/useNavGroups.ts`).
+  Gemerkt wird je Browser. Wer zu einer Seite wechselt (Link, Suche, direkter
+  Aufruf), findet ihre Gruppe offen.
+- **Eine zugeklappte Gruppe zeigt an der Überschrift, was sie verdeckt:** den
+  Zähler ihrer Einträge und einen Punkt, wenn die aktuelle Seite darin liegt.
+  Ein neuer Hinweis an einem Eintrag braucht deshalb auch eine Fassung für die
+  Überschrift.
+
 ## Lange Texte
 
 - **Eine Erklärung über 72 Zeichen (`LONG_TEXT`, `ui/primitives/hint-text`)
