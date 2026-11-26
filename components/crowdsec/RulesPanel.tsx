@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, Download, Loader2 } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, Download, Loader2 } from 'lucide-react';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/ConfirmDialog';
 import Select from '@/components/Select';
@@ -24,6 +24,11 @@ const BASE_LABELS: Record<string, string> = {
   'crowdsecurity/appsec-generic-rules': msgid('WAF: allgemeine Angriffsmuster'),
 };
 
+/** So viele Anwendungen zeigt die Liste, bis man sie aufklappt. Eingeschaltete stehen immer da. */
+const COLLAPSED_APPS = 4;
+/** Womit die zugeklappte Liste aufgefüllt wird: was hinter HAPM am häufigsten läuft. */
+const FEATURED_APPS = ['nextcloud', 'wordpress', 'jellyfin', 'immich'];
+
 const KIND_LABELS: Record<CrowdsecAppRules['kinds'][number], { label: string; hint: string }> = {
   log: { label: msgid('Log'), hint: msgid('Ausnahmen für die Erkennung im Log von HAProxy') },
   waf: { label: msgid('WAF'), hint: msgid('Virtuelle Patches in der WAF') },
@@ -43,6 +48,10 @@ export default function RulesPanel() {
   const { t, locale } = useT();
   const { data, error, loading, reload } = useCrowdsecData<CrowdsecRules>('/api/crowdsec/rules', 120_000);
   const [busy, setBusy] = useState<string | null>(null);
+  const [allApps, setAllApps] = useState(false);
+  // Was hier geschaltet wurde, bleibt sichtbar, auch wenn es wieder aus ist:
+  // sonst verschwindet die Zeile unter dem Mauszeiger.
+  const [touched, setTouched] = useState<ReadonlySet<string>>(new Set());
 
   async function change(key: string, body: unknown, done: string) {
     setBusy(key);
@@ -73,7 +82,22 @@ export default function RulesPanel() {
     void change('crs', { crs: mode }, t('Gespeichert. CrowdSec lädt die Regeln neu.'));
   }
 
+  function switchApp(id: string, body: unknown, done: string) {
+    setTouched((prev) => new Set(prev).add(id));
+    return change(`app:${id}`, body, done);
+  }
+
   if (loading && !data) return <SkeletonRows />;
+
+  const sortedApps = [...(data?.apps ?? [])].sort((a, b) => t(a.label).localeCompare(t(b.label), locale));
+  // Zugeklappt: was an ist oder gerade geschaltet wurde, aufgefüllt mit den
+  // häufigsten bis COLLAPSED_APPS. Die Reihenfolge bleibt alphabetisch.
+  const pinned = new Set(sortedApps.filter((app) => app.installed || app.partial || touched.has(app.id)).map((app) => app.id));
+  for (const id of [...FEATURED_APPS, ...sortedApps.map((app) => app.id)]) {
+    if (pinned.size >= COLLAPSED_APPS) break;
+    pinned.add(id);
+  }
+  const shownApps = allApps ? sortedApps : sortedApps.filter((app) => pinned.has(app.id));
 
   return (
     <>
@@ -83,8 +107,15 @@ export default function RulesPanel() {
           <div className="card sys-block">
             <div className="card-header">
               <div>
-                <h2 className="card-title">{t('OWASP Core Rule Set')}</h2>
-                <p className="card-subtitle">{t('Allgemeine Regeln gegen SQL-Injection, XSS und ähnliche Angriffe.')}</p>
+                <h2 className="card-title">
+                  {t('OWASP Core Rule Set')}
+                  <InfoHint
+                    text={t(
+                      'Eine freie Regelsammlung für Web Application Firewalls, gepflegt vom OWASP-Projekt. Sie prüft jede Anfrage auf typische Angriffsmuster: SQL-Injection, Cross-Site-Scripting (XSS), Zugriffe auf Systemdateien, Befehle im Text. Die virtuellen Patches, die immer an sind, fangen nur bekannte Lücken bestimmter Programme ab. Das Rule Set erkennt auch Angriffe, für die es noch keinen Patch gibt, trifft dafür aber manchmal harmlose Anfragen, etwa ein Formular mit Code im Text. Deshalb ist es aus, bis Sie es einschalten. Empfehlung: einige Tage „Nur melden“ und unter Ereignisse ansehen, was es fände. Dann für Anwendungen mit Fehltreffern die Ausnahmen unten einschalten und erst danach „Treffer sperren“.'
+                    )}
+                  />
+                </h2>
+                <p className="card-subtitle">{t('Zusätzliche, strengere Prüfung jeder Anfrage auf typische Angriffe.')}</p>
               </div>
             </div>
             <div className="card-body cs-form">
@@ -121,7 +152,7 @@ export default function RulesPanel() {
                   </tr>
                 </thead>
                 <tbody>
-                  {[...data.apps].sort((a, b) => t(a.label).localeCompare(t(b.label), locale)).map((app) => (
+                  {shownApps.map((app) => (
                     <tr key={app.id}>
                       <td data-label="primary">
                         <span className="form-label-row">
@@ -154,8 +185,8 @@ export default function RulesPanel() {
                               checked={app.installed}
                               disabled={busy !== null}
                               onChange={(e) =>
-                                change(
-                                  `app:${app.id}`,
+                                switchApp(
+                                  app.id,
                                   { app: app.id, installed: e.target.checked },
                                   e.target.checked
                                     ? t('Die Regeln für {name} sind an.', { name: t(app.label) })
@@ -179,6 +210,16 @@ export default function RulesPanel() {
                 </tbody>
               </table>
             </div>
+            {sortedApps.length > COLLAPSED_APPS && (
+              <div className="cs-more">
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAllApps((open) => !open)} aria-expanded={allApps}>
+                  {allApps ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                  {allApps
+                    ? t('Weniger anzeigen')
+                    : t('Alle {count} Anwendungen anzeigen', { count: sortedApps.length })}
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="card sys-block">

@@ -592,6 +592,7 @@
 .cs-state { height: 100%; }
 .cs-how { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
 .cs-how li { display: flex; align-items: flex-start; gap: 12px; }
+.cs-more { display: flex; justify-content: center; }
 .cs-kinds { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .cs-how li > span:last-child { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .form-columns > .form-col:empty { display: none; }

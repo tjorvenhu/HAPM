@@ -171,7 +171,11 @@ export const crowdsec: Readonly<Record<string, string>> = {
   'Die OWASP-Regeln sperren jetzt.': 'The OWASP rules now block.',
   'Gespeichert. CrowdSec lädt die Regeln neu.': 'Saved. CrowdSec reloads the rules.',
   'OWASP Core Rule Set': 'OWASP Core Rule Set',
-  'Allgemeine Regeln gegen SQL-Injection, XSS und ähnliche Angriffe.': 'Generic rules against SQL injection, XSS and similar attacks.',
+  'Zusätzliche, strengere Prüfung jeder Anfrage auf typische Angriffe.': 'Additional, stricter check of every request for typical attacks.',
+  'Eine freie Regelsammlung für Web Application Firewalls, gepflegt vom OWASP-Projekt. Sie prüft jede Anfrage auf typische Angriffsmuster: SQL-Injection, Cross-Site-Scripting (XSS), Zugriffe auf Systemdateien, Befehle im Text. Die virtuellen Patches, die immer an sind, fangen nur bekannte Lücken bestimmter Programme ab. Das Rule Set erkennt auch Angriffe, für die es noch keinen Patch gibt, trifft dafür aber manchmal harmlose Anfragen, etwa ein Formular mit Code im Text. Deshalb ist es aus, bis Sie es einschalten. Empfehlung: einige Tage „Nur melden“ und unter Ereignisse ansehen, was es fände. Dann für Anwendungen mit Fehltreffern die Ausnahmen unten einschalten und erst danach „Treffer sperren“.':
+    'A free rule set for web application firewalls, maintained by the OWASP project. It checks every request for typical attack patterns: SQL injection, cross-site scripting (XSS), access to system files, commands in the body. The virtual patches, which are always on, only catch known vulnerabilities of specific programs. The rule set also detects attacks for which no patch exists yet, but in return it sometimes hits harmless requests, such as a form with code in its text. That is why it stays off until you switch it on. Recommendation: use "Report only" for a few days and check under Events what it would catch. Then switch on the exclusions below for applications with false hits, and only after that "Block hits".',
+  'Weniger anzeigen': 'Show less',
+  'Alle {count} Anwendungen anzeigen': 'Show all {count} applications',
   Modus: 'Mode',
   Regelsammlungen: 'Rule collections',
   'Aus dem Hub von CrowdSec.': 'From the CrowdSec hub.',
