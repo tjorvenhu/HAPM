@@ -3,11 +3,14 @@
 import { useEffect, useState, useCallback, type ReactNode } from 'react';
 import Link from 'next/link';
 import { ShieldCheck, Loader2, RefreshCw, RotateCw, Network, Info, Upload, Replace, Trash2 } from 'lucide-react';
+import PageHeading from '@/components/PageHeading';
 import { useApp } from '@/components/AppShell';
 import { usePolling } from '@/components/usePolling';
 import { useNow } from '@/components/useNow';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/ConfirmDialog';
+import { errorText } from '@/components/errorText';
+import { subscribeRunFinished } from '@/components/runs/runs';
 import CertificateUploadDialog, { type UploadBody } from '@/components/reverse-proxy/CertificateUploadDialog';
 import CertificateIssueDialog from '@/components/reverse-proxy/CertificateIssueDialog';
 import { InfoHint } from '@/ui/primitives/InfoHint';
@@ -15,7 +18,7 @@ import type { AcmeCertificate } from '@/lib/haproxy/certs';
 import type { UploadedCertificate } from '@/lib/haproxy/cert-upload';
 import type { CertificateSource } from '@/lib/types';
 import { SkeletonRows } from '@/components/Skeleton';
-import { formatDate } from '@/lib/i18n';
+import { MISSING, formatDate } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
 
 /**
@@ -107,10 +110,11 @@ export default function ReverseProxyCertificatesPage() {
       try {
         const res = await apiFetch('/api/haproxy/certificates');
         const data = await res.json();
-        if (data.success) setRows(data.data);
+        if (!res.ok || !data.success) throw new Error(data.error);
+        setRows(data.data);
         setError('');
-      } catch {
-        setError(t('Die Zertifikate konnten nicht geladen werden.'));
+      } catch (err: unknown) {
+        setError(errorText(err, t('Die Zertifikate konnten nicht geladen werden.')));
       } finally {
         setLoading(false);
       }
@@ -126,6 +130,16 @@ export default function ReverseProxyCertificatesPage() {
    * Zertifikat ändert sich beim Ausstellen und beim Erneuern, sonst nie, und
    * jeder Takt ist ein `acme.sh --list` über jedes Domainverzeichnis. */
   usePolling(() => load(true), 120_000);
+
+  // Ein Antrag („Erneut beantragen“) läuft abgekoppelt. Sein Ende ändert die
+  // Zeile, und darauf soll niemand bis zum nächsten Takt warten.
+  useEffect(
+    () =>
+      subscribeRunFinished((run) => {
+        if (run.kind === 'haproxy') void load(true);
+      }),
+    [load]
+  );
 
   /** Ein eigener Zustand für den Knopf, damit die Liste beim Aktualisieren
    *  stehen bleibt, mit Mindestdauer, sonst blitzt der Spinner nur auf. */
@@ -177,7 +191,8 @@ export default function ReverseProxyCertificatesPage() {
     } catch (err: unknown) {
       notify({
         variant: 'error',
-        message: err instanceof Error && err.message ? err.message : t('Das Zertifikat ließ sich nicht entfernen.'),
+        title: t('Entfernen fehlgeschlagen'),
+        message: errorText(err, t('Das Zertifikat ließ sich nicht entfernen.')),
       });
     } finally {
       setRemoving(null);
@@ -228,7 +243,8 @@ export default function ReverseProxyCertificatesPage() {
     } catch (err: unknown) {
       notify({
         variant: 'error',
-        message: err instanceof Error && err.message ? err.message : t('Das Zertifikat ließ sich nicht löschen.'),
+        title: t('Löschen fehlgeschlagen'),
+        message: errorText(err, t('Das Zertifikat ließ sich nicht löschen.')),
       });
     } finally {
       setRemoving(null);
@@ -260,7 +276,7 @@ export default function ReverseProxyCertificatesPage() {
           await deleteAcme(cert);
         } catch (err: unknown) {
           failed.push(cert.mainDomain);
-          if (err instanceof Error && err.message) reason = err.message;
+          reason = errorText(err, t('Das Zertifikat ließ sich nicht löschen.'));
         }
       }
       notify(
@@ -269,7 +285,11 @@ export default function ReverseProxyCertificatesPage() {
               variant: 'success',
               message: plural(certs.length, { one: '{count} Zertifikat ist gelöscht.', other: '{count} Zertifikate sind gelöscht.' }),
             }
-          : { variant: 'error', message: t('Nicht gelöscht: {list}. {reason}', { list: failed.join(', '), reason }) }
+          : {
+              variant: 'error',
+              title: t('Löschen fehlgeschlagen'),
+              message: t('Nicht gelöscht: {list}. {reason}', { list: failed.join(', '), reason }),
+            }
       );
       await load(true);
     } finally {
@@ -332,11 +352,11 @@ export default function ReverseProxyCertificatesPage() {
         </span>
       );
     }
-    return cert.renewAt ? formatDate(locale, cert.renewAt) : '—';
+    return cert.renewAt ? formatDate(locale, cert.renewAt) : MISSING;
   }
 
   function acmeUsersCell(cert: CertificateRow): ReactNode {
-    if (cert.createdAt === null) return '—';
+    if (cert.createdAt === null) return MISSING;
     if (cert.deployed === false) {
       return (
         <span className="badge-status badge-warning" style={{ whiteSpace: 'nowrap' }}>
@@ -383,7 +403,11 @@ export default function ReverseProxyCertificatesPage() {
     <>
       <div className="page-header">
         <div>
-          <h1 className="page-title">{t('Zertifikate')}</h1>
+          <PageHeading
+            icon={<ShieldCheck size={20} />}
+            title={t('Zertifikate')}
+            back={{ label: t('Übersicht'), href: '/reverse-proxy' }}
+          />
           <p className="page-subtitle">
             {t('Was acme.sh führt und was hochgeladen ist. Gelesen bei jedem Aufruf, nicht aus einer Kopie.')}
           </p>
@@ -393,7 +417,7 @@ export default function ReverseProxyCertificatesPage() {
             {refreshing ? <Loader2 size={16} className="spin" /> : <RefreshCw size={16} />}
             {t('Aktualisieren')}
           </button>
-          <button className="btn btn-primary" onClick={() => setUploading({ replace: null })} disabled={loading || rows.length === 0}>
+          <button className="btn btn-primary" onClick={() => setUploading({ replace: null })} disabled={loading || rows.length === 0 || removing !== null}>
             <Upload size={16} />
             {t('Hochladen')}
           </button>
@@ -405,15 +429,18 @@ export default function ReverseProxyCertificatesPage() {
       {loading ? (
         <SkeletonRows />
       ) : rows.length === 0 ? (
-        <div className="empty-state">
-          <Network size={40} />
-          <h3>{t('HAProxy antwortet nicht')}</h3>
-          <p>
-            {rich('Ohne HAProxy gibt es hier nichts zu zeigen. Sein Zustand steht in der {overview}.', {
-              overview: <Link href="/dashboard">{t('Übersicht')}</Link>,
-            })}
-          </p>
-        </div>
+        // Nach einem gescheiterten Laden steht nur die Meldung oben: über HAProxy ist dann nichts bekannt.
+        !error && (
+          <div className="empty-state">
+            <Network size={40} />
+            <h3>{t('HAProxy antwortet nicht')}</h3>
+            <p>
+              {rich('Ohne HAProxy gibt es hier nichts zu zeigen. Sein Zustand steht in der {overview}.', {
+                overview: <Link href="/dashboard">{t('Übersicht')}</Link>,
+              })}
+            </p>
+          </div>
+        )
       ) : (
         <>
           <div className="form-note sys-block">
@@ -472,8 +499,8 @@ export default function ReverseProxyCertificatesPage() {
                             <td>
                               <code>{cert.file}</code>
                             </td>
-                            <td>{cert.domains.join(', ') || '—'}</td>
-                            <td>{cert.issuer ?? '—'}</td>
+                            <td>{cert.domains.join(', ') || MISSING}</td>
+                            <td>{cert.issuer ?? MISSING}</td>
                             <td>{expiryCell(cert)}</td>
                             <td>{usersCell(cert.usedBy)}</td>
                             <td>
@@ -482,6 +509,7 @@ export default function ReverseProxyCertificatesPage() {
                                   className="btn btn-ghost btn-icon btn-sm"
                                   data-tooltip={t('Ersetzen')}
                                   aria-label={t('Ersetzen')}
+                                  disabled={removing !== null}
                                   onClick={() => setUploading({ replace: cert })}
                                 >
                                   <Replace size={16} />
@@ -490,7 +518,7 @@ export default function ReverseProxyCertificatesPage() {
                                   className="btn btn-ghost btn-icon btn-sm"
                                   data-tooltip={t('Entfernen')}
                                   aria-label={t('Entfernen')}
-                                  disabled={removing === cert.file}
+                                  disabled={removing !== null}
                                   onClick={() => void remove(cert)}
                                 >
                                   {removing === cert.file ? <Loader2 size={16} className="spin" /> : <Trash2 size={16} />}
@@ -573,7 +601,7 @@ export default function ReverseProxyCertificatesPage() {
                               <code>{cert.mainDomain}</code>
                             </td>
                             <td>{cert.domains.join(', ')}</td>
-                            <td>{cert.keyLength ?? '—'}</td>
+                            <td>{cert.keyLength ?? MISSING}</td>
                             <td>{renewCell(cert)}</td>
                             <td>{acmeUsersCell(cert)}</td>
                             <td>
@@ -625,6 +653,7 @@ export default function ReverseProxyCertificatesPage() {
           domains={issuing.cert.domains}
           dnsHooks={issuing.dnsHooks}
           onIssue={(dnsHook) => issue(issuing.cert, dnsHook)}
+          onError={(message) => notify({ variant: 'error', title: t('Beantragen fehlgeschlagen'), message })}
           onClose={() => setIssuing(null)}
         />
       )}
@@ -633,6 +662,13 @@ export default function ReverseProxyCertificatesPage() {
         <CertificateUploadDialog
           replace={uploading.replace ? { file: uploading.replace.file, domains: uploading.replace.domains } : null}
           onUpload={upload}
+          onError={(message) =>
+            notify({
+              variant: 'error',
+              title: uploading.replace ? t('Ersetzen fehlgeschlagen') : t('Hochladen fehlgeschlagen'),
+              message,
+            })
+          }
           onClose={() => setUploading(null)}
         />
       )}

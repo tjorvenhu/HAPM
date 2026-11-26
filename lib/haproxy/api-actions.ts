@@ -45,6 +45,9 @@ import {
   readGlobalSettings,
 } from './provision';
 import { parseSteps, startHaproxyRun, stepsAsLog, type HaproxyActor } from './runner';
+import { geoipTable } from '../geoip/store';
+import { lookupCountry } from '../geoip/format';
+import { lockoutReason } from './protection-guard';
 import {
   HaproxyConfigError,
   readGlobalSettingsPatch,
@@ -648,6 +651,7 @@ export async function getProxySettings(serverId?: string | null) {
     adminEditable: settings.adminEditable,
     lockedServices: settings.lockedServices,
     protection: settings.protection,
+    crowdsec: settings.crowdsec,
     editable: settingsEditable(settings),
     dnsHooks,
   };
@@ -670,13 +674,22 @@ export async function patchProxySettings(body: Record<string, unknown>, actor: H
   const invalid = validateGlobalSettings(input);
   if (invalid) throw new ApiError(invalid);
 
+  // Wie in der Oberfläche: wer sich mit der Sperre selbst träfe, käme danach
+  // auch über die API nicht mehr herein, um sie zurückzunehmen.
+  if (input.protection && actor.ip) {
+    const table = await geoipTable();
+    const lockout = lockoutReason(input.protection, input.adminIps, { ip: actor.ip, country: lookupCountry(table, actor.ip) });
+    if (lockout) throw new ApiError(lockout, 409);
+  }
+
   await asConflict(() => precheckSettings(server, input));
 
   const run = await startHaproxyRun({
     server,
     action: 'settings',
     serviceId: 'globale-einstellungen',
-    settings: input,
+    // Der Lauf rechnet den Patch unter der Sperre noch einmal aus (`patch`).
+    settings: { ...input, patch: body },
     actor,
   });
   return {

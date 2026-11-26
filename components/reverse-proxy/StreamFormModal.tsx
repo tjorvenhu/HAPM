@@ -3,6 +3,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Plus, Loader2, X, Cable, Server, ShieldAlert, Info, Check } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
+import { useToast } from '@/components/Toast';
+import { errorText } from '@/components/errorText';
 import Select from '@/components/Select';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import IpAllowList from '@/components/IpAllowList';
@@ -104,6 +106,7 @@ export default function StreamFormModal({
   onStarted,
 }: Props) {
   const { apiFetch } = useApp();
+  const { notify } = useToast();
   const { t, rich } = useT();
 
   /* Anders als bei einem Dienst zählt `acmeReady` hier nicht: eine
@@ -116,6 +119,7 @@ export default function StreamFormModal({
   const editingId = edit?.stream.id ?? null;
 
   const [saving, setSaving] = useState(false);
+  /** Nur die Prüfung vor dem Absenden. Was die Route antwortet, ist eine Meldung. */
   const [formError, setFormError] = useState('');
   /** Es gibt genau einen HAProxy. Die Kennung geht weiter im Rumpf mit, weil
    *  die Routen und die Historie sie tragen. */
@@ -179,6 +183,9 @@ export default function StreamFormModal({
   };
   // Dieselbe Funktion, die die Route aufruft.
   const inputError = editingId ? validateStreamInput(input) : validateNewStream(input);
+  /** Ein leeres Formular ist nicht falsch ausgefüllt, sondern noch gar nicht:
+   *  die Meldung zu `inputError` steht erst da, wenn etwas eingetragen ist. */
+  const started = port !== '' || input.servers.length > 0 || input.allowedSources.length > 0;
 
   /* ── Der Port, geprüft auf der Maschine ──
    *
@@ -189,10 +196,15 @@ export default function StreamFormModal({
    * Konfiguration selbst hergibt, prüft `addStream` ohnehin noch einmal
    * innerhalb des Locks, und ein Formular, das sich sperrt, weil die Abfrage
    * gerade scheitert, hilft niemandem.
+   *
+   * Die Antwort trägt den Port, nach dem gefragt wurde. Hinweis, Warnfläche
+   * und die Sperre des Knopfs gälten sonst für den vorigen Port, bis die
+   * nächste Antwort da ist, und nach einem Fehlschlag auf Dauer.
    */
-  const [portCheck, setPortCheck] = useState<PortCheck | null>(null);
+  const [portAnswer, setPortAnswer] = useState<{ port: number; check: PortCheck } | null>(null);
   const [portChecking, setPortChecking] = useState(false);
   const portNumber = input.port;
+  const portCheck = portAnswer?.port === portNumber ? portAnswer.check : null;
 
   useEffect(() => {
     let live = true;
@@ -203,7 +215,10 @@ export default function StreamFormModal({
         portNumber < STREAM_PORT_MIN ||
         portNumber > STREAM_PORT_MAX
       ) {
-        setPortCheck(null);
+        setPortAnswer(null);
+        // Eine Abfrage von vorhin setzt ihn nicht mehr zurück: sie ist beim
+        // Leeren des Felds abgehängt worden.
+        setPortChecking(false);
         return;
       }
       setPortChecking(true);
@@ -215,9 +230,13 @@ export default function StreamFormModal({
       apiFetch(`/api/haproxy/streams?${query.toString()}`)
         .then((res) => res.json())
         .then((data) => {
-          if (live && data.success) setPortCheck(data.data as PortCheck);
+          if (live) {
+            setPortAnswer(data.success ? { port: portNumber, check: data.data as PortCheck } : null);
+          }
         })
-        .catch(() => {})
+        .catch(() => {
+          if (live) setPortAnswer(null);
+        })
         .finally(() => {
           if (live) setPortChecking(false);
         });
@@ -236,7 +255,6 @@ export default function StreamFormModal({
     }
     setFormError('');
     setSaving(true);
-    const failed = t(editingId ? 'Speichern fehlgeschlagen' : 'Anlegen fehlgeschlagen');
     try {
       const res = await apiFetch(
         editingId
@@ -249,20 +267,34 @@ export default function StreamFormModal({
         }
       );
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || failed);
+      if (!res.ok) throw new Error(data.error);
       // Die Kennung einer neuen Weiterleitung steht in der Antwort.
       const startedId: string = editingId ?? data.data.serviceId;
       onStarted({
         id: data.data.runId,
         label: editingId
-          ? t('TCP-Weiterleitung „{id}" ändern', { id: startedId })
-          : t('TCP-Weiterleitung „{id}" anlegen', { id: startedId }),
+          ? t('TCP-Weiterleitung „{id}“ ändern', { id: startedId })
+          : t('TCP-Weiterleitung „{id}“ anlegen', { id: startedId }),
         serviceId: startedId,
         title: t('Port {port}', { port: input.port }),
         isNew: !editingId,
       });
     } catch (err: unknown) {
-      setFormError(err instanceof Error ? err.message : failed);
+      notify({
+        variant: 'error',
+        title: t(editingId ? 'Speichern fehlgeschlagen' : 'Anlegen fehlgeschlagen'),
+        message: errorText(
+          err,
+          t(
+            editingId
+              ? 'Die TCP-Weiterleitung ließ sich nicht speichern.'
+              : 'Die TCP-Weiterleitung ließ sich nicht anlegen.'
+          )
+        ),
+      });
+    } finally {
+      // Auch nach `onStarted`: schließt die Seite den Dialog nicht, bliebe der
+      // Knopf sonst für immer gesperrt.
       setSaving(false);
     }
   }
@@ -345,7 +377,7 @@ export default function StreamFormModal({
                     <span className="form-hint">
                       {portChecking ? (
                         <>
-                          <Loader2 size={12} className="spin" /> {t('Wird auf dem Server geprüft …')}
+                          <Loader2 size={12} className="spin" /> {t('Wird auf dem Server geprüft…')}
                         </>
                       ) : portCheck === null ? (
                         t('{min} bis {max}. HAProxy nimmt danach auf diesem Port Verbindungen an, auf allen Adressen dieses Servers.', {
@@ -360,7 +392,11 @@ export default function StreamFormModal({
                             : t('Weder in der Konfiguration noch auf dem Server belegt.')}
                         </>
                       ) : (
-                        <>{t('Belegt: {reason}', { reason: portCheck.reason ? t(portCheck.reason) : '' })}</>
+                        <>
+                          {portCheck.reason
+                            ? t('Belegt: {reason}', { reason: t(portCheck.reason) })
+                            : t('Belegt.')}
+                        </>
                       )}
                     </span>
                     {editingId && (
@@ -522,6 +558,7 @@ export default function StreamFormModal({
                           type="button"
                           className="btn btn-ghost btn-icon"
                           data-tooltip={t('Zeile entfernen')}
+                          aria-label={t('Zeile entfernen')}
                           disabled={servers.length === 1}
                           onClick={() => setServers(servers.filter((_, i) => i !== index))}
                         >
@@ -617,6 +654,12 @@ export default function StreamFormModal({
                     )}
                   </span>
                 </div>
+
+                {/* Der Grund, aus dem der Knopf unten gesperrt ist. Am Fuß wie
+                    in `ServiceFormModal`. */}
+                {inputError && started && (
+                  <div className="alert alert-warning">{t(inputError)}</div>
+                )}
               </div>
             </div>
           </div>

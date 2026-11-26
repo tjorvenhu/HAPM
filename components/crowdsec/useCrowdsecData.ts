@@ -40,7 +40,10 @@ export function useCrowdsecData<T>(path: string, pollMs = 30_000) {
       next = { path, data: null, error: t('CrowdSec ist nicht erreichbar.') };
     }
     if (latest.current !== path) return;
-    setState((current) => ({ ...next, data: next.data ?? (next.error ? current.data : null) }));
+    // Bei einem Fehler bleibt stehen, was zu DIESEM Pfad schon da war. Die
+    // Daten eines anderen (voriger Zeitraum, anderer Container) nicht: sie
+    // stünden sonst unter der neuen Auswahl.
+    setState((current) => ({ ...next, data: next.data ?? (next.error && current.path === path ? current.data : null) }));
   }, [apiFetch, path, t]);
 
   useEffect(() => {
@@ -50,8 +53,8 @@ export function useCrowdsecData<T>(path: string, pollMs = 30_000) {
   usePolling(() => void load(), pollMs);
 
   return {
-    data: state.data,
-    error: state.error,
+    data: state.path === path ? state.data : null,
+    error: state.path === path ? state.error : '',
     loading: state.path !== path,
     reload: load,
   };

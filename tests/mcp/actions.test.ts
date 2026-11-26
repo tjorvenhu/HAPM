@@ -117,6 +117,14 @@ describe('Einstellungen über ein Token', () => {
     expect(() => readServiceSettingsInput({ smtpPass: null })).toThrow(ApiError);
   });
 
+  it('lehnt jede Änderung am SMTP-Server ab: wer ihn umstellt, bekäme die Links zum Zurücksetzen', () => {
+    for (const body of [{ smtpHost: 'evil.example' }, { smtpPort: 25 }, { smtpSecurity: 'none' }, { smtpUser: 'x' }]) {
+      expect(() => readServiceSettingsInput(body), JSON.stringify(body)).toThrow(ApiError);
+    }
+    // Absender und Empfänger bleiben möglich.
+    expect(readServiceSettingsInput({ mailFrom: 'hapm@example.org' })).toEqual({ mailFrom: 'hapm@example.org' });
+  });
+
   it('nimmt alles andere wie die Oberfläche', () => {
     const body = { exposure: 'public', notifyRecipients: ['ops@example.com'], autoUpdateHaproxy: true };
     expect(readServiceSettingsInput(body)).toEqual(readSettingsInput(body));

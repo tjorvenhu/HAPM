@@ -4,6 +4,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { FileCog, Loader2, Check } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
+import { errorText } from '@/components/errorText';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { useMountedLoad } from '@/components/useMountedLoad';
 import { usePolling } from '@/components/usePolling';
@@ -110,6 +111,7 @@ export default function BaseConfigPanel() {
         other: '{count} Zeilen werden in haproxy.cfg geschrieben. HAProxy prüft die Datei vorher und lädt danach neu. Scheitert das, bleibt die bisherige Fassung stehen.',
       }),
       confirmLabel: t('Übernehmen'),
+      variant: 'warning',
     });
     if (!ok) return;
 
@@ -121,7 +123,7 @@ export default function BaseConfigPanel() {
         body: JSON.stringify({ serverId: target.$id, ids: [...selected] }),
       });
       const data = await res.json();
-      if (!data.success) throw new Error(data.error || t('Übernehmen fehlgeschlagen'));
+      if (!data.success) throw new Error(data.error || t('Der Vorgang ist fehlgeschlagen.'));
 
       const steps = data.data.steps as { label: string; ok: boolean; detail?: string }[];
       const failed = steps.find((step) => !step.ok);
@@ -144,7 +146,7 @@ export default function BaseConfigPanel() {
       notify({
         variant: 'error',
         title: t('Übernehmen fehlgeschlagen'),
-        message: err instanceof Error ? err.message : t('Unbekannter Fehler.'),
+        message: errorText(err, t('HAPM hat nicht geantwortet. Bitte versuchen Sie es erneut.')),
       });
     } finally {
       setBusy(false);

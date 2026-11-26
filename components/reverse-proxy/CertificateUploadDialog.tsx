@@ -4,6 +4,7 @@ import { useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { FileUp, Upload, X } from 'lucide-react';
 import { InfoHint } from '@/ui/primitives/InfoHint';
+import { errorText } from '@/components/errorText';
 import { useT } from '@/lib/i18n/react';
 
 /**
@@ -12,7 +13,9 @@ import { useT } from '@/lib/i18n/react';
  * Ein Baustein für zwei Stellen: die Zertifikatsseite (mit `apiFetch`) und den
  * Schritt „Einrichten" des Assistenten (mit seinem `call()`, er steht außerhalb
  * der App-Hülle). Deshalb schickt der Dialog nicht selbst, sondern ruft
- * `onUpload`; wirft das, steht die Meldung im Dialog, und die Eingabe bleibt.
+ * `onUpload`; wirft das, bleibt er mit der Eingabe offen. Die Meldung geht an
+ * `onError` (die Zertifikatsseite zeigt sie als Toast). Der Assistent hat keine
+ * Toasts und gibt kein `onError` mit: dort steht sie im Dialog.
  *
  * Geprüft wird auf dem Server (`inspectUpload`): ob der Schlüssel passt, was
  * das Zertifikat abdeckt, ob es gilt. Hier nur, ob überhaupt etwas dasteht.
@@ -31,13 +34,14 @@ interface Props {
   /** Was das Zertifikat abdecken soll, falls das feststeht (Assistent). */
   expected?: string[];
   onUpload: (body: UploadBody) => Promise<void>;
+  onError?: (message: string) => void;
   onClose: () => void;
 }
 
 /** Größer ist keine Kette mehr, das prüft auch der Server. */
 const MAX_FILE = 100_000;
 
-export default function CertificateUploadDialog({ replace, expected, onUpload, onClose }: Props) {
+export default function CertificateUploadDialog({ replace, expected, onUpload, onError, onClose }: Props) {
   const { t } = useT();
   const [certificate, setCertificate] = useState('');
   const [privateKey, setPrivateKey] = useState('');
@@ -46,7 +50,10 @@ export default function CertificateUploadDialog({ replace, expected, onUpload, o
   const certFile = useRef<HTMLInputElement>(null);
   const keyFile = useRef<HTMLInputElement>(null);
 
-  async function readFile(file: File | undefined, set: (text: string) => void) {
+  async function readFile(input: HTMLInputElement, set: (text: string) => void) {
+    const file = input.files?.[0];
+    // Sonst meldet der Browser keine Änderung, wenn dieselbe Datei noch einmal gewählt wird.
+    input.value = '';
     if (!file) return;
     if (file.size > MAX_FILE) {
       setError(t('Die Datei ist größer als 100 KB. Ein Zertifikat mit Kette ist kleiner.'));
@@ -67,7 +74,10 @@ export default function CertificateUploadDialog({ replace, expected, onUpload, o
     try {
       await onUpload({ certificate, privateKey, replace: replace?.file ?? null });
     } catch (err: unknown) {
-      setError(err instanceof Error ? t(err.message) : t('Das Zertifikat ließ sich nicht hochladen.'));
+      // `t()` um das Ganze: der Assistent wirft seinen Rückfall als Schlüssel, nicht übersetzt.
+      const text = t(errorText(err, t('Das Zertifikat ließ sich nicht hochladen.')));
+      if (onError) onError(text);
+      else setError(text);
       setSaving(false);
     }
   }
@@ -130,7 +140,7 @@ export default function CertificateUploadDialog({ replace, expected, onUpload, o
               type="file"
               accept=".pem,.crt,.cer,.txt"
               hidden
-              onChange={(e) => void readFile(e.target.files?.[0], setCertificate)}
+              onChange={(e) => void readFile(e.target, setCertificate)}
             />
           </div>
 
@@ -165,7 +175,7 @@ export default function CertificateUploadDialog({ replace, expected, onUpload, o
               type="file"
               accept=".pem,.key,.txt"
               hidden
-              onChange={(e) => void readFile(e.target.files?.[0], setPrivateKey)}
+              onChange={(e) => void readFile(e.target, setPrivateKey)}
             />
           </div>
 

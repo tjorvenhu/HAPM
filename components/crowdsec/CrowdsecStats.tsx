@@ -65,6 +65,11 @@ export default function CrowdsecStats() {
       </div>
 
       {error && <div className="alert alert-danger sys-block">{error}</div>}
+      {data?.truncated && (
+        <div className="alert alert-info sys-block">
+          {t('Im Zeitraum gab es mehr Ereignisse, als sich auswerten lassen. Die Zahlen sind eine Untergrenze und decken nur die neuesten ab.')}
+        </div>
+      )}
 
       {!stats ? (
         loading ? <SkeletonRows /> : null

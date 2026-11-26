@@ -556,6 +556,18 @@ Erneuerung der Zertifikate (`acme.sh --cron`) und das Aufräumen (Metriken nach
 14 Tagen, Historie nach 180, Protokoll nach 365). Alle zwei Minuten sieht er für
 die Benachrichtigungen nach, ob HAProxy läuft und die Ziele antworten.
 
+**Tägliche Uhrzeiten** (Erneuerung, Sicherung, selbsttätige Updates) vergleicht
+er nicht mit der Minute der Uhr, sondern fragt, ob der Zeitpunkt seit dem
+letzten Takt erreicht wurde (`timeReached` in `lib/schedule-time.ts`). Am Tag
+der Umstellung auf Sommerzeit gibt es 02:00 bis 02:59 nicht, die Sicherung um
+02:30 fiele sonst aus, und ein Takt, der sich um Millisekunden verschiebt,
+überspringt irgendwann eine Minute. Nach einem Neustart zählt erst, was ab dann
+erreicht wird: es wird nichts nachgeholt.
+
+**Ein Update beginnt nicht, während eine Sicherung oder ein Zurückspielen
+läuft** (`startUpdate`), und umgekehrt: beide halten Container an oder
+ersetzen sie.
+
 ## Benachrichtigungen: `lib/notifications/`, `lib/mail/`
 
 HAPM verschickt Mails über ein SMTP-Konto, das unter „Benachrichtigungen"

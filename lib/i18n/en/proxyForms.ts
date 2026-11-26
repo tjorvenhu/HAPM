@@ -97,7 +97,7 @@ export const proxyForms: Dictionary = {
   'Nur erreichbar von {addresses}': 'Only reachable from {addresses}',
   'Nur von {addresses} erreichbar: {domains}': 'Only reachable from {addresses}: {domains}',
   'Verdeckt': 'Shadowed',
-  'Die Weiche von „{other}" steht weiter oben und passt auch für diese Domains. HAProxy nimmt die erste, dieser Eintrag wird nie erreicht.':
+  'Die Weiche von „{other}“ steht weiter oben und passt auch für diese Domains. HAProxy nimmt die erste, dieser Eintrag wird nie erreicht.':
     'The use_backend rule of “{other}” comes earlier and also matches these domains. HAProxy takes the first one, so this entry is never reached.',
   'Ein Besucher bleibt über einen Cookie bei dem Ziel, auf dem er gelandet ist. HAProxy setzt ihn selbst und nimmt ihn aus der Anfrage, bevor sie hinten ankommt.':
     'A cookie keeps a visitor on the target they landed on. HAProxy sets it itself and removes it from the request before it reaches the target.',
@@ -145,8 +145,8 @@ export const proxyForms: Dictionary = {
     'Outside the marker blocks. Where the section starts would be a guess.',
 
   // TCP-Weiterleitung anlegen und bearbeiten (`StreamFormModal.tsx`)
-  'TCP-Weiterleitung „{id}" ändern': 'Change TCP forward “{id}”',
-  'TCP-Weiterleitung „{id}" anlegen': 'Create TCP forward “{id}”',
+  'TCP-Weiterleitung „{id}“ ändern': 'Change TCP forward “{id}”',
+  'TCP-Weiterleitung „{id}“ anlegen': 'Create TCP forward “{id}”',
   'TCP-Weiterleitung bearbeiten': 'Edit TCP forward',
   'TCP-Weiterleitung anlegen': 'Create TCP forward',
   'Ein Port dieses Servers, durchgereicht an ein Ziel dahinter. Kein HTTP, kein Zertifikat: was durchgeht, sieht HAProxy nicht an.':
@@ -156,12 +156,18 @@ export const proxyForms: Dictionary = {
     'The identifier of the listen section stays the same, even if the port changes.',
   'Aus dem Port ergibt sich die Kennung des listen-Abschnitts, zum Beispiel tcp_5432.':
     'The identifier of the listen section is derived from the port, for example tcp_5432.',
-  'Wird auf dem Server geprüft …': 'Checking on the server …',
+  'Wird auf dem Server geprüft…': 'Checking on the server…',
   '{min} bis {max}. HAProxy nimmt danach auf diesem Port Verbindungen an, auf allen Adressen dieses Servers.':
     '{min} to {max}. HAProxy then accepts connections on this port, on all addresses of this server.',
   'Frei.': 'Free.',
   'Weder in der Konfiguration noch auf dem Server belegt.': 'Not in use in the configuration or on the server.',
   'Belegt: {reason}': 'In use: {reason}',
+  'Belegt.': 'In use.',
+  'Die TCP-Weiterleitung ließ sich nicht anlegen.': 'The TCP forward could not be created.',
+  'Die TCP-Weiterleitung ließ sich nicht speichern.': 'The TCP forward could not be saved.',
+  'Das Ziel ließ sich nicht anlegen.': 'The target could not be created.',
+  'Das Ziel ließ sich nicht speichern.': 'The target could not be saved.',
+  'Der Server ließ sich nicht speichern.': 'The server could not be saved.',
   'Kennung: {id}': 'Identifier: {id}',
   'Die Firewall macht dieser Vorgang nicht auf.': 'This task does not open the firewall.',
   'Er ändert nur die HAProxy-Konfiguration. Damit der Port von außen erreichbar ist, muss er zusätzlich freigegeben sein: auf diesem Server selbst (nftables, ufw, firewalld) und, falls davor eine liegt, in der Firewall des Anbieters oder der Cloud. Ohne das läuft der Eintrag hier durch und die Verbindung von außen bleibt trotzdem hängen.':
@@ -200,8 +206,8 @@ export const proxyForms: Dictionary = {
   'Lastverteilung bearbeiten': 'Edit load balancer',
   'HTTP-Weiterleitung anlegen': 'Create HTTP redirect',
   'HTTP-Weiterleitung bearbeiten': 'Edit HTTP redirect',
-  'Ziel „{id}" ändern': 'Change target “{id}”',
-  'Ziel „{id}" anlegen': 'Create target “{id}”',
+  'Ziel „{id}“ ändern': 'Change target “{id}”',
+  'Ziel „{id}“ anlegen': 'Create target “{id}”',
   'Offen': 'Open',
   'Mit Passwort gesperrt, siehe Zugriff': 'Locked with password, see Access',
   'Nur für Admin-IPs, siehe Zugriff': 'Admin IPs only, see Access',
@@ -312,8 +318,8 @@ export const proxyForms: Dictionary = {
   'Aus heißt 302: vorübergehend, und jederzeit zurücknehmbar.': 'Off means 302: temporary, and can be reverted at any time.',
   'Ein Browser merkt sich eine 301 und ruft die alte Adresse nicht mehr auf. Wer sie später ändert, erreicht damit niemanden mehr, der schon einmal hier war, bis dessen Cache abläuft.':
     'A browser remembers a 301 and no longer requests the old address. If you change it later, you will not reach anyone who has been here before until their cache expires.',
-  'Adresse und Port, wie HAProxy sie erreicht, üblicherweise die Adresse im privaten Netz. Der Name ist frei; leer heißt server1, server2, …':
-    'Address and port as HAProxy reaches them, usually the address in the private network. The name is free; empty means server1, server2, …',
+  'Adresse und Port, wie HAProxy sie erreicht, üblicherweise die Adresse im privaten Netz.':
+    'Address and port as HAProxy reaches them, usually the address in the private network.',
   'Zweites Ziel: auf Lastverteilung umstellen': 'Second target: switch to load balancer',
   'Öffnet dasselbe Ziel im Lastverteilungs-Formular, mit Verfahren, Gewichtung und Sitzungsbindung. Nicht gespeicherte Eingaben in diesem Formular gehen dabei verloren.':
     'Opens the same target in the load balancer form, with algorithm, weights and session persistence. Unsaved input in this form is lost.',
@@ -321,7 +327,7 @@ export const proxyForms: Dictionary = {
     'The weight is the share of a target relative to the others: 2 to 1 means twice as many requests. Empty means no {weight} setting is written and the HAProxy default applies (all equal). {zero} takes a target out of the rotation without dropping its persistent sessions: the way to take a server out calmly.',
   'Es wird keine balance-Zeile geschrieben. Dann gilt, was im defaults-Block der Konfiguration steht, üblicherweise Round Robin. Was dort wirklich steht, weiß dieses Formular nicht, deshalb wird nichts hingeschrieben.':
     'No balance line is written. Then whatever is in the defaults block of the configuration applies, usually round robin. This form does not know what is really there, so nothing is written.',
-  'HAProxy setzt einen eigenen Cookie und nimmt ihn aus der Anfrage, bevor sie beim Ziel ankommt. Nötig für Anwendungen, die Sitzungen im Arbeitsspeicher halten. Teilen die Ziele ihre Sitzungen (gemeinsame Datenbank, Redis), braucht es sie nicht. In der Konfiguration: „{line}" im Backend und „cookie <Servername>" an jeder server-Zeile.':
+  'HAProxy setzt einen eigenen Cookie und nimmt ihn aus der Anfrage, bevor sie beim Ziel ankommt. Nötig für Anwendungen, die Sitzungen im Arbeitsspeicher halten. Teilen die Ziele ihre Sitzungen (gemeinsame Datenbank, Redis), braucht es sie nicht. In der Konfiguration: „{line}“ im Backend und „cookie <Servername>“ an jeder server-Zeile.':
     'HAProxy sets its own cookie and removes it from the request before it reaches the target. Needed for applications that keep sessions in memory. If the targets share their sessions (shared database, Redis), it is not needed. In the configuration: “{line}” in the backend and “cookie <server name>” on every server line.',
   'Ein Besucher bleibt bei dem Ziel, auf dem er gelandet ist.': 'A visitor stays on the target they landed on.',
   'Jede Anfrage kann bei einem anderen Ziel landen.': 'Each request may land on a different target.',
@@ -335,7 +341,7 @@ export const proxyForms: Dictionary = {
   'Nur die Admin-IPs kommen durch, alle anderen bekommen 403.': 'Only the admin IPs get through, everyone else gets 403.',
   'Besucher sehen eine Passwortabfrage.': 'Visitors see a password prompt.',
   'Es sind keine Admin-IPs hinterlegt. Ohne Adressen kommt niemand hinein.': 'No admin IPs are configured. Without addresses nobody gets in.',
-  'Für „Nur Admin-IPs" sind keine Adressen hinterlegt.': 'No addresses are configured for “Admin IPs only”.',
+  'Für „Nur Admin-IPs“ sind keine Adressen hinterlegt.': 'No addresses are configured for “Admin IPs only”.',
   'Die Passwortsperre braucht HAProxy 2.4 oder neuer. Hier läuft {version}.':
     'The password lock needs HAProxy 2.4 or newer. This server runs {version}.',
   'Eine Adresse ist hinterlegt': 'One address is configured',
@@ -379,7 +385,7 @@ export const proxyForms: Dictionary = {
   'Name von Header {number}': 'Name of header {number}',
   'Wert von Header {number}': 'Value of header {number}',
   'Header hinzufügen': 'Add header',
-  'Für WebSocket, Terminal und Live-Ansicht. Ohne den Schalter beendet HAProxy eine offene Verbindung nach der Zeit aus dem defaults-Block, üblicherweise nach einer Minute ohne Daten. In der Konfiguration: „{line}" in jedem Backend des Eintrags, auch in denen der Pfad-Regeln.':
+  'Für WebSocket, Terminal und Live-Ansicht. Ohne den Schalter beendet HAProxy eine offene Verbindung nach der Zeit aus dem defaults-Block, üblicherweise nach einer Minute ohne Daten. In der Konfiguration: „{line}“ in jedem Backend des Eintrags, auch in denen der Pfad-Regeln.':
     'For WebSocket, terminal and live view. Without the switch, HAProxy closes an open connection after the time from the defaults block, usually after one minute without data. In the configuration: “{line}” in every backend of the entry, including those of the path rules.',
   'Eine offene Verbindung bleibt bis zu einer Stunde bestehen.': 'An open connection stays up for up to one hour.',
   'Es gilt die Zeit aus der Grundkonfiguration.': 'The time from the base configuration applies.',
@@ -402,7 +408,7 @@ export const proxyForms: Dictionary = {
   'HAPM erneuert die Länder-Tabelle wieder selbst.': 'HAPM renews the country table automatically again.',
   'HAPM lädt die Länder-Tabelle nicht mehr selbst.': 'HAPM no longer downloads the country table automatically.',
   'Umschalten fehlgeschlagen': 'Switching failed',
-  '„{file}" nennt keinen Stand. Erwartet wird der Monat im Dateinamen, so wie DB-IP ihn ausliefert: dbip-country-lite-2026-08.csv.gz':
+  '„{file}“ nennt keinen Stand. Erwartet wird der Monat im Dateinamen, so wie DB-IP ihn ausliefert: dbip-country-lite-2026-08.csv.gz':
     '“{file}” does not state a version. The month is expected in the file name, the way DB-IP delivers it: dbip-country-lite-2026-08.csv.gz',
   '{v4} IPv4- und {v6} IPv6-Bereiche übernommen.': 'Imported {v4} IPv4 and {v6} IPv6 ranges.',
   'Die Datei konnte nicht gelesen werden.': 'The file could not be read.',
@@ -461,7 +467,7 @@ export const proxyForms: Dictionary = {
   'HAProxy spricht unverschlüsselt mit dem Ziel.': 'HAProxy talks to the target unencrypted.',
   'Verschlüsselt. Das Zertifikat des Ziels wird nicht geprüft.': 'Encrypted. The target certificate is not verified.',
   'Verschlüsselt. Das Zertifikat muss von einer bekannten CA stammen.': 'Encrypted. The certificate must come from a known CA.',
-  'Für Ziele, die selbst verschlüsseln, etwa Proxmox auf 8006 oder TrueNAS. Ohne Prüfung passt das für selbst signierte Zertifikate. Mit Prüfung muss das Zertifikat von einer CA stammen, der das System vertraut, und für die aufgerufene Domain gelten. HAProxy schickt die Domain der Anfrage als SNI. In der Konfiguration: „{insecure}" oder „{verify}" an jeder server-Zeile.':
+  'Für Ziele, die selbst verschlüsseln, etwa Proxmox auf 8006 oder TrueNAS. Ohne Prüfung passt das für selbst signierte Zertifikate. Mit Prüfung muss das Zertifikat von einer CA stammen, der das System vertraut, und für die aufgerufene Domain gelten. HAProxy schickt die Domain der Anfrage als SNI. In der Konfiguration: „{insecure}“ oder „{verify}“ an jeder server-Zeile.':
     'For targets that encrypt themselves, such as Proxmox on 8006 or TrueNAS. Without verification this works for self-signed certificates. With verification the certificate must come from a CA the system trusts and be valid for the requested domain. HAProxy sends the domain of the request as SNI. In the configuration: "{insecure}" or "{verify}" on every server line.',
   'Die Prüfung des Zertifikats braucht HAProxy 2.6 oder neuer. Hier läuft {version}.':
     'Verifying the certificate needs HAProxy 2.6 or newer. This one runs {version}.',

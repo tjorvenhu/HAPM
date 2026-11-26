@@ -7,6 +7,7 @@ import { InfoHint } from '@/ui/primitives/InfoHint';
 import Select from '@/components/Select';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
+import { errorText } from '@/components/errorText';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { normalizeAcmeDirectory, validateAcmeDirectory, validateEab } from '@/lib/acme-server';
 import { useT } from '@/lib/i18n/react';
@@ -44,6 +45,7 @@ export default function CertificateSourceCard({
   const [eabKeyId, setEabKeyId] = useState('');
   const [eabHmacKey, setEabHmacKey] = useState('');
   const [httpReachable, setHttpReachable] = useState(settings.acmeHttpReachable);
+  /** Nur die Prüfung der Eingabe vor dem Absenden. Was die Route ablehnt, kommt als Meldung. */
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -69,6 +71,7 @@ export default function CertificateSourceCard({
           'HAPM beantragt danach kein Zertifikat mehr. Ein neues Ziel lässt sich nur anlegen, wenn für seine Domains schon eins hochgeladen ist. Bestehende Zertifikate von acme.sh werden weiter erneuert.'
         ),
         confirmLabel: t('Umstellen'),
+        variant: 'warning',
       });
       if (!confirmed) return;
     }
@@ -99,7 +102,11 @@ export default function CertificateSourceCard({
           : t('Gespeichert. Es gilt für neue Zertifikate.'),
       });
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : t('Die Einstellung ließ sich nicht speichern.'));
+      notify({
+        variant: 'error',
+        title: t('Speichern fehlgeschlagen'),
+        message: errorText(err, t('Die Einstellung ließ sich nicht speichern.')),
+      });
     } finally {
       setSaving(false);
     }
@@ -197,7 +204,7 @@ export default function CertificateSourceCard({
                 <div className="form-row">
                   <div className="form-group">
                     <label className="form-label" htmlFor="acme-eab-kid">
-                      {t('EAB Key-ID')} {t('(optional)')}
+                      {t('EAB Key-ID (optional)')}
                       <InfoHint
                         text={t(
                           'External Account Binding: nur nötig, wenn die CA es verlangt. Sie zeigt Key-ID und HMAC-Schlüssel beim Anlegen des Zugangs an.'
@@ -217,7 +224,7 @@ export default function CertificateSourceCard({
                   </div>
                   <div className="form-group">
                     <label className="form-label" htmlFor="acme-eab-hmac">
-                      {t('EAB HMAC-Schlüssel')} {t('(optional)')}
+                      {t('EAB HMAC-Schlüssel (optional)')}
                       <InfoHint text={t('Geht an acme.sh und wird in HAPM nicht gespeichert.')} />
                     </label>
                     <input

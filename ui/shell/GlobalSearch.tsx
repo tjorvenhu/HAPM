@@ -231,7 +231,7 @@ export default function GlobalSearch({ placeholder, search, localGroups, minLeng
           {!searching ? (
             <p className="global-search__empty">{t("Mindestens {count} Zeichen eingeben.", { count: minLength })}</p>
           ) : flatItems.length === 0 ? (
-            <p className="global-search__empty">{pending ? t("Suche läuft …") : t("Keine Treffer für „{query}“.", { query: trimmed })}</p>
+            <p className="global-search__empty">{pending ? t("Suche läuft…") : t("Keine Treffer für „{query}“.", { query: trimmed })}</p>
           ) : (
             groups.map((group) => {
               const groupOffset = offset

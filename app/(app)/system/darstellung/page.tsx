@@ -19,6 +19,7 @@ import { InfoHint } from '@/ui/primitives/InfoHint';
 import type { Brand } from '@/ui/primitives/brand';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
+import { errorText } from '@/components/errorText';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { SkeletonDetail } from '@/components/Skeleton';
 import ColorField from '@/components/reverse-proxy/ColorField';
@@ -204,7 +205,13 @@ export default function AppearancePage() {
       });
       return;
     }
-    const bytes = await readAsBytes(file);
+    let bytes: Uint8Array;
+    try {
+      bytes = await readAsBytes(file);
+    } catch {
+      notify({ variant: 'error', title: t('Bild nicht übernommen'), message: t('Das Bild ließ sich nicht lesen.') });
+      return;
+    }
     const checked = checkImageBytes(bytes, locale);
     if ('error' in checked) {
       notify({ variant: 'error', title: t('Bild nicht übernommen'), message: checked.error });
@@ -276,10 +283,7 @@ export default function AppearancePage() {
         notify({ variant: 'success', message });
       }
     } catch (err: unknown) {
-      notify({
-        variant: 'error',
-        message: err instanceof Error ? err.message : t('Die Darstellung ließ sich nicht speichern.'),
-      });
+      notify({ variant: 'error', message: errorText(err, t('Die Darstellung ließ sich nicht speichern.')) });
     } finally {
       setSaving(false);
     }

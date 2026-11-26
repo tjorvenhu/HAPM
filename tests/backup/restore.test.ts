@@ -147,7 +147,11 @@ function expectToday() {
   expect(fs.readFileSync(path.join(dataDir, 'secrets.json'), 'utf8')).toBe('alt-schluessel');
 }
 
-describe('RESTORE_SCRIPT', () => {
+// Jeder Fall startet das Skript in einer echten Shell mit Dutzenden Kommandos.
+// Unter Windows und wenn die ganze Suite parallel läuft, reichen die üblichen
+// fünf Sekunden dafür nicht immer: der Fall scheiterte dann an der Zeit, nicht
+// am Skript.
+describe('RESTORE_SCRIPT', { timeout: 30_000 }, () => {
   it('spielt zurück: Datenbank, dann Dateien, prüft vor dem Neuladen und startet HAPM', () => {
     const { code, progress, calls } = runScript();
     expect(code).toBe(0);

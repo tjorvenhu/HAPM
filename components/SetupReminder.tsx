@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ArrowRight, ListChecks } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
+import { errorText } from '@/components/errorText';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { SETUP_STEPS, type SetupStep } from '@/lib/setup/rules';
 import { msgid } from '@/lib/i18n';
@@ -78,13 +79,10 @@ export default function SetupReminder() {
       setSetup(body.data.setup as SetupView);
       notify({
         variant: 'success',
-        message: t('Die Einrichtung ist übersprungen. Adresse und Art der Installation stehen unter „Allgemein".'),
+        message: t('Die Einrichtung ist übersprungen. Adresse und Art der Installation stehen unter „Allgemein“.'),
       });
     } catch (err: unknown) {
-      notify({
-        variant: 'error',
-        message: err instanceof Error ? err.message : t('Das ließ sich nicht speichern.'),
-      });
+      notify({ variant: 'error', message: errorText(err, t('Das ließ sich nicht speichern.')) });
     } finally {
       setBusy(false);
     }

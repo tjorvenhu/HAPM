@@ -8,6 +8,8 @@ import { useConfirm } from '@/components/ConfirmDialog';
 import BrandLogo from '@/components/BrandLogo';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import { useT } from '@/lib/i18n/react';
+import { openRun } from '@/components/runs/runs';
+import type { CrowdsecOverview } from './types';
 
 /**
  * CrowdSec ganz ab- und wieder einschalten (`setCrowdsecEnabled`). Abschalten
@@ -21,6 +23,25 @@ export function useCrowdsecSwitch(onDone?: (enabled: boolean) => void) {
   const { t } = useT();
   const [busy, setBusy] = useState(false);
 
+  /**
+   * Warten, bis der Lauf CrowdSec aus `haproxy.cfg` genommen hat und HAPM die
+   * Container anhält. Gefragt wird der Zustand und nicht der Lauf: was zählt,
+   * ist, ob die Datei CrowdSec noch nennt. Antwortet HAPM zwischendurch nicht
+   * (HAProxy lädt neu), wird weitergefragt.
+   */
+  async function waitUntilSwitched(): Promise<boolean> {
+    const deadline = Date.now() + 35 * 60_000;
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      const body = await apiFetch('/api/crowdsec', { cache: 'no-store' })
+        .then((res) => res.json())
+        .catch(() => null);
+      const data = body?.success ? (body.data as CrowdsecOverview) : null;
+      if (data && !data.status.switching) return !data.protection.inUse;
+    }
+    return false;
+  }
+
   async function apply(enabled: boolean) {
     setBusy(true);
     try {
@@ -29,8 +50,14 @@ export function useCrowdsecSwitch(onDone?: (enabled: boolean) => void) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled }),
       });
-      const body = await res.json();
-      if (!res.ok || !body.success) throw new Error(body.error || t('Speichern fehlgeschlagen'));
+      const body = await res.json().catch(() => null);
+      if (!res.ok || !body?.success) throw new Error(body?.error || t('Speichern fehlgeschlagen'));
+      if (body.data.pending && body.data.runId) {
+        openRun({ kind: 'haproxy', id: body.data.runId, label: t('CrowdSec für alle Ziele'), context: t('Abschalten') });
+        if (!(await waitUntilSwitched())) {
+          throw new Error(t('HAProxy ließ sich nicht umstellen, CrowdSec bleibt an. Was gescheitert ist, steht unter Logs, Vorgänge.'));
+        }
+      }
       notify({
         variant: 'success',
         message: enabled
@@ -41,8 +68,9 @@ export function useCrowdsecSwitch(onDone?: (enabled: boolean) => void) {
     } catch (err) {
       notify({ variant: 'error', title: t('Umschalten fehlgeschlagen'), message: err instanceof Error ? err.message : String(err) });
     } finally {
+      // Erst die Sitzung neu lesen, dann freigeben: sonst zeigt der Schalter kurz den alten Stand.
+      await reload().catch(() => undefined);
       setBusy(false);
-      await reload();
     }
   }
 

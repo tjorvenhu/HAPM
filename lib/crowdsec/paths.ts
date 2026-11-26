@@ -54,6 +54,26 @@ export function crowdsecDisabled(): boolean {
 
 export const DISABLED_FILE = 'hapm-disabled';
 
+const switching = globalThis as unknown as { __hapmCrowdsecSwitchingOff?: boolean };
+
+/** Ob gerade ein Lauf CrowdSec aus `haproxy.cfg` nimmt (`setCrowdsecEnabled`). */
+export function crowdsecSwitchingOff(): boolean {
+  return switching.__hapmCrowdsecSwitchingOff === true;
+}
+
+export function setCrowdsecSwitchingOff(value: boolean): void {
+  switching.__hapmCrowdsecSwitchingOff = value;
+}
+
+/**
+ * Ob ein Ziel jetzt CrowdSec bekommen darf: installiert und nicht gerade beim
+ * Abschalten. Sonst schriebe ein Vorgang, der hinter dem Abschalten ansteht,
+ * die Zeilen wieder in die Datei, und HAProxy fragte einen Bouncer, der steht.
+ */
+export function crowdsecUsable(): boolean {
+  return crowdsecInstalled() && !crowdsecSwitchingOff();
+}
+
 /** Der Ordner im HAPM-Container, in dem die Dateien für beide Container liegen
  *  (auf dem Server `HAPM_STORAGE/crowdsec`). */
 export function crowdsecDir(): string {

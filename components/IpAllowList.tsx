@@ -80,6 +80,7 @@ export default function IpAllowList({
               type="button"
               className="btn btn-ghost btn-icon"
               data-tooltip={t('Zeile entfernen')}
+              aria-label={t('Zeile entfernen')}
               disabled={disabled || rows.length === 1}
               onClick={() => onChange(rows.filter((_, i) => i !== index))}
             >

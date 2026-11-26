@@ -176,7 +176,8 @@ async function checkTargets(now: string): Promise<void> {
 async function checkCrowdsec(now: string): Promise<void> {
   const s = state();
   const scope = protection();
-  if (!crowdsecInstalled() || !scope.readable || (scope.global !== true && scope.services.length === 0)) {
+  // `inUse` und nicht die gelesenen Schalter: auch ein von Hand geänderter Block fragt den Bouncer.
+  if (!crowdsecInstalled() || !scope.readable || !scope.inUse) {
     s.crowdsec = new Map();
     return;
   }

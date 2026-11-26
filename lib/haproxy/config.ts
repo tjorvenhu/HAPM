@@ -3109,8 +3109,18 @@ export interface GlobalSettingsInput {
   /** Fehlt das Feld, bleibt CrowdSec im Frontend, wie es ist. */
   crowdsec?: boolean;
   /** `true`: auch die Zeilen aus jedem Backend nehmen. Nur mit `crowdsec: false`,
-   *  wenn CrowdSec ganz abgeschaltet wird (`setCrowdsecEnabled`). */
+   *  wenn CrowdSec ganz abgeschaltet wird (`setCrowdsecEnabled`). Ein Block im
+   *  Frontend geht dann auch mit, wenn ihn jemand von Hand geändert hat. */
   crowdsecRemoveAll?: boolean;
+  /** `true`: `httpsLines` und `adminIps` gelten nicht, es bleibt, was beim Lauf
+   *  in der Datei steht. Für Läufe, die nur CrowdSec schalten: sie stehen
+   *  womöglich hinter einem anderen an und schrieben sonst dessen Änderung zurück. */
+  fromFile?: boolean;
+  /** Der Teil-Patch der API, wie er kam. Der Lauf rechnet ihn unter der Sperre
+   *  gegen den Stand aus, der dann in der Datei steht (`readGlobalSettingsPatch`),
+   *  statt gegen den vom Zeitpunkt der Anfrage: zwei Aufrufe „diese Adresse
+   *  dazu", die hintereinander anstehen, verlören sonst einen. */
+  patch?: Record<string, unknown>;
 }
 
 /* ── Zugriffsschutz ──
@@ -3705,11 +3715,16 @@ export function validateGlobalSettings(input: GlobalSettingsInput): Message | nu
  * der Admin-ACL. Alles andere bleibt Zeichen für Zeichen stehen — auch die
  * Einrückung, die aus der jeweils ersten Zeile übernommen wird.
  */
-export function applyGlobalSettings(text: string, input: GlobalSettingsInput): string {
-  const invalid = validateGlobalSettings(input);
-  if (invalid) throw new HaproxyConfigError(invalid);
-
+export function applyGlobalSettings(text: string, given: GlobalSettingsInput): string {
   const current = parseGlobalSettings(text);
+  // Was schon in der Datei steht, wird nicht noch einmal geprüft: es bleibt, wie es ist.
+  const input: GlobalSettingsInput =
+    given.fromFile === true ? { ...given, httpsLines: current.httpsLines ?? [], adminIps: current.adminIps } : given;
+  if (given.fromFile !== true) {
+    const invalid = validateGlobalSettings(input);
+    if (invalid) throw new HaproxyConfigError(invalid);
+  }
+
   if (current.httpsLines === null) {
     throw new HaproxyConfigError(
       msg(
@@ -3791,8 +3806,9 @@ export function applyGlobalSettings(text: string, input: GlobalSettingsInput): s
     lines = applyProtectionBlock(lines, input.protection ?? current.protection, input.adminIps.length > 0);
   }
 
+  const removeAll = input.crowdsecRemoveAll === true && input.crowdsec === false;
   if (input.crowdsec !== undefined && input.crowdsec !== current.crowdsec) {
-    if (current.crowdsec === null) {
+    if (current.crowdsec === null && !removeAll) {
       throw new HaproxyConfigError(
         msg(
           'Der Block "{marker}" in {file} steht nicht so da, wie HAPM ihn schreibt. Er wird deshalb nicht überschrieben. Erst in der Datei auf den Stand von HAPM bringen oder entfernen.',
@@ -3802,7 +3818,7 @@ export function applyGlobalSettings(text: string, input: GlobalSettingsInput): s
     }
     lines = applyCrowdsecBlock(lines, input.crowdsec);
   }
-  if (input.crowdsecRemoveAll === true && input.crowdsec === false) {
+  if (removeAll) {
     // Die Zeilen sind fest (`CROWDSEC_LINES`) und kommen sonst nirgends vor.
     // Das Backend des Bouncers nimmt danach `syncCrowdsecBackend` weg.
     lines = lines.filter((line) => !CROWDSEC_LINES.includes(clean(line)));

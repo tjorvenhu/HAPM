@@ -5,6 +5,7 @@ import { FileWarning, Loader2, Paintbrush } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/ConfirmDialog';
+import { errorText } from '@/components/errorText';
 import { SkeletonRows } from '@/components/Skeleton';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import { useT } from '@/lib/i18n/react';
@@ -88,6 +89,7 @@ export default function ErrorPagesPanel({ row, onWritten }: ErrorPagesPanelProps
         other: '{count} Fehlerdateien werden durch die Seite im gespeicherten Design ersetzt, danach lädt HAProxy neu. Der Status jeder Datei bleibt derselbe. Die bisherige Fassung bleibt als .hapm-original daneben liegen.',
       }),
       confirmLabel: t('Schreiben'),
+      variant: 'warning',
     });
     if (!ok) return;
 
@@ -121,7 +123,7 @@ export default function ErrorPagesPanel({ row, onWritten }: ErrorPagesPanelProps
       notify({
         variant: 'error',
         title: t('Schreiben fehlgeschlagen'),
-        message: err instanceof Error ? err.message : t('Unbekannter Fehler.'),
+        message: errorText(err, t('Unbekannter Fehler.')),
       });
     } finally {
       setBusy(false);

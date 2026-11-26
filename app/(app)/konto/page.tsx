@@ -22,6 +22,7 @@ import { browserSupportsWebAuthn, startRegistration } from '@simplewebauthn/brow
 import { useApp } from '@/components/AppShell';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { useToast } from '@/components/Toast';
+import { errorText } from '@/components/errorText';
 import { usePolling } from '@/components/usePolling';
 import { SkeletonRows } from '@/components/Skeleton';
 import AreaTabs, { useArea, type Area } from '@/components/AreaTabs';
@@ -120,22 +121,19 @@ function Account() {
   const [setupOpen, setSetupOpen] = useState(false);
   const [disableOpen, setDisableOpen] = useState(false);
   const [disablePassword, setDisablePassword] = useState('');
-  const [disableError, setDisableError] = useState('');
   const [disabling, setDisabling] = useState(false);
 
   // Neue Wiederherstellungscodes: erst das Passwort, dann die Codes, einmal.
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [recoveryPassword, setRecoveryPassword] = useState('');
-  const [recoveryError, setRecoveryError] = useState('');
   const [creatingCodes, setCreatingCodes] = useState(false);
   const [newCodes, setNewCodes] = useState<string[] | null>(null);
-  const codeActions = useRecoveryCodeActions(newCodes ?? [], (message) => notify({ variant: 'error', message }));
+  const codeActions = useRecoveryCodeActions(newCodes ?? []);
 
   const [savingLocale, setSavingLocale] = useState(false);
 
   const [passkeyDialog, setPasskeyDialog] = useState<PasskeyDialog | null>(null);
   const [passkeyName, setPasskeyName] = useState('');
-  const [passkeyError, setPasskeyError] = useState('');
   const [savingPasskey, setSavingPasskey] = useState(false);
 
   const load = useCallback(async () => {
@@ -153,7 +151,6 @@ function Account() {
       if (passkeyData.data?.available && new URLSearchParams(window.location.search).get('passkey') === 'neu') {
         selectArea('passkeys');
         setPasskeyName(t(suggestPasskeyName(navigator.userAgent)));
-        setPasskeyError('');
         setPasskeyDialog({ mode: 'add' });
       }
     } catch {
@@ -197,7 +194,11 @@ function Account() {
         message: t('Das Passwort ist geändert. Alle anderen Sitzungen dieses Kontos sind beendet.'),
       });
     } catch (err: unknown) {
-      setPasswordError(err instanceof Error ? err.message : t('Das Passwort ließ sich nicht ändern.'));
+      notify({
+        variant: 'error',
+        title: t('Ändern fehlgeschlagen'),
+        message: errorText(err, t('Das Passwort ließ sich nicht ändern.')),
+      });
     } finally {
       setSavingPassword(false);
     }
@@ -214,13 +215,11 @@ function Account() {
 
   function openDisable() {
     setDisablePassword('');
-    setDisableError('');
     setDisableOpen(true);
   }
 
   async function handleDisable(e: FormEvent) {
     e.preventDefault();
-    setDisableError('');
     setDisabling(true);
     try {
       const res = await apiFetch('/api/account/2fa', {
@@ -235,7 +234,11 @@ function Account() {
       setDisableOpen(false);
       notify({ variant: 'success', message: t('Der zweite Faktor ist abgeschaltet.') });
     } catch (err: unknown) {
-      setDisableError(err instanceof Error ? err.message : t('Der zweite Faktor ließ sich nicht abschalten.'));
+      notify({
+        variant: 'error',
+        title: t('Abschalten fehlgeschlagen'),
+        message: errorText(err, t('Der zweite Faktor ließ sich nicht abschalten.')),
+      });
     } finally {
       setDisabling(false);
     }
@@ -257,14 +260,12 @@ function Account() {
       if (!proceed) return;
     }
     setRecoveryPassword('');
-    setRecoveryError('');
     setNewCodes(null);
     setRecoveryOpen(true);
   }
 
   async function handleCreateCodes(e: FormEvent) {
     e.preventDefault();
-    setRecoveryError('');
     setCreatingCodes(true);
     try {
       const res = await apiFetch('/api/account/2fa/recovery-codes', {
@@ -280,7 +281,11 @@ function Account() {
       await load();
       notify({ variant: 'success', message: t('Neue Wiederherstellungscodes sind erzeugt. Die alten gelten nicht mehr.') });
     } catch (err: unknown) {
-      setRecoveryError(err instanceof Error ? err.message : t('Die Wiederherstellungscodes ließen sich nicht erzeugen.'));
+      notify({
+        variant: 'error',
+        title: t('Erzeugen fehlgeschlagen'),
+        message: errorText(err, t('Die Wiederherstellungscodes ließen sich nicht erzeugen.')),
+      });
     } finally {
       setCreatingCodes(false);
     }
@@ -294,13 +299,11 @@ function Account() {
 
   function openAddPasskey() {
     setPasskeyName(t(suggestPasskeyName(navigator.userAgent)));
-    setPasskeyError('');
     setPasskeyDialog({ mode: 'add' });
   }
 
   function openRenamePasskey(passkey: PasskeyView) {
     setPasskeyName(passkey.name);
-    setPasskeyError('');
     setPasskeyDialog({ mode: 'rename', passkey });
   }
 
@@ -343,7 +346,6 @@ function Account() {
   async function handlePasskeySubmit(e: FormEvent) {
     e.preventDefault();
     if (!passkeyDialog) return;
-    setPasskeyError('');
     setSavingPasskey(true);
     try {
       if (passkeyDialog.mode === 'add') await addPasskey();
@@ -360,7 +362,19 @@ function Account() {
             : t('Der Name ist gespeichert.'),
       });
     } catch (err: unknown) {
-      setPasskeyError(err instanceof Error ? err.message : t('Der Vorgang ist fehlgeschlagen.'));
+      notify(
+        passkeyDialog.mode === 'add'
+          ? {
+              variant: 'error',
+              title: t('Anlegen fehlgeschlagen'),
+              message: errorText(err, t('Der Passkey konnte nicht hinterlegt werden.')),
+            }
+          : {
+              variant: 'error',
+              title: t('Speichern fehlgeschlagen'),
+              message: errorText(err, t('Der Name konnte nicht gespeichert werden.')),
+            }
+      );
     } finally {
       setSavingPasskey(false);
     }
@@ -370,20 +384,18 @@ function Account() {
     await confirm({
       title: t('Passkey entfernen'),
       message: t(
-        'Mit "{name}" ist danach keine Anmeldung mehr möglich. Ihr Passwort bleibt bestehen. Auf dem Gerät selbst löschen Sie den Passkey in dessen Einstellungen.',
+        'Mit „{name}“ ist danach keine Anmeldung mehr möglich. Ihr Passwort bleibt bestehen. Auf dem Gerät selbst löschen Sie den Passkey in dessen Einstellungen.',
         { name: passkey.name }
       ),
       confirmLabel: t('Entfernen'),
       variant: 'danger',
+      failedTitle: t('Entfernen fehlgeschlagen'),
       onConfirm: async () => {
         const res = await apiFetch(`/api/account/passkeys/${encodeURIComponent(passkey.id)}`, {
           method: 'DELETE',
         });
         const data = await res.json();
-        if (!res.ok) {
-          notify({ variant: 'error', message: data.error || t('Der Passkey ließ sich nicht entfernen.') });
-          throw new Error(data.error);
-        }
+        if (!res.ok || !data.success) throw new Error(data.error || t('Der Passkey ließ sich nicht entfernen.'));
         await load();
         notify({ variant: 'success', message: t('Der Passkey ist entfernt.') });
       },
@@ -410,7 +422,8 @@ function Account() {
     } catch (err: unknown) {
       notify({
         variant: 'error',
-        message: err instanceof Error ? err.message : t('Die Sprache ließ sich nicht speichern.'),
+        title: t('Speichern fehlgeschlagen'),
+        message: errorText(err, t('Die Sprache ließ sich nicht speichern.')),
       });
     } finally {
       setSavingLocale(false);
@@ -660,7 +673,7 @@ function Account() {
                     <th>{t('Name')}</th>
                     <th>{t('Ablage')}</th>
                     <th>{t('Hinterlegt am')}</th>
-                    <th />
+                    <th aria-label={t('Aktionen')} />
                   </tr>
                 </thead>
                 <tbody>
@@ -754,7 +767,6 @@ function Account() {
             </div>
             <form onSubmit={handleDisable}>
               <div className="modal-body">
-                {disableError && <div className="alert alert-danger">{disableError}</div>}
                 <p className="form-hint">
                   {t('Danach reicht für die Anmeldung das Passwort. Das hinterlegte Geheimnis wird gelöscht.')}
                 </p>
@@ -796,15 +808,19 @@ function Account() {
           <div className="modal">
             <div className="modal-header">
               <h2 className="modal-title">{t('Wiederherstellungscodes')}</h2>
-              <button
-                type="button"
-                className="modal-close"
-                onClick={closeRecovery}
-                disabled={creatingCodes}
-                aria-label={t('Dialog schließen')}
-              >
-                <X size={18} />
-              </button>
+              {/* Solange die neuen Codes dastehen, schließt nur „Codes gespeichert“:
+                  sie werden kein zweites Mal gezeigt. */}
+              {!newCodes && (
+                <button
+                  type="button"
+                  className="modal-close"
+                  onClick={closeRecovery}
+                  disabled={creatingCodes}
+                  aria-label={t('Dialog schließen')}
+                >
+                  <X size={18} />
+                </button>
+              )}
             </div>
             {newCodes ? (
               <>
@@ -820,8 +836,8 @@ function Account() {
                 </div>
                 <div className="modal-footer">
                   <button type="button" className="btn btn-secondary" onClick={codeActions.copy}>
-                    {codeActions.copied ? <Check size={16} /> : <Copy size={16} />}
-                    {codeActions.copied ? t('Kopiert') : t('Kopieren')}
+                    <Copy size={16} />
+                    {t('Kopieren')}
                   </button>
                   <button type="button" className="btn btn-secondary" onClick={codeActions.download}>
                     <Download size={16} />
@@ -836,7 +852,6 @@ function Account() {
             ) : (
               <form onSubmit={handleCreateCodes}>
                 <div className="modal-body">
-                  {recoveryError && <div className="alert alert-danger">{recoveryError}</div>}
                   <p className="form-hint">
                     {t('Zehn neue Codes entstehen und werden einmal angezeigt. Zur Bestätigung Ihr Passwort.')}
                   </p>
@@ -891,8 +906,6 @@ function Account() {
             </div>
             <form onSubmit={handlePasskeySubmit}>
               <div className="modal-body">
-                {passkeyError && <div className="alert alert-danger">{passkeyError}</div>}
-
                 <div className="form-group">
                   <label className="form-label" htmlFor="passkeyName">{t('Name')}</label>
                   <input

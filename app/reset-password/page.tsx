@@ -59,7 +59,7 @@ function ResetPasswordContent() {
     return (
       <AuthCard standalone title={t(TITLE)}>
         <div className="auth-form">
-          <div className="auth-error">{t('Der Link ist unvollständig. Bitte fordern Sie einen neuen an.')}</div>
+          <div className="auth-error" role="alert">{t('Der Link ist unvollständig. Bitte fordern Sie einen neuen an.')}</div>
           <Link href="/forgot-password" className="auth-submit">
             <KeyRound size={15} /> {t('Neuen Link anfordern')}
           </Link>
@@ -114,7 +114,7 @@ function ResetPasswordContent() {
           />
         </div>
         <p className="auth-hint">{t('Mindestens 10 Zeichen mit Groß- und Kleinbuchstaben und einer Zahl.')}</p>
-        {error && <div className="auth-error">{error}</div>}
+        {error && <div className="auth-error" role="alert">{error}</div>}
         <button className="auth-submit" type="submit" disabled={loading || !password || !repeat}>
           {loading ? <span className="btn-spinner" aria-hidden="true" /> : <KeyRound size={15} />}
           {loading ? t('Speichern…') : t('Passwort speichern')}

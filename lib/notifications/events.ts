@@ -268,7 +268,12 @@ export const STATE_RETENTION_DAYS = 180;
 
 export function repeatAfterMs(type: NotificationEventType): number {
   // Einmal je Fassung: der Schlüssel trägt die Fassung, wiederholt wird nicht.
-  return type === 'update_available' ? Number.POSITIVE_INFINITY : REPEAT_AFTER_MS;
+  if (type === 'update_available') return Number.POSITIVE_INFINITY;
+  // Die Entwarnung kommt je gemeldetem Ausfall genau einmal (`resolveState` in
+  // `checks.ts`). Eine zweite Dämpfung verschluckte sie, wenn derselbe Eintrag
+  // an zwei Tagen kurz nacheinander ausfällt: die Ausfallmail kündigt sie an.
+  if (type === 'backend_recovered') return 0;
+  return REPEAT_AFTER_MS;
 }
 
 export type DeliveryDecision = 'send' | 'disabled' | 'no_recipients' | 'not_configured' | 'dampened';

@@ -129,7 +129,10 @@ installiert oder entfernt alles, was dazugehört. Drei Arten:
   „Wirkt auf“.
 - **Eigene Whitelists von HAPM** (`local`), wo der Hub nichts oder zu wenig hat
   (Matrix, Immich, Seafile, ONLYOFFICE, Synology, Audiobookshelf, Navidrome,
-  Git-Server, Ergänzungen für Nextcloud, Jellyfin und Plex). HAPM schreibt sie
+  Git-Server, Ergänzungen für Nextcloud, Jellyfin und Plex). Jedes Muster ist
+  am Anfang und, wo der Pfad dort endet, am Ende verankert, und `..` im Pfad
+  nimmt keine Ausnahme: ein Muster, das irgendwo passen darf, träfe auch die
+  Parameter, und ein Scanner hängte den ausgenommenen Pfad einfach an. HAPM schreibt sie
   nach `config/parsers/s02-enrich/hapm-app-<id>.yaml` und beim Start neu, wenn
   sich die Liste mit einem Update geändert hat. Aufgenommen ist nur, was in
   einem Ticket oder im Forum von CrowdSec **mit Pfad und Status** belegt ist;
@@ -364,11 +367,30 @@ Seite selbst, die bleibt über die Adresse erreichbar). `setCrowdsecEnabled` in
 MCP-Werkzeug `set_crowdsec_enabled`.
 
 - Aus: ein Lauf am Reverse-Proxy nimmt CrowdSec aus `haproxy.cfg`, global und
-  aus jedem Ziel (`crowdsecRemoveAll` in `applyGlobalSettings`), der Schalter
-  wartet darauf. **Erst wenn der Lauf durch ist**, hält HAPM beide Container an
-  und legt `crowdsec/hapm-disabled` an. Scheitert er, bleibt alles an: eine
-  Konfiguration, die einen angehaltenen Bouncer fragt, ließe jede Anfrage
-  ungeprüft durch.
+  aus jedem Ziel (`crowdsecRemoveAll` in `applyGlobalSettings`, auch ein von
+  Hand geänderter Block geht mit). Die Antwort kommt **sofort** mit
+  `pending: true` und der Kennung des Laufs: er kann hinter einem Zertifikat
+  anstehen, und eine Anfrage, die so lange wartet, schnitte HAProxy nach 50
+  Sekunden ab, während der Lauf später trotzdem alles entfernte. **Erst wenn
+  der Lauf durch ist**, hält HAPM beide Container an und legt
+  `crowdsec/hapm-disabled` an (`finishSwitchOff`). Ob er gelungen ist, sagt die
+  Datei und nicht der Status des Laufs: nennt `haproxy.cfg` CrowdSec noch,
+  bleibt alles an. Die Oberfläche fragt `GET /api/crowdsec`, bis
+  `status.switching` aus ist.
+- Der Lauf trägt `fromFile`: HTTPS-Zeilen und Admin-IPs bleiben, wie sie beim
+  Lauf in der Datei stehen. Mit den Werten vom Zeitpunkt der Anfrage schriebe
+  er eine Änderung zurück, die davor in der Warteschlange stand.
+- **Solange CrowdSec nicht eingeschaltet ist oder gerade abgeschaltet wird,
+  nimmt kein Ziel es an** (`assertCrowdsecAvailable` in `provision.ts`, vor dem
+  Lauf und im Lauf unter der Sperre, für Oberfläche, API und MCP). Sonst
+  schriebe ein Vorgang, der hinter dem Abschalten ansteht, die Zeilen wieder
+  hinein. Ein Update der beiden Container wird dann ebenfalls abgelehnt.
+- **Steht CrowdSec noch in `haproxy.cfg`, obwohl es nicht eingeschaltet ist**
+  (nach `install.sh --no-crowdsec` ohne vorheriges Ausschalten, nach dem
+  Zurückspielen einer älteren Sicherung), nimmt der Abgleich im Scheduler es
+  selbst heraus (`dropOrphanedCrowdsec`, höchstens alle sechs Stunden ein
+  Versuch). HAProxy wartete sonst bei jeder Anfrage auf einen Bouncer, den es
+  nicht gibt.
 - Die Marke ist eine Datei und kein Feld in der Datenbank, weil
   `crowdsecInstalled()` an vielen Stellen ohne `await` gefragt wird. Mit Marke
   ist es `false`: Seitenleiste, Übersicht, Logs, Statistik, Updates,
@@ -377,9 +399,12 @@ MCP-Werkzeug `set_crowdsec_enabled`.
   Schalter zum Einschalten, `features.crowdsecPresent`).
 - Startet jemand die Container wieder (`docker compose up -d` bei einem
   Update), hält der Abgleich im Scheduler sie wieder an (`keepCrowdsecStopped`).
-- An: Marke weg, Dateien schreiben, Container starten. Welche Ziele geprüft
-  werden, bleibt aus. Sperren, Freigaben und Regeln liegen im Datenordner und
-  gelten wieder.
+- An: Marke weg, Dateien schreiben, Container starten. Startet einer nicht,
+  bleibt CrowdSec abgeschaltet, mit dem Grund in der Meldung. Halten die
+  Container vom Abschalten gerade noch an (bis zu einer halben Minute je
+  Container), wird das Einschalten abgelehnt statt mittendrin gestartet. Welche
+  Ziele geprüft werden, bleibt aus. Sperren, Freigaben und Regeln liegen im
+  Datenordner und gelten wieder.
 
 **Für alle Ziele, Stack bleibt:** in der Oberfläche den globalen Schalter und
 die Schalter der Ziele aus. Danach steht in `haproxy.cfg` nichts mehr von

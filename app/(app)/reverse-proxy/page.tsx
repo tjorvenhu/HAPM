@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
+import { errorText } from '@/components/errorText';
 import { usePolling } from '@/components/usePolling';
 import EntityCard, { EntityGrid, EntityTags, EntityTag, EntityField } from '@/components/EntityCard';
 import {
@@ -75,7 +76,8 @@ export default function ReverseProxyPage() {
       try {
         const res = await apiFetch('/api/haproxy/services');
         const data = await res.json();
-        if (data.success) setProxies(data.data);
+        if (!res.ok || !data.success) throw new Error(data.error);
+        setProxies(data.data);
         setError('');
       } catch {
         setError(t('Die Reverse-Proxy-Ziele konnten nicht geladen werden.'));
@@ -107,38 +109,52 @@ export default function ReverseProxyPage() {
    * Ein eigenes Intervall statt `usePolling`: es geht nicht um einen Takt,
    * sondern um ein Ende — der Effekt räumt sich selbst ab. Erst nachladen, dann
    * melden, sonst steht die Erfolgsmeldung neben einer Liste ohne die Gruppe.
+   *
+   * `pendingScope` wird erst nach dem Nachladen geleert: der Effekt hängt daran,
+   * und sein Aufräumen setzt `cancelled`. Vorher geleert, kam die Meldung nie.
    */
   useEffect(() => {
     if (!pendingScope) return;
     let cancelled = false;
+    // Ein Takt mit Nachladen dauert länger als drei Sekunden. Der nächste
+    // wartet, sonst meldete er dasselbe Ende ein zweites Mal.
+    let busy = false;
 
     const poll = async () => {
-      const states = await Promise.all(
-        pendingScope.runIds.map((id) =>
-          apiFetch(`/api/haproxy/runs/${id}`)
-            .then((r) => r.json())
-            .catch(() => null)
-        )
-      );
-      if (cancelled) return;
-      // Ein Lauf, der sich nicht abfragen lässt, gilt als fertig: sonst bliebe
-      // die Karte für immer stehen, weil eine Antwort ausbleibt.
-      if (states.some((s) => s?.success && s.data.status === 'running')) return;
+      if (busy) return;
+      busy = true;
+      try {
+        const states = await Promise.all(
+          pendingScope.runIds.map((id) =>
+            apiFetch(`/api/haproxy/runs/${id}`)
+              .then((r) => r.json())
+              .catch(() => null)
+          )
+        );
+        if (cancelled) return;
+        // Ein Lauf, der sich nicht abfragen lässt, gilt als fertig: sonst bliebe
+        // die Karte für immer stehen, weil eine Antwort ausbleibt.
+        if (states.some((s) => s?.success && s.data.status === 'running')) return;
 
-      setPendingScope(null);
-      const failed = states.filter((s) => s?.success && s.data.status !== 'success').length;
-      await load(true);
-      if (cancelled) return;
-      notify({
-        variant: failed === 0 ? 'success' : 'error',
-        title: t('Gruppe „{name}"', { name: scopeLabel(pendingScope.name) }),
-        message:
-          failed !== 0
-            ? t('Der Vorgang ist fehlgeschlagen. Die Schritte stehen in den Logs.')
-            : pendingScope.action === 'add'
-              ? t('Die Gruppe ist angelegt.')
-              : t('Die Gruppe ist entfernt.'),
-      });
+        const failed = states.filter((s) => s?.success && s.data.status !== 'success').length;
+        await load(true);
+        if (cancelled) return;
+        // Das Ende ist behandelt: kein weiterer Takt, bis der Effekt abgeräumt ist.
+        clearInterval(interval);
+        setPendingScope(null);
+        notify({
+          variant: failed === 0 ? 'success' : 'error',
+          title: t('Gruppe „{name}“', { name: scopeLabel(pendingScope.name) }),
+          message:
+            failed !== 0
+              ? t('Der Vorgang ist fehlgeschlagen. Die Schritte stehen in den Logs.')
+              : pendingScope.action === 'add'
+                ? t('Die Gruppe ist angelegt.')
+                : t('Die Gruppe ist entfernt.'),
+        });
+      } finally {
+        busy = false;
+      }
     };
 
     const interval = setInterval(poll, 3000);
@@ -157,6 +173,12 @@ export default function ReverseProxyPage() {
     } finally {
       setRefreshing(false);
     }
+  }
+
+  /** Ein neu geöffneter Dialog beginnt ohne die Meldung des vorigen Versuchs. */
+  function openNewScope() {
+    setFormError('');
+    setNewScope('');
   }
 
   /**
@@ -189,7 +211,11 @@ export default function ReverseProxyPage() {
       setPendingScope({ name, runIds, action: 'add' });
       if (runIds[0]) openRun({ kind: 'haproxy', id: runIds[0] });
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : t('Unbekannter Fehler.'));
+      notify({
+        variant: 'error',
+        title: t('Anlegen fehlgeschlagen'),
+        message: errorText(err, t('HAPM hat nicht geantwortet. Bitte versuchen Sie es erneut.')),
+      });
     } finally {
       setCreating(false);
     }
@@ -220,7 +246,7 @@ export default function ReverseProxyPage() {
         </div>
         <div className="page-actions">
           {proxies.length > 0 && (
-            <button className="btn btn-secondary" onClick={() => setNewScope('')}>
+            <button className="btn btn-secondary" onClick={openNewScope}>
               <FolderPlus size={16} />
               {t('Gruppe anlegen')}
             </button>
@@ -247,16 +273,19 @@ export default function ReverseProxyPage() {
       {loading ? (
         <SkeletonCards />
       ) : proxies.length === 0 ? (
-        <div className="empty-state">
-          <Network size={40} />
-          <h3>{t('HAProxy nicht gefunden')}</h3>
-          <p>
-            {rich('Diese Seite liest die Konfiguration unter {path}. Ob HAProxy läuft, steht in der {overview}.', {
-              path: <code>/etc/haproxy/haproxy.cfg</code>,
-              overview: <Link href="/dashboard">{t('Übersicht')}</Link>,
-            })}
-          </p>
-        </div>
+        // Nach einem Ladefehler ist die Liste leer, weil sie unbekannt ist: dann steht nur die Meldung oben.
+        !error && (
+          <div className="empty-state">
+            <Network size={40} />
+            <h3>{t('HAProxy nicht gefunden')}</h3>
+            <p>
+              {rich('Diese Seite liest die Konfiguration unter {path}. Ob HAProxy läuft, steht in der {overview}.', {
+                path: <code>/etc/haproxy/haproxy.cfg</code>,
+                overview: <Link href="/dashboard">{t('Übersicht')}</Link>,
+              })}
+            </p>
+          </div>
+        )
       ) : (
         <>
           <div className="sys-block">
@@ -267,7 +296,7 @@ export default function ReverseProxyPage() {
                 <p>
                   {t('Eine Gruppe fasst Ziele zusammen, etwa „Websites“ oder „Intern“. Jedes Ziel gehört in eine Gruppe. Legen Sie deshalb zuerst eine Gruppe an.')}
                 </p>
-                <button className="btn btn-primary" onClick={() => setNewScope('')}>
+                <button className="btn btn-primary" onClick={openNewScope}>
                   <FolderPlus size={16} />
                   {t('Gruppe anlegen')}
                 </button>

@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
+import { errorText } from '@/components/errorText';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { usePolling } from '@/components/usePolling';
 import Select from '@/components/Select';
@@ -70,6 +71,9 @@ const STATE_CLASS: Record<ImportState, string> = {
  *  mit keiner vorhandenen zusammenfallen. */
 const NEW_SCOPE = '+neu';
 
+/** So viele Abfragen des Laufs dürfen in Folge scheitern, bevor die Seite ihn aufgibt. */
+const MAX_UNREAD_POLLS = 5;
+
 interface RunView {
   status: RunStatus;
 }
@@ -83,6 +87,7 @@ export default function ReverseProxyImportPage() {
 
   const [text, setText] = useState('');
   const [fileName, setFileName] = useState<string | null>(null);
+  /** Nur die Prüfung vor dem Absenden. Was der Server oder die Datei antwortet, ist eine Meldung. */
   const [inputError, setInputError] = useState('');
 
   const [preview, setPreview] = useState<ImportPreview | null>(null);
@@ -105,14 +110,21 @@ export default function ReverseProxyImportPage() {
 
   async function loadFile(file: File) {
     setInputError('');
+    const refuse = (message: string) => notify({ variant: 'error', title: file.name, message });
     if (file.size > IMPORT_MAX_BYTES) {
-      setInputError(t('Die Datei ist größer als {size} MB.', { size: IMPORT_MAX_BYTES / 1_000_000 }));
+      refuse(t('Die Datei ist größer als {size} MB.', { size: IMPORT_MAX_BYTES / 1_000_000 }));
       return;
     }
-    const content = await file.text();
+    let content: string;
+    try {
+      content = await file.text();
+    } catch {
+      refuse(t('Die Datei konnte nicht gelesen werden.'));
+      return;
+    }
     const invalid = importTextError(content);
     if (invalid) {
-      setInputError(t(invalid));
+      refuse(t(invalid));
       return;
     }
     setText(content);
@@ -141,7 +153,11 @@ export default function ReverseProxyImportPage() {
       setSelected(new Set(next.entries.filter((e) => e.state === 'ready').map((e) => e.key)));
       setNewScope((current) => current || next.suggestedScope);
     } catch (err) {
-      setInputError(err instanceof Error ? err.message : t('Unbekannter Fehler.'));
+      notify({
+        variant: 'error',
+        title: t('Vorschau fehlgeschlagen'),
+        message: errorText(err, t('HAPM hat nicht geantwortet. Bitte versuchen Sie es erneut.')),
+      });
     } finally {
       setPreviewing(false);
     }
@@ -169,14 +185,31 @@ export default function ReverseProxyImportPage() {
     });
   }
 
+  /** Abfragen in Folge ohne Antwort. Nach `MAX_UNREAD_POLLS` gibt die Seite den
+   *  Lauf auf, sonst bliebe das ganze Formular gesperrt, weil eine Antwort ausbleibt. */
+  const unreadPolls = useRef(0);
+
   const pollRun = useCallback(async () => {
     if (!runId) return;
     const data = await apiFetch(`/api/haproxy/runs/${runId}`)
       .then((r) => r.json())
       .catch(() => null);
-    if (!data?.success) return;
+    if (!data?.success) {
+      unreadPolls.current += 1;
+      if (unreadPolls.current < MAX_UNREAD_POLLS) return;
+      unreadPolls.current = 0;
+      setRunId(null);
+      setRun(null);
+      notify({
+        variant: 'error',
+        title: t('Import'),
+        message: t('Der Stand des Vorgangs ließ sich nicht abfragen. Die Schritte stehen in den Logs.'),
+      });
+      return;
+    }
+    unreadPolls.current = 0;
     setRun({ status: data.data.status });
-  }, [apiFetch, runId]);
+  }, [apiFetch, runId, notify, t]);
 
   usePolling(() => (run?.status === 'running' || (runId && !run) ? pollRun() : undefined), 3000);
 
@@ -191,27 +224,29 @@ export default function ReverseProxyImportPage() {
           ? plural(
               chosen.length,
               {
-                one: 'Ein Eintrag wird in der Gruppe „{scope}" angelegt, die dafür neu entsteht.',
-                other: '{count} Einträge werden nacheinander in der Gruppe „{scope}" angelegt, die dafür neu entsteht.',
+                one: 'Ein Eintrag wird in der Gruppe „{scope}“ angelegt, die dafür neu entsteht.',
+                other: '{count} Einträge werden nacheinander in der Gruppe „{scope}“ angelegt, die dafür neu entsteht.',
               },
               scope
             )
           : plural(
               chosen.length,
               {
-                one: 'Ein Eintrag wird in der Gruppe „{scope}" angelegt.',
-                other: '{count} Einträge werden nacheinander in der Gruppe „{scope}" angelegt.',
+                one: 'Ein Eintrag wird in der Gruppe „{scope}“ angelegt.',
+                other: '{count} Einträge werden nacheinander in der Gruppe „{scope}“ angelegt.',
               },
               scope
             ),
         t('Jeder geht durch dieselbe Prüfung wie im Dialog und lädt HAProxy einzeln neu.'),
         certificates > 0
-          ? t('Beantragt werden bis zu {count} Zertifikate, jedes kann einige Minuten dauern.', {
-              count: certificates,
+          ? plural(certificates, {
+              one: 'Beantragt wird höchstens ein Zertifikat, das kann einige Minuten dauern.',
+              other: 'Beantragt werden bis zu {count} Zertifikate, jedes kann einige Minuten dauern.',
             })
           : t('Zertifikate werden keine beantragt.'),
       ].join(' '),
       confirmLabel: t('Importieren'),
+      variant: 'warning',
     });
     if (!ok) return;
 
@@ -231,6 +266,7 @@ export default function ReverseProxyImportPage() {
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || t('Der Import ließ sich nicht starten.'));
       setRun(null);
+      unreadPolls.current = 0;
       setRunId(data.data.runId);
       setImportedFrom(preview);
       startRun({ kind: 'haproxy', id: data.data.runId as string, label: t('Import') });
@@ -238,7 +274,7 @@ export default function ReverseProxyImportPage() {
       notify({
         variant: 'error',
         title: t('Import nicht gestartet'),
-        message: err instanceof Error ? err.message : t('Unbekannter Fehler.'),
+        message: errorText(err, t('HAPM hat nicht geantwortet. Bitte versuchen Sie es erneut.')),
       });
     } finally {
       setStarting(false);
@@ -357,14 +393,18 @@ export default function ReverseProxyImportPage() {
                 : t(
                     'Ausgestellt wird über HTTP-01, Wildcards über DNS-01. Die Domains müssen dafür schon auf diesen Server zeigen, sonst scheitert der Antrag. DNS-Einträge legt der Import nicht an.'
                   )}{' '}
-              {t('Mit der Auswahl werden bis zu {count} Zertifikate beantragt.', { count: load.certificates })}
+              {plural(load.certificates, {
+                one: 'Mit der Auswahl wird höchstens ein Zertifikat beantragt.',
+                other: 'Mit der Auswahl werden bis zu {count} Zertifikate beantragt.',
+              })}
               {load.busiest && (load.exceeds || load.near) && (
                 <>
                   {' '}
-                  {t('{count} davon entfallen auf {domain}.', {
-                    count: load.busiest.count,
-                    domain: load.busiest.domain,
-                  })}{' '}
+                  {plural(
+                    load.busiest.count,
+                    { one: 'Eines davon entfällt auf {domain}.', other: '{count} davon entfallen auf {domain}.' },
+                    { domain: load.busiest.domain }
+                  )}{' '}
                   {load.exceeds
                     ? t("Das ist mehr, als Let's Encrypt annimmt. Importieren Sie in Etappen.")
                     : t("Das ist mehr als die Hälfte dessen, was Let's Encrypt in einer Woche annimmt.")}
@@ -593,7 +633,7 @@ function EntryRow({
             checked={selectable && checked}
             disabled={disabled || !selectable}
             onChange={(e) => onToggle(e.target.checked)}
-            aria-label={t('{name} übernehmen', { name: entry.domains[0] ?? `Port ${entry.port}` })}
+            aria-label={t('{name} übernehmen', { name: entry.domains[0] ?? t('Port {port}', { port: entry.port ?? '?' }) })}
           />
           <span className="toggle-slider" />
         </label>

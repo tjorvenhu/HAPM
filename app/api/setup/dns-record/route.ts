@@ -1,3 +1,4 @@
+import { assertSetupOpen } from '@/lib/setup/run';
 import net from 'node:net';
 import { requireCsrf, requireSession } from '@/lib/session';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
@@ -25,6 +26,7 @@ export async function PUT(request: Request) {
   try {
     await requireCsrf(request);
     const session = await requireSession();
+    await assertSetupOpen();
     const body = await jsonBody<{ domain?: unknown; address?: unknown }>(request);
 
     const state = await getSetupState();

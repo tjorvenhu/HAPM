@@ -321,9 +321,31 @@ export function compileGeoTable(
     if (!start) continue;
     // Das Ende zählt nur für die Lückenprüfung unten.
     const end = ipToKey(cells[1]);
-    (start.family === 4 ? v4 : v6).push({ key: start.key, code });
-    if (end && end.family === start.family && end.key >= start.key) {
-      (start.family === 4 ? v4 : v6).push({ key: end.key + 1n, code: '' });
+    if (start.family === 6) {
+      /* Die Tabelle kennt bei IPv6 nur /64. Ein Bereich, der mitten in einem
+       * /64 anfängt (weil davor ein einzelner Host eines anderen Landes
+       * herausgeschnitten ist), hätte denselben Schlüssel wie der Bereich davor,
+       * fiele als Doppelter weg, und seine Endmarke machte alles dahinter zu
+       * „unbekannt": Besucher ohne Land, und Adressen eines gesperrten Landes,
+       * die in keiner Sperrliste stehen. Deshalb gehört jedes /64 dem Bereich,
+       * der an seinem Anfang gilt: der Anfang wird auf die nächste Grenze
+       * aufgerundet, und ein Bereich, der kein ganzes /64 beginnt, entfällt. */
+      const fullStart = parseAddress(cells[0]);
+      const fullEnd = parseAddress(cells[1]);
+      if (!fullStart || fullStart.family !== 6) continue;
+      const startKey = (fullStart.key + (1n << 64n) - 1n) >> 64n;
+      if (fullEnd && fullEnd.family === 6 && fullEnd.key >= fullStart.key) {
+        const endKey = fullEnd.key >> 64n;
+        if (startKey > endKey) continue;
+        v6.push({ key: startKey, code }, { key: endKey + 1n, code: '' });
+      } else {
+        v6.push({ key: startKey, code });
+      }
+      continue;
+    }
+    v4.push({ key: start.key, code });
+    if (end && end.family === 4 && end.key >= start.key) {
+      v4.push({ key: end.key + 1n, code: '' });
     }
   }
 

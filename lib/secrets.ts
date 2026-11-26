@@ -21,12 +21,29 @@ interface Secrets {
 
 let cached: Secrets | null = null;
 
+/**
+ * Nur eine fehlende Datei heißt „noch keine Geheimnisse". Ist sie da, aber
+ * nicht lesbar oder kein JSON (Tippfehler nach einem Eingriff von Hand, halb
+ * geschrieben), bricht der Start ab: neu angelegt überschriebe sie den
+ * `encryptionKey`, und TOTP-Geheimnisse, DNS-Tokens und das SMTP-Passwort wären
+ * für immer unlesbar.
+ */
 function readFile(): Partial<Secrets> {
+  const file = dataPath('secrets.json');
+  let text: string;
   try {
-    return JSON.parse(fs.readFileSync(dataPath('secrets.json'), 'utf8')) as Partial<Secrets>;
-  } catch {
-    return {};
+    text = fs.readFileSync(file, 'utf8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return {};
+    throw new Error(`${file} ist nicht lesbar (${(err as Error).message}). HAPM startet nicht, um die Schlüssel darin nicht zu überschreiben.`);
   }
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed as Partial<Secrets>;
+  } catch {
+    // Unten dieselbe Meldung.
+  }
+  throw new Error(`${file} ist kein gültiges JSON. HAPM startet nicht, um die Schlüssel darin nicht zu überschreiben. Die Datei von Hand richten oder aus einer Sicherung holen.`);
 }
 
 export function secrets(): Secrets {

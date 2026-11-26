@@ -49,7 +49,7 @@ export default function AlertsPanel({
 }) {
   const { t, plural, locale } = useT();
   const path = `/api/crowdsec/alerts?window=${period}${target ? `&service=${encodeURIComponent(target)}` : ''}`;
-  const { data, error, loading } = useCrowdsecData<{ alerts: CrowdsecAlertRow[] }>(path, 30_000);
+  const { data, error, loading } = useCrowdsecData<{ alerts: CrowdsecAlertRow[]; truncated?: boolean }>(path, 30_000);
   const now = useNow(30_000);
   const labelOf = useMemo(() => new Map(targets.map((entry) => [entry.id, entry.label])), [targets]);
   const options = [
@@ -103,6 +103,11 @@ export default function AlertsPanel({
       </div>
 
       {error && <div className="alert alert-danger cs-card-alert">{error}</div>}
+      {data?.truncated && (
+        <div className="alert alert-info cs-card-alert">
+          {t('Im Zeitraum gibt es mehr Ereignisse, als hier Platz haben. Gezeigt sind die neuesten. Ein kürzerer Zeitraum oder ein einzelnes Ziel zeigt alle.')}
+        </div>
+      )}
 
       {loading && !data ? (
         <SkeletonRows />
@@ -114,7 +119,7 @@ export default function AlertsPanel({
         </div>
       ) : (
         <div className="table-wrap">
-          <table className="table">
+          <table className="table cs-alerts">
             <thead>
               <tr>
                 <th>{t('Zeitpunkt')}</th>

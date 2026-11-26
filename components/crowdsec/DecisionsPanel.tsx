@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
-import { Ban, CheckCircle2, Loader2, Plus, Unlock } from 'lucide-react';
+import { CheckCircle2, Loader2, Plus, Unlock } from 'lucide-react';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/ConfirmDialog';
 import Select from '@/components/Select';
@@ -40,7 +40,7 @@ export default function DecisionsPanel({ onFreed }: { onFreed?: () => void }) {
   const { notify } = useToast();
   const confirm = useConfirm();
   const send = useCrowdsecSend();
-  const { t, plural, locale } = useT();
+  const { t, locale } = useT();
   const { data, error, loading, reload } = useCrowdsecData<{ decisions: CrowdsecDecision[] }>('/api/crowdsec/decisions', 20_000);
   const [value, setValue] = useState('');
   const [duration, setDuration] = useState<BanDuration>('24h');
@@ -249,12 +249,6 @@ export default function DecisionsPanel({ onFreed }: { onFreed?: () => void }) {
               </tbody>
             </table>
           </div>
-        )}
-        {decisions.length > 0 && (
-          <p className="form-hint">
-            <Ban size={14} />{' '}
-            {plural(decisions.length, { one: '{count} Sperre aktiv.', other: '{count} Sperren aktiv.' })}
-          </p>
         )}
       </div>
     </>

@@ -74,6 +74,19 @@ export function setupExecutionAlive(): boolean {
   return g.__hapm_setup_alive === true;
 }
 
+/**
+ * Die Antworten des Assistenten lassen sich nur ändern, solange die Einrichtung
+ * offen ist und nicht gerade läuft. Für jede Route unter `/api/setup`, die etwas
+ * speichert: nach „abgeschlossen" oder „übersprungen" gehören Adresse, DNS und
+ * Zertifikate den Seiten der Oberfläche.
+ */
+export async function assertSetupOpen(): Promise<void> {
+  if ((await getSettings()).setupStatus !== 'open') {
+    throw new ApiError(msg('Die Einrichtung ist schon abgeschlossen.'), 409);
+  }
+  if (setupExecutionAlive()) throw new ApiError(msg('Die Einrichtung läuft bereits.'), 409);
+}
+
 interface StageContext {
   state: SetupChoices;
   challenge: ChallengeChoice;
@@ -224,7 +237,7 @@ const STAGES: Record<SetupStageKey, (context: StageContext) => Promise<string>> 
     const server = localServer();
     const { settings } = await readGlobalSettings(server);
     if (settings.crowdsec === true) return msgid('Ist schon eingeschaltet.');
-    const input = { httpsLines: settings.httpsLines ?? [], adminIps: settings.adminIps, crowdsec: true };
+    const input = { httpsLines: [], adminIps: [], fromFile: true, crowdsec: true };
     await prechecked(() => precheckSettings(server, input));
     const run = await startHaproxyRun({
       server,
@@ -252,20 +265,28 @@ const STAGES: Record<SetupStageKey, (context: StageContext) => Promise<string>> 
  */
 export async function startSetupExecution(actor: HaproxyActor): Promise<SetupExecution> {
   if (setupExecutionAlive()) throw new ApiError(msg('Die Einrichtung läuft bereits.'), 409);
-
-  const state = await getSetupState();
-  const settings = await getSettings();
-  const certificates = certificateFactsOf(settings);
-  // Die Hooks prüft der erste Schritt an der Maschine, hier zählt nur, ob alles beantwortet ist.
-  if (resumeStep(state, { hasAccount: true, dnsHooks: null, certificates }) !== 'run') {
-    throw new ApiError(msg('Die Einrichtung ist noch nicht vollständig beantwortet.'));
-  }
-
-  const challenge: ChallengeChoice = challengeFor(settings, state.dnsHook);
-
-  let execution = newExecution(executionPlan(state, certificates), new Date().toISOString());
+  // Gleich hier und nicht erst nach den Abfragen: zwei Aufrufe kurz
+  // nacheinander kämen sonst beide an der Prüfung vorbei.
   g.__hapm_setup_alive = true;
+
+  let state: Awaited<ReturnType<typeof getSetupState>>;
+  let settings: Awaited<ReturnType<typeof getSettings>>;
+  let challenge: ChallengeChoice;
+  let execution: SetupExecution;
   try {
+    state = await getSetupState();
+    settings = await getSettings();
+    // Abgeschlossen und übersprungen sind endgültig: ein Assistent, der in einem
+    // zweiten Fenster noch offen ist, setzte sonst die Adresse von HAPM zurück
+    // und löschte damit alle Passkeys.
+    if (settings.setupStatus !== 'open') throw new ApiError(msg('Die Einrichtung ist schon abgeschlossen.'), 409);
+    const certificates = certificateFactsOf(settings);
+    // Die Hooks prüft der erste Schritt an der Maschine, hier zählt nur, ob alles beantwortet ist.
+    if (resumeStep(state, { hasAccount: true, dnsHooks: null, certificates }) !== 'run') {
+      throw new ApiError(msg('Die Einrichtung ist noch nicht vollständig beantwortet.'));
+    }
+    challenge = challengeFor(settings, state.dnsHook);
+    execution = newExecution(executionPlan(state, certificates), new Date().toISOString());
     await updateSetupState({ execution });
   } catch (err) {
     g.__hapm_setup_alive = false;

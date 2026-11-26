@@ -461,7 +461,22 @@ export async function startAddressMove(
   actor: HaproxyActor
 ): Promise<AddressMoveView> {
   if (moveAlive()) throw new ApiError(msg('Der Umzug läuft bereits.'), 409);
+  // Gleich vormerken: zwei Aufrufe kurz nacheinander (zwei Fenster, zwei
+  // Domains) kämen sonst beide an der Prüfung vorbei.
+  g.__hapm_move_alive = true;
+  try {
+    return await beginAddressMove(domainInput, confirmed, actor);
+  } catch (err) {
+    g.__hapm_move_alive = false;
+    throw err;
+  }
+}
 
+async function beginAddressMove(
+  domainInput: string,
+  confirmed: boolean,
+  actor: HaproxyActor
+): Promise<AddressMoveView> {
   const check = await checkAddressMove(domainInput);
   const domain = check.domain;
   if (check.gate === 'blocked') {

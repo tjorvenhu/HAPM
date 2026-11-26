@@ -112,8 +112,6 @@ export const crowdsec: Readonly<Record<string, string>> = {
   'Gerade ist keine Adresse von CrowdSec oder von Hand gesperrt.': 'No address is currently banned by CrowdSec or by hand.',
   Endet: 'Ends',
   'Sperre aufheben': 'Lift ban',
-  '{count} Sperre aktiv.': '{count} ban active.',
-  '{count} Sperren aktiv.': '{count} bans active.',
   'Das ist keine Adresse und kein Netz.': 'This is neither an address nor a network.',
 
   // Freigaben
@@ -192,6 +190,26 @@ export const crowdsec: Readonly<Record<string, string>> = {
   'HAProxy hat die neue Anbindung an CrowdSec geladen.': 'HAProxy loaded the new CrowdSec connection.',
 
   // Ganz ab- und einschalten
+  'CrowdSec hält gerade noch an. Bitte in einer Minute noch einmal einschalten.':
+    'CrowdSec is still stopping. Please switch it on again in a minute.',
+  'CrowdSec wird gerade abgeschaltet. Bitte warten, bis der Vorgang fertig ist.':
+    'CrowdSec is being switched off. Please wait until the task has finished.',
+  '{names} ließ sich nicht starten, CrowdSec bleibt abgeschaltet. Auf dem Server legt docker compose up -d im Ordner der Installation die Container an.':
+    '{names} could not be started, CrowdSec stays switched off. On the server, docker compose up -d in the installation folder creates the containers.',
+  '{file} ist nicht lesbar. CrowdSec bleibt an.': '{file} cannot be read. CrowdSec stays on.',
+  'CrowdSec ist auf dieser Installation nicht eingeschaltet. Einschalten lässt es sich unter System, Allgemein.':
+    'CrowdSec is not switched on for this installation. You can switch it on under System, General.',
+  'CrowdSec ist auf dieser Installation nicht eingeschaltet.': 'CrowdSec is not switched on for this installation.',
+  'In der Oberfläche abgeschaltet.': 'Switched off in the web interface.',
+  'Das Netz {value} ist zu groß. Das größte erlaubte ist /{min}.': 'The network {value} is too large. The largest allowed is /{min}.',
+  '{value} trifft Ihre eigene Adresse ({ip}). Sie sperrten sich damit selbst aus.':
+    '{value} covers your own address ({ip}). You would lock yourself out.',
+  'Erwartet wird installed: true oder false.': 'Expected installed: true or false.',
+  'Läuft, antwortet nicht': 'Running, not responding',
+  'Im Zeitraum gibt es mehr Ereignisse, als hier Platz haben. Gezeigt sind die neuesten. Ein kürzerer Zeitraum oder ein einzelnes Ziel zeigt alle.':
+    'There are more events in this period than fit here. The newest are shown. A shorter period or a single target shows all of them.',
+  'Im Zeitraum gab es mehr Ereignisse, als sich auswerten lassen. Die Zahlen sind eine Untergrenze und decken nur die neuesten ab.':
+    'There were more events in this period than can be evaluated. The figures are a lower bound and cover only the newest.',
   'CrowdSec abschalten': 'Switch off CrowdSec',
   'CrowdSec einschalten': 'Switch on CrowdSec',
   'CrowdSec ist wieder an. Welche Ziele es prüft, schalten Sie unter CrowdSec ein.':
@@ -209,12 +227,8 @@ export const crowdsec: Readonly<Record<string, string>> = {
     'No target is checked, and both containers are stopped. Bans, allowlist and rules are stored and apply again as soon as CrowdSec runs.',
   'Erwartet wird enabled: true oder false.': 'Expected enabled: true or false.',
   'CrowdSec ist auf dieser Installation nicht vorhanden.': 'CrowdSec is not present on this installation.',
-  'Die globalen Einstellungen in {file} sind nicht lesbar. CrowdSec bleibt an.':
-    'The global settings in {file} cannot be read. CrowdSec stays on.',
   'HAProxy ließ sich nicht umstellen, CrowdSec bleibt an. Was gescheitert ist, steht unter Logs, Vorgänge.':
     'HAProxy could not be switched over, CrowdSec stays on. What failed is under Logs, Tasks.',
-  'CrowdSec ist wieder an, aber {names} ließ sich nicht starten. Auf dem Server legt docker compose up -d im Ordner der Installation die Container an.':
-    'CrowdSec is on again, but {names} could not be started. On the server, docker compose up -d in the installation folder creates the containers.',
 
   // Benachrichtigungen
   'CrowdSec prüft nicht': 'CrowdSec is not checking',

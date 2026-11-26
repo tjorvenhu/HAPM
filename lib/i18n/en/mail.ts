@@ -247,8 +247,8 @@ export const mail: Dictionary = {
   'Nicht gesetzt': 'Not set',
   'Leer lassen, um es zu behalten': 'Leave empty to keep it',
   'Testmail an': 'Test email to',
-  'Verschickt wird mit dem gespeicherten Konto, nicht mit dem, was gerade im Formular steht. Die Antwort des Mailservers steht danach hier.':
-    'It is sent with the saved account, not with what is in the form right now. The response of the mail server appears here afterwards.',
+  'Verschickt wird mit dem gespeicherten Konto, nicht mit dem, was gerade im Formular steht. Das Ergebnis steht danach unter „Letzter Versand“.':
+    'It is sent with the saved account, not with what is in the form right now. The result then appears under “Last sent”.',
   'Erst Server und Absender speichern.': 'Save server and sender first.',
   'Erst die Änderungen speichern.': 'Save the changes first.',
   'Testmail senden': 'Send test email',

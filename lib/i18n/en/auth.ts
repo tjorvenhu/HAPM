@@ -93,7 +93,7 @@ export const auth: Dictionary = {
     'With two-factor authentication (2FA), signing in also requires a code from your phone.',
   'Sie benötigen eine Authenticator-App wie:': 'You need an authenticator app such as:',
   'Einrichtung starten': 'Start setup',
-  'QR-Code wird generiert...': 'Generating QR code...',
+  'QR-Code wird generiert…': 'Generating QR code…',
   'Scannen Sie den QR-Code mit Ihrer Authenticator-App oder geben Sie den Code manuell ein.':
     'Scan the QR code with your authenticator app or enter the code manually.',
   '2FA QR-Code': '2FA QR code',
@@ -121,8 +121,7 @@ export const auth: Dictionary = {
     'A recovery code has ten letters and digits, for example abcde-23456.',
   'Der Wiederherstellungscode stimmt nicht oder ist schon benutzt.':
     'The recovery code is wrong or has already been used.',
-  '2FA erfolgreich aktiviert!': '2FA activated!',
-  'Sie werden weitergeleitet...': 'Redirecting...',
-  'Fehler bei der Einrichtung': 'Setup failed',
+  '2FA erfolgreich aktiviert': '2FA activated',
+  'Einrichtung fehlgeschlagen': 'Setup failed',
   'Verifizierung fehlgeschlagen': 'Verification failed',
 };

@@ -27,18 +27,31 @@ import { startLogFollower } from './haproxy-log';
 import { HEALTH_CHECK_INTERVAL_MS, runDailyChecks, runHealthChecks } from './notifications/checks';
 import { maybeRefreshGeoip } from './geoip/fetch';
 import { getBackupSettings } from './backup/settings';
-import { onBackupFailure, pruneBackupRuns, reconcileBackupRuns, startBackup } from './backup/run';
+import {
+  BACKUP_INTERRUPTED,
+  onBackupFailure,
+  pruneBackupRuns,
+  reconcileBackupRuns,
+  startBackup,
+  stillInterruptedBackups,
+} from './backup/run';
 import { reconcileRestore } from './backup/restore';
 import { notify } from './notifications';
 import { keepCrowdsecStopped, reconcileCrowdsec } from './crowdsec/setup';
 import { crowdsecDisabled, crowdsecInStack } from './crowdsec/paths';
+import { dropOrphanedCrowdsec } from './crowdsec/actions';
+import { timeReached } from './schedule-time';
 
 /** CrowdSec startet nach HAPM. Angemeldet wird der Bouncer danach, und
  *  nachgesehen wird regelmäßig, falls jemand den Container neu angelegt hat. */
 const CROWDSEC_RECONCILE_MS = 15 * 60_000;
 
 async function tickCrowdsec(): Promise<void> {
-  if (!crowdsecInStack() || process.platform !== 'linux') return;
+  if (process.platform !== 'linux') return;
+  // Nicht eingeschaltet, aber `haproxy.cfg` fragt den Bouncer noch: herausnehmen.
+  const dropped = await dropOrphanedCrowdsec(systemActor()).catch((err) => `CrowdSec ließ sich nicht aus haproxy.cfg nehmen: ${err instanceof Error ? err.message : String(err)}`);
+  if (dropped) log(dropped);
+  if (!crowdsecInStack()) return;
   if (crowdsecDisabled()) {
     for (const name of await keepCrowdsecStopped()) log(`CrowdSec ist abgeschaltet, ${name} angehalten`);
     return;
@@ -63,6 +76,8 @@ interface SchedulerState {
   lastStatsError: string | null;
   lastDailyRun: string | null;
   lastRenewal: { at: string; ok: boolean; output: string } | null;
+  /** Wann `tickMinute` zuletzt lief. Dazwischen liegt, was seitdem erreicht wurde. */
+  lastTick: number | null;
   /** Der Tag, an dem zuletzt selbsttätig aktualisiert wurde, damit es je Tag einmal geschieht. */
   lastAutoUpdateDay: string | null;
   /** Der Tag der letzten selbsttätigen Sicherung, aus demselben Grund. */
@@ -81,6 +96,7 @@ function state(): SchedulerState {
     lastStatsError: null,
     lastDailyRun: null,
     lastRenewal: null,
+    lastTick: null,
     lastAutoUpdateDay: null,
     lastBackupDay: null,
   });
@@ -150,25 +166,24 @@ export async function runDaily(): Promise<void> {
   }
 }
 
-/** Die Uhrzeit des Containers als `HH:MM`. Die Zeitzone kommt aus `TZ`. */
-function clock(now: Date): string {
-  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-}
-
 async function tickMinute(): Promise<void> {
   const s = state();
   const now = new Date();
-  const time = clock(now);
+  const to = now.getTime();
+  // Nach einem Neustart zählt erst, was ab jetzt erreicht wird: sonst liefe
+  // nach jedem Start am Nachmittag die Sicherung von heute Nacht noch einmal.
+  const from = s.lastTick ?? to - 60_000;
+  s.lastTick = to;
   const day = now.toDateString();
 
   // Kurz nach drei: dann ist auf einem Proxy am wenigsten los.
-  if (time === '03:17') void runDaily();
+  if (timeReached('03:17', from, to)) void runDaily();
 
   await expireStaleUpdateRuns().catch(() => undefined);
 
   try {
     const backup = await getBackupSettings();
-    if (backup.enabled && backup.hostPath && time === backup.time && s.lastBackupDay !== day) {
+    if (backup.enabled && backup.hostPath && timeReached(backup.time, from, to) && s.lastBackupDay !== day) {
       s.lastBackupDay = day;
       log('Tägliche Sicherung beginnt');
       await startBackup(systemActor());
@@ -179,7 +194,7 @@ async function tickMinute(): Promise<void> {
 
   try {
     const settings = await getSettings();
-    if (settings.autoUpdate.length === 0 || time !== settings.autoUpdateTime || s.lastAutoUpdateDay === day) return;
+    if (settings.autoUpdate.length === 0 || !timeReached(settings.autoUpdateTime, from, to) || s.lastAutoUpdateDay === day) return;
     s.lastAutoUpdateDay = day;
     await runAutoUpdates(settings.autoUpdate);
   } catch (err) {
@@ -227,11 +242,22 @@ export async function initializeScheduler(): Promise<void> {
   // Was der vorige Prozess offen gelassen hat.
   await reconcileOrphanedHaproxyRuns().catch((err) => log(`Abgleich der Läufe gescheitert: ${err}`));
   await reconcileUpdateRuns().catch((err) => log(`Abgleich der Updates gescheitert: ${err}`));
-  await reconcileBackupRuns().catch((err) => log(`Abgleich der Sicherungen gescheitert: ${err}`));
+  const interrupted = await reconcileBackupRuns().catch((err) => {
+    log(`Abgleich der Sicherungen gescheitert: ${err}`);
+    return [] as string[];
+  });
   // Nach dem Zurückspielen: der Helfer hat sein Ergebnis in eine Datei geschrieben.
   await reconcileRestore().catch((err) => log(`Abgleich des Zurückspielens gescheitert: ${err}`));
   // Die Sicherung kennt den Mailversand nicht, sie meldet nur, dass sie gescheitert ist.
   onBackupFailure((detail) => void notify({ type: 'backup_failed', detail }));
+  // Eine Sicherung, die der vorige Prozess nicht zu Ende gebracht hat, fehlt:
+  // das soll jemand erfahren. Erst nach dem Abgleich des Zurückspielens, der
+  // seine eigene Sicherung noch richtigstellt.
+  void stillInterruptedBackups(interrupted)
+    .then((count) => {
+      if (count > 0) void notify({ type: 'backup_failed', detail: BACKUP_INTERRUPTED });
+    })
+    .catch(() => undefined);
 
   startLogFollower();
 

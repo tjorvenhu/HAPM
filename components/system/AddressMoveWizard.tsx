@@ -7,6 +7,7 @@ import {
 import { useApp } from '@/components/AppShell';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { useToast } from '@/components/Toast';
+import { errorText } from '@/components/errorText';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import { SetupStepper } from '@/app/setup/SetupStepper';
 import { useT } from '@/lib/i18n/react';
@@ -25,7 +26,8 @@ import '@/app/setup/setup.css';
  * in der Einrichtung (`app/setup`), der Ablauf in `lib/address-move/`.
  *
  * Während des Umzugs darf das Fenster zu: der Umzug läuft auf dem Server
- * weiter, und `/system` öffnet es wieder, solange er läuft.
+ * weiter. `/system` öffnet es beim nächsten Aufruf der Seite wieder, solange
+ * er läuft.
  *
  * Wer den Assistenten unter der alten Adresse offen hat, verliert sie mit dem
  * letzten Schritt (das alte Ziel geht weg). Bricht das Pollen danach ab, ist
@@ -84,6 +86,7 @@ export default function AddressMoveWizard({
   const [domainDraft, setDomainDraft] = useState(
     initial.move && moveOutcome(initial.move) !== 'succeeded' ? initial.move.domain : ''
   );
+  /** Nur die Prüfung der Domain im ersten Schritt. Was eine Route ablehnt, kommt als Meldung. */
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -129,12 +132,14 @@ export default function AddressMoveWizard({
       setError(t(invalid));
       return;
     }
+    setError('');
     const ok = await confirm({
       title: t('Nur die Adresse eintragen?'),
       message: t(
         'HAPM legt dann weder Zertifikat noch Ziel an und lässt das alte Ziel stehen. Das passt, wenn HAPM hinter einem anderen Reverse-Proxy steht. Alle hinterlegten Passkeys werden gelöscht.'
       ),
       confirmLabel: t('Nur eintragen'),
+      variant: currentUrl ? 'warning' : 'default',
     });
     if (!ok) return;
     setBusy(true);
@@ -142,7 +147,11 @@ export default function AddressMoveWizard({
       await request('/api/settings', { method: 'PATCH', body: JSON.stringify({ publicUrl: `https://${domain}` }) });
       onSavedWithoutMove(`https://${domain}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('Die Adresse ließ sich nicht speichern.'));
+      notify({
+        variant: 'error',
+        title: t('Speichern fehlgeschlagen'),
+        message: errorText(err, t('Die Adresse ließ sich nicht speichern.')),
+      });
     } finally {
       setBusy(false);
     }
@@ -152,7 +161,6 @@ export default function AddressMoveWizard({
 
   const runCheck = useCallback(async () => {
     setChecking(true);
-    setError('');
     try {
       const res = await apiFetch(`/api/settings/address?domain=${encodeURIComponent(domain)}`);
       const body = await res.json();
@@ -160,11 +168,15 @@ export default function AddressMoveWizard({
       setCheck(body.data as AddressMoveCheck);
     } catch (err) {
       setCheck(null);
-      setError(err instanceof Error ? err.message : t('Die Prüfung ist fehlgeschlagen.'));
+      notify({
+        variant: 'error',
+        title: t('Prüfen fehlgeschlagen'),
+        message: errorText(err, t('Die Prüfung ist fehlgeschlagen.')),
+      });
     } finally {
       setChecking(false);
     }
-  }, [apiFetch, domain, t]);
+  }, [apiFetch, domain, notify, t]);
 
   async function setRecord() {
     if (!check) return;
@@ -177,10 +189,11 @@ export default function AddressMoveWizard({
         address,
       }),
       confirmLabel: t('Eintrag anlegen'),
+      // Die Route ersetzt einen Eintrag, den es beim Anbieter schon gibt.
+      variant: 'warning',
     });
     if (!ok) return;
     setBusy(true);
-    setError('');
     try {
       const data = await request<{ outcome: string; type: string; zone: string }>('/api/settings/address/dns-record', {
         method: 'PUT',
@@ -198,7 +211,11 @@ export default function AddressMoveWizard({
       });
       await runCheck();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('Der Eintrag ließ sich nicht anlegen.'));
+      notify({
+        variant: 'error',
+        title: t('Anlegen fehlgeschlagen'),
+        message: errorText(err, t('Der Eintrag ließ sich nicht anlegen.')),
+      });
     } finally {
       setBusy(false);
     }
@@ -206,7 +223,6 @@ export default function AddressMoveWizard({
 
   async function start() {
     setBusy(true);
-    setError('');
     try {
       const next = await request<AddressMoveView>('/api/settings/address', {
         method: 'POST',
@@ -216,7 +232,11 @@ export default function AddressMoveWizard({
       setLostContact(false);
       setStep('move');
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('Der Umzug ließ sich nicht starten.'));
+      notify({
+        variant: 'error',
+        title: t('Starten fehlgeschlagen'),
+        message: errorText(err, t('Der Umzug ließ sich nicht starten.')),
+      });
     } finally {
       setBusy(false);
     }
@@ -403,13 +423,14 @@ export default function AddressMoveWizard({
                         <span>{t('Die Domain führt trotzdem zu diesem Server, etwa über eine Adressumsetzung (NAT).')}</span>
                       </span>
                       <span className="toggle-switch">
-                        <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
+                        <input type="checkbox" checked={confirmed} disabled={busy} onChange={(e) => setConfirmed(e.target.checked)} />
                         <span className="toggle-slider" />
                       </span>
                     </label>
                   )}
 
-                  {check && (
+                  {/* Auch ohne Ergebnis: nach einer gescheiterten Prüfung ist das der Weg weiter. */}
+                  {(check || !checking) && (
                     <div>
                       <button type="button" className="btn btn-ghost btn-sm" onClick={() => void runCheck()} disabled={checking || busy}>
                         {checking ? <Loader2 size={14} className="spin" /> : <Search size={14} />}
@@ -460,7 +481,7 @@ export default function AddressMoveWizard({
               )}
               {step === 'check' && (
                 <>
-                  <button type="button" className="btn btn-secondary" onClick={() => { setError(''); setStep('address'); }} disabled={busy}>
+                  <button type="button" className="btn btn-secondary" onClick={() => setStep('address')} disabled={busy}>
                     <ArrowLeft size={16} />
                     {t('Zurück')}
                   </button>

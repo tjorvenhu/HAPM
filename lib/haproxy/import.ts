@@ -382,8 +382,10 @@ function readSections(lines: Line[], skipped: SkippedLine[]): Section[] {
     if (section.kind === 'defaults') {
       const value: string | null = own ?? (section.from ? inherited : null);
       section.mode = value ?? 'tcp';
+      // Auch ein benannter Block gilt für alles danach, das kein `from` nennt:
+      // HAProxy nimmt immer den letzten `defaults` davor.
       if (section.name) named.set(section.name, value);
-      else lastDefaults = value;
+      lastDefaults = value;
       continue;
     }
     const known = own ?? inherited;
@@ -1071,6 +1073,9 @@ function emptyRoute(line: number): DomainRoute {
   return { main: null, redirect: null, paths: [], problems: [], notes: [], sources: [], line };
 }
 
+/** Aktionen, die einen Besucher abweisen oder nach einem Passwort fragen (hinter `http-request` oder `tcp-request connection|content|session`). */
+const ACCESS_ACTIONS = /^((connection|content|session) )?(deny|auth|tarpit|reject|silent-drop|return)( |$)/i;
+
 /** Zeilen eines Frontends, die nur es selbst betreffen und keine Domain:
  *  Ports, Timeouts, Log. HAPM bringt eigene mit. Sie stehen gesammelt in
  *  einer Zeile, nicht je einzeln. */
@@ -1133,6 +1138,8 @@ function readHttpFrontend(section: Section, ctx: FrontendContext): void {
   const redirects: Line[] = [];
   const rules: Line[] = [];
   const others: Line[] = [];
+  /** Was für jede Domain dieses Frontends ein Grund ist, sie nicht zu übernehmen. */
+  const frontendWide: { line: Line; reason: string }[] = [];
   let defaultBackend: Line | null = null;
   let stats = false;
 
@@ -1212,6 +1219,17 @@ function readHttpFrontend(section: Section, ctx: FrontendContext): void {
     }
     for (const domain of domains) {
       const route = routeOf(domain, line.no);
+      // Wie bei den Weichen: leitet eine Wildcard davor schon weiter, kam diese
+      // Regel bisher nicht zum Zug. In HAPM stünde die genaue Domain davor.
+      const earlier = [...local.entries()].find(([other, r]) => other !== domain && r.redirect && shadows(other, domain));
+      if (earlier && !route.redirect) {
+        route.problems.push(
+          t(
+            'Zeile {line}: {domain} (Zeile {earlier}) greift vorher. In HAPM käme diese Domain zuerst zum Zug, das änderte, wohin ihr Verkehr geht.',
+            { line: line.no, domain: earlier[0], earlier: String(earlier[1].redirect?.line ?? earlier[1].line) }
+          )
+        );
+      }
       if (route.redirect) {
         skip(
           line,
@@ -1302,14 +1320,15 @@ function readHttpFrontend(section: Section, ctx: FrontendContext): void {
         }
         // Eine Domain, die eine frühere Wildcard schon bedient: in HAPM stünde
         // sie davor und käme zum Zug, vorher kam sie es nicht.
+        // Auch eine Wildcard, die bisher nur Pfad-Regeln hat, greift vorher.
         const shadow = [...local.entries()].find(
-          ([other, r]) => other !== domain && (r.main || r.redirect) && shadows(other, domain)
+          ([other, r]) => other !== domain && (r.main || r.redirect || r.paths.length > 0) && shadows(other, domain)
         );
         if (shadow && !route.main) {
           route.problems.push(
             t(
               'Zeile {line}: {domain} (Zeile {earlier}) greift vorher. In HAPM käme diese Domain zuerst zum Zug, das änderte, wohin ihr Verkehr geht.',
-              { line: line.no, domain: shadow[0], earlier: String(shadow[1].main?.line ?? shadow[1].redirect?.line) }
+              { line: line.no, domain: shadow[0], earlier: String(shadow[1].main?.line ?? shadow[1].redirect?.line ?? shadow[1].line) }
             )
           );
         }
@@ -1375,6 +1394,18 @@ function readHttpFrontend(section: Section, ctx: FrontendContext): void {
             ? t('Lua-Aktionen übernimmt HAPM nicht.')
             : t('Die Regel gilt für alle Domains des Frontends. Was für alle gelten soll, steht in HAPM unter Reverse-Proxy, Einstellungen.')
         );
+        // Eine Regel, die Besucher abweist (nur aus dem Büro, nur mit Passwort),
+        // fiele beim Import weg, und die Domain wäre danach für jeden offen.
+        // Das ist kein Hinweis am Rand, sondern ein Grund, sie nicht zu übernehmen.
+        if (ACCESS_ACTIONS.test(line.words.slice(1, 4).join(' '))) {
+          frontendWide.push({
+            line,
+            reason: t(
+              'Die Regel „{rule}“ beschränkt den Zugriff für alle Domains dieses Frontends. HAPM übernimmt sie nicht, importiert wäre die Domain für jeden erreichbar. Erst unter Reverse-Proxy, Einstellungen den Zugriffsschutz einrichten oder die Sperre am Ziel setzen.',
+              { rule: line.words.slice(0, 2).join(' ') }
+            ),
+          });
+        }
       }
       continue;
     }
@@ -1404,8 +1435,16 @@ function readHttpFrontend(section: Section, ctx: FrontendContext): void {
    * dieselbe Domain gleich; routen sie sie verschieden, ist das ein Grund. */
   const tls = binds.some((b) => b.ssl);
   const ports = unique(binds.filter((b) => !b.quic).map((b) => b.port).filter((p): p is number => p !== null));
+  // Ein abgeschaltetes Frontend bedient niemanden. Importiert liefe die Domain.
+  const disabled = settings.find((line) => line.words[0].toLowerCase() === 'disabled');
+  if (disabled) {
+    frontendWide.push({ line: disabled, reason: t('Das Frontend ist abgeschaltet (disabled). Importiert liefe die Domain.') });
+  }
   for (const [domain, route] of local) {
     if (!route.main && !route.redirect && route.paths.length === 0 && route.problems.length === 0) continue;
+    for (const wide of frontendWide) {
+      route.problems.push(t('Zeile {line}: {reason}', { line: wide.line.no, reason: wide.reason }));
+    }
     if (!route.main && !route.redirect && route.paths.length > 0) {
       route.problems.push(
         t('{domain} hat nur Pfad-Regeln und keine Weiche für den Rest. HAPM braucht für jede Domain ein Ziel.', { domain })

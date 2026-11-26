@@ -25,7 +25,6 @@ export const mcp: Dictionary = {
     'Set the key as environment variable {variable}, so it is not stored in any file.',
   'Für Clients, die nur lokale Server starten, etwa über {file}. Braucht Node.js.':
     'For clients that only start local servers, for example through {file}. Needs Node.js.',
-  'Kopieren nicht möglich. Bitte von Hand markieren.': 'Copying is not possible. Please select the text by hand.',
 
   // Meldungen der internen API außerhalb des Reverse-Proxys (`/api/internal/…`, MCP).
   'Update-Lauf nicht gefunden.': 'Update run not found.',
@@ -34,7 +33,10 @@ export const mcp: Dictionary = {
     'The HAPM address cannot be changed through the API. Moving it is done in the web interface under General.',
   'Das SMTP-Passwort lässt sich über die API nicht setzen. Es steht in der Oberfläche unter Benachrichtigungen.':
     'The SMTP password cannot be set through the API. It is set in the web interface under Notifications.',
+  'Der SMTP-Server lässt sich über die API nicht ändern ({field}). Er steht in der Oberfläche unter Benachrichtigungen.':
+    'The SMTP server cannot be changed through the API ({field}). It is in the web interface under Notifications.',
   'Ein Schlüssel für External Account Binding lässt sich über die API nicht setzen. Er steht in der Oberfläche unter Allgemein.':
     'An External Account Binding key cannot be set through the API. It is set in the web interface under General.',
   'Es fehlt die Domain, die geprüft werden soll.': 'The domain to check is missing.',
+  'Die Adresse von HAPM konnte nicht geladen werden. Bitte laden Sie die Seite neu.': 'The HAPM address could not be loaded. Please reload the page.',
 };

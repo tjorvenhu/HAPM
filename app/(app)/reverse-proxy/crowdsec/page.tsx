@@ -61,14 +61,30 @@ function CrowdsecView() {
   });
   const [target, setTarget] = useState<string | null>(() => searchParams.get('ziel'));
 
-  const chooseTarget = useCallback(
-    (next: string | null) => {
-      setTarget(next);
+  // Zeitraum und Ziel stehen beide in der Adresse: ein Link auf die Ereignisse
+  // eines Ziels soll nach dem Neuladen noch dasselbe zeigen.
+  const showEvents = useCallback(
+    (nextTarget: string | null, nextPeriod: AlertWindow) => {
       const params = new URLSearchParams({ bereich: 'ereignisse' });
-      if (next) params.set('ziel', next);
+      if (nextTarget) params.set('ziel', nextTarget);
+      if (nextPeriod !== '24h') params.set('zeitraum', nextPeriod);
       router.replace(`/reverse-proxy/crowdsec?${params.toString()}`, { scroll: false });
     },
     [router]
+  );
+  const chooseTarget = useCallback(
+    (next: string | null) => {
+      setTarget(next);
+      showEvents(next, period);
+    },
+    [showEvents, period]
+  );
+  const choosePeriod = useCallback(
+    (next: AlertWindow) => {
+      setPeriod(next);
+      showEvents(target, next);
+    },
+    [showEvents, target]
   );
 
   async function refresh() {
@@ -121,7 +137,7 @@ function CrowdsecView() {
       ) : area === 'ereignisse' ? (
         <AlertsPanel
           period={period}
-          onPeriod={setPeriod}
+          onPeriod={choosePeriod}
           target={target}
           onTarget={chooseTarget}
           targets={data.protection.targets}

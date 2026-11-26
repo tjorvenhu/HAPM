@@ -4,6 +4,7 @@ import { useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { RotateCw, X } from 'lucide-react';
 import Select from '@/components/Select';
+import { errorText } from '@/components/errorText';
 import { useT } from '@/lib/i18n/react';
 
 /**
@@ -15,6 +16,9 @@ import { useT } from '@/lib/i18n/react';
  * einen selbst (wie beim Anlegen eines Ziels).
  *
  * Der Lauf geht abgekoppelt weiter; die Pille unten rechts zeigt ihn.
+ *
+ * Wirft `onIssue`, bleibt der Dialog mit seiner Auswahl offen. Die Meldung geht
+ * an `onError` (die Seite zeigt sie als Toast), ohne `onError` steht sie im Dialog.
  */
 
 interface Props {
@@ -22,10 +26,11 @@ interface Props {
   domains: string[];
   dnsHooks: string[];
   onIssue: (dnsHook: string | null) => Promise<void>;
+  onError?: (message: string) => void;
   onClose: () => void;
 }
 
-export default function CertificateIssueDialog({ mainDomain, domains, dnsHooks, onIssue, onClose }: Props) {
+export default function CertificateIssueDialog({ mainDomain, domains, dnsHooks, onIssue, onError, onClose }: Props) {
   const { t } = useT();
   const [dnsHook, setDnsHook] = useState<string | null>(null);
   const [error, setError] = useState('');
@@ -43,7 +48,9 @@ export default function CertificateIssueDialog({ mainDomain, domains, dnsHooks, 
     try {
       await onIssue(dnsHook);
     } catch (err: unknown) {
-      setError(err instanceof Error && err.message ? err.message : t('Der Antrag ließ sich nicht starten.'));
+      const text = errorText(err, t('Der Antrag ließ sich nicht starten.'));
+      if (onError) onError(text);
+      else setError(text);
       setSaving(false);
     }
   }

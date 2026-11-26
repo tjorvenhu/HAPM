@@ -52,6 +52,14 @@ export type BackupOverview = Awaited<ReturnType<typeof backupOverview>>;
 
 /** Die Einstellungen ändern. Was nicht im Rumpf steht, bleibt (`updateBackupSettings`). */
 export async function changeBackupSettings(body: Record<string, unknown>, actor: BackupActor): Promise<BackupOverview> {
+  // Die Route reicht durch, was kommt: `"false"` als Text schaltete die
+  // tägliche Sicherung sonst ein, eine Zahl als Ordner endete als 500.
+  const wrong = (field: string, expected: string) =>
+    new ApiError(msg('Das Feld {field} hat nicht die erwartete Form ({expected}).', { field, expected }));
+  if (body.enabled !== undefined && typeof body.enabled !== 'boolean') throw wrong('enabled', 'true, false');
+  if (body.hostPath !== undefined && body.hostPath !== null && typeof body.hostPath !== 'string') throw wrong('hostPath', 'Text');
+  if (body.time !== undefined && typeof body.time !== 'string') throw wrong('time', 'HH:MM');
+  if (body.keep !== undefined && typeof body.keep !== 'number') throw wrong('keep', 'Zahl');
   const settings = await updateBackupSettings({
     enabled: body.enabled as boolean | undefined,
     hostPath: body.hostPath as string | null | undefined,

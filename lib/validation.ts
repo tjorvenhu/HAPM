@@ -33,6 +33,18 @@ export function validateEmail(email: string): boolean {
 }
 
 /**
+ * Die Kontaktadresse des ACME-Kontos. Strenger als `validateEmail`: acme.sh
+ * schreibt sie als `CA_EMAIL='…'` in eine Datei, die es später als Shell liest.
+ * Ein Apostroph oder `$` darin machte die Datei kaputt oder zu einem Kommando.
+ * Erlaubt ist deshalb nur, was in einer üblichen Adresse vorkommt (wie bei den
+ * Zugangsdaten der DNS-Hooks, `lib/haproxy/dns-credentials.ts`).
+ */
+export function validateAcmeEmail(email: string): boolean {
+  if (!email || email.length > 254) return false;
+  return /^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/.test(email);
+}
+
+/**
  * Validate password complexity. Returns a German error message, or null if valid.
  * Der Text ist ein Schlüssel (`msgid`): `handleError` übersetzt ihn, wenn er als `ApiError` hinausgeht.
  */

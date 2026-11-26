@@ -75,8 +75,11 @@ import {
   crowdsecSpoeConfig,
   syncCrowdsecBackend,
   usesCrowdsec,
+  parseCrowdsecGlobal,
+  readGlobalSettingsPatch,
+  validateGlobalSettings,
 } from './config';
-import { spoaAddress } from '../crowdsec/paths';
+import { crowdsecUsable, spoaAddress } from '../crowdsec/paths';
 import { lockPages, lockPageDigestCommand, lockPageWriteCommand } from './lock-page';
 import { geoipTable } from '../geoip/store';
 import { geoBlockFileContent, knownCountries } from '../geoip/networks';
@@ -936,6 +939,54 @@ export async function reloadForCrowdsec(server: Server): Promise<'none' | 'reloa
 }
 
 /**
+ * Ein Vorgang, nach dem ein Ziel keine Anfrage mehr bekäme.
+ *
+ * Innerhalb einer Gruppe ordnet `insertServiceBlock` genaue Domains vor die
+ * Wildcards. Über Gruppen hinweg nicht: eine Wildcard in einer Gruppe weiter
+ * oben nimmt einem Ziel weiter unten alle Anfragen ab, `haproxy -c` sieht daran
+ * nichts Falsches, der Lauf endet erfolgreich, und nur die Karte sagt es
+ * danach. Das wird abgelehnt, bevor ein Zertifikat beantragt ist. Was in der
+ * Datei schon verdeckt war, bleibt, wie es ist: repariert wird nichts.
+ * `renamedFrom`: die alte Kennung des geänderten Ziels.
+ */
+export function assertNothingShadowed(before: string, after: string, id: string, renamedFrom: string | null = null): void {
+  const was = new Map(parseHaproxyConfig(before).map((service) => [service.id, service.shadowedBy]));
+  for (const service of parseHaproxyConfig(after)) {
+    if (!service.shadowedBy) continue;
+    if (was.get(service.id === id && renamedFrom ? renamedFrom : service.id)) continue;
+    throw new ApiError(
+      service.id === id
+        ? msg(
+            'Das Ziel bekäme keine Anfrage: {other} steht in der Konfiguration weiter oben und bedient {domains} schon mit einer Wildcard. Legen Sie es in dieselbe Gruppe wie {other}, dort stehen genaue Domains vor der Wildcard.',
+            { other: service.shadowedBy, domains: service.domains.join(', ') }
+          )
+        : msg(
+            'Die Wildcard nähme dem Ziel {other} alle Anfragen ab: seine Gruppe steht in der Konfiguration weiter unten. Legen Sie das Ziel in die Gruppe von {other}, dort stehen genaue Domains vor der Wildcard.',
+            { other: service.id }
+          ),
+      409
+    );
+  }
+}
+
+/**
+ * CrowdSec einschalten, wo es nicht läuft: abgewählt, in der Oberfläche
+ * abgeschaltet oder gerade beim Abschalten. HAProxy fragte dann bei jeder
+ * Anfrage einen Bouncer, den es nicht gibt. Die Oberfläche bietet den Schalter
+ * dann nicht an, API und MCP kämen ohne diese Prüfung trotzdem durch.
+ * `already`: steht schon so in der Datei, dann ändert der Vorgang daran nichts.
+ * Geprüft wird vor dem Lauf (für die Antwort an das Formular) und im Lauf
+ * unter der Sperre (ein Vorgang kann hinter dem Abschalten anstehen).
+ */
+function assertCrowdsecAvailable(wanted: boolean | undefined, already: boolean): void {
+  if (wanted !== true || already || crowdsecUsable()) return;
+  throw new ApiError(
+    msg('CrowdSec ist auf dieser Installation nicht eingeschaltet. Einschalten lässt es sich unter System, Allgemein.'),
+    409
+  );
+}
+
+/**
  * Eine Passwortsperre auf einer Maschine, deren HAProxy sie nicht kann.
  *
  * `haproxy -c` lehnte die Datei ohnehin ab, aber mit einer Meldung über ein
@@ -1221,7 +1272,12 @@ async function issueAndDeploy(
   plan: ChallengePlan,
   coverage: Coverage,
   acmeServer: string,
-  steps: StepLog
+  steps: StepLog,
+  /**
+   * `stale`: Namen, die dieser Vorgang aus dem Ziel nimmt und die kein anderes
+   * Ziel mehr trägt. `issued` setzt die Funktion, wenn sie neu beantragt hat.
+   */
+  change: { stale: string[]; issued: boolean } = { stale: [], issued: false }
 ): Promise<boolean> {
   const { certs } = coverage;
   const mainDomain = domains[0];
@@ -1233,7 +1289,18 @@ async function issueAndDeploy(
    * kostet einen Lauf gegen das Kontingent von Let's Encrypt und legt einen
    * zweiten Erneuerungseintrag auf überlappende Domains an; die beiden nähmen
    * sich danach gegenseitig die Challenge weg. */
-  const existing = findCertificateFor(certs, domains);
+  const found = findCertificateFor(certs, domains);
+  /* Das eigene Zertifikat des Ziels deckt die neue, kürzere Liste weiter ab,
+   * trägt aber noch den Namen, der gerade entfernt wird. Bliebe es, prüfte die
+   * nächste Erneuerung auch diesen Namen (sein DNS-Eintrag geht mit dem Ziel),
+   * scheiterte daran, und das Zertifikat liefe für alle übrigen Namen ab. Dann
+   * also neu beantragen, mit der Liste, die jetzt gilt. Ein Wildcard, unter dem
+   * das Ziel nur läuft, trägt den entfernten Namen nicht wörtlich und bleibt. */
+  const outdated =
+    found !== null &&
+    coverage.acme.includes(found) &&
+    change.stale.some((name) => found.domains.some((domain) => domain.toLowerCase() === name.toLowerCase()));
+  const existing = outdated ? null : found;
   if (existing) {
     /* Ausgestellt heißt noch nicht ausgerollt. acme.sh führt ein Zertifikat,
      * sobald der Antrag durch ist; scheiterte danach das Ausrollen (oder hat
@@ -1286,6 +1353,7 @@ async function issueAndDeploy(
     });
     return false;
   }
+  change.issued = issue.code === 0;
   await steps.push({
     label: msgid(issue.code === 2 ? 'Zertifikat war noch gültig' : 'Zertifikat ausgestellt'),
     ok: true,
@@ -1366,12 +1434,16 @@ async function deployCertificate(
  */
 async function dropCertificate(
   ssh: Awaited<ReturnType<typeof getSSHConfig>>,
-  mainDomain: string,
+  cert: Pick<AcmeCertificate, 'mainDomain' | 'keyLength'>,
   steps: StepLog
 ): Promise<void> {
+  const mainDomain = cert.mainDomain;
+  // Wie acme.sh es führt: ein RSA-Zertifikat liegt ohne `_ecc`, und
+  // `--remove --ecc` fände es nicht.
+  const ecc = isEccKey(cert.keyLength);
   const remove = await sshExec(
     ssh,
-    buildCommand([ACME, '--remove', '-d', mainDomain, '--ecc']),
+    buildCommand([ACME, '--remove', '-d', mainDomain, ...(ecc ? ['--ecc'] : [])]),
     SHORT_MS
   );
   await steps.push({
@@ -1381,7 +1453,7 @@ async function dropCertificate(
   });
   await sshExec(
     ssh,
-    buildCommand(['rm', '-rf', '--', `${ACME_HOME}/${mainDomain}_ecc`]),
+    buildCommand(['rm', '-rf', '--', `${ACME_HOME}/${mainDomain}${ecc ? '_ecc' : ''}`]),
     SHORT_MS
   ).catch(() => null);
 }
@@ -1417,11 +1489,13 @@ export async function createService(
     const plan = await assertIssuable(ssh, probe, input.domains, challenge);
     assertLockSupported(server, probe, input);
     assertTlsSupported(probe, input);
+    assertCrowdsecAvailable(input.crowdsec, false);
 
     // Wirft bei doppelter ID oder belegter Domain — bevor irgendetwas passiert,
     // und insbesondere bevor ein Zertifikat beantragt wird. Ein Fehlversuch bei
     // Let's Encrypt zählt gegen ein Kontingent.
     const nextConfig = addService(probe.raw, input);
+    assertNothingShadowed(probe.raw, nextConfig, input.id);
 
     /* ── Zertifikat ── */
     await steps.phase('certificate');
@@ -1569,7 +1643,11 @@ export async function deleteService(
      * ist eine liegengebliebene Datei und kein Ausfall — deshalb wird es
      * gemeldet und nicht zurückgerollt. */
     await steps.phase('cleanup');
-    if (mainDomain && !keepCertificate) await dropCertificate(ssh, mainDomain, steps);
+    // Nur, wenn acme.sh unter diesem Namen eines führt. Ein Ziel, das unter
+    // einem Zertifikat mit anderem Namen läuft (Wildcard aus der Einrichtung),
+    // hat keins: `acme.sh --remove` scheiterte, und der ganze Vorgang gälte als
+    // Fehler, obwohl das Ziel entfernt ist.
+    if (cert && !keepCertificate) await dropCertificate(ssh, cert, steps);
 
     if (parked) {
       await sshExec(ssh, buildCommand(['rm', '-f', '--', parked]), SHORT_MS).catch(() => null);
@@ -1628,11 +1706,13 @@ export async function updateService(
 
     assertLockSupported(server, probe, input);
     assertTlsSupported(probe, input);
+    assertCrowdsecAvailable(input.crowdsec, current.crowdsec);
 
     // Wirft bei einer Domain, die inzwischen woanders geroutet wird — bevor ein
     // Zertifikat beantragt wird. Die eigenen Domains stehen dem nicht im Weg:
     // `replaceService` entfernt den alten Eintrag zuerst.
     const nextConfig = replaceService(probe.raw, oldId, input);
+    assertNothingShadowed(probe.raw, nextConfig, input.id, oldId);
 
     const certNeeded = certificateChanged(current.domains, input.domains);
     const oldMain = current.domains[0] ?? null;
@@ -1642,9 +1722,21 @@ export async function updateService(
     const plan = certNeeded ? await assertIssuable(ssh, probe, input.domains, challenge) : null;
 
     await steps.phase('certificate');
+    // Was aus dem Ziel fällt und nirgends sonst steht: ein Zertifikat, das den
+    // Namen noch trägt, wird neu beantragt (siehe `issueAndDeploy`).
+    const others = parseHaproxyConfig(nextConfig).filter((service) => service.id !== input.id);
+    const lower = (list: string[]) => list.map((domain) => domain.toLowerCase());
+    const certChange = {
+      stale: current.domains.filter(
+        (domain) =>
+          !lower(input.domains).includes(domain.toLowerCase()) &&
+          !others.some((service) => lower(service.domains).includes(domain.toLowerCase()))
+      ),
+      issued: false,
+    };
     if (plan) {
       const coverage = await probeCoverage(ssh);
-      if (!(await issueAndDeploy(ssh, input.domains, plan, coverage, challenge.acmeServer, steps))) {
+      if (!(await issueAndDeploy(ssh, input.domains, plan, coverage, challenge.acmeServer, steps, certChange))) {
         return { steps: steps.steps };
       }
     } else {
@@ -1683,8 +1775,10 @@ export async function updateService(
       // sein, an dem noch andere Dienste hängen.
       const acmeNow = await probeCertificates(ssh);
       const oldCert = acmeNow.find((c) => c.mainDomain.toLowerCase() === oldMain.toLowerCase());
+      // Hat das Ziel gerade ein eigenes neues bekommen, hängt es am alten nicht
+      // mehr: sonst hielte es das alte fest, das den entfernten Namen noch trägt.
       const sharedWith = oldCert
-        ? certificateUsers(oldCert, parseHaproxyConfig(nextConfig))
+        ? certificateUsers(oldCert, certChange.issued ? others : parseHaproxyConfig(nextConfig))
         : [];
       const oldUploaded = (await probeUploaded(ssh, acmeNow)).some((u) => u.file === pemFileName(oldMain));
 
@@ -1704,7 +1798,8 @@ export async function updateService(
         await sshExec(ssh, buildCommand(['rm', '-f', '--', pemPath(oldMain)]), SHORT_MS).catch(
           () => null
         );
-        await dropCertificate(ssh, oldMain, steps);
+        // Wie beim Löschen: nur, wenn acme.sh unter dem alten Namen eines führt.
+        if (oldCert) await dropCertificate(ssh, oldCert, steps);
       }
     }
 
@@ -1788,6 +1883,7 @@ export async function precheckCreate(
   await assertIssuable(await getSSHConfig(server), probe, input.domains, challenge);
   assertLockSupported(server, probe, input);
   assertTlsSupported(probe, input);
+  assertCrowdsecAvailable(input.crowdsec, false);
 
   // Vergeben und vormerken ohne ein `await` dazwischen: sonst läse ein zweiter
   // Aufruf die Liste, bevor dieser sich eingetragen hat.
@@ -1797,7 +1893,7 @@ export async function precheckCreate(
       : input;
   assertNotReserved(input.id);
   // Wirft als HaproxyConfigError bei doppelter ID oder belegter Domain.
-  addService(probe.raw, assigned);
+  assertNothingShadowed(probe.raw, addService(probe.raw, assigned), assigned.id);
   if (input.id === '') reserveId(assigned.id);
   return assigned;
 }
@@ -1833,7 +1929,8 @@ export async function precheckUpdate(
   }
   assertLockSupported(server, probe, input);
   assertTlsSupported(probe, input);
-  replaceService(probe.raw, oldId, input);
+  assertCrowdsecAvailable(input.crowdsec, current.crowdsec);
+  assertNothingShadowed(probe.raw, replaceService(probe.raw, oldId, input), input.id, oldId);
   return current;
 }
 
@@ -2497,6 +2594,7 @@ export async function precheckSettings(
   input: GlobalSettingsInput
 ): Promise<void> {
   const probe = await readableProbe(server);
+  assertCrowdsecAvailable(input.crowdsec, parseCrowdsecGlobal(probe.raw) === true);
   // Wirft als HaproxyConfigError bei fehlendem Marker, unbekannten Zeilen im
   // Block oder fehlendem default_404 — bevor irgendetwas geschrieben wird.
   applyGlobalSettings(probe.raw, input);
@@ -2523,7 +2621,7 @@ export async function precheckSettings(
 
 export async function updateGlobalSettings(
   server: Server,
-  input: GlobalSettingsInput,
+  given: GlobalSettingsInput,
   reporter?: ProvisionReporter
 ): Promise<ProvisionResult> {
   return withProxyLock(server.$id, reporter, async () => {
@@ -2535,6 +2633,16 @@ export async function updateGlobalSettings(
     if (!probe.configReadable) {
       throw new ApiError(msg('{file} ist nicht lesbar.', { file: HAPROXY_CFG }));
     }
+    // Ein Teil-Patch gilt gegen das, was JETZT in der Datei steht.
+    let input = given;
+    if (given.patch) {
+      const resolved = readGlobalSettingsPatch(given.patch, parseGlobalSettings(probe.raw));
+      if ('error' in resolved) throw new ApiError(resolved.error);
+      const invalid = validateGlobalSettings(resolved);
+      if (invalid) throw new ApiError(invalid);
+      input = resolved;
+    }
+    assertCrowdsecAvailable(input.crowdsec, parseCrowdsecGlobal(probe.raw) === true);
 
     const nextConfig = applyGlobalSettings(probe.raw, input);
     if (nextConfig === probe.raw) {

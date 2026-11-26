@@ -2,11 +2,13 @@
 
 import { useEffect, useState, useCallback, type FormEvent } from 'react';
 import { Globe, Plus, Loader2, Trash2, KeyRound, Info, ExternalLink } from 'lucide-react';
+import PageHeading from '@/components/PageHeading';
 import { useApp } from '@/components/AppShell';
 import { usePolling } from '@/components/usePolling';
 import { useNow } from '@/components/useNow';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { useToast } from '@/components/Toast';
+import { errorText } from '@/components/errorText';
 import EntityCard, { EntityGrid, EntityField } from '@/components/EntityCard';
 import ProviderName, { ProviderLogo } from '@/components/dns/ProviderName';
 import { validateZoneName, normalizeDomain, type DnsProviderId } from '@/lib/dns/zones';
@@ -69,7 +71,8 @@ export default function DnsZonesPage() {
       try {
         const res = await apiFetch('/api/dns/zones');
         const data = await res.json();
-        if (data.success) setZones(data.data as ZoneRow[]);
+        if (!res.ok || !data.success) throw new Error(data.error);
+        setZones(data.data as ZoneRow[]);
         setError('');
       } catch {
         setError(t('Die Domains konnten nicht geladen werden.'));
@@ -116,7 +119,7 @@ export default function DnsZonesPage() {
         body: JSON.stringify({ provider: chosen.id, name: normalizeDomain(name), apiToken }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || t('Anbinden fehlgeschlagen'));
+      if (!res.ok) throw new Error(data.error || t('Die Domain ließ sich nicht anbinden.'));
       const added = data.data as { name: string; created: boolean; delegated: boolean | null };
       setModalOpen(false);
       setApiToken('');
@@ -139,7 +142,11 @@ export default function DnsZonesPage() {
       }
       await load(true);
     } catch (err: unknown) {
-      setFormError(err instanceof Error ? err.message : t('Anbinden fehlgeschlagen'));
+      notify({
+        variant: 'error',
+        title: t('Anbinden fehlgeschlagen'),
+        message: errorText(err, t('Die Domain ließ sich nicht anbinden.')),
+      });
     } finally {
       setSaving(false);
     }
@@ -149,7 +156,6 @@ export default function DnsZonesPage() {
     e.preventDefault();
     if (!rotating) return;
     setSaving(true);
-    setFormError('');
     try {
       const res = await apiFetch(`/api/dns/zones/${rotating.$id}`, {
         method: 'PATCH',
@@ -157,13 +163,17 @@ export default function DnsZonesPage() {
         body: JSON.stringify({ apiToken: newToken }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || t('Speichern fehlgeschlagen'));
+      if (!res.ok) throw new Error(data.error || t('Der Token ließ sich nicht austauschen.'));
       notify({ variant: 'success', message: t('Der Token für {name} ist ausgetauscht.', { name: rotating.name }) });
       setRotating(null);
       setNewToken('');
       await load(true);
     } catch (err: unknown) {
-      setFormError(err instanceof Error ? err.message : t('Speichern fehlgeschlagen'));
+      notify({
+        variant: 'error',
+        title: t('Speichern fehlgeschlagen'),
+        message: errorText(err, t('Der Token ließ sich nicht austauschen.')),
+      });
     } finally {
       setSaving(false);
     }
@@ -178,14 +188,11 @@ export default function DnsZonesPage() {
       ),
       confirmLabel: t('Entfernen'),
       variant: 'danger',
+      failedTitle: t('Entfernen fehlgeschlagen'),
       onConfirm: async () => {
         const res = await apiFetch(`/api/dns/zones/${zone.$id}`, { method: 'DELETE' });
         const data = await res.json();
-        if (!res.ok) {
-          setError(data.error || t('Entfernen fehlgeschlagen'));
-          throw new Error(data.error);
-        }
-        setError('');
+        if (!res.ok || !data.success) throw new Error(data.error || t('Die Anbindung ließ sich nicht entfernen.'));
         notify({ variant: 'success', message: t('{name} ist nicht mehr angebunden.', { name: zone.name }) });
         await load(true);
       },
@@ -196,7 +203,7 @@ export default function DnsZonesPage() {
     <>
       <div className="page-header">
         <div>
-          <h1 className="page-title">{t('Domains')}</h1>
+          <PageHeading icon={<Globe size={20} />} title={t('Domains')} back={{ label: t('Übersicht'), href: '/reverse-proxy' }} />
           <p className="page-subtitle">
             {t(
               'Der Zugang zu Hetzner oder Cloudflare. Damit legt HAPM den DNS-Eintrag eines Ziels an, und der Einrichtungsassistent den Eintrag der Oberfläche. Die übrigen Einträge verwalten Sie beim Anbieter.'
@@ -213,9 +220,11 @@ export default function DnsZonesPage() {
 
       {error && <div className="alert alert-danger sys-block">{error}</div>}
 
+      {/* Nach einem gescheiterten Abruf ist nicht bekannt, ob es Domains gibt:
+          dann steht nur die Meldung da, nicht „Noch keine Domain angebunden“. */}
       {loading ? (
         <SkeletonCards />
-      ) : zones.length === 0 ? (
+      ) : zones.length === 0 && error ? null : zones.length === 0 ? (
         <div className="empty-state">
           <Globe size={40} />
           <h3>{t('Noch keine Domain angebunden')}</h3>
@@ -244,10 +253,10 @@ export default function DnsZonesPage() {
                   <button
                     className="btn btn-ghost btn-icon btn-sm"
                     data-tooltip={t('API-Token austauschen')}
+                    aria-label={t('API-Token austauschen')}
                     onClick={() => {
                       setRotating(zone);
                       setNewToken('');
-                      setFormError('');
                     }}
                   >
                     <KeyRound size={16} />
@@ -255,6 +264,7 @@ export default function DnsZonesPage() {
                   <button
                     className="btn btn-ghost btn-icon btn-sm"
                     data-tooltip={t('Anbindung entfernen')}
+                    aria-label={t('Anbindung entfernen')}
                     onClick={() => handleDelete(zone)}
                   >
                     <Trash2 size={16} />
@@ -414,7 +424,6 @@ export default function DnsZonesPage() {
             </div>
             <form onSubmit={handleRotate}>
               <div className="modal-body">
-                {formError && <div className="alert alert-danger sys-block">{formError}</div>}
                 <div className="form-group">
                   <label className="form-label">
                     {t('Neuer Token von {provider}', { provider: dnsProviderInfo(rotating.provider).label })}

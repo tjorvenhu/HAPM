@@ -11,6 +11,9 @@ export const system: Dictionary = {
   "{name} ist nicht mehr angebunden.": "{name} is no longer connected.",
   "Der Zugang zu Hetzner oder Cloudflare. Damit legt HAPM den DNS-Eintrag eines Ziels an, und der Einrichtungsassistent den Eintrag der Oberfläche. Die übrigen Einträge verwalten Sie beim Anbieter.": "The access to Hetzner or Cloudflare. HAPM uses it to create the DNS record of a target, and the setup assistant to create the record of the web interface. You manage all other records at the provider.",
   "Domain anbinden": "Connect domain",
+  "Die Anbindung ließ sich nicht entfernen.": "The connection could not be removed.",
+  "Der Token ließ sich nicht austauschen.": "The token could not be replaced.",
+  "Die Domain ließ sich nicht anbinden.": "The domain could not be connected.",
   "Noch keine Domain angebunden": "No domain connected yet",
   "Dafür braucht es die Domain und einen API-Token von Hetzner oder Cloudflare, der die Einträge der Zone bearbeiten darf.": "This needs the domain and an API token from Hetzner or Cloudflare that may edit the records of the zone.",
   "Verbunden": "Connected",
@@ -247,7 +250,7 @@ export const system: Dictionary = {
   "Was für alle Ziele gilt.": "What applies to all targets.",
   "Neue Abbilder prüfen und einspielen.": "Check for new images and apply them.",
   "Das ließ sich nicht speichern.": "That could not be saved.",
-  "Die Einrichtung ist übersprungen. Adresse und Art der Installation stehen unter „Allgemein\".": "The setup is skipped. The address and the installation type are under \"General\".",
+  "Die Einrichtung ist übersprungen. Adresse und Art der Installation stehen unter „Allgemein“.": "The setup is skipped. The address and the installation type are under “General”.",
   "Einrichtung abschließen": "Finish setup",
   "Es fehlt noch Schritt {step} von {total}: {name}.": "Step {step} of {total} is still missing: {name}.",
   "Einrichtung fortsetzen": "Continue setup",
@@ -258,7 +261,7 @@ export const system: Dictionary = {
   "acme.sh oder das Zertifikatsverzeichnis fehlt.": "acme.sh or the certificate directory is missing.",
 
   // Updates: `app/(app)/updates`, `components/system`, `lib/updates`, `app/api/updates`
-  'Neue Abbilder für HAProxy und HAPM, neue Fassungen von acme.sh.': 'New images for HAProxy and HAPM, new versions of acme.sh.',
+  'Neue Abbilder der Container und neue Fassungen von acme.sh.': 'New images of the containers and new versions of acme.sh.',
   'Jetzt prüfen': 'Check now',
   'Vor dem Tausch prüft das neue Abbild die vorhandene Konfiguration. Lehnt es sie ab, bleibt alles unverändert. Beim Tausch ist HAProxy für wenige Sekunden nicht erreichbar. Startet der neue Container nicht, kommt der bisherige zurück.':
     'Before the swap, the new image checks the existing configuration. If it rejects it, everything stays unchanged. During the swap, HAProxy is unreachable for a few seconds. If the new container does not start, the previous one comes back.',
@@ -335,6 +338,8 @@ export const system: Dictionary = {
   'acme.sh ließ sich nicht aktualisieren.': 'acme.sh could not be updated.',
   'Der Lauf nennt keinen Grund.': 'The run gives no reason.',
   'Es läuft schon ein Update. Bitte warten, bis es fertig ist.': 'An update is already running. Please wait until it is finished.',
+  'Gerade läuft eine Sicherung oder ein Zurückspielen. Das Update geht danach.':
+    'A backup or a restore is running. The update is possible afterwards.',
   'Der Helfer hat den Container nicht ersetzt. HAPM läuft weiter in der bisherigen Fassung.': 'The helper did not replace the container. HAPM keeps running in the previous version.',
   'Die Übergabe an den Helfer ist nicht zustande gekommen.': 'The handover to the helper did not happen.',
   'Die Übergabe an den Helfer ist nicht zustande gekommen. HAPM läuft weiter in der bisherigen Fassung.': 'The handover to the helper did not happen. HAPM keeps running in the previous version.',
@@ -357,7 +362,7 @@ export const system: Dictionary = {
   '{noun} abgeschlossen': '{noun} completed',
   'Wird gestartet': 'Starting',
   'Mit Hinweisen abgeschlossen': 'Completed with warnings',
-  'Warte auf Ausgabe...': 'Waiting for output...',
+  'Warte auf Ausgabe…': 'Waiting for output…',
   'Im Hintergrund weiterlaufen lassen': 'Keep running in the background',
   'Schließen': 'Close',
 
@@ -372,8 +377,8 @@ export const system: Dictionary = {
   'Die Sicherung ließ sich nicht starten.': 'The backup could not be started.',
   'Die Einstellungen ließen sich nicht speichern.': 'The settings could not be saved.',
   'Gesichert wird täglich um {time} Uhr nach {path}.': 'Backups run every day at {time} to {path}.',
-  'Gespeichert. Täglich gesichert wird nicht. Von Hand geht es mit „Jetzt sichern".':
-    'Saved. No daily backup. To back up manually, use "Back up now".',
+  'Gespeichert. Täglich gesichert wird nicht. Von Hand geht es mit „Jetzt sichern“.':
+    'Saved. No daily backup. To back up manually, use “Back up now”.',
   'Bitte zuerst einen Ordner auf dem Server eintragen.': 'Please enter a folder on the server first.',
   'Die Sicherung braucht Docker. HAPM läuft gerade nicht in einem Container.': 'The backup needs Docker. HAPM is not running in a container right now.',
   'Sicherung läuft': 'Backup running',
@@ -403,9 +408,10 @@ export const system: Dictionary = {
   'Das Archiv enthält private Schlüssel und den Schlüssel zu den verschlüsselten Einstellungen. Es ist nicht verschlüsselt. Der Ordner gehört an einen Ort, an den nur Sie kommen.':
     'The archive contains private keys and the key to the encrypted settings. It is not encrypted. Keep the folder in a place only you can access.',
   'Im Ordner': 'In the folder',
-  'Stand nach dem letzten Lauf': 'As of the last run',
-  'vom {date}': 'on {date}',
-  'in {path}': 'in {path}',
+  'Stand nach dem letzten Lauf.': 'As of the last run.',
+  'Stand nach dem letzten Lauf in {path}.': 'As of the last run in {path}.',
+  'Stand nach dem letzten Lauf vom {date}.': 'As of the last run on {date}.',
+  'Stand nach dem letzten Lauf vom {date} in {path}.': 'As of the last run on {date} in {path}.',
   'HAPM liest den Ordner nicht laufend. Die Liste stammt aus dem letzten Lauf. Was danach von Hand gelöscht oder dazugelegt wurde, steht hier nicht.':
     'HAPM does not read the folder continuously. The list comes from the last run. Anything deleted or added by hand since then is not shown here.',
   'Noch keine Sicherung geschrieben': 'No backup written yet',
@@ -441,6 +447,7 @@ export const system: Dictionary = {
     'HAPM does not store backups in {path}. Please specify a dedicated folder, such as /srv/hapm-backup.',
   'Die Uhrzeit hat nicht die Form HH:MM.': 'The time is not in the format HH:MM.',
   'Aufbewahrt werden zwischen {min} und {max} Sicherungen.': 'Between {min} and {max} backups can be kept.',
+  'Das Feld {field} hat nicht die erwartete Form ({expected}).': 'The field {field} does not have the expected form ({expected}).',
   'Ohne Ordner lässt sich die tägliche Sicherung nicht einschalten.': 'The daily backup cannot be turned on without a folder.',
 
   // Sicherung zurückspielen: `components/backup/RestorePanel.tsx`, `lib/backup/restore*.ts`, `lib/backup/archive.ts`, `app/api/backup/restore`
@@ -457,6 +464,10 @@ export const system: Dictionary = {
   'Begonnen am {date} von {user}.': 'Started on {date} by {user}.',
   'Der Stand von vorher liegt in {path}.': 'The previous state is in {path}.',
   'Zurückspielen fehlgeschlagen': 'Restore failed',
+  'Starten fehlgeschlagen': 'Start failed',
+  'Verwerfen fehlgeschlagen': 'Discard failed',
+  'Prüfen fehlgeschlagen': 'Check failed',
+  'Das Zurückspielen konnte nicht geladen werden.': 'The restore could not be loaded.',
   'Zurückgespielt': 'Restored',
   'HAPM hat nicht geantwortet. Bitte versuchen Sie es erneut.': 'HAPM did not respond. Please try again.',
   'Vorher sichert HAPM den aktuellen Stand in den Ordner {path}. Diese Sicherung räumt die Aufbewahrung nicht weg.':
@@ -482,8 +493,8 @@ export const system: Dictionary = {
   'Die Liste stammt aus einem früheren Ordner.': 'The list comes from an earlier folder.',
   'Ein Archiv lässt sich auch hochladen, etwa von einem anderen Server.': 'You can also upload an archive, for example from another server.',
   'Archiv hochladen': 'Upload archive',
-  'Ein Archiv von HAPM (.tar.gz), höchstens 512 MB. Es wird vor allem anderen geprüft.':
-    'A HAPM archive (.tar.gz), up to 512 MB. It is checked before anything else happens.',
+  'Ein Archiv von HAPM (.tar.gz), höchstens {max}. Es wird vor allem anderen geprüft.':
+    'A HAPM archive (.tar.gz), up to {max}. It is checked before anything else happens.',
   // Prüfung des Archivs (`lib/backup/archive.ts`)
   'Das Archiv lässt sich nicht vollständig lesen. Es ist beschädigt, unvollständig oder kein .tar.gz-Archiv.':
     'The archive cannot be read completely. It is damaged, incomplete, or not a .tar.gz archive.',
@@ -569,8 +580,8 @@ export const system: Dictionary = {
   'Die Adresse ist entfernt. Mails enthalten keinen Link in die Oberfläche.': 'The address is removed. Emails contain no link to the interface.',
   'Gespeichert, aber nicht bei acme.sh angekommen': 'Saved, but not applied in acme.sh',
   "Die Adresse für Let's Encrypt ist gespeichert.": "The address for Let's Encrypt is saved.",
-  'Auf „Nur im eigenen Netz" umstellen?': 'Switch to "Only on your own network"?',
-  'Auf „Aus dem Internet erreichbar" umstellen?': 'Switch to "Reachable from the internet"?',
+  'Auf „Nur im eigenen Netz“ umstellen?': 'Switch to “Only on your own network”?',
+  'Auf „Aus dem Internet erreichbar“ umstellen?': 'Switch to “Reachable from the internet”?',
   "Neue Zertifikate werden danach über Port 80 geprüft. Erreicht Let's Encrypt den Server nicht, scheitert jeder neue Antrag. Bestehende Zertifikate behalten ihre Methode, auch bei der Erneuerung.":
     "New certificates will then be validated over port 80. If Let's Encrypt cannot reach the server, every new request fails. Existing certificates keep their method, including on renewal.",
   'Umstellen': 'Switch',
@@ -661,8 +672,10 @@ export const system: Dictionary = {
    "Directory-URL": "Directory URL",
   "Die Adresse, unter der der ACME-Server sein Verzeichnis anbietet. Bei step-ca etwa https://ca.example.org/acme/acme/directory. acme.sh muss sie über HTTPS mit einem Zertifikat erreichen, dem es vertraut.": "The address at which the ACME server offers its directory. For step-ca, for example https://ca.example.org/acme/acme/directory. acme.sh must reach it over HTTPS with a certificate it trusts.",
   "EAB Key-ID": "EAB key ID",
+  "EAB Key-ID (optional)": "EAB key ID (optional)",
   "External Account Binding: nur nötig, wenn die CA es verlangt. Sie zeigt Key-ID und HMAC-Schlüssel beim Anlegen des Zugangs an.": "External Account Binding: only needed if the CA requires it. The CA shows the key ID and HMAC key when you create the access.",
   "EAB HMAC-Schlüssel": "EAB HMAC key",
+  "EAB HMAC-Schlüssel (optional)": "EAB HMAC key (optional)",
   "Geht an acme.sh und wird in HAPM nicht gespeichert.": "Goes to acme.sh and is not stored in HAPM.",
   "Dieser ACME-Server erreicht HAPM über HTTP (Port 80)": "This ACME server reaches HAPM over HTTP (port 80)",
   "ACME-Server": "ACME server",

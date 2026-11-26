@@ -10,6 +10,7 @@ import PageHeading from '@/components/PageHeading';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/ConfirmDialog';
+import { errorText } from '@/components/errorText';
 import { usePolling } from '@/components/usePolling';
 import Select from '@/components/Select';
 import { SkeletonRows } from '@/components/Skeleton';
@@ -262,7 +263,7 @@ export default function ErrorPagesDesignPage() {
       setBrand((data.data.brand ?? null) as PageBrand | null);
       setLoadError('');
     } catch (err) {
-      setLoadError(err instanceof Error ? err.message : t('Das Design ließ sich nicht laden.'));
+      setLoadError(errorText(err, t('Das Design ließ sich nicht laden.')));
     }
   }, [apiFetch, t]);
 
@@ -278,7 +279,7 @@ export default function ErrorPagesDesignPage() {
         $id: '',
         name: '',
         entries: [],
-        error: err instanceof Error ? err.message : t('Die Fehlerdateien ließen sich nicht lesen.'),
+        error: errorText(err, t('Die Fehlerdateien ließen sich nicht lesen.')),
       });
     }
   }, [apiFetch, t]);
@@ -511,7 +512,7 @@ export default function ErrorPagesDesignPage() {
       notify({
         variant: 'error',
         title: t('Speichern fehlgeschlagen'),
-        message: err instanceof Error ? err.message : t('Unbekannter Fehler.'),
+        message: errorText(err, t('Unbekannter Fehler.')),
       });
     } finally {
       setBusy(null);
@@ -539,7 +540,7 @@ export default function ErrorPagesDesignPage() {
       notify({
         variant: 'error',
         title: t('Zurücksetzen fehlgeschlagen'),
-        message: err instanceof Error ? err.message : t('Unbekannter Fehler.'),
+        message: errorText(err, t('Unbekannter Fehler.')),
       });
     } finally {
       setBusy(null);

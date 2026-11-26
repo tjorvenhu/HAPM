@@ -592,6 +592,18 @@
 .cs-state { height: 100%; }
 .cs-how { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
 .cs-how li { display: flex; align-items: flex-start; gap: 12px; }
+/* Regeln: die Namen aus dem Hub sind lang und ohne Leerzeichen. Sie dürfen
+   überall umbrechen, damit auf einem schmalen Schirm der Schalter in der
+   letzten Spalte sichtbar bleibt, statt aus der Tabelle zu laufen. */
+.cs-rules .detail-sub { overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  .cs-rules :is(th, td) { padding-inline: 0.5rem; }
+  .cs-rules :is(th, td):first-child { padding-left: 1rem; }
+  .cs-rules :is(th, td):last-child { padding-right: 1rem; }
+  /* Die Namen im Hub sind Beiwerk: schmal fehlt der Platz dafür. */
+  .cs-rules .detail-sub.mono { display: none; }
+}
+.cs-alerts td:first-child { white-space: nowrap; }
 .cs-more { display: flex; justify-content: center; }
 .cs-kinds { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .cs-how li > span:last-child { display: flex; flex-direction: column; gap: 2px; min-width: 0; }

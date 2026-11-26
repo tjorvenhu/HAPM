@@ -461,7 +461,7 @@ function AccountStep({
           autoComplete="email"
         />
       </div>
-      {error && <div className="auth-error">{error}</div>}
+      {error && <div className="auth-error" role="alert">{error}</div>}
       <button className="auth-submit" type="submit" disabled={loading}>
         {loading ? <span className="btn-spinner" aria-hidden="true" /> : <UserPlus size={15} />}
         {loading ? t('Konto wird angelegt…') : t('Konto anlegen')}
@@ -575,7 +575,7 @@ function ExposureStep({
           </span>
         </label>
       )}
-      {error && <div className="auth-error">{error}</div>}
+      {error && <div className="auth-error" role="alert">{error}</div>}
       <div className="hapm-setup-nav">
         {later}
         <button className="auth-submit" type="button" disabled={saving || !choice} onClick={save}>
@@ -757,7 +757,7 @@ function DnsStep({
           </div>
           <p className="auth-hint">
             {provider.apiTokenField
-              ? t('Mit dem Token stellt acme.sh Zertifikate aus. HAPM richtet damit auch die Zone unter „DNS" ein und speichert es dafür verschlüsselt.')
+              ? t('Mit dem Token stellt acme.sh Zertifikate aus. HAPM richtet damit auch die Zone unter „DNS“ ein und speichert es dafür verschlüsselt.')
               : t('Der Token geht an acme.sh und wird in HAPM nicht gespeichert.')}{' '}
             <a href={provider.consoleUrl} target="_blank" rel="noreferrer">
               {t('Token bei {provider} anlegen', { provider: provider.label })}
@@ -766,7 +766,7 @@ function DnsStep({
         </>
       )}
 
-      {error && <div className="auth-error">{error}</div>}
+      {error && <div className="auth-error" role="alert">{error}</div>}
 
       <div className="hapm-setup-nav">
         {back}
@@ -1025,7 +1025,7 @@ function CertificatesStep({
         <p className="auth-hint">{t('Das Zertifikat der Oberfläche laden Sie im letzten Schritt hoch, bevor HAPM sie einrichtet.')}</p>
       )}
 
-      {error && <div className="auth-error">{error}</div>}
+      {error && <div className="auth-error" role="alert">{error}</div>}
 
       <div className="hapm-setup-nav">
         {back}
@@ -1243,7 +1243,7 @@ function MailStep({
         ) : (
           <div className="alert alert-danger">{testResult.error ?? t('Die Testmail wurde nicht verschickt.')}</div>
         ))}
-      {error && <div className="auth-error">{error}</div>}
+      {error && <div className="auth-error" role="alert">{error}</div>}
 
       <div className="hapm-setup-nav">
         {back}
@@ -1601,7 +1601,7 @@ function AddressStep({
       {recordNote && <div className="alert alert-success">{recordNote}</div>}
       {recordUnused && <div className="alert alert-warning">{recordUnused}</div>}
       {verdict && <div className={`alert ${verdict.tone}`}>{verdict.text}</div>}
-      {error && <div className="auth-error">{error}</div>}
+      {error && <div className="auth-error" role="alert">{error}</div>}
 
       <div className="hapm-setup-nav">
         {back}
@@ -1780,13 +1780,13 @@ function RunStep({
       {outcome !== 'idle' && <Stages setup={setup} />}
 
       {outcome === 'failed' && (
-        <div className="auth-error">
+        <div className="auth-error" role="alert">
           {t(
             'Die Einrichtung ist nicht durchgelaufen. Ihr Konto und alles, was oben einen Haken trägt, bleiben bestehen. Sie können die Eingaben ändern und es erneut versuchen.'
           )}
         </div>
       )}
-      {error && <div className="auth-error">{error}</div>}
+      {error && <div className="auth-error" role="alert">{error}</div>}
 
       {outcome !== 'running' && (
         <>

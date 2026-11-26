@@ -15,6 +15,8 @@ import {
 } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { useConfirm } from '@/components/ConfirmDialog';
+import { useToast } from '@/components/Toast';
+import { errorText } from '@/components/errorText';
 import { usePolling } from '@/components/usePolling';
 import { useMountedLoad } from '@/components/useMountedLoad';
 import { SkeletonDetail } from '@/components/Skeleton';
@@ -120,12 +122,14 @@ interface Props {
 export default function RestorePanel({ files, filesAsOf, listedPath, hostPath }: Props) {
   const { apiFetch } = useApp();
   const confirm = useConfirm();
+  const { notify } = useToast();
   const { t, locale } = useT();
 
   const [data, setData] = useState<RestoreOverview | null>(null);
+  /** Die Route hat geantwortet, aber abgelehnt. `offline` heißt: gar keine Antwort. */
+  const [loadError, setLoadError] = useState('');
   const [offline, setOffline] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
-  const [formError, setFormError] = useState('');
   const [password, setPassword] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -135,12 +139,15 @@ export default function RestorePanel({ files, filesAsOf, listedPath, hostPath }:
       const body = await res.json();
       if (body.success) {
         setData(body.data as RestoreOverview);
-        setOffline(false);
+        setLoadError('');
+      } else {
+        setLoadError(body.error || t('Das Zurückspielen konnte nicht geladen werden.'));
       }
+      setOffline(false);
     } catch {
       setOffline(true);
     }
-  }, [apiFetch]);
+  }, [apiFetch, t]);
 
   useMountedLoad(load);
 
@@ -156,21 +163,26 @@ export default function RestorePanel({ files, filesAsOf, listedPath, hostPath }:
     [load]
   );
 
-  /** Gibt bei Erfolg `data` der Antwort zurück, sonst `null`. */
-  async function send(url: string, init: RequestInit, label: string): Promise<{ data: unknown } | null> {
-    setFormError('');
+  /** Gibt bei Erfolg `data` der Antwort zurück, sonst `null`: dann steht der Grund in einer Meldung. */
+  async function send(
+    url: string,
+    init: RequestInit,
+    label: string,
+    failedTitle: string
+  ): Promise<{ data: unknown } | null> {
     setBusy(label);
     try {
       const res = await apiFetch(url, init);
       const body = await res.json();
-      if (!body.success) {
-        setFormError(body.error || t('Das hat nicht geklappt.'));
-        return null;
-      }
+      if (!body.success) throw new Error(body.error || t('Das hat nicht geklappt.'));
       if (body.data && 'staged' in body.data) setData(body.data as RestoreOverview);
       return { data: body.data };
-    } catch {
-      setFormError(t('HAPM hat nicht geantwortet. Bitte versuchen Sie es erneut.'));
+    } catch (err: unknown) {
+      notify({
+        variant: 'error',
+        title: failedTitle,
+        message: errorText(err, t('HAPM hat nicht geantwortet. Bitte versuchen Sie es erneut.')),
+      });
       return null;
     } finally {
       setBusy(null);
@@ -182,7 +194,8 @@ export default function RestorePanel({ files, filesAsOf, listedPath, hostPath }:
     await send(
       '/api/backup/restore/check',
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) },
-      `check:${name}`
+      `check:${name}`,
+      t('Prüfen fehlgeschlagen')
     );
   }
 
@@ -190,20 +203,27 @@ export default function RestorePanel({ files, filesAsOf, listedPath, hostPath }:
     if (fileInput.current) fileInput.current.value = '';
     setPassword('');
     if (data && file.size > data.maxBytes) {
-      setFormError(t('Das Archiv ist größer als {max}. So groß wird eine Sicherung von HAPM nicht.', { max: '512 MB' }));
+      notify({
+        variant: 'error',
+        title: t('Hochladen fehlgeschlagen'),
+        message: t('Das Archiv ist größer als {max}. So groß wird eine Sicherung von HAPM nicht.', {
+          max: formatBytes(locale, data.maxBytes),
+        }),
+      });
       return;
     }
     await send(
       `/api/backup/restore/upload?name=${encodeURIComponent(file.name)}`,
       // Roh und gestreamt: die Datei, nicht ihr Inhalt im Speicher der Seite.
       { method: 'POST', headers: { 'Content-Type': 'application/gzip' }, body: file },
-      'upload'
+      'upload',
+      t('Hochladen fehlgeschlagen')
     );
   }
 
   async function discard() {
     setPassword('');
-    await send('/api/backup/restore', { method: 'DELETE' }, 'discard');
+    await send('/api/backup/restore', { method: 'DELETE' }, 'discard', t('Verwerfen fehlgeschlagen'));
   }
 
   async function start(event: FormEvent, staged: Staged) {
@@ -223,7 +243,7 @@ export default function RestorePanel({ files, filesAsOf, listedPath, hostPath }:
         'Konten, Einstellungen, Ziele, Zertifikate und die Konfiguration von HAProxy werden durch den Stand der Sicherung ersetzt. Alle Sitzungen enden, danach melden Sie sich mit einem Konto aus der Sicherung an. HAPM startet dafür kurz neu.'
       )} ${where}`,
       confirmLabel: t('Zurückspielen'),
-      variant: 'warning',
+      variant: 'danger',
       requireText: t('ZURÜCKSPIELEN'),
     });
     if (!confirmed) return;
@@ -235,7 +255,8 @@ export default function RestorePanel({ files, filesAsOf, listedPath, hostPath }:
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: staged.id, password }),
       },
-      'start'
+      'start',
+      t('Zurückspielen fehlgeschlagen')
     );
     if (started) {
       setPassword('');
@@ -268,6 +289,8 @@ export default function RestorePanel({ files, filesAsOf, listedPath, hostPath }:
               <AlertTriangle size={16} strokeWidth={1.5} />
               <span>{t('HAPM antwortet gerade nicht. Die Seite versucht es weiter.')}</span>
             </div>
+          ) : loadError ? (
+            <div className="alert alert-danger">{loadError}</div>
           ) : (
             <SkeletonDetail />
           )}
@@ -311,7 +334,7 @@ export default function RestorePanel({ files, filesAsOf, listedPath, hostPath }:
 
         {!running && lastRun && <LastRun run={lastRun} />}
 
-        {formError && <div className="alert alert-danger">{formError}</div>}
+        {loadError && !offline && <div className="alert alert-danger">{loadError}</div>}
 
         {!running && staged && (
           <form onSubmit={(event) => void start(event, staged)} className="card-body">
@@ -418,9 +441,16 @@ export default function RestorePanel({ files, filesAsOf, listedPath, hostPath }:
               </div>
               {files && (
                 <span className="form-hint">
-                  {t('Stand nach dem letzten Lauf')}
-                  {filesAsOf ? ` ${t('vom {date}', { date: formatDateTime(locale, filesAsOf) })}` : ''}
-                  {listedPath ? ` ${t('in {path}', { path: listedPath })}` : ''}.
+                  {filesAsOf && listedPath
+                    ? t('Stand nach dem letzten Lauf vom {date} in {path}.', {
+                        date: formatDateTime(locale, filesAsOf),
+                        path: listedPath,
+                      })
+                    : filesAsOf
+                      ? t('Stand nach dem letzten Lauf vom {date}.', { date: formatDateTime(locale, filesAsOf) })
+                      : listedPath
+                        ? t('Stand nach dem letzten Lauf in {path}.', { path: listedPath })
+                        : t('Stand nach dem letzten Lauf.')}
                   <InfoHint
                     text={t(
                       'HAPM liest den Ordner nicht laufend. Die Liste stammt aus dem letzten Lauf. Was danach von Hand gelöscht oder dazugelegt wurde, steht hier nicht.'
@@ -511,7 +541,11 @@ export default function RestorePanel({ files, filesAsOf, listedPath, hostPath }:
                 {busy === 'upload' ? <Loader2 size={16} strokeWidth={1.5} className="spin" /> : <Upload size={16} strokeWidth={1.5} />}
                 {t('Archiv hochladen')}
               </button>
-              <span className="form-hint">{t('Ein Archiv von HAPM (.tar.gz), höchstens 512 MB. Es wird vor allem anderen geprüft.')}</span>
+              <span className="form-hint">
+                {t('Ein Archiv von HAPM (.tar.gz), höchstens {max}. Es wird vor allem anderen geprüft.', {
+                  max: formatBytes(locale, data.maxBytes),
+                })}
+              </span>
             </div>
           </>
         )}

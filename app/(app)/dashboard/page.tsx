@@ -768,7 +768,7 @@ export default function DashboardPage() {
         </p>
       </div>
       <div className="page-actions">
-        <button type="button" className="btn btn-ghost" onClick={() => setLayoutOpen(true)}>
+        <button type="button" className="btn btn-ghost" onClick={() => setLayoutOpen(true)} disabled={!data}>
           <LayoutList size={16} strokeWidth={1.5} />
           {t('Anpassen')}
         </button>
@@ -804,10 +804,12 @@ export default function DashboardPage() {
   const haproxyDown = docker.available && (haproxy.running === false || haproxy.status === 'restarting');
   const empty = proxy.services === 0 && proxy.streams === 0;
   const unhealthyCount = proxy.down === null || proxy.partial === null ? null : proxy.down + proxy.partial;
+  // Kein Update gefunden, aber ein Bestandteil ist ungeprüft: das ist unbekannt, nicht 0.
+  const foundUpdates = updates.filter((state) => state.updateAvailable === true).length;
   const pendingUpdates =
-    data.updates === null || data.updates.length === 0
+    updates.length === 0 || (foundUpdates === 0 && updates.some((state) => state.updateAvailable === null))
       ? null
-      : data.updates.filter((state) => state.updateAvailable === true).length;
+      : foundUpdates;
   const expired = certificates.due.some((cert) => cert.daysLeft !== null && cert.daysLeft < 0);
   const haproxyBadge = containerBadge(haproxy);
 

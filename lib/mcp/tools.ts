@@ -811,10 +811,10 @@ export const TOOLS: ToolDefinition[] = [
     name: 'set_crowdsec_enabled',
     title: 'Switch CrowdSec on or off entirely',
     description:
-      '{"enabled":false} switches CrowdSec off entirely: a reverse-proxy run removes it from haproxy.cfg (global and every service), ' +
-      'waits for it (up to 2 minutes), then stops both containers and hides CrowdSec in the UI. If the run fails, nothing changes. ' +
-      '{"enabled":true} starts the containers again; which services are checked stays off until switched on per service or globally. ' +
-      'Returns runId of the reverse-proxy run (null if nothing used CrowdSec).',
+      '{"enabled":false} switches CrowdSec off entirely: a reverse-proxy run removes it from haproxy.cfg (global and every service). ' +
+      'The call returns at once with pending=true and the runId: poll get_run. When the run succeeds, HAPM stops both containers and hides ' +
+      'CrowdSec in the UI; if it fails, nothing changes and CrowdSec stays on. Without a run (pending=false, runId=null) it is off immediately. ' +
+      '{"enabled":true} starts the containers again; which services are checked stays off until switched on per service or globally.',
     input: { enabled: z.boolean() },
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     run: (args, ctx) => setCrowdsecEnabled(args, auditActor(ctx.actor)),
@@ -1023,7 +1023,8 @@ export const TOOLS: ToolDefinition[] = [
     title: 'Update HAPM settings',
     description:
       'Partial update of the HAPM settings: only the fields you send change. ' +
-      'Not possible here: the HAPM address (moving it is a guided process in the web interface), the SMTP password, and the certificate source ' +
+      'Not possible here: the HAPM address (moving it is a guided process in the web interface), the SMTP server and its password ' +
+      '(whoever redirects the mail server receives password reset links), and the certificate source ' +
       '(use update_certificate_settings). Changing exposure changes how future certificates are requested, existing ones stay. ' +
       'A new acmeEmail is registered with acme.sh; the result is in "acme". Example: {"notifyRecipients":["ops@example.com"]}.',
     input: {
@@ -1035,10 +1036,6 @@ export const TOOLS: ToolDefinition[] = [
         .describe('Components updated automatically once a day at autoUpdateTime, e.g. ["haproxy","acme","crowdsec","crowdsec-bouncer"]. [] turns it off.'),
       autoUpdateHaproxy: z.boolean().optional().describe('Older switch: adds HAProxy to autoUpdate or removes it.'),
       autoUpdateTime: z.string().optional().describe('Time for automatic updates, HH:MM.'),
-      smtpHost: z.string().nullable().optional(),
-      smtpPort: z.number().int().optional().describe('1 to 65535.'),
-      smtpSecurity: z.enum(['starttls', 'tls', 'none']).optional(),
-      smtpUser: z.string().nullable().optional(),
       mailFrom: z.string().nullable().optional().describe('Sender address of notification mails.'),
       notifyRecipients: z.array(z.string()).optional().describe('Replace the list of recipients (max 20 addresses).'),
       notifyEvents: z

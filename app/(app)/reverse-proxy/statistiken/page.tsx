@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { usePolling } from '@/components/usePolling';
+import { errorText } from '@/components/errorText';
 import { SkeletonRows } from '@/components/Skeleton';
 import Select from '@/components/Select';
 import { BarList } from '@/ui/charts/BarList';
@@ -18,7 +19,7 @@ import MetricChart, { ChartCard } from '@/components/systems/MetricChart';
 import { seriesColor } from '@/lib/systems/series';
 import LiveTraffic from '@/components/reverse-proxy/LiveTraffic';
 import type { ChartPoint } from '@/lib/systems/series';
-import { formatBytes, formatCount, formatDateTime, formatShare, formatTime, msgid } from '@/lib/i18n';
+import { MISSING, formatBytes, formatCount, formatDateTime, formatShare, formatTime, msgid } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
 import { STATS_FORMATS, seriesPerLocale } from './format';
 import BrandLogo from '@/components/BrandLogo';
@@ -324,21 +325,27 @@ function StatsView({ tabs }: { tabs: React.ReactNode }) {
 
   /* ── Die Zeitreihe ── */
 
+  // Dienst, Zeitraum und die Runden des Sammlers können sich überholen. Es
+  // zählt die Antwort auf die letzte Anfrage, nicht die, die zuletzt ankommt.
+  const statsRequest = useRef(0);
+
   const loadStats = useCallback(
     async (quiet = false) => {
+      const id = ++statsRequest.current;
       if (!quiet) setLoading(true);
       try {
         const params = new URLSearchParams({ hours });
         if (scope) params.set('scope', scope);
         const res = await apiFetch(`/api/haproxy/stats?${params}`);
         const data = await res.json();
+        if (id !== statsRequest.current) return;
         if (!data.success) throw new Error(data.error);
         setStats(data.data as StatsResponse);
         setError('');
-      } catch {
-        setError(t('Die Zeitreihe konnte nicht geladen werden.'));
+      } catch (err: unknown) {
+        if (id === statsRequest.current) setError(errorText(err, t('Die Zeitreihe konnte nicht geladen werden.')));
       } finally {
-        setLoading(false);
+        if (id === statsRequest.current) setLoading(false);
       }
     },
     [apiFetch, hours, scope, t]
@@ -370,10 +377,13 @@ function StatsView({ tabs }: { tabs: React.ReactNode }) {
 
   /** Läuft gerade eine Auswertung? Dann startet der Takt keine zweite. */
   const trafficBusy = useRef(false);
+  /** Wie bei der Zeitreihe: nach einem Wechsel des Dienstes gilt nur die Antwort auf die letzte Anfrage. */
+  const trafficRequest = useRef(0);
 
   const loadTraffic = useCallback(
     async (quiet = false) => {
       if (quiet && trafficBusy.current) return;
+      const id = ++trafficRequest.current;
       trafficBusy.current = true;
       if (!quiet) {
         setTrafficLoading(true);
@@ -384,16 +394,22 @@ function StatsView({ tabs }: { tabs: React.ReactNode }) {
         if (scope) params.set('scope', scope);
         const res = await apiFetch(`/api/haproxy/traffic?${params}`);
         const data = await res.json();
+        if (id !== trafficRequest.current) return;
         if (!data.success) throw new Error(data.error);
         setTraffic(data.data as TrafficResponse);
         setTrafficError('');
-      } catch {
+      } catch (err: unknown) {
         // Leise gescheitert: die letzte Auswertung bleibt stehen, ihr
         // Zeitstempel zeigt, wie alt sie ist.
-        if (!quiet) setTrafficError(t('Die Zugriffe konnten nicht ausgewertet werden.'));
+        if (!quiet && id === trafficRequest.current) {
+          setTrafficError(errorText(err, t('Die Zugriffe konnten nicht ausgewertet werden.')));
+        }
       } finally {
-        trafficBusy.current = false;
-        if (!quiet) setTrafficLoading(false);
+        // Ein überholter Lauf räumt nicht auf: der neuere läuft noch und tut es selbst.
+        if (id === trafficRequest.current) {
+          trafficBusy.current = false;
+          if (!quiet) setTrafficLoading(false);
+        }
       }
     },
     [apiFetch, scope, t]
@@ -529,7 +545,7 @@ function StatsView({ tabs }: { tabs: React.ReactNode }) {
             andere erst nach der zweiten Runde. Ohne diesen Satz stehen fünf
             Diagramme auf „keine Messwerte", und das liest sich wie „kaputt".
           */}
-          {(stats?.samples ?? 0) < 2 && (
+          {stats && stats.samples < 2 && (
             <div className="alert alert-info sys-block">
               <Timer size={16} style={{ flexShrink: 0 }} />
               <span>
@@ -549,7 +565,7 @@ function StatsView({ tabs }: { tabs: React.ReactNode }) {
             <Kpi
               icon={<Activity size={16} />}
               label={t('Anfragen')}
-              value={requests === null ? '–' : fmt.count(requests)}
+              value={requests === null ? MISSING : fmt.count(requests)}
             />
             <Kpi
               icon={<BarChart3 size={16} />}
@@ -561,7 +577,7 @@ function StatsView({ tabs }: { tabs: React.ReactNode }) {
               label={t('Serverfehler (5xx)')}
               value={
                 totals.http5xx === null || totals.http5xx === undefined
-                  ? '–'
+                  ? MISSING
                   : `${fmt.count(totals.http5xx)}${errorRate === null ? '' : ` · ${formatShare(locale, errorRate, 1)}`}`
               }
             />
@@ -570,7 +586,7 @@ function StatsView({ tabs }: { tabs: React.ReactNode }) {
               label={t('Ausgehend')}
               value={
                 totals.bytesOutKb === null || totals.bytesOutKb === undefined
-                  ? '–'
+                  ? MISSING
                   : fmt.kb(totals.bytesOutKb)
               }
             />
@@ -579,26 +595,26 @@ function StatsView({ tabs }: { tabs: React.ReactNode }) {
               label={t('Ø Antwortzeit')}
               value={
                 totals.responseMs === null || totals.responseMs === undefined
-                  ? '–'
+                  ? MISSING
                   : fmt.ms(totals.responseMs)
               }
             />
             <Kpi
               icon={<Users size={16} />}
               label={t('IP-Adressen')}
-              value={traffic ? fmt.count(traffic.totals.uniqueIps) : '–'}
+              value={traffic ? fmt.count(traffic.totals.uniqueIps) : MISSING}
             />
             <Kpi
               icon={<Globe size={16} />}
               label={t('Länder')}
-              value={traffic ? fmt.count(traffic.countries.length) : '–'}
+              value={traffic ? fmt.count(traffic.countries.length) : MISSING}
             />
             <Kpi
               icon={<ShieldBan size={16} />}
               label={t('Abgewiesen')}
               value={
                 totals.denied === null || totals.denied === undefined
-                  ? '–'
+                  ? MISSING
                   : fmt.count(totals.denied)
               }
             />
@@ -723,7 +739,7 @@ function StatsView({ tabs }: { tabs: React.ReactNode }) {
                 traffic?.totals.from
                   ? t('Aus dem Access-Log, {from} bis {to}.', {
                       from: formatDateTime(locale, traffic.totals.from),
-                      to: traffic.totals.to ? formatDateTime(locale, traffic.totals.to) : '–',
+                      to: traffic.totals.to ? formatDateTime(locale, traffic.totals.to) : MISSING,
                     })
                   : t('Aus dem Access-Log.')
               }
@@ -731,7 +747,7 @@ function StatsView({ tabs }: { tabs: React.ReactNode }) {
               {trafficLoading ? (
                 <div className="viz-empty">
                   <Loader2 size={16} className="spin" style={{ marginRight: 8 }} />
-                  {t('Das Log wird ausgewertet …')}
+                  {t('Das Log wird ausgewertet…')}
                 </div>
               ) : (
                 <MetricChart
@@ -755,9 +771,9 @@ function StatsView({ tabs }: { tabs: React.ReactNode }) {
           />
 
           {/* ── Die Dienste ── */}
-          {!scope && (
+          {!scope && stats && (
             <ServiceTable
-              services={stats?.services ?? []}
+              services={stats.services}
               onSelect={selectScope}
               hours={Number(hours)}
             />

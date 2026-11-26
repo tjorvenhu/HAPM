@@ -200,7 +200,7 @@ export default function RunOverlay({ run, onClose }: Props) {
 
               {haproxy ? (
                 <pre className="run-log" ref={logRef}>
-                  {view?.output || t('Warte auf Ausgabe...')}
+                  {view?.output || t('Warte auf Ausgabe…')}
                 </pre>
               ) : view ? (
                 <RunStepList steps={view.steps} pending={view.pending} />

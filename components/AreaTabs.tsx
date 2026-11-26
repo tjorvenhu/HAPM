@@ -13,6 +13,10 @@ import { useT } from '@/lib/i18n/react';
  * `push`: wer durch die Reiter klickt, will mit einem Schritt zurück aus der
  * Seite heraus. `useSearchParams` verlangt eine Suspense-Grenze um die Seite,
  * sonst scheitert der Build.
+ *
+ * Die Wahl steht im Zustand, damit der Reiter beim Klick sofort wechselt und
+ * nicht erst, wenn die Adresse nachgezogen ist. Ändert sich `bereich` in der
+ * Adresse von außen (ein Link auf dieselbe Seite, die Suche), folgt der Zustand.
  */
 
 export interface Area<K extends string> {
@@ -32,12 +36,18 @@ export function useArea<K extends string>(
   const searchParams = useSearchParams();
   const first = areas[0].key;
 
+  const wanted = searchParams.get('bereich');
+  const fromAddress = areas.find((entry) => entry.key === wanted)?.key ?? first;
+
   const [area, setArea] = useState<K>(() => {
     const anchor = typeof window !== 'undefined' ? anchors[window.location.hash.slice(1)] : undefined;
-    if (anchor) return anchor;
-    const wanted = searchParams.get('bereich');
-    return areas.find((entry) => entry.key === wanted)?.key ?? first;
+    return anchor ?? fromAddress;
   });
+  const [seen, setSeen] = useState(wanted);
+  if (wanted !== seen) {
+    setSeen(wanted);
+    setArea(fromAddress);
+  }
 
   const select = useCallback(
     (next: K) => {

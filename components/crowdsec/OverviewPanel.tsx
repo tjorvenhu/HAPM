@@ -6,7 +6,7 @@ import { AlertTriangle, Ban, Globe, Loader2, Power, ShieldAlert, ShieldCheck, Us
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/ConfirmDialog';
-import { openRun } from '@/components/runs/runs';
+import { startRun, subscribeRunFinished } from '@/components/runs/runs';
 import { useCrowdsecSwitch } from './CrowdsecSwitch';
 import BrandLogo from '@/components/BrandLogo';
 import { InfoHint } from '@/ui/primitives/InfoHint';
@@ -32,15 +32,16 @@ function ContainerBadge({ info, label }: { info: CrowdsecOverview['status']['cro
     );
   }
   if (info.running) {
+    const unhealthy = info.health === 'unhealthy';
     return (
-      <span className={`badge-status ${info.health === 'unhealthy' ? 'badge-warning' : 'badge-success'}`}>
+      <span className={`badge-status ${unhealthy ? 'badge-warning' : 'badge-success'}`}>
         <span className="dot" />
-        {t('Läuft')}
+        {t(unhealthy ? 'Läuft, antwortet nicht' : 'Läuft')}
       </span>
     );
   }
   return (
-    <span className="badge-status badge-danger" data-tooltip={info.status}>
+    <span className="badge-status badge-danger">
       <span className="dot" />
       {t(info.status === 'restarting' ? 'Startet neu' : 'Gestoppt')}
     </span>
@@ -61,31 +62,16 @@ export default function OverviewPanel({ data, onChanged }: { data: CrowdsecOverv
   const { status, summary, protection } = data;
   const now = useNow(30_000);
 
+  // Das Ende des Laufs meldet die gemeinsame Mechanik (`startRun`), auch wenn
+  // dieser Reiter inzwischen verlassen ist. Hier wird danach nur neu gelesen.
   useEffect(() => {
     if (!pendingRun) return;
-    let cancelled = false;
-    const interval = setInterval(async () => {
-      const body = await apiFetch(`/api/haproxy/runs/${pendingRun}`)
-        .then((r) => r.json())
-        .catch(() => null);
-      if (cancelled || !body?.success || body.data.status === 'running') return;
-      const ok = body.data.status === 'success';
+    return subscribeRunFinished((run) => {
+      if (run.kind !== 'haproxy' || run.id !== pendingRun) return;
       setPendingRun(null);
       onChanged();
-      notify({
-        variant: ok ? 'success' : 'error',
-        title: t('CrowdSec für alle Ziele'),
-        message: ok
-          ? t('Durchgelaufen, HAProxy hat die neue Konfiguration übernommen.')
-          : t('Nicht durchgelaufen. Der erste fehlgeschlagene Schritt steht im Protokoll.'),
-        action: { label: t('Protokoll'), onClick: () => openRun({ kind: 'haproxy', id: pendingRun }) },
-      });
-    }, 3000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [pendingRun, apiFetch, notify, onChanged, t]);
+    });
+  }, [pendingRun, onChanged]);
 
   async function switchGlobal(on: boolean) {
     const res = await apiFetch('/api/haproxy/settings');
@@ -107,7 +93,7 @@ export default function OverviewPanel({ data, onChanged }: { data: CrowdsecOverv
     const result = await patch.json();
     if (!patch.ok || !result.success) throw new Error(result.error || t('Speichern fehlgeschlagen'));
     setPendingRun(result.data.runId);
-    openRun({
+    startRun({
       kind: 'haproxy',
       id: result.data.runId,
       label: t('CrowdSec für alle Ziele'),

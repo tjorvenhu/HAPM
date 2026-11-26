@@ -16,7 +16,10 @@
  *   HAPM schreibt sie als Whitelist nach `parsers/s02-enrich/hapm-app-<id>.yaml`.
  *
  * Bei HAProxy ist `evt.Meta.http_path` die ganze Anfrage samt `?…`: ein Muster,
- * das mit `$` endet, braucht davor `(\?.*)?`. Eine Whitelist in `s02-enrich`
+ * das mit `$` endet, braucht davor `(\?.*)?`. Jedes Muster ist am Anfang
+ * verankert und, wo der Pfad dort endet, auch am Ende: ein Muster, das irgendwo
+ * passen darf, passte auch auf die Parameter, und ein Scanner hängte es einfach
+ * an (`/index.php?id=1'…&x=/apps/deck/…`). `..` im Pfad nimmt keine Ausnahme. Eine Whitelist in `s02-enrich`
  * nimmt die Zeile aus jedem Szenario, auch aus `http-crawl-non_statics`, das
  * für eine Whitelist nach dem Überlauf zu wenig Ereignisse behält.
  *
@@ -56,7 +59,9 @@ function exprString(value: string): string {
 
 export function localRuleExpression(rule: LocalRule): string {
   const list = (values: readonly string[]) => `[${values.map(exprString).join(', ')}]`;
-  return `evt.Meta.http_verb in ${list(rule.verbs)} && evt.Meta.http_status in ${list(rule.statuses)} && evt.Meta.http_path matches ${exprString(rule.path)}`;
+  // `..` nie: sonst hängte ein Scanner `/../../.env` an einen ausgenommenen
+  // Anfang und bliebe mit seinen 404 unerkannt.
+  return `evt.Meta.http_verb in ${list(rule.verbs)} && evt.Meta.http_status in ${list(rule.statuses)} && !(evt.Meta.http_path contains '..') && evt.Meta.http_path matches ${exprString(rule.path)}`;
 }
 
 const GET = ['GET', 'HEAD'] as const;
@@ -78,11 +83,11 @@ export const APP_RULES: readonly AppRules[] = [
     local: [
       { verbs: ['HEAD'], statuses: ['403', '404'], path: String.raw`^/remote\.php/(web)?dav/files/`, source: `${HUB}/issues/1102` },
       { verbs: ['PROPFIND'], statuses: ['403'], path: String.raw`^/remote\.php/dav/(calendars|addressbooks)/`, source: `${FORUM}/1472` },
-      { verbs: ['POST'], statuses: ['403'], path: String.raw`/apps/text/session/\d+/sync`, source: `${HUB}/issues/1092` },
+      { verbs: ['POST'], statuses: ['403'], path: String.raw`^(/[^/?.]+)?(/index\.php)?/apps/text/session/\d+/sync(\?.*)?$`, source: `${HUB}/issues/1092` },
       {
         verbs: GET,
         statuses: ['200', '304'],
-        path: String.raw`/apps/deck/api/v\d+(\.\d+)?/boards/\d+/stacks/\d+/cards/\d+`,
+        path: String.raw`^(/[^/?.]+)?(/index\.php)?/apps/deck/api/v\d+(\.\d+)?/boards/\d+/stacks/\d+/cards/\d+(\?.*)?$`,
         source: `${HUB}/issues/991`,
       },
       {
@@ -93,7 +98,7 @@ export const APP_RULES: readonly AppRules[] = [
       },
       { verbs: ['POST'], statuses: ['404'], path: String.raw`^(/index\.php)?/login/v2/poll(\?.*)?$`, source: `${FORUM}/1253` },
       { verbs: ['GET'], statuses: ['404'], path: String.raw`^/push/ws(\?.*)?$`, source: `${FORUM}/1253` },
-      { verbs: ['HEAD'], statuses: ['404'], path: String.raw`^/ocs/v2\.php/apps/spreed/api/v\d+/(chat|room)`, source: `${FORUM}/1253` },
+      { verbs: ['HEAD'], statuses: ['404'], path: String.raw`^/ocs/v2\.php/apps/spreed/api/v\d+/(chat|room)(/[A-Za-z0-9]+)*(\?.*)?$`, source: `${FORUM}/1253` },
       {
         verbs: ['PROPFIND'],
         statuses: ['404'],
@@ -177,14 +182,14 @@ export const APP_RULES: readonly AppRules[] = [
     ),
     hub: [{ type: 'parsers', name: 'crowdsecurity/jellyfin-whitelist' }],
     local: [
-      { verbs: GET, statuses: ['404'], path: String.raw`(?i)^/items/[^/?]+/images/backdrop`, source: `${HUB}/pull/2008` },
+      { verbs: GET, statuses: ['404'], path: String.raw`(?i)^/items/[^/?]+/images/backdrop(/\d+)?(\?.*)?$`, source: `${HUB}/pull/2008` },
       {
         verbs: GET,
         statuses: ['404'],
-        path: String.raw`(?i)^/videos/[^/?]+/[^/?]+/subtitles/\d+/\d+/stream`,
+        path: String.raw`(?i)^/videos/[^/?]+/[^/?]+/subtitles/\d+/\d+/stream(\.[a-z0-9]+)?(\?.*)?$`,
         source: 'https://github.com/jellyfin/Swiftfin/issues/1418',
       },
-      { verbs: GET, statuses: ['404'], path: String.raw`(?i)^/branding/splashscreen`, source: 'https://github.com/jellyfin/Swiftfin/issues/690' },
+      { verbs: GET, statuses: ['404'], path: String.raw`(?i)^/branding/splashscreen(\?.*)?$`, source: 'https://github.com/jellyfin/Swiftfin/issues/690' },
     ],
   },
   {
@@ -228,26 +233,26 @@ export const APP_RULES: readonly AppRules[] = [
       {
         verbs: GET,
         statuses: ['404'],
-        path: String.raw`^/_matrix/client/(r0|v3)/rooms/[^/?]+/(state/m\.room\.encryption/?(\?.*)?$|event/[^/?]+)`,
+        path: String.raw`^/_matrix/client/(r0|v3)/rooms/[^/?]+/(state/m\.room\.encryption/?|event/[^/?]+)(\?.*)?$`,
         source: `${HUB}/pull/1726`,
       },
       {
         verbs: GET,
         statuses: ['404'],
-        path: String.raw`^/_matrix/client/unstable/org\.matrix\.msc3814\.v1/dehydrated_device`,
+        path: String.raw`^/_matrix/client/unstable/org\.matrix\.msc3814\.v1/dehydrated_device(/[^/?]+)?(\?.*)?$`,
         source: `${HUB}/pull/1726`,
       },
-      { verbs: GET, statuses: ['404'], path: String.raw`^/_matrix/federation/v1/event/[^/?]+`, source: `${HUB}/pull/1726` },
-      { verbs: GET, statuses: ['403'], path: String.raw`^/_matrix/client/v1/rooms/[^/?]+/relations/[^/?]+`, source: `${HUB}/pull/1726` },
-      { verbs: GET, statuses: ['200', '304'], path: String.raw`^/_matrix/client/v1/media/thumbnail/[^/?]+/[^/?]+`, source: `${HUB}/pull/1726` },
+      { verbs: GET, statuses: ['404'], path: String.raw`^/_matrix/federation/v1/event/[^/?]+(\?.*)?$`, source: `${HUB}/pull/1726` },
+      { verbs: GET, statuses: ['403'], path: String.raw`^/_matrix/client/v1/rooms/[^/?]+/relations/[^/?]+(/[^/?]+){0,2}(\?.*)?$`, source: `${HUB}/pull/1726` },
+      { verbs: GET, statuses: ['200', '304'], path: String.raw`^/_matrix/client/v1/media/thumbnail/[^/?]+/[^/?]+(\?.*)?$`, source: `${HUB}/pull/1726` },
       {
         verbs: GET,
         statuses: ['404'],
-        path: String.raw`^/_matrix/client/unstable/org\.matrix\.msc2965/auth_(metadata|issuer)`,
+        path: String.raw`^/_matrix/client/unstable/org\.matrix\.msc2965/auth_(metadata|issuer)(\?.*)?$`,
         source: `${HUB}/issues/1546`,
       },
-      { verbs: GET, statuses: ['404'], path: String.raw`^/_matrix/(media/(r0|v3)|client/v1/media)/preview_url`, source: `${HUB}/issues/547` },
-      { verbs: GET, statuses: ['404'], path: String.raw`^(/\.well-known/matrix/|/_matrix/client/v3/voip/turnServer)`, source: `${FORUM}/1472` },
+      { verbs: GET, statuses: ['404'], path: String.raw`^/_matrix/(media/(r0|v3)|client/v1/media)/preview_url(\?.*)?$`, source: `${HUB}/issues/547` },
+      { verbs: GET, statuses: ['404'], path: String.raw`^(/\.well-known/matrix/(client|server|support)|/_matrix/client/v3/voip/turnServer)(\?.*)?$`, source: `${FORUM}/1472` },
     ],
   },
   {
@@ -262,7 +267,7 @@ export const APP_RULES: readonly AppRules[] = [
       {
         verbs: GET,
         statuses: ['200', '304', '404'],
-        path: String.raw`^/api/assets/[0-9a-fA-F-]+/thumbnail`,
+        path: String.raw`^/api/assets/[0-9a-fA-F-]+/thumbnail(\?.*)?$`,
         source: 'https://gist.github.com/MikMik1011/536656958903f90bc3a771ea7f393538',
       },
     ],
@@ -275,7 +280,7 @@ export const APP_RULES: readonly AppRules[] = [
       'Der Sync-Client von Seafile holt Dateien in Blöcken, jeden Block über eine eigene Adresse ohne Dateiendung. Schon ein einziger Abgleich sieht für CrowdSec deshalb wie ein Crawler aus. Der Hub hat dafür nichts. HAPM nimmt die Blöcke aus.'
     ),
     hub: [],
-    local: [{ verbs: GET, statuses: ['200'], path: String.raw`^/seafhttp/repo/[0-9a-f-]+/block/[0-9a-f]+`, source: `${HUB}/issues/1793` }],
+    local: [{ verbs: GET, statuses: ['200'], path: String.raw`^/seafhttp/repo/[0-9a-f-]+/block/[0-9a-f]+(\?.*)?$`, source: `${HUB}/issues/1793` }],
   },
   {
     id: 'onlyoffice',
@@ -289,7 +294,7 @@ export const APP_RULES: readonly AppRules[] = [
       {
         verbs: GET,
         statuses: ['200', '304'],
-        path: String.raw`^(/[^/?]+)?/[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{20,}/fonts/\d+`,
+        path: String.raw`^(/[^/?]+)?/[0-9]+\.[0-9]+\.[0-9]+-[0-9a-f]{20,}/fonts/\d+(\?.*)?$`,
         source: `${HUB}/issues/2007`,
       },
       {
@@ -309,7 +314,7 @@ export const APP_RULES: readonly AppRules[] = [
     ),
     hub: [],
     local: [
-      { verbs: GET, statuses: ['404'], path: String.raw`^/webapi/AudioStation/cover\.cgi`, source: `${HUB}/issues/1163` },
+      { verbs: GET, statuses: ['404'], path: String.raw`^/webapi/AudioStation/cover\.cgi(\?.*)?$`, source: `${HUB}/issues/1163` },
       { verbs: GET, statuses: ['404'], path: String.raw`^/webapi/entry\.cgi\?.*api=SYNO\.FileStation\.Thumb`, source: `${HUB}/issues/1163` },
     ],
   },
@@ -338,7 +343,7 @@ export const APP_RULES: readonly AppRules[] = [
       'Clients wie Substreamer fragen Bilder von Künstlern ab, die es nicht gibt. Navidrome antwortet mit 404, und viele davon hintereinander sehen für CrowdSec wie ein Scanner aus. Der Hub hat dafür nichts. HAPM nimmt diese Bildabrufe aus.'
     ),
     hub: [],
-    local: [{ verbs: GET, statuses: ['404'], path: String.raw`^/share/img/[^/?]+`, source: 'https://github.com/navidrome/navidrome/issues/5112' }],
+    local: [{ verbs: GET, statuses: ['404'], path: String.raw`^/share/img/[^/?]+(\?.*)?$`, source: 'https://github.com/navidrome/navidrome/issues/5112' }],
   },
   {
     id: 'git',

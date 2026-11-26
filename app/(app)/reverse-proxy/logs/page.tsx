@@ -42,10 +42,12 @@ function LogsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const crowdsec = useApp().session.features?.crowdsec === true;
-  const [view, setView] = useState<View>(() => {
+  const [chosen, setView] = useState<View>(() => {
     const wanted = searchParams.get('ansicht');
     return wanted === 'haproxy' || wanted === 'crowdsec' ? wanted : 'runs';
   });
+  // Ohne CrowdSec gibt es dessen Reiter nicht: ein Link mit `?ansicht=crowdsec` landet beim ersten.
+  const view: View = chosen === 'crowdsec' && !crowdsec ? 'runs' : chosen;
 
   const select = useCallback(
     (next: View) => {
@@ -111,7 +113,7 @@ function LogsPage() {
         )}
       </div>
 
-      {view === 'runs' ? <RunsView /> : view === 'haproxy' || !crowdsec ? <HaproxyLogView /> : <CrowdsecLogView />}
+      {view === 'runs' ? <RunsView /> : view === 'haproxy' ? <HaproxyLogView /> : <CrowdsecLogView />}
     </>
   );
 }

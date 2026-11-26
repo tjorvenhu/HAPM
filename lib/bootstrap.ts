@@ -26,7 +26,7 @@ import {
 import { reloadForCrowdsec } from './haproxy/provision';
 import { localServer } from './helpers';
 import { writeCrowdsecFiles } from './crowdsec/setup';
-import { crowdsecInStack } from './crowdsec/paths';
+import { crowdsecDisabled, crowdsecInStack } from './crowdsec/paths';
 import { ERROR_DIR, renderBaseConfig } from './haproxy/base-config';
 import { errorFiles } from './haproxy/error-pages';
 import { defaultPageDesign, type PageDesign } from './haproxy/page-design';
@@ -209,6 +209,9 @@ function ensureCrowdsecFiles(): { step: BootstrapStep | null; spoeChanged: boole
   const spoeChanged = current !== null && current !== spoe;
 
   if (!crowdsecInStack()) return { step: null, spoeChanged };
+  if (crowdsecDisabled()) {
+    return { step: { label: 'CrowdSec', ok: true, detail: msgid('In der Oberfläche abgeschaltet.') }, spoeChanged };
+  }
   const files = writeCrowdsecFiles();
   return {
     step: files.mounted

@@ -108,6 +108,25 @@ describe('compileGeoTable / lookupCountry', () => {
     expect(lookupCountry(table, '1.0.4.0')).toBeNull();
   });
 
+  it('verliert bei IPv6 nichts, wenn ein einzelner Host mitten aus einem /64 herausgeschnitten ist', () => {
+    // DE, darin ein französischer Host, danach geht DE weiter: drei Zeilen in der Quelle.
+    const table = build(
+      [
+        '2001:db8::,2001:db8:0:5::ffff,DE',
+        '2001:db8:0:5::1:0,2001:db8:0:5::1:0,FR',
+        '2001:db8:0:5::1:1,2001:db8:ffff:ffff:ffff:ffff:ffff:ffff,DE',
+        '2001:db9::,2001:db9:ffff:ffff:ffff:ffff:ffff:ffff,NL',
+      ].join('\n')
+    );
+    expect(lookupCountry(table, '2001:db8:0:4::1')).toBe('DE');
+    // Das angeschnittene /64 bleibt bei dem Land, das an seinem Anfang gilt.
+    expect(lookupCountry(table, '2001:db8:0:5::1:0')).toBe('DE');
+    // Dahinter war vorher „unbekannt".
+    expect(lookupCountry(table, '2001:db8:0:6::1')).toBe('DE');
+    expect(lookupCountry(table, '2001:db8:1::1')).toBe('DE');
+    expect(lookupCountry(table, '2001:db9::1')).toBe('NL');
+  });
+
   it('antwortet auch unterhalb des ersten Bereichs', () => {
     const sparse = build('9.0.0.0,9.0.0.255,US');
     expect(lookupCountry(sparse, '1.1.1.1')).toBeNull();

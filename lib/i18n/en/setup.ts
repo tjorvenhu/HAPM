@@ -44,7 +44,7 @@ export const setup: Dictionary = {
   "Der Anbieter ließ sich nicht übernehmen.": "The provider could not be applied.",
   "Mit {provider} weiter": "Continue with {provider}",
   "(optional)": "(optional)",
-  "Mit dem Token stellt acme.sh Zertifikate aus. HAPM richtet damit auch die Zone unter „DNS\" ein und speichert es dafür verschlüsselt.": "acme.sh issues certificates with the token. HAPM also uses it to set up the zone under \"DNS\" and stores it encrypted for that.",
+  "Mit dem Token stellt acme.sh Zertifikate aus. HAPM richtet damit auch die Zone unter „DNS“ ein und speichert es dafür verschlüsselt.": "acme.sh issues certificates with the token. HAPM also uses it to set up the zone under \"DNS\" and stores it encrypted for that.",
   "Der Token geht an acme.sh und wird in HAPM nicht gespeichert.": "The token goes to acme.sh and is not stored in HAPM.",
   "Token bei {provider} anlegen": "Create a token at {provider}",
   "Wird geprüft…": "Checking…",

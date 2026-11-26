@@ -11,6 +11,10 @@ export const proxyPages: Dictionary = {
   'Schritte ansehen': 'View steps',
   'Ändern fehlgeschlagen': 'Change failed',
   'Löschen fehlgeschlagen': 'Delete failed',
+  'Die TCP-Weiterleitung konnte nicht gelöscht werden.': 'The TCP forward could not be deleted.',
+  'Das Ziel konnte nicht gelöscht werden.': 'The target could not be deleted.',
+  'Ersetzen fehlgeschlagen': 'Replacing failed',
+  'Beantragen fehlgeschlagen': 'Request failed',
   'Endgültig löschen': 'Delete permanently',
   'Gruppe anlegen': 'Create group',
   'Gruppe entfernen': 'Remove group',
@@ -28,9 +32,10 @@ export const proxyPages: Dictionary = {
   'keine': 'none',
 
   // Übersicht (`page.tsx`)
-  'Gruppe „{name}"': 'Group “{name}”',
+  'Gruppe „{name}“': 'Group “{name}”',
   'Der Vorgang ist fehlgeschlagen. Die Schritte stehen in den Logs.': 'The task failed. The logs show the steps.',
   'Die Gruppe ist angelegt.': 'The group has been created.',
+  'Der Stand des Vorgangs ließ sich nicht abfragen. Die Schritte stehen in den Logs.': 'The state of the task could not be read. The steps are in the logs.',
   'Die Gruppe ist entfernt.': 'The group has been removed.',
   'Die Gruppe konnte nicht angelegt werden.': 'The group could not be created.',
   'Welche Domain auf welches Ziel zeigt. Gelesen wird direkt aus der HAProxy-Konfiguration, nicht aus einer Kopie.':
@@ -64,10 +69,10 @@ export const proxyPages: Dictionary = {
 
   // Gruppenseite (`[scope]/page.tsx`)
   'Eintrag nicht gefunden': 'Entry not found',
-  '„{id}" steht nicht (mehr) in dieser Gruppe.': '“{id}” is not (or no longer) in this group.',
-  'Sperre von „{id}" lösen': 'Unlock “{id}”',
-  '„{id}" mit Passwort sperren': 'Lock “{id}” with a password',
-  '„{id}" auf Admin-IPs sperren': 'Lock “{id}” to admin IPs',
+  '„{id}“ steht nicht (mehr) in dieser Gruppe.': '“{id}” is not (or no longer) in this group.',
+  'Sperre von „{id}“ lösen': 'Unlock “{id}”',
+  '„{id}“ mit Passwort sperren': 'Lock “{id}” with a password',
+  '„{id}“ auf Admin-IPs sperren': 'Lock “{id}” to admin IPs',
   'Reverse-Proxy-Ziel löschen': 'Delete reverse proxy target',
   'Das entfernt die Weiche für {domains} aus der HAProxy-Konfiguration, samt Backend, Zertifikat und dessen automatischer Erneuerung.':
     'This removes the route for {domains} from the HAProxy configuration, along with the backend, the certificate, and its automatic renewal.',
@@ -76,13 +81,13 @@ export const proxyPages: Dictionary = {
   'Die Domains sind danach nicht mehr erreichbar.': 'The domains will no longer be reachable.',
   'DNS-Einträge ebenfalls entfernen': 'Also remove DNS records',
   'Zum Bestätigen die Dienst-ID abtippen:': 'Type the service ID to confirm:',
-  'Ziel „{id}" löschen': 'Delete target “{id}”',
+  'Ziel „{id}“ löschen': 'Delete target “{id}”',
   'TCP-Weiterleitung löschen': 'Delete TCP forward',
-  'Das nimmt den listen-Abschnitt „{id}" aus der HAProxy-Konfiguration. Port {port} nimmt danach keine Verbindungen mehr an, und was gerade darüber läuft, bricht ab.':
+  'Das nimmt den listen-Abschnitt „{id}“ aus der HAProxy-Konfiguration. Port {port} nimmt danach keine Verbindungen mehr an, und was gerade darüber läuft, bricht ab.':
     'This removes the listen section “{id}” from the HAProxy configuration. Port {port} will no longer accept connections, and anything currently running over it is cut off.',
   'Zum Bestätigen die Kennung abtippen:': 'Type the identifier to confirm:',
-  'TCP-Weiterleitung „{id}" löschen': 'Delete TCP forward “{id}”',
-  'Gruppe „{name}" entfernen?': 'Remove group “{name}”?',
+  'TCP-Weiterleitung „{id}“ löschen': 'Delete TCP forward “{id}”',
+  'Gruppe „{name}“ entfernen?': 'Remove group “{name}”?',
   'Die Marker-Paare werden aus der Konfiguration genommen. Es steht kein Eintrag darin, es geht also nichts offline. Danach lässt sich in dieser Gruppe nichts mehr anlegen.':
     'The marker pairs are taken out of the configuration. There is no entry in them, so nothing goes offline. Afterwards nothing more can be created in this group.',
   'Die Gruppe konnte nicht entfernt werden.': 'The group could not be removed.',
@@ -101,7 +106,7 @@ export const proxyPages: Dictionary = {
   'Nicht entfernbar: hier liegt das Ziel der Oberfläche von HAPM': 'Cannot be removed: the target of the HAPM interface is here',
   'Noch kein Eintrag': 'No entry yet',
   'Hier stehen die Dienste dieser Gruppe, sobald der erste angelegt ist.': 'The services of this group appear here once the first one is created.',
-  'Kein Eintrag dieser Gruppe passt zur Suche und zum Typ „{kind}".': 'No entry in this group matches the search and the type “{kind}”.',
+  'Kein Eintrag dieser Gruppe passt zur Suche und zum Typ „{kind}“.': 'No entry in this group matches the search and the type “{kind}”.',
   'Kein Eintrag dieser Gruppe passt zur Suche.': 'No entry in this group matches the search.',
   'Ports dieses Servers, durchgereicht ohne HTTP und ohne Zertifikat': 'Ports on this server, passed through without HTTP and without a certificate',
   'acme.sh ist nicht eingerichtet': 'acme.sh is not set up',
@@ -178,7 +183,7 @@ export const proxyPages: Dictionary = {
   'Zugriffe je Stunde': 'Requests per hour',
   'Aus dem Access-Log, {from} bis {to}.': 'From the access log, {from} to {to}.',
   'Aus dem Access-Log.': 'From the access log.',
-  'Das Log wird ausgewertet …': 'Analyzing the log …',
+  'Das Log wird ausgewertet…': 'Analyzing the log…',
   'Keine Daten': 'No data',
   'Zugriffe': 'Requests',
   'Aus dem Access-Log von HAProxy.': 'From the HAProxy access log.',
@@ -240,6 +245,8 @@ export const proxyPages: Dictionary = {
   'Alle Vorgänge': 'All tasks',
   'Alle Status': 'All statuses',
   'Keine Protokolle': 'No logs',
+  'Die Einträge enden auf einer früheren Seite.': 'The entries end on an earlier page.',
+  'Keine weiteren Protokolle': 'No more logs',
   'Für diesen Filter gibt es keine Einträge.': 'There are no entries for this filter.',
   'Sobald ein Ziel angelegt, geändert oder gelöscht wurde, steht der Vorgang hier.':
     'As soon as a target is created, changed, or deleted, the task appears here.',
@@ -305,11 +312,12 @@ export const proxyPages: Dictionary = {
   'Die Schlüssel konnten nicht geladen werden.': 'The keys could not be loaded.',
   'Die Adressliste gilt ab dem nächsten Aufruf.': 'The address list applies from the next request.',
   'Schlüssel zurückziehen': 'Revoke key',
-  '"{name}" gilt danach sofort nicht mehr. Ein Dienst, der ihn benutzt, bekommt ab dem nächsten Aufruf 401. Das betrifft auch Skripte, die gerade laufen. Der Eintrag bleibt bestehen, damit das Aktivitätsprotokoll auflösbar bleibt.':
-    '"{name}" stops working immediately. A service that uses it gets 401 from the next request on. This also affects scripts that are running right now. The entry is kept so the audit log stays resolvable.',
+  '„{name}“ gilt danach sofort nicht mehr. Ein Dienst, der ihn benutzt, bekommt ab dem nächsten Aufruf 401. Das betrifft auch Skripte, die gerade laufen. Der Eintrag bleibt bestehen, damit das Aktivitätsprotokoll auflösbar bleibt.':
+    '“{name}” stops working immediately. A service that uses it gets 401 from the next request on. This also affects scripts that are running right now. The entry is kept so the audit log stays resolvable.',
   'Zurückziehen': 'Revoke',
   'Zurückziehen fehlgeschlagen': 'Revoke failed',
-  '"{name}" gilt nicht mehr.': '"{name}" is no longer valid.',
+  'Der Schlüssel konnte nicht zurückgezogen werden.': 'The key could not be revoked.',
+  '„{name}“ gilt nicht mehr.': '“{name}” is no longer valid.',
   'Womit ein anderer Dienst oder ein KI-Assistent Domains und Ziele in HAProxy anlegt, ändert und entfernt. Die Anleitungen stehen in {api} und {mcp}.':
     'How another service or an AI assistant creates, changes and removes domains and targets in HAProxy. The guides are in {api} and {mcp}.',
   'API-Key anlegen': 'Create API key',
@@ -356,12 +364,16 @@ export const proxyPages: Dictionary = {
   'Nicht übernehmbar': 'Not importable',
   'Die Datei ist größer als {size} MB.': 'The file is larger than {size} MB.',
   'Die Vorschau ließ sich nicht berechnen.': 'The preview could not be computed.',
-  'Ein Eintrag wird in der Gruppe „{scope}" angelegt, die dafür neu entsteht.':
+  'Ein Eintrag wird in der Gruppe „{scope}“ angelegt, die dafür neu entsteht.':
     'One entry will be created in the group “{scope}”, which is created for it.',
-  '{count} Einträge werden nacheinander in der Gruppe „{scope}" angelegt, die dafür neu entsteht.':
+  '{count} Einträge werden nacheinander in der Gruppe „{scope}“ angelegt, die dafür neu entsteht.':
     '{count} entries will be created one after another in the group “{scope}”, which is created for them.',
-  'Ein Eintrag wird in der Gruppe „{scope}" angelegt.': 'One entry will be created in the group “{scope}”.',
-  '{count} Einträge werden nacheinander in der Gruppe „{scope}" angelegt.':
+  'Ein Eintrag wird in der Gruppe „{scope}“ angelegt.': 'One entry will be created in the group “{scope}”.',
+  'Eines davon entfällt auf {domain}.': 'One of them is for {domain}.',
+  'Mit der Auswahl wird höchstens ein Zertifikat beantragt.': 'With this selection, at most one certificate is requested.',
+  'Beantragt wird höchstens ein Zertifikat, das kann einige Minuten dauern.': 'At most one certificate is requested, which can take a few minutes.',
+  'Vorschau fehlgeschlagen': 'Preview failed',
+  '{count} Einträge werden nacheinander in der Gruppe „{scope}“ angelegt.':
     '{count} entries will be created one after another in the group “{scope}”.',
   'Jeder geht durch dieselbe Prüfung wie im Dialog und lädt HAProxy einzeln neu.':
     'Each goes through the same check as in the dialog and reloads HAProxy on its own.',

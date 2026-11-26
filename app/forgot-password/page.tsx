@@ -82,12 +82,12 @@ export default function ForgotPasswordPage() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="admin@example.com"
+              placeholder="admin@example.org"
               autoComplete="email"
               autoFocus
             />
           </div>
-          {error && <div className="auth-error">{error}</div>}
+          {error && <div className="auth-error" role="alert">{error}</div>}
           <button className="auth-submit" type="submit" disabled={loading}>
             {loading ? <span className="btn-spinner" aria-hidden="true" /> : <Mail size={15} />}
             {loading ? t('Senden…') : t('Link senden')}

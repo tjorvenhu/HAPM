@@ -29,6 +29,8 @@ import { HAPROXY_CFG } from '../haproxy/config';
 import { acmeStatus, upgradeAcme } from '../acme';
 import { checkUpdatesAfterNow } from './check';
 import { notify } from '../notifications';
+import { backupRunning } from '../backup/run';
+import { restoreActive } from '../backup/restore';
 
 export interface UpdateActor {
   userId: string;
@@ -212,7 +214,7 @@ async function updateSelf(log: StepLog): Promise<'handover' | null> {
     },
   });
   await log.add(
-    msgid('Übergabe'),
+    HANDOVER_STEP,
     true,
     msgid('Ein Helfer aus dem neuen Abbild ersetzt jetzt den Container. HAPM ist gleich wieder da.')
   );
@@ -306,11 +308,17 @@ async function finish(
   patch: Partial<UpdateRun>,
   actor: UpdateActor
 ): Promise<void> {
-  await updateDocument<UpdateRun>(COLLECTIONS.UPDATE_RUNS, run.$id, {
-    status,
-    completedAt: new Date().toISOString(),
-    ...patch,
-  }).catch(() => undefined);
+  // Scheitert dieser eine Schreibvorgang, bliebe der Lauf offen und sperrte
+  // jedes weitere Update bis zum Neustart: deshalb mehrere Versuche.
+  const done = { status, completedAt: new Date().toISOString(), ...patch };
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const written = await updateDocument<UpdateRun>(COLLECTIONS.UPDATE_RUNS, run.$id, done).then(
+      () => true,
+      () => false
+    );
+    if (written) break;
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
   await logAudit({
     ...actor,
     action: status === 'error' ? 'update_failed' : 'update_completed',
@@ -362,6 +370,12 @@ export async function startUpdate(component: UpdateComponent, actor: UpdateActor
   if (globalLock.__hapmUpdateRunning || open.length > 0) {
     throw new ApiError(msg('Es läuft schon ein Update. Bitte warten, bis es fertig ist.'), 409);
   }
+  // Ein Update tauscht Container, während Sicherung oder Zurückspielen sie
+  // anhalten, lesen oder ersetzen: das Zurückspielen fände HAProxy nicht mehr,
+  // die Sicherung bräche mit HAPM ab.
+  if (restoreActive() || backupRunning()) {
+    throw new ApiError(msg('Gerade läuft eine Sicherung oder ein Zurückspielen. Das Update geht danach.'), 409);
+  }
   globalLock.__hapmUpdateRunning = true;
 
   let run: UpdateRun;
@@ -388,6 +402,8 @@ export async function startUpdate(component: UpdateComponent, actor: UpdateActor
   return run;
 }
 
+const HANDOVER_STEP = msgid('Übergabe');
+
 /** So lange darf die Übergabe an den Helfer dauern, bevor sie als gescheitert gilt. */
 const HANDOVER_TIMEOUT_MS = 10 * 60 * 1000;
 
@@ -406,8 +422,13 @@ export async function expireStaleUpdateRuns(): Promise<void> {
   ]);
   for (const run of open) {
     if (run.component !== 'hapm') continue;
-    if (Date.now() - Date.parse(run.startedAt) < HANDOVER_TIMEOUT_MS) continue;
     const steps = JSON.parse(run.steps ?? '[]') as HaproxyStep[];
+    // Die Frist läuft ab der Übergabe, nicht ab dem Beginn: das Abbild zu holen
+    // dauert über eine langsame Leitung länger als zehn Minuten, und der Lauf
+    // gälte als gescheitert, während er noch arbeitet. Die Zeile wird mit jedem
+    // Schritt geschrieben, `$updatedAt` ist also der Zeitpunkt der Übergabe.
+    if (!steps.some((step) => step.label === HANDOVER_STEP)) continue;
+    if (Date.now() - Date.parse(run.$updatedAt ?? run.startedAt) < HANDOVER_TIMEOUT_MS) continue;
     steps.push({
       label: msgid('Neuer Container'),
       ok: false,
@@ -468,6 +489,13 @@ export async function reconcileUpdateRuns(): Promise<void> {
         error: changed ? null : failed,
       });
       announce(run, changed ? null : failed, version);
+      // Das alte Abbild bliebe sonst nach jedem Update von HAPM liegen. Erst
+      // etwas später: der Helfer räumt den alten Container noch weg, und
+      // solange der existiert, lässt sich sein Abbild nicht entfernen.
+      if (changed && run.fromImage) {
+        const old = run.fromImage;
+        setTimeout(() => void engine.removeImage(old).catch(() => undefined), 2 * 60_000).unref?.();
+      }
     } else {
       const restarted = msgid('HAPM wurde während des Updates neu gestartet. Der Zustand steht unter „Updates“.');
       await updateDocument<UpdateRun>(COLLECTIONS.UPDATE_RUNS, run.$id, {

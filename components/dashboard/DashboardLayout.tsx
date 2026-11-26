@@ -122,11 +122,17 @@ export function LayoutDialog<K extends string>({
 }) {
   const { t } = useT();
 
-  function move(index: number, by: -1 | 1) {
+  // Gerechnet wird auf dem, was dasteht: ein Tausch mit einem Bereich, den es
+  // hier nicht gibt, änderte in der Liste nichts.
+  const visible = layout.order.filter((key) => !unavailable.includes(key));
+
+  function move(key: K, by: -1 | 1) {
+    const neighbour = visible[visible.indexOf(key) + by];
+    if (neighbour === undefined) return;
     const order = [...layout.order];
-    const target = index + by;
-    if (target < 0 || target >= order.length) return;
-    [order[index], order[target]] = [order[target], order[index]];
+    const from = order.indexOf(key);
+    const to = order.indexOf(neighbour);
+    [order[from], order[to]] = [order[to], order[from]];
     onChange({ ...layout, order });
   }
 
@@ -147,7 +153,7 @@ export function LayoutDialog<K extends string>({
         <div className="modal-body">
           <p className="form-hint">{t('Reihenfolge und sichtbare Bereiche gelten für diesen Browser.')}</p>
           <div className="dash-layout-list">
-            {layout.order.map((key, index) => unavailable.includes(key) ? null : (
+            {visible.map((key, index) => (
               <div key={key} className="dash-layout-row">
                 <label className="toggle-switch">
                   <input
@@ -162,7 +168,7 @@ export function LayoutDialog<K extends string>({
                 <button
                   type="button"
                   className="btn btn-ghost btn-icon btn-sm"
-                  onClick={() => move(index, -1)}
+                  onClick={() => move(key, -1)}
                   disabled={index === 0}
                   aria-label={t('Nach oben')}
                   data-tooltip={t('Nach oben')}
@@ -172,8 +178,8 @@ export function LayoutDialog<K extends string>({
                 <button
                   type="button"
                   className="btn btn-ghost btn-icon btn-sm"
-                  onClick={() => move(index, 1)}
-                  disabled={index === layout.order.length - 1}
+                  onClick={() => move(key, 1)}
+                  disabled={index === visible.length - 1}
                   aria-label={t('Nach unten')}
                   data-tooltip={t('Nach unten')}
                 >

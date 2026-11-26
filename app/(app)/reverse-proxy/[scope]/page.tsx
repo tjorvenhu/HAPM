@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
+import { errorText } from '@/components/errorText';
 import { usePolling } from '@/components/usePolling';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { openRun } from '@/components/runs/runs';
@@ -72,6 +73,9 @@ import { useT } from '@/lib/i18n/react';
  * Gelesen wird weiterhin bei jedem Aufruf direkt aus `/etc/haproxy/haproxy.cfg`;
  * es gibt keine Collection dahinter, siehe docs/reverse-proxy.md.
  */
+
+/** So viele Abfragen eines Laufs dürfen in Folge scheitern, bevor die Seite ihn aufgibt. */
+const MAX_UNREAD_POLLS = 5;
 
 export default function ReverseProxyScopePage({
   params,
@@ -180,7 +184,8 @@ function ScopeView({ slug }: { slug: string }) {
       try {
         const res = await apiFetch('/api/haproxy/services');
         const data = await res.json();
-        if (data.success) setProxies(data.data);
+        if (!res.ok || !data.success) throw new Error(data.error);
+        setProxies(data.data);
         setError('');
       } catch {
         setError(t('Die Reverse-Proxy-Ziele konnten nicht geladen werden.'));
@@ -243,7 +248,7 @@ function ScopeView({ slug }: { slug: string }) {
     notify({
       variant: 'error',
       title: t('Eintrag nicht gefunden'),
-      message: t('„{id}" steht nicht (mehr) in dieser Gruppe.', { id: requestedService }),
+      message: t('„{id}“ steht nicht (mehr) in dieser Gruppe.', { id: requestedService }),
     });
   }, [deepLinkHandled, requestedService, loading, proxies, slug, router, notify, t]);
 
@@ -267,6 +272,10 @@ function ScopeView({ slug }: { slug: string }) {
     // Ein Takt mit Nachladen dauert länger als zwei Sekunden. Der nächste
     // wartet, sonst meldete er denselben fertigen Lauf ein zweites Mal.
     let busy = false;
+    // Je Lauf, wie oft er sich in Folge nicht abfragen ließ. Nach
+    // `MAX_UNREAD_POLLS` gibt die Seite ihn auf, sonst drehte seine Karte für
+    // immer, weil eine Antwort ausbleibt.
+    const unread = new Map<string, number>();
 
     const poll = async () => {
       if (busy) return;
@@ -285,9 +294,16 @@ function ScopeView({ slug }: { slug: string }) {
 
         const running: [string, RunSnapshot][] = [];
         const finished: { run: PendingRun; ok: boolean }[] = [];
+        const lost: PendingRun[] = [];
         runs.forEach((run, index) => {
           const snapshot = snapshots[index];
-          if (!snapshot) return;
+          if (!snapshot) {
+            const misses = (unread.get(run.id) ?? 0) + 1;
+            unread.set(run.id, misses);
+            if (misses >= MAX_UNREAD_POLLS) lost.push(run);
+            return;
+          }
+          unread.delete(run.id);
           if (snapshot.status === 'running') running.push([run.id, snapshot]);
           else finished.push({ run, ok: snapshot.status === 'success' });
         });
@@ -298,7 +314,7 @@ function ScopeView({ slug }: { slug: string }) {
         setPendingRuns((current) =>
           running.reduce((acc, [id, snapshot]) => applyRunSnapshot(acc, id, snapshot), current)
         );
-        if (finished.length === 0) return;
+        if (finished.length === 0 && lost.length === 0) return;
 
         /* ERST nachladen, dann Platzhalter abräumen und melden.
          *
@@ -309,7 +325,8 @@ function ScopeView({ slug }: { slug: string }) {
          * der Vorgang ist durch UND die Liste zeigt es. */
         await load(true);
         if (cancelled) return;
-        const done = new Set(finished.map(({ run }) => run.id));
+        const done = new Set([...finished.map(({ run }) => run.id), ...lost.map((run) => run.id)]);
+        for (const id of done) unread.delete(id);
         setPendingRuns((current) => removePendingRuns(current, done));
         for (const { run, ok } of finished) {
           notify({
@@ -319,6 +336,13 @@ function ScopeView({ slug }: { slug: string }) {
               ? t('Durchgelaufen, HAProxy hat die neue Konfiguration übernommen.')
               : t('Nicht durchgelaufen. Der erste fehlgeschlagene Schritt steht im Protokoll.'),
             action: { label: t('Protokoll'), onClick: () => showRun(run.id) },
+          });
+        }
+        for (const run of lost) {
+          notify({
+            variant: 'error',
+            title: run.label,
+            message: t('Der Stand des Vorgangs ließ sich nicht abfragen. Die Schritte stehen in den Logs.'),
           });
         }
       } finally {
@@ -387,15 +411,15 @@ function ScopeView({ slug }: { slug: string }) {
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || t('Ändern fehlgeschlagen'));
+      if (!res.ok) throw new Error(data.error || t('Der Vorgang ist fehlgeschlagen.'));
       startRun({
         id: data.data.runId,
         label:
           choice === null
-            ? t('Sperre von „{id}" lösen', { id: service.id })
+            ? t('Sperre von „{id}“ lösen', { id: service.id })
             : choice.mode === 'password'
-              ? t('„{id}" mit Passwort sperren', { id: service.id })
-              : t('„{id}" auf Admin-IPs sperren', { id: service.id }),
+              ? t('„{id}“ mit Passwort sperren', { id: service.id })
+              : t('„{id}“ auf Admin-IPs sperren', { id: service.id }),
         serviceId: service.id,
         title: service.domains[0] ?? service.id,
         isNew: false,
@@ -407,14 +431,21 @@ function ScopeView({ slug }: { slug: string }) {
       notify({
         variant: 'error',
         title: t('Ändern fehlgeschlagen'),
-        message: err instanceof Error ? err.message : t('Unbekannter Fehler.'),
+        message: errorText(err, t('HAPM hat nicht geantwortet. Bitte versuchen Sie es erneut.')),
       });
     } finally {
       setLockingId(null);
     }
   }
 
+  /** Solange die Frage nach dem DNS-Eintrag läuft, ist der Dialog noch nicht
+   *  offen. Ein zweiter Klick öffnete sonst einen zweiten, und das Versprechen
+   *  des ersten löste sich nie auf. */
+  const [preparingDelete, setPreparingDelete] = useState(false);
+
   async function handleDelete(proxy: ProxyRow, service: HaproxyService) {
+    if (preparingDelete) return;
+    setPreparingDelete(true);
     /* ── Gibt es überhaupt einen eigenen DNS-Eintrag? ──
      *
      * Gefragt wird vor dem Dialog und nicht darin: der Schalter soll nur da
@@ -436,7 +467,8 @@ function ScopeView({ slug }: { slug: string }) {
               .map((m) => m.domain)
           : []
       )
-      .catch(() => [] as string[]);
+      .catch(() => [] as string[])
+      .finally(() => setPreparingDelete(false));
 
     await confirm({
       title: t('Reverse-Proxy-Ziel löschen'),
@@ -467,6 +499,7 @@ function ScopeView({ slug }: { slug: string }) {
       requireTextLabel: t('Zum Bestätigen die Dienst-ID abtippen:'),
       confirmLabel: t('Endgültig löschen'),
       variant: 'danger',
+      failedTitle: t('Löschen fehlgeschlagen'),
       onConfirm: async (removeDns) => {
         const res = await apiFetch(`/api/haproxy/services/${encodeURIComponent(service.id)}`, {
           method: 'DELETE',
@@ -481,13 +514,13 @@ function ScopeView({ slug }: { slug: string }) {
         });
         const data = await res.json();
         if (!res.ok) {
-          // Der Dialog zeigt den Text selbst an, solange er offen bleibt —
-          // deshalb hier kein Toast, sondern das Werfen, auf das er wartet.
-          throw new Error(data.error || t('Löschen fehlgeschlagen'));
+          // Geworfen statt gemeldet: `useConfirm` zeigt den Text als Meldung
+          // (Titel `failedTitle`) und lässt den Dialog offen.
+          throw new Error(data.error || t('Das Ziel konnte nicht gelöscht werden.'));
         }
         startRun({
           id: data.data.runId,
-          label: t('Ziel „{id}" löschen', { id: service.id }),
+          label: t('Ziel „{id}“ löschen', { id: service.id }),
           serviceId: service.id,
           title: service.domains[0] ?? service.id,
           isNew: false,
@@ -511,13 +544,14 @@ function ScopeView({ slug }: { slug: string }) {
     await confirm({
       title: t('TCP-Weiterleitung löschen'),
       message: t(
-        'Das nimmt den listen-Abschnitt „{id}" aus der HAProxy-Konfiguration. Port {port} nimmt danach keine Verbindungen mehr an, und was gerade darüber läuft, bricht ab.',
+        'Das nimmt den listen-Abschnitt „{id}“ aus der HAProxy-Konfiguration. Port {port} nimmt danach keine Verbindungen mehr an, und was gerade darüber läuft, bricht ab.',
         { id: stream.id, port: stream.port ?? '?' }
       ),
       requireText: stream.id,
       requireTextLabel: t('Zum Bestätigen die Kennung abtippen:'),
       confirmLabel: t('Endgültig löschen'),
       variant: 'danger',
+      failedTitle: t('Löschen fehlgeschlagen'),
       onConfirm: async () => {
         const res = await apiFetch(`/api/haproxy/streams/${encodeURIComponent(stream.id)}`, {
           method: 'DELETE',
@@ -525,12 +559,12 @@ function ScopeView({ slug }: { slug: string }) {
           body: JSON.stringify({ serverId: proxy.$id }),
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || t('Löschen fehlgeschlagen'));
+        if (!res.ok) throw new Error(data.error || t('Die TCP-Weiterleitung konnte nicht gelöscht werden.'));
         startRun({
           id: data.data.runId,
-          label: t('TCP-Weiterleitung „{id}" löschen', { id: stream.id }),
+          label: t('TCP-Weiterleitung „{id}“ löschen', { id: stream.id }),
           serviceId: stream.id,
-          title: `Port ${stream.port ?? '?'}`,
+          title: t('Port {port}', { port: stream.port ?? '?' }),
           isNew: false,
           kind: 'delete',
           phase: null,
@@ -562,7 +596,7 @@ function ScopeView({ slug }: { slug: string }) {
   async function removeScope() {
     if (!page) return;
     const okToGo = await confirm({
-      title: t('Gruppe „{name}" entfernen?', { name: page.title }),
+      title: t('Gruppe „{name}“ entfernen?', { name: page.title }),
       message: t(
         'Die Marker-Paare werden aus der Konfiguration genommen. Es steht kein Eintrag darin, es geht also nichts offline. Danach lässt sich in dieser Gruppe nichts mehr anlegen.'
       ),
@@ -593,7 +627,7 @@ function ScopeView({ slug }: { slug: string }) {
       notify({
         variant: 'error',
         title: t('Entfernen fehlgeschlagen'),
-        message: err instanceof Error ? err.message : t('Unbekannter Fehler.'),
+        message: errorText(err, t('HAPM hat nicht geantwortet. Bitte versuchen Sie es erneut.')),
       });
     } finally {
       setRemoving(false);
@@ -658,7 +692,7 @@ function ScopeView({ slug }: { slug: string }) {
               <Globe size={20} />
             </span>
             <div>
-              <h1 className="page-title">{t('Gruppe nicht gefunden')}</h1>
+              <h1 className="page-title">{error ? t('Gruppe') : t('Gruppe nicht gefunden')}</h1>
               <div className="page-crumbs">
                 <Link className="page-back" href="/reverse-proxy">
                   <ArrowLeft size={14} />
@@ -751,6 +785,7 @@ function ScopeView({ slug }: { slug: string }) {
                 type="button"
                 className="btn btn-ghost btn-icon btn-sm"
                 data-tooltip={t('Suche leeren')}
+                aria-label={t('Suche leeren')}
                 onClick={() => setSearch('')}
               >
                 <X size={15} />
@@ -768,7 +803,13 @@ function ScopeView({ slug }: { slug: string }) {
               ...TARGET_KINDS.map((k) => ({ value: k, label: t(TARGET_KIND_LABELS[k]) })),
             ]}
           />
-          <button className="btn btn-secondary btn-icon" onClick={refresh} disabled={refreshing} data-tooltip={t('Aktualisieren')}>
+          <button
+            className="btn btn-secondary btn-icon"
+            onClick={refresh}
+            disabled={refreshing}
+            data-tooltip={t('Aktualisieren')}
+            aria-label={t('Aktualisieren')}
+          >
             {refreshing ? <Loader2 size={16} className="spin" /> : <RefreshCw size={16} />}
           </button>
           {canRemove && (
@@ -777,6 +818,7 @@ function ScopeView({ slug }: { slug: string }) {
               onClick={() => removeScope()}
               disabled={removing}
               data-tooltip={t('Gruppe entfernen')}
+              aria-label={t('Gruppe entfernen')}
             >
               {removing ? <Loader2 size={16} className="spin" /> : <FolderMinus size={16} />}
             </button>
@@ -846,7 +888,7 @@ function ScopeView({ slug }: { slug: string }) {
               Grund schickt einen suchen, wo nichts zu suchen ist. */}
           <p>
             {kindFilter
-              ? t('Kein Eintrag dieser Gruppe passt zur Suche und zum Typ „{kind}".', {
+              ? t('Kein Eintrag dieser Gruppe passt zur Suche und zum Typ „{kind}“.', {
                   kind: t(TARGET_KIND_LABELS[kindFilter]),
                 })
               : t('Kein Eintrag dieser Gruppe passt zur Suche.')}

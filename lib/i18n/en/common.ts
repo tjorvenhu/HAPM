@@ -46,6 +46,8 @@ export const common: Dictionary = {
   'Zu viele Versuche. Bitte warten Sie 5 Minuten.': 'Too many attempts. Please wait 5 minutes.',
   'Die Anfrage ist fehlgeschlagen.': 'The request failed.',
   'Der Vorgang ist fehlgeschlagen.': 'The operation failed.',
+  'Kopieren nicht möglich. Bitte von Hand markieren.': 'Copying is not possible. Please select the text by hand.',
+  'Hochladen fehlgeschlagen': 'Upload failed',
   // Von mehreren Bereichen gebraucht
   'Die Passwörter stimmen nicht überein.': 'The passwords do not match.',
   'Passwort wiederholen': 'Repeat password',

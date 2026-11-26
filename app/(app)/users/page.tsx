@@ -6,6 +6,7 @@ import { InfoHint } from '@/ui/primitives/InfoHint';
 import { useApp } from '@/components/AppShell';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { useToast } from '@/components/Toast';
+import { errorText } from '@/components/errorText';
 import { usePolling } from '@/components/usePolling';
 import { SkeletonRows } from '@/components/Skeleton';
 import { formatDate, formatDateTimeMedium } from '@/lib/i18n';
@@ -28,7 +29,6 @@ export default function UsersPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [saving, setSaving] = useState(false);
-  const [formError, setFormError] = useState('');
 
   const load = useCallback(async () => {
     try {
@@ -55,13 +55,11 @@ export default function UsersPage() {
     setName('');
     setEmail('');
     setPassword('');
-    setFormError('');
     setModalOpen(true);
   }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    setFormError('');
     setSaving(true);
     try {
       const res = await apiFetch('/api/users', {
@@ -76,7 +74,11 @@ export default function UsersPage() {
       setModalOpen(false);
       notify({ variant: 'success', message: t('Das Konto für {email} ist angelegt.', { email: data.data.email }) });
     } catch (err: unknown) {
-      setFormError(err instanceof Error ? err.message : t('Das Konto ließ sich nicht anlegen.'));
+      notify({
+        variant: 'error',
+        title: t('Anlegen fehlgeschlagen'),
+        message: errorText(err, t('Das Konto ließ sich nicht anlegen.')),
+      });
     } finally {
       setSaving(false);
     }
@@ -91,13 +93,11 @@ export default function UsersPage() {
       }),
       confirmLabel: t('Löschen'),
       variant: 'danger',
+      failedTitle: t('Löschen fehlgeschlagen'),
       onConfirm: async () => {
         const res = await apiFetch(`/api/users/${user.$id}`, { method: 'DELETE' });
         const data = await res.json();
-        if (!res.ok) {
-          notify({ variant: 'error', message: data.error || t('Das Konto ließ sich nicht löschen.') });
-          throw new Error(data.error);
-        }
+        if (!res.ok || !data.success) throw new Error(data.error || t('Das Konto ließ sich nicht löschen.'));
         await load();
         notify({ variant: 'success', message: t('Das Konto von {name} ist gelöscht.', { name: user.name }) });
       },
@@ -134,7 +134,7 @@ export default function UsersPage() {
                 <th>{t('Passkeys')}</th>
                 <th>{t('Letzte Anmeldung')}</th>
                 <th>{t('Angelegt')}</th>
-                <th />
+                <th aria-label={t('Aktionen')} />
               </tr>
             </thead>
             <tbody>
@@ -202,8 +202,6 @@ export default function UsersPage() {
             </div>
             <form onSubmit={handleSubmit}>
               <div className="modal-body">
-                {formError && <div className="alert alert-danger">{formError}</div>}
-
                 <div className="form-group">
                   <label className="form-label" htmlFor="userName">{t('Name')}</label>
                   <input

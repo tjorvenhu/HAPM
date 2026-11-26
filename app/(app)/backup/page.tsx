@@ -16,12 +16,13 @@ import {
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
+import { errorText } from '@/components/errorText';
 import { usePolling } from '@/components/usePolling';
 import { useNow } from '@/components/useNow';
 import { SkeletonDetail, SkeletonRows } from '@/components/Skeleton';
 import AreaTabs, { useArea, type Area } from '@/components/AreaTabs';
 import { RUN_STATUS_CLASS, RUN_STATUS_LABELS, formatClock } from '@/components/system/format';
-import { formatBytes, formatDateTime, msgid, type Translator } from '@/lib/i18n';
+import { MISSING, formatBytes, formatDateTime, msgid, type Translator } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
 import RestorePanel from '@/components/backup/RestorePanel';
 import RunStepList from '@/components/runs/RunStepList';
@@ -79,14 +80,14 @@ function readKeepField(raw: string, previous: string): string {
 }
 
 function triggeredByLabel(value: string | null, t: Translator['t']): string {
-  if (!value) return '';
+  if (!value) return MISSING;
   return value === 'scheduler' ? t('Zeitplan') : value;
 }
 
 function runDuration(run: RunView, now: number): string {
   const start = Date.parse(run.startedAt);
   const end = run.completedAt ? Date.parse(run.completedAt) : now;
-  if (Number.isNaN(start) || Number.isNaN(end)) return '';
+  if (Number.isNaN(start) || Number.isNaN(end)) return MISSING;
   return formatClock(end - start);
 }
 
@@ -113,7 +114,6 @@ function Backup() {
   const [error, setError] = useState('');
   /** Nur was im Formular geändert wurde. So überschreibt eine Abfrage keine Eingabe. */
   const [draft, setDraft] = useState<FormState | null>(null);
-  const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
   const [starting, setStarting] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
@@ -167,10 +167,12 @@ function Backup() {
     }
   }
 
-  /** Speichert den Entwurf. Gibt den neuen Stand zurück, oder `null`, wenn es nicht ging. */
+  /**
+   * Speichert den Entwurf. Gibt den neuen Stand zurück, oder `null`, wenn es
+   * nicht ging: dann steht der Grund in einer Meldung.
+   */
   async function persist(): Promise<BackupData | null> {
     if (!draft) return data;
-    setFormError('');
     setSaving(true);
     try {
       const res = await apiFetch('/api/backup', {
@@ -184,16 +186,17 @@ function Backup() {
         }),
       });
       const body = await res.json();
-      if (!body.success) {
-        setFormError(body.error || t('Die Einstellungen ließen sich nicht speichern.'));
-        return null;
-      }
+      if (!body.success) throw new Error(body.error || t('Die Einstellungen ließen sich nicht speichern.'));
       const next = body.data as BackupData;
       setData(next);
       setDraft(null);
       return next;
-    } catch {
-      setFormError(t('Die Einstellungen ließen sich nicht speichern.'));
+    } catch (err: unknown) {
+      notify({
+        variant: 'error',
+        title: t('Speichern fehlgeschlagen'),
+        message: errorText(err, t('Die Einstellungen ließen sich nicht speichern.')),
+      });
       return null;
     } finally {
       setSaving(false);
@@ -213,7 +216,7 @@ function Backup() {
               time: next.settings.time,
               path: next.settings.hostPath,
             })
-          : t('Gespeichert. Täglich gesichert wird nicht. Von Hand geht es mit „Jetzt sichern".'),
+          : t('Gespeichert. Täglich gesichert wird nicht. Von Hand geht es mit „Jetzt sichern“.'),
     });
   }
 
@@ -222,7 +225,7 @@ function Backup() {
     const next = await persist();
     if (!next) return;
     if (!next.settings.hostPath) {
-      setFormError(t('Bitte zuerst einen Ordner auf dem Server eintragen.'));
+      notify({ variant: 'error', message: t('Bitte zuerst einen Ordner auf dem Server eintragen.') });
       return;
     }
     await start();
@@ -312,8 +315,6 @@ function Backup() {
             </div>
 
             <form className="card-body" onSubmit={save}>
-              {formError && <div className="alert alert-danger">{formError}</div>}
-
               <div className="form-group">
                 <label className="form-label" htmlFor="backup-path">
                   {t('Ordner auf dem Server')}
@@ -519,7 +520,9 @@ function Backup() {
                             )}
                           </td>
                           <td data-label={t('Größe')} className="sys-td-num">
-                            {run.sizeBytes !== null && <span className="sys-num">{formatBytes(locale, run.sizeBytes)}</span>}
+                            <span className="sys-num">
+                              {run.sizeBytes !== null ? formatBytes(locale, run.sizeBytes) : MISSING}
+                            </span>
                           </td>
                           <td data-label={t('Dauer')}>
                             <span className="sys-num">{runDuration(run, now)}</span>

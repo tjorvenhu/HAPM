@@ -150,6 +150,22 @@ const MARK_PATHS = '__HAPM_PATHS__';
  * Debian ist `awk` ein mawk. Ein Programm, das je nach Abbild still nichts
  * liefert, ist keine Auswertung.
  *
+ * ── Warum die Zeiten geprüft werden ──
+ *
+ * Eine TCP-Weiterleitung schreibt mit `option tcplog` in dieselbe Datei. Ihre
+ * Zeile hat an der Stelle des Statuscodes die Bytes: als Anfrage gezählt, stünde
+ * dort „Status 51234". Eine HTTP-Zeile hat fünf Zeiten (vier Schrägstriche),
+ * eine TCP-Zeile drei, und der Status ist dreistellig oder `-1`.
+ *
+ * ── Woher die Stunde kommt ──
+ *
+ * Vom Kopf der Zeile, den HAPM beim Mitschreiben davorsetzt (UTC, ISO), wo es
+ * ihn gibt: die Zeit in der eckigen Klammer ist die Ortszeit des
+ * HAProxy-Containers, und der läuft ohne `TZ` in UTC, der Browser aber nicht.
+ * Die Kurve läge sonst ein oder zwei Stunden daneben. Für Anfang und Ende des
+ * Zeitraums wird nach Jahr, Monat, Tag, Stunde verglichen (`sk`): `31/Jan`
+ * gegen `01/Feb` als Text vertauschte beide.
+ *
  * Enthält bewusst **kein** einfaches Anführungszeichen: es geht als ein
  * Argument durch `shellEscape`, und das ist die Sorte Zeichen, an der eine
  * Kommandozeile aufbricht.
@@ -170,14 +186,22 @@ const AWK_PROGRAM = String.raw`
   if (be == "" || be == "-") be = "(ohne Backend)"
   if (only != "" && be != only) next
 
+  tm = $(ci + 3)
+  if (gsub(/\//, "/", tm) != 4) next
   st = $(ci + 4)
-  if (st !~ /^[0-9]+$/) next
+  if (st !~ /^(-1|[1-5][0-9][0-9])$/) next
   by = $(ci + 5)
   if (by !~ /^[0-9]+$/) by = 0
 
-  when = substr($ci, 2, 14)
-  if (first == "" || when < first) first = when
-  if (last == "" || when > last) last = when
+  if ($1 ~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:/) {
+    when = substr($1, 1, 13)
+    sk = when
+  } else {
+    when = substr($ci, 2, 14)
+    sk = substr(when, 8, 4) sprintf("%02d", (index("JanFebMarAprMayJunJulAugSepOctNovDec", substr(when, 4, 3)) + 2) / 3) substr(when, 1, 2) substr(when, 13, 2)
+  }
+  if (first == "" || sk < firstKey) { first = when; firstKey = sk }
+  if (last == "" || sk > lastKey) { last = when; lastKey = sk }
 
   parsed++
   bytes += by
@@ -348,6 +372,8 @@ const MONTHS: Record<string, string> = {
  * das ist bei einer Flotte in einer Zeitzone die richtige Antwort.
  */
 export function toIsoHour(stamp: string): string | null {
+  // Aus dem Kopf der Zeile, den HAPM schreibt: das ist UTC und sagt es auch.
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}$/.test(stamp)) return `${stamp}:00:00Z`;
   const match = /^(\d{2})\/([A-Za-z]{3})\/(\d{4}):(\d{2})$/.exec(stamp);
   if (!match) return null;
   const month = MONTHS[match[2]];

@@ -180,6 +180,9 @@ async function running(name: string): Promise<boolean> {
 export async function reloadCrowdsec(): Promise<void> {
   if (!(await running(crowdsecContainerName()))) return;
   await engine.restart(crowdsecContainerName());
+  // Der Neustart hat geladen, was `writeCrowdsecFiles` vorgemerkt hat: sonst
+  // startete der Abgleich CrowdSec eine Viertelstunde später ein zweites Mal.
+  pendingChanges().crowdsec = false;
 }
 
 /**

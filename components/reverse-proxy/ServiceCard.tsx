@@ -303,7 +303,7 @@ export default function ServiceCard({
           icon: <EyeOff size={14} />,
           label: t('Verdeckt'),
           tooltip: t(
-            'Die Weiche von „{other}" steht weiter oben und passt auch für diese Domains. HAProxy nimmt die erste, dieser Eintrag wird nie erreicht.',
+            'Die Weiche von „{other}“ steht weiter oben und passt auch für diese Domains. HAProxy nimmt die erste, dieser Eintrag wird nie erreicht.',
             { other: service.shadowedBy }
           ),
           className: 'is-offline',
@@ -329,7 +329,7 @@ export default function ServiceCard({
       ? [{
           key: 'healthcheck',
           icon: <Activity size={14} />,
-          label: 'Healthcheck',
+          label: t('Healthcheck'),
           tooltip: t(HEALTH_TAG[health].tooltip),
           className: HEALTH_TAG[health].className,
         }]

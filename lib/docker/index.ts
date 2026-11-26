@@ -59,10 +59,12 @@ export async function containerInfo(nameOrId: string): Promise<ContainerInfo | n
     repoDigests: (image?.RepoDigests ?? []).map((entry: string) => entry.slice(entry.indexOf('@') + 1)),
     version: versionOf(image?.Config?.Env, image?.Config?.Labels),
     imageCreated: image?.Created ?? null,
-    running: Boolean(state.Running),
+    // Docker meldet in der Pause einer Neustartschleife `Running` und
+    // `Restarting` zugleich. Ein Container, der immer wieder abbricht, läuft nicht.
+    running: Boolean(state.Running) && !state.Restarting,
     status: state.Status ?? 'unbekannt',
     health: state.Health?.Status ?? null,
-    startedAt: state.Running ? (state.StartedAt ?? null) : null,
+    startedAt: state.Running && !state.Restarting ? (state.StartedAt ?? null) : null,
     restartCount: Number(container.RestartCount ?? 0),
   };
 }

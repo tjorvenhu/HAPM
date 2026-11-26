@@ -53,7 +53,7 @@ function extraFields(line: CrowdsecLogLine): string {
 
 /** `crowdsec-spoa-bouncer/v0.3.1-4705eac0452d…` mit der Kennung des Commits auf sieben Zeichen. */
 function shortAgent(agent: string): string {
-  return agent.replace(/-([0-9a-f]{7})[0-9a-f]{8,}/, '-$1');
+  return agent.replace(/-([0-9a-f]{7})[0-9a-f]{8,}(?![0-9a-z])/, '-$1');
 }
 
 function requestDuration(locale: Locale, ms: number): string {

@@ -64,7 +64,7 @@ export default function BackendTlsPick({ value, onChange, label, targets, verify
         <label className="form-label">{t(label)}</label>
         <InfoHint
           text={t(
-            'Für Ziele, die selbst verschlüsseln, etwa Proxmox auf 8006 oder TrueNAS. Ohne Prüfung passt das für selbst signierte Zertifikate. Mit Prüfung muss das Zertifikat von einer CA stammen, der das System vertraut, und für die aufgerufene Domain gelten. HAProxy schickt die Domain der Anfrage als SNI. In der Konfiguration: „{insecure}" oder „{verify}" an jeder server-Zeile.',
+            'Für Ziele, die selbst verschlüsseln, etwa Proxmox auf 8006 oder TrueNAS. Ohne Prüfung passt das für selbst signierte Zertifikate. Mit Prüfung muss das Zertifikat von einer CA stammen, der das System vertraut, und für die aufgerufene Domain gelten. HAProxy schickt die Domain der Anfrage als SNI. In der Konfiguration: „{insecure}“ oder „{verify}“ an jeder server-Zeile.',
             { insecure: backendTlsParams('insecure'), verify: backendTlsParams('verify') }
           )}
         />

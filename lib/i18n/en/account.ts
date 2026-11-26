@@ -61,6 +61,8 @@ export const account: Dictionary = {
     'The second factor is set up. All other sessions of this account have ended.',
   'Der zweite Faktor ließ sich nicht abschalten.': 'The second factor could not be turned off.',
   'Der zweite Faktor ist abgeschaltet.': 'The second factor is turned off.',
+  'Erzeugen fehlgeschlagen': 'Generating failed',
+  'Abschalten fehlgeschlagen': 'Turning off failed',
   'Der zweite Faktor ist nicht eingerichtet.': 'The second factor is not set up.',
   'Der zweite Faktor ist schon eingerichtet.': 'The second factor is already set up.',
   'Die Einrichtung wurde noch nicht gestartet.': 'Setup has not been started yet.',
@@ -102,8 +104,8 @@ export const account: Dictionary = {
     'The passkey is added. You can use it the next time you sign in.',
   'Der Name konnte nicht gespeichert werden.': 'The name could not be saved.',
   'Der Name ist gespeichert.': 'The name is saved.',
-  'Mit "{name}" ist danach keine Anmeldung mehr möglich. Ihr Passwort bleibt bestehen. Auf dem Gerät selbst löschen Sie den Passkey in dessen Einstellungen.':
-    'Signing in with "{name}" will no longer be possible. Your password stays. To delete the passkey on the device itself, use its settings.',
+  'Mit „{name}“ ist danach keine Anmeldung mehr möglich. Ihr Passwort bleibt bestehen. Auf dem Gerät selbst löschen Sie den Passkey in dessen Einstellungen.':
+    'Signing in with “{name}” will no longer be possible. Your password stays. To delete the passkey on the device itself, use its settings.',
   'Der Passkey ließ sich nicht entfernen.': 'The passkey could not be removed.',
   'Der Passkey ist entfernt.': 'The passkey is removed.',
   'Diesen Passkey gibt es nicht mehr.': 'This passkey no longer exists.',

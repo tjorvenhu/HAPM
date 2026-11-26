@@ -133,6 +133,7 @@ export default function ProtectionSection({
                 type="button"
                 className="btn btn-ghost btn-icon"
                 data-tooltip={t('Zeile entfernen')}
+                aria-label={t('Zeile entfernen')}
                 disabled={value.blockedIps.length === 1 && ip === ''}
                 onClick={() => {
                   const rest = value.blockedIps.filter((_, i) => i !== index);

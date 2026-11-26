@@ -6,6 +6,7 @@ import { InfoHint } from '@/ui/primitives/InfoHint';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/ConfirmDialog';
+import { errorText } from '@/components/errorText';
 import { useMountedLoad } from '@/components/useMountedLoad';
 import { usePolling } from '@/components/usePolling';
 import { SkeletonRows } from '@/components/Skeleton';
@@ -69,6 +70,7 @@ export default function GeoipPanel() {
   const [status, setStatus] = useState<GeoipOverview | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [busy, setBusy] = useState<'refresh' | 'switch' | 'upload' | 'reset' | null>(null);
+  /** Nur die Prüfung des Dateinamens vor dem Senden. Was der Server antwortet, ist eine Meldung. */
   const [formError, setFormError] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -98,6 +100,7 @@ export default function GeoipPanel() {
       if (!data.success) throw new Error(data.error);
       const next = data.data as GeoipOverview & { changed: boolean };
       setStatus(next);
+      setFormError('');
       notify(
         next.changed
           ? {
@@ -123,7 +126,7 @@ export default function GeoipPanel() {
       notify({
         variant: 'error',
         title: t('Erneuern fehlgeschlagen'),
-        message: err instanceof Error && err.message ? err.message : t('Unbekannter Fehler.'),
+        message: errorText(err, t('Unbekannter Fehler.')),
       });
       // Der gescheiterte Versuch steht jetzt am Zustand, und der soll dastehen.
       await load();
@@ -143,6 +146,7 @@ export default function GeoipPanel() {
       const data = await res.json();
       if (!data.success) throw new Error(data.error);
       setStatus(data.data as GeoipOverview);
+      setFormError('');
       notify({
         variant: 'success',
         message: t(
@@ -153,7 +157,7 @@ export default function GeoipPanel() {
       notify({
         variant: 'error',
         title: t('Umschalten fehlgeschlagen'),
-        message: err instanceof Error && err.message ? err.message : t('Unbekannter Fehler.'),
+        message: errorText(err, t('Unbekannter Fehler.')),
       });
     } finally {
       setBusy(null);
@@ -169,7 +173,7 @@ export default function GeoipPanel() {
       // nichts.
       setFormError(
         t(
-          '„{file}" nennt keinen Stand. Erwartet wird der Monat im Dateinamen, so wie DB-IP ihn ausliefert: dbip-country-lite-2026-08.csv.gz',
+          '„{file}“ nennt keinen Stand. Erwartet wird der Monat im Dateinamen, so wie DB-IP ihn ausliefert: dbip-country-lite-2026-08.csv.gz',
           { file: file.name }
         )
       );
@@ -197,10 +201,13 @@ export default function GeoipPanel() {
         }),
       });
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : t('Die Datei konnte nicht gelesen werden.'));
+      notify({
+        variant: 'error',
+        title: t('Hochladen fehlgeschlagen'),
+        message: errorText(err, t('Die Datei konnte nicht gelesen werden.')),
+      });
     } finally {
       setBusy(null);
-      if (fileInput.current) fileInput.current.value = '';
     }
   }
 
@@ -213,6 +220,7 @@ export default function GeoipPanel() {
           : 'Danach gilt wieder die mitgelieferte Fassung. Sie ist in der Regel älter, die Länder in der Statistik werden dadurch ungenauer. Sonst ändert sich nichts.'
       ),
       confirmLabel: t('Zurücksetzen'),
+      variant: 'warning',
     });
     if (!ok) return;
 
@@ -222,9 +230,14 @@ export default function GeoipPanel() {
       const data = await res.json();
       if (!data.success) throw new Error(data.error);
       setStatus(data.data as GeoipOverview);
+      setFormError('');
       notify({ variant: 'success', message: t('Es gilt wieder die mitgelieferte Tabelle.') });
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : t('Das hat nicht geklappt.'));
+      notify({
+        variant: 'error',
+        title: t('Zurücksetzen fehlgeschlagen'),
+        message: errorText(err, t('Das hat nicht geklappt.')),
+      });
     } finally {
       setBusy(null);
     }
@@ -403,6 +416,8 @@ export default function GeoipPanel() {
                 style={{ display: 'none' }}
                 onChange={(event) => {
                   const file = event.target.files?.[0];
+                  // Sonst meldet der Browser keine Änderung, wenn dieselbe Datei noch einmal gewählt wird.
+                  event.target.value = '';
                   if (file) void upload(file);
                 }}
               />

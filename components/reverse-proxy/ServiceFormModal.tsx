@@ -8,6 +8,8 @@ import {
   CircleCheck, CircleDashed, CircleAlert,
 } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
+import { useToast } from '@/components/Toast';
+import { errorText } from '@/components/errorText';
 import { suggestPassword } from '@/components/suggestPassword';
 import Select from '@/components/Select';
 import { InfoHint } from '@/ui/primitives/InfoHint';
@@ -80,8 +82,7 @@ interface ServerRow {
 
 const EMPTY_SERVER: ServerRow = { name: '', target: '', weight: '' };
 
-/** Eine Zeile des Formulars als Eingabe. An einer Stelle, weil sie im
- *  Standard-Backend und in jeder Pfad-Regel gleich gelesen werden muss. */
+/** Eine Zeile des Standard-Backends als Eingabe. */
 function toServerInput(row: ServerRow) {
   return {
     name: row.name.trim(),
@@ -90,12 +91,18 @@ function toServerInput(row: ServerRow) {
   };
 }
 
+/** Ein Ziel einer Pfad-Regel. Ohne Gewicht: `RouteServerInput` kennt keines,
+ *  und geschrieben würde es nicht. */
+type RouteServerRow = Omit<ServerRow, 'weight'>;
+
+const EMPTY_ROUTE_SERVER: RouteServerRow = { name: '', target: '' };
+
 /** Eine Pfad-Regel im Formular. `paths` und `servers` sind Listen, weil beide
  *  es in der Konfiguration auch sind. */
 interface RouteRow {
   name: string;
   paths: string[];
-  servers: ServerRow[];
+  servers: RouteServerRow[];
   check: boolean;
   backendTls: BackendTls;
 }
@@ -138,7 +145,7 @@ const ADMIN_IPS_SHOWN = 4;
 const EMPTY_ROUTE: RouteRow = {
   name: '',
   paths: [''],
-  servers: [{ ...EMPTY_SERVER }],
+  servers: [{ ...EMPTY_ROUTE_SERVER }],
   check: true,
   // HTTP und nicht die Wahl des Backends: eine Regel zeigt auf einen anderen
   // Port, und dort spricht oft ein anderes Programm.
@@ -218,6 +225,7 @@ export default function ServiceFormModal({
   onStarted,
 }: Props) {
   const { apiFetch } = useApp();
+  const { notify } = useToast();
   const { t, plural, rich } = useT();
 
   /**
@@ -250,6 +258,7 @@ export default function ServiceFormModal({
   const editingId = edit?.service.id ?? null;
 
   const [saving, setSaving] = useState(false);
+  /** Nur die Prüfung vor dem Absenden. Was die Route antwortet, ist eine Meldung. */
   const [formError, setFormError] = useState('');
   /** Es gibt genau einen HAProxy. Die Kennung geht weiter im Rumpf mit, weil
    *  die Routen und die Historie sie tragen. */
@@ -308,8 +317,8 @@ export default function ServiceFormModal({
       paths: route.paths.length > 0 ? [...route.paths] : [''],
       servers:
         route.servers.length > 0
-          ? route.servers.map((s) => ({ name: s.name, target: s.target, weight: s.weight === null ? '' : String(s.weight) }))
-          : [{ ...EMPTY_SERVER }],
+          ? route.servers.map((s) => ({ name: s.name, target: s.target }))
+          : [{ ...EMPTY_ROUTE_SERVER }],
       check: route.check,
       backendTls: route.backendTls,
     })) ?? []
@@ -843,7 +852,6 @@ export default function ServiceFormModal({
     }
     setFormError('');
     setSaving(true);
-    const failed = t(editingId ? 'Speichern fehlgeschlagen' : 'Anlegen fehlgeschlagen');
     try {
       const res = await apiFetch(
         editingId ? `/api/haproxy/services/${encodeURIComponent(editingId)}` : '/api/haproxy/services',
@@ -862,25 +870,35 @@ export default function ServiceFormModal({
         }
       );
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || failed);
+      if (!res.ok) throw new Error(data.error);
       // Ab hier ist der Vorgang gestartet, nicht fertig. Der Dialog geht zu,
       // damit niemand fünf Minuten vor einem Spinner sitzt; was die Route noch
-      // synchron geprüft hat (belegte ID, fremde Domain), steht oben im
-      // Formular und kam gar nicht bis hierher.
+      // synchron geprüft hat (belegte ID, fremde Domain), kam als Meldung
+      // zurück und gar nicht bis hierher.
       // Die ID eines neuen Eintrags steht in der Antwort: vergeben hat sie
       // der Server.
       const startedId: string = editingId ?? data.data.serviceId;
       onStarted({
         id: data.data.runId,
         label: editingId
-          ? t('Ziel „{id}" ändern', { id: startedId })
-          : t('Ziel „{id}" anlegen', { id: startedId }),
+          ? t('Ziel „{id}“ ändern', { id: startedId })
+          : t('Ziel „{id}“ anlegen', { id: startedId }),
         serviceId: startedId,
         title: input.domains[0] ?? startedId,
         isNew: !editingId,
       });
     } catch (err: unknown) {
-      setFormError(err instanceof Error ? err.message : failed);
+      notify({
+        variant: 'error',
+        title: t(editingId ? 'Speichern fehlgeschlagen' : 'Anlegen fehlgeschlagen'),
+        message: errorText(
+          err,
+          t(editingId ? 'Das Ziel ließ sich nicht speichern.' : 'Das Ziel ließ sich nicht anlegen.')
+        ),
+      });
+    } finally {
+      // Auch nach `onStarted`: schließt die Seite den Dialog nicht, bliebe der
+      // Knopf sonst für immer gesperrt.
       setSaving(false);
     }
   }
@@ -1048,6 +1066,7 @@ export default function ServiceFormModal({
                               type="button"
                               className="btn btn-ghost btn-icon"
                               data-tooltip={t('Zeile entfernen')}
+                              aria-label={t('Zeile entfernen')}
                               onClick={() => setDomains(domains.filter((_, j) => j !== index))}
                             >
                               <X size={16} />
@@ -1476,6 +1495,7 @@ export default function ServiceFormModal({
                           type="button"
                           className="btn btn-ghost btn-icon"
                           data-tooltip={t('Zeile entfernen')}
+                          aria-label={t('Zeile entfernen')}
                           disabled={backends.length === 1}
                           onClick={() => setBackends(backends.filter((_, i) => i !== index))}
                         >
@@ -1499,7 +1519,7 @@ export default function ServiceFormModal({
                   </div>
                 )}
                 <span className="form-hint">
-                  {t('Adresse und Port, wie HAProxy sie erreicht, üblicherweise die Adresse im privaten Netz. Der Name ist frei; leer heißt server1, server2, …')}
+                  {t('Adresse und Port, wie HAProxy sie erreicht, üblicherweise die Adresse im privaten Netz.')}
                 </span>
                 {/* Der eine Weg von hier ins größere Formular. Ohne ihn wäre
                     ein zweites Ziel hinter einer laufenden Domain nur über
@@ -1573,7 +1593,7 @@ export default function ServiceFormModal({
                             für dieselbe Zeile laufen auseinander. */}
                         <InfoHint
                           text={t(
-                            'HAProxy setzt einen eigenen Cookie und nimmt ihn aus der Anfrage, bevor sie beim Ziel ankommt. Nötig für Anwendungen, die Sitzungen im Arbeitsspeicher halten. Teilen die Ziele ihre Sitzungen (gemeinsame Datenbank, Redis), braucht es sie nicht. In der Konfiguration: „{line}" im Backend und „cookie <Servername>" an jeder server-Zeile.',
+                            'HAProxy setzt einen eigenen Cookie und nimmt ihn aus der Anfrage, bevor sie beim Ziel ankommt. Nötig für Anwendungen, die Sitzungen im Arbeitsspeicher halten. Teilen die Ziele ihre Sitzungen (gemeinsame Datenbank, Redis), braucht es sie nicht. In der Konfiguration: „{line}“ im Backend und „cookie <Servername>“ an jeder server-Zeile.',
                             { line: STICKY_BACKEND_LINE }
                           )}
                         />
@@ -1704,7 +1724,7 @@ export default function ServiceFormModal({
                       {t(
                         access === 'ip'
                           ? 'Es sind keine Admin-IPs hinterlegt. Ohne Adressen kommt niemand hinein.'
-                          : 'Für „Nur Admin-IPs" sind keine Adressen hinterlegt.'
+                          : 'Für „Nur Admin-IPs“ sind keine Adressen hinterlegt.'
                       )}{' '}
                       <Link href="/reverse-proxy/einstellungen?bereich=zugriff">{t('Einstellungen öffnen')}</Link>
                     </span>
@@ -1815,7 +1835,6 @@ export default function ServiceFormModal({
                         ))}
                       </div>
                     )}
-                    {accessError && <span className="form-hint">{accessError}</span>}
                   </div>
                 )}
               </section>
@@ -1906,6 +1925,7 @@ export default function ServiceFormModal({
                           type="button"
                           className="btn btn-ghost btn-icon"
                           data-tooltip={t('Regel entfernen')}
+                          aria-label={t('Regel entfernen')}
                           onClick={() => setRoutes(routes.filter((_, i) => i !== routeIndex))}
                         >
                           <Trash2 size={16} />
@@ -1934,6 +1954,7 @@ export default function ServiceFormModal({
                                 type="button"
                                 className="btn btn-ghost btn-icon"
                                 data-tooltip={t('Zeile entfernen')}
+                                aria-label={t('Zeile entfernen')}
                                 disabled={route.paths.length === 1}
                                 onClick={() =>
                                   update({
@@ -1985,31 +2006,11 @@ export default function ServiceFormModal({
                                   })
                                 }
                               />
-                              {/* Auch hier, obwohl eine Regel meistens ein Ziel
-                                  hat: sonst wäre die Gewichtung ein Feld, das
-                                  zwar zurückgelesen und wieder geschrieben
-                                  wird, sich aber nirgends ändern lässt. */}
-                              <input
-                                className="form-input"
-                                style={{ width: 76, flex: '0 0 76px' }}
-                                type="number"
-                                min={WEIGHT_MIN}
-                                max={WEIGHT_MAX}
-                                value={server.weight}
-                                onChange={(e) =>
-                                  update({
-                                    servers: route.servers.map((s, i) =>
-                                      i === serverIndex ? { ...s, weight: e.target.value } : s
-                                    ),
-                                  })
-                                }
-                                placeholder="1"
-                                aria-label={t('Gewicht von Ziel {number}', { number: serverIndex + 1 })}
-                              />
                               <button
                                 type="button"
                                 className="btn btn-ghost btn-icon"
                                 data-tooltip={t('Zeile entfernen')}
+                                aria-label={t('Zeile entfernen')}
                                 disabled={route.servers.length === 1}
                                 onClick={() =>
                                   update({
@@ -2027,7 +2028,7 @@ export default function ServiceFormModal({
                             type="button"
                             className="btn btn-secondary btn-sm"
                             onClick={() =>
-                              update({ servers: [...route.servers, { ...EMPTY_SERVER }] })
+                              update({ servers: [...route.servers, { ...EMPTY_ROUTE_SERVER }] })
                             }
                           >
                             <Plus size={14} />
@@ -2074,7 +2075,7 @@ export default function ServiceFormModal({
                         onClick={() =>
                           setRoutes([
                             ...routes,
-                            { ...EMPTY_ROUTE, paths: [''], servers: [{ ...EMPTY_SERVER }] },
+                            { ...EMPTY_ROUTE, paths: [''], servers: [{ ...EMPTY_ROUTE_SERVER }] },
                           ])
                         }
                       >
@@ -2230,6 +2231,7 @@ export default function ServiceFormModal({
                                     className="btn btn-ghost btn-icon"
                                     data-tooltip-pos="left"
                                     data-tooltip={t('Zeile entfernen')}
+                                    aria-label={t('Zeile entfernen')}
                                     onClick={() =>
                                       setHeaders((current) => ({
                                         ...current,
@@ -2288,7 +2290,7 @@ export default function ServiceFormModal({
                           {/* Die Zeile aus der Konstante und nicht abgetippt. */}
                           <InfoHint
                             text={t(
-                              'Für WebSocket, Terminal und Live-Ansicht. Ohne den Schalter beendet HAProxy eine offene Verbindung nach der Zeit aus dem defaults-Block, üblicherweise nach einer Minute ohne Daten. In der Konfiguration: „{line}" in jedem Backend des Eintrags, auch in denen der Pfad-Regeln.',
+                              'Für WebSocket, Terminal und Live-Ansicht. Ohne den Schalter beendet HAProxy eine offene Verbindung nach der Zeit aus dem defaults-Block, üblicherweise nach einer Minute ohne Daten. In der Konfiguration: „{line}“ in jedem Backend des Eintrags, auch in denen der Pfad-Regeln.',
                               { line: TUNNEL_LINE }
                             )}
                           />
@@ -2339,6 +2341,12 @@ export default function ServiceFormModal({
               {!inputError && surfaceError && (
                 <div className="alert alert-warning">{t(surfaceError)}</div>
               )}
+              {/* Hier und nicht bei der Auswahl der Domains: die verschwindet,
+                  sobald nur noch eine Domain zur Wahl steht, und der Knopf
+                  unten wäre ohne Grund gesperrt. */}
+              {!inputError && !surfaceError && accessError && (
+                <div className="alert alert-warning">{accessError}</div>
+              )}
             </div>
           </div>
         </div>
@@ -2354,7 +2362,9 @@ export default function ServiceFormModal({
           <button
             type="submit"
             className="btn btn-primary"
-            disabled={saving || !!inputError || !!surfaceError || !!accessError}
+            // Solange die DNS-Abfrage läuft, stammt `dnsDomains` von der vorigen
+            // Eingabe: der Eintrag einer eben getippten Domain fiele beim Speichern weg.
+            disabled={saving || !!inputError || !!surfaceError || !!accessError || dnsPending.length > 0}
           >
             {saving && <Loader2 size={16} className="spin" />}
             {t(editingId ? 'Speichern' : 'Anlegen')}

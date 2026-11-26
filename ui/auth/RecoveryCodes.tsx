@@ -1,7 +1,7 @@
 "use client"
 
-import { useState } from "react"
 import { useT } from "@/lib/i18n/react"
+import { useToast } from "../tool/Toast"
 
 /**
  * Wiederherstellungscodes zum einmaligen Ansehen: die Liste und was man mit ihr
@@ -31,19 +31,22 @@ export function RecoveryCodeGrid({ codes }: { codes: string[] }) {
 /**
  * Kopieren scheitert ohne HTTPS: die Zwischenablage gibt es nur in einem
  * sicheren Kontext, und HAPM läuft in der Einrichtung unter IP und Port. Dann
- * meldet `copy` es über `onCopyFailed`, und das Herunterladen geht trotzdem.
+ * sagt die Meldung von `copy`, wie es weitergeht, und das Herunterladen geht
+ * trotzdem. Braucht den `ToastProvider` des Rahmens.
  */
-export function useRecoveryCodeActions(codes: string[], onCopyFailed: (message: string) => void) {
+export function useRecoveryCodeActions(codes: string[]) {
   const { t } = useT()
-  const [copied, setCopied] = useState(false)
+  const { notify } = useToast()
 
   async function copy() {
     try {
       await navigator.clipboard.writeText(codes.join("\n"))
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+      notify({ variant: "success", message: t("Kopiert") })
     } catch {
-      onCopyFailed(t("Kopieren nicht möglich. Bitte laden Sie die Codes herunter oder markieren Sie sie von Hand."))
+      notify({
+        variant: "error",
+        message: t("Kopieren nicht möglich. Bitte laden Sie die Codes herunter oder markieren Sie sie von Hand."),
+      })
     }
   }
 
@@ -57,5 +60,5 @@ export function useRecoveryCodeActions(codes: string[], onCopyFailed: (message: 
     URL.revokeObjectURL(url)
   }
 
-  return { copied, copy, download }
+  return { copy, download }
 }

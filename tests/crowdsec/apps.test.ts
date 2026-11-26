@@ -10,7 +10,7 @@ import { APP_RULES, localRuleExpression, renderAppWhitelist, type LocalRule } fr
 function matches(rule: LocalRule, verb: string, status: string, path: string): boolean {
   const insensitive = rule.path.startsWith('(?i)');
   const pattern = new RegExp(insensitive ? rule.path.slice(4) : rule.path, insensitive ? 'i' : '');
-  return rule.verbs.includes(verb) && rule.statuses.includes(status) && pattern.test(path);
+  return rule.verbs.includes(verb) && rule.statuses.includes(status) && !path.includes('..') && pattern.test(path);
 }
 
 function allowed(verb: string, status: string, path: string): string | null {
@@ -57,8 +57,23 @@ describe('eigene Ausnahmen je Anwendung', () => {
     ['GET', '500', '/remote.php/dav/files/x'],
     ['GET', '404', '/wp-login.php'],
     ['GET', '404', '/api/assets/../../etc/passwd'],
+    // Ein ausgenommener Pfad als Parameter angehängt nimmt nichts aus.
+    ['GET', '200', "/index.php?id=1' UNION SELECT 1&x=/apps/deck/api/v1/boards/1/stacks/1/cards/1"],
+    ['POST', '403', '/xmlrpc.php?/apps/text/session/1/sync'],
+    ['POST', '403', '/xmlrpc.php/apps/text/session/1/sync'],
+    // Auch nicht hinter einem ausgenommenen Anfang.
+    ['GET', '404', '/Items/abc/Images/Backdrop/../../.env'],
+    ['HEAD', '404', '/remote.php/dav/files/../../.env'],
+    ['GET', '404', '/share/img/x/../../wp-login.php'],
+    ['GET', '404', '/.well-known/matrix/../../.git/config'],
   ])('nimmt Scanner nicht aus: %s %s %s', (verb, status, path) => {
     expect(allowed(verb, status, path)).toBeNull();
+  });
+
+  it('verankert jedes Muster am Anfang', () => {
+    for (const app of APP_RULES) {
+      for (const rule of app.local ?? []) expect(rule.path.replace(/^\(\?i\)/, '').startsWith('^'), `${app.id}: ${rule.path}`).toBe(true);
+    }
   });
 
   it('nennt für jede Ausnahme eine Quelle', () => {
@@ -86,7 +101,7 @@ describe('renderAppWhitelist', () => {
 
   it('maskiert Backslashes für die Ausdruckssprache', () => {
     expect(localRuleExpression({ verbs: ['GET'], statuses: ['404'], path: String.raw`^/a\.b`, source: 'x' })).toBe(
-      String.raw`evt.Meta.http_verb in ['GET'] && evt.Meta.http_status in ['404'] && evt.Meta.http_path matches '^/a\\.b'`
+      String.raw`evt.Meta.http_verb in ['GET'] && evt.Meta.http_status in ['404'] && !(evt.Meta.http_path contains '..') && evt.Meta.http_path matches '^/a\\.b'`
     );
   });
 });

@@ -122,7 +122,7 @@ Stunde (`429`), zurückgezogen heißt `401`.
 | `start_backup` | schreiben | Sicherung jetzt → `runId` |
 | `get_backup_run` | lesen | Stand eines Sicherungslaufs, mit `waitSeconds` |
 | `get_settings` | lesen | Einstellungen von HAPM und Stand des Mailversands |
-| `update_settings` | schreiben | Teil-Patch, ohne Adresse und SMTP-Passwort |
+| `update_settings` | schreiben | Teil-Patch, ohne Adresse, SMTP-Server (`smtpHost`, `smtpPort`, `smtpSecurity`, `smtpUser`) und SMTP-Passwort. Wer den Server umstellt, bekommt die Mails zum Zurücksetzen eines Passworts, also ein Konto. |
 | `update_certificate_settings` | schreiben | Herkunft der Zertifikate, ACME-Server, ohne EAB |
 | `send_test_mail` | schreiben | Testmail an eine Adresse |
 | `check_address` | lesen | Prüfung einer neuen Adresse für HAPM |

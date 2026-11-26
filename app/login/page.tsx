@@ -172,7 +172,7 @@ export default function LoginPage() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@example.com"
+                placeholder="admin@example.org"
                 autoComplete="email"
                 autoFocus
               />
@@ -192,7 +192,7 @@ export default function LoginPage() {
             <div className="auth-forgot">
               <Link href="/forgot-password">{t('Passwort vergessen?')}</Link>
             </div>
-            {error && <div className="auth-error">{error}</div>}
+            {error && <div className="auth-error" role="alert">{error}</div>}
             <button className="auth-submit" type="submit" disabled={loading}>
               {loading ? <span className="btn-spinner" aria-hidden="true" /> : <LogIn size={15} />}
               {loading ? t('Anmelden…') : t('Anmelden')}
@@ -251,7 +251,7 @@ export default function LoginPage() {
                 />
               </div>
             )}
-            {error && <div className="auth-error">{error}</div>}
+            {error && <div className="auth-error" role="alert">{error}</div>}
             <button
               className="auth-submit"
               type="submit"

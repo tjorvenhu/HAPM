@@ -5,6 +5,7 @@ import { BellRing, Languages, Loader2, Mail, Plus, Save, Send, Trash2, Users, X 
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
+import { errorText } from '@/components/errorText';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { usePolling } from '@/components/usePolling';
 import { useNow } from '@/components/useNow';
@@ -82,6 +83,7 @@ function Notifications() {
   const [draft, setDraft] = useState<SmtpForm | null>(null);
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [clearingPassword, setClearingPassword] = useState(false);
 
   const [testTo, setTestTo] = useState('');
   const [testing, setTesting] = useState(false);
@@ -166,7 +168,11 @@ function Notifications() {
             : t('Gespeichert. Ohne Server und Absender wird nichts verschickt.'),
       });
     } catch (err: unknown) {
-      setFormError(err instanceof Error ? err.message : t('Das SMTP-Konto ließ sich nicht speichern.'));
+      notify({
+        variant: 'error',
+        title: t('Speichern fehlgeschlagen'),
+        message: errorText(err, t('Das SMTP-Konto ließ sich nicht speichern.')),
+      });
     } finally {
       setSaving(false);
     }
@@ -180,12 +186,15 @@ function Notifications() {
       variant: 'danger',
     });
     if (!confirmed) return;
+    setClearingPassword(true);
     try {
       await patch({ smtpPass: null });
       if (draft) setDraft({ ...draft, smtpPass: '' });
       notify({ variant: 'success', message: t('Das SMTP-Passwort ist gelöscht.') });
     } catch (err: unknown) {
-      notify({ variant: 'error', message: err instanceof Error ? err.message : t('Das Passwort ließ sich nicht löschen.') });
+      notify({ variant: 'error', message: errorText(err, t('Das Passwort ließ sich nicht löschen.')) });
+    } finally {
+      setClearingPassword(false);
     }
   }
 
@@ -237,7 +246,11 @@ function Notifications() {
       setRecipient('');
       notify({ variant: 'success', message });
     } catch (err: unknown) {
-      setRecipientError(err instanceof Error ? err.message : t('Die Empfänger ließen sich nicht speichern.'));
+      notify({
+        variant: 'error',
+        title: t('Speichern fehlgeschlagen'),
+        message: errorText(err, t('Die Empfänger ließen sich nicht speichern.')),
+      });
     } finally {
       setSavingRecipients(false);
     }
@@ -268,7 +281,7 @@ function Notifications() {
         message: enabled ? t('„{label}“ ist eingeschaltet.', { label }) : t('„{label}“ ist ausgeschaltet.', { label }),
       });
     } catch (err: unknown) {
-      notify({ variant: 'error', message: err instanceof Error ? err.message : t('Der Schalter ließ sich nicht speichern.') });
+      notify({ variant: 'error', message: errorText(err, t('Der Schalter ließ sich nicht speichern.')) });
     } finally {
       setSavingEvent(null);
     }
@@ -280,7 +293,7 @@ function Notifications() {
       await patch({ mailLocale: next });
       notify({ variant: 'success', message: t('Mails von HAPM gehen ab jetzt auf {language} hinaus.', { language: LOCALE_NAMES[next] }) });
     } catch (err: unknown) {
-      notify({ variant: 'error', message: err instanceof Error ? err.message : t('Die Sprache ließ sich nicht speichern.') });
+      notify({ variant: 'error', message: errorText(err, t('Die Sprache ließ sich nicht speichern.')) });
     } finally {
       setSavingLocale(false);
     }
@@ -515,8 +528,13 @@ function Notifications() {
                 {t('Speichern')}
               </button>
               {settings.smtpPassSet && (
-                <button className="btn btn-ghost" type="button" onClick={() => void clearPassword()} disabled={saving}>
-                  <Trash2 size={16} strokeWidth={1.5} />
+                <button
+                  className="btn btn-ghost"
+                  type="button"
+                  onClick={() => void clearPassword()}
+                  disabled={saving || clearingPassword}
+                >
+                  {clearingPassword ? <Loader2 size={16} strokeWidth={1.5} className="spin" /> : <Trash2 size={16} strokeWidth={1.5} />}
                   {t('Passwort löschen')}
                 </button>
               )}
@@ -527,7 +545,7 @@ function Notifications() {
             <div className="form-group">
               <label className="form-label" htmlFor="test-to">
                 {t('Testmail an')}
-                <InfoHint text={t('Verschickt wird mit dem gespeicherten Konto, nicht mit dem, was gerade im Formular steht. Die Antwort des Mailservers steht danach hier.')} />
+                <InfoHint text={t('Verschickt wird mit dem gespeicherten Konto, nicht mit dem, was gerade im Formular steht. Das Ergebnis steht danach unter „Letzter Versand“.')} />
               </label>
               <div className="form-list-row">
                 <input

@@ -1,4 +1,4 @@
-import { requireCsrf, requireSession } from '@/lib/session';
+import { requireCsrf, requireSession, revokeOtherSessions } from '@/lib/session';
 import { verifyPassword } from '@/lib/auth/users';
 import { has2FAEnabled, remove2FA, clear2FACookie } from '@/lib/two-factor';
 import { logAudit, getClientIP } from '@/lib/audit';
@@ -23,6 +23,9 @@ export async function DELETE(request: Request) {
 
     await remove2FA(session.userId);
     await clear2FACookie();
+    // Eine Sitzung, die nach dem Passwort noch am Code hing, gälte ohne zweiten
+    // Faktor sonst als angemeldet. Wie beim Einrichten: die anderen enden.
+    await revokeOtherSessions();
 
     await logAudit({
       userId: session.userId,

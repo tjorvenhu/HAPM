@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from 'react';
 import { ArrowLeft, Copy, KeyRound, Lock, RefreshCw, ShieldCheck, X } from 'lucide-react';
 import { suggestPassword } from '@/components/suggestPassword';
+import { useToast } from '@/components/Toast';
 import {
   LOCK_PASSWORD_MIN,
   shortVersion,
@@ -43,9 +44,9 @@ interface Props {
 
 export default function LockDialog({ proxy, service, onPick, onClose }: Props) {
   const { t } = useT();
+  const { notify } = useToast();
   const [step, setStep] = useState<'kind' | 'password'>('kind');
   const [password, setPassword] = useState(suggestPassword);
-  const [copied, setCopied] = useState(false);
 
   const hasAdminIps = proxy.adminIps.length > 0;
   // `null` heißt unbekannt, und dann wird nichts ausgegraut: ob die Maschine
@@ -53,10 +54,15 @@ export default function LockDialog({ proxy, service, onPick, onClose }: Props) {
   const passwordPossible = supportsPasswordLock(proxy.version) !== false;
   const passwordError = validateLockPassword(password);
 
+  // Ohne HTTPS gibt es `navigator.clipboard` nicht, und das ist bei einer
+  // internen Installation der Normalfall. Dann sagt die Meldung, was bleibt.
   async function copyPassword() {
-    await navigator.clipboard.writeText(password);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(password);
+      notify({ message: t('Kopiert'), variant: 'success' });
+    } catch {
+      notify({ message: t('Kopieren nicht möglich. Bitte von Hand markieren.'), variant: 'error' });
+    }
   }
 
   function handleSubmit(e: FormEvent) {
@@ -162,7 +168,7 @@ export default function LockDialog({ proxy, service, onPick, onClose }: Props) {
                   </button>
                   <button type="button" className="btn btn-secondary" onClick={copyPassword}>
                     <Copy size={16} />
-                    {t(copied ? 'Kopiert' : 'Kopieren')}
+                    {t('Kopieren')}
                   </button>
                 </div>
                 <p className="form-hint">

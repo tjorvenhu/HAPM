@@ -106,7 +106,7 @@ export default function Select<T extends string>({
             </span>
           </>
         ) : (
-          <span className="placeholder">{placeholder ?? t('Bitte auswählen...')}</span>
+          <span className="placeholder">{placeholder ?? t('Bitte auswählen…')}</span>
         )}
         <ChevronDown size={16} className="chevron" />
       </button>

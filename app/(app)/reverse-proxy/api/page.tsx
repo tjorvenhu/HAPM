@@ -3,12 +3,13 @@
 import { Suspense, useEffect, useState, useCallback, type FormEvent } from 'react';
 import PageHeading from '@/components/PageHeading';
 import {
-  KeyRound, Plus, Ban, Loader2, Copy, Check, X, Globe, Link2, Bot, Plug } from 'lucide-react';
+  KeyRound, Plus, Ban, Loader2, Copy, X, Globe, Link2, Bot, Plug } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { usePolling } from '@/components/usePolling';
 import { useNow } from '@/components/useNow';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { useToast } from '@/components/Toast';
+import { errorText } from '@/components/errorText';
 import EntityCard, { EntityGrid, EntityField } from '@/components/EntityCard';
 import IpAllowList from '@/components/IpAllowList';
 import { SkeletonCards } from '@/components/Skeleton';
@@ -126,21 +127,26 @@ function ApiPage() {
     setBaseUrl(`${window.location.origin}/api/internal/haproxy`);
   }, []);
 
-  const [copied, setCopied] = useState<string | null>(null);
-
-  /** Die Adresse von HAPM aus den Einstellungen, für den MCP-Endpunkt. */
+  /**
+   * Die Adresse von HAPM aus den Einstellungen, für den MCP-Endpunkt.
+   *
+   * Drei Zustände: `publicUrl: null` heißt nur bei `ready` „nicht eingetragen“.
+   * Ließen sich die Einstellungen nicht lesen (`failed`), ist sie unbekannt.
+   */
   const [publicUrl, setPublicUrl] = useState<string | null>(null);
-  const [settingsLoading, setSettingsLoading] = useState(true);
+  const [settingsState, setSettingsState] = useState<'loading' | 'ready' | 'failed'>('loading');
   useEffect(() => {
     let cancelled = false;
     apiFetch('/api/settings')
-      .then((res) => res.json())
-      .then((body) => {
-        if (!cancelled && body.success) setPublicUrl(body.data.publicUrl ?? null);
+      .then(async (res) => {
+        const body = await res.json();
+        if (!res.ok || !body.success) throw new Error(body.error);
+        if (cancelled) return;
+        setPublicUrl(body.data.publicUrl ?? null);
+        setSettingsState('ready');
       })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setSettingsLoading(false);
+      .catch(() => {
+        if (!cancelled) setSettingsState('failed');
       });
     return () => {
       cancelled = true;
@@ -152,7 +158,6 @@ function ApiPage() {
   const [description, setDescription] = useState('');
   const [newIps, setNewIps] = useState<string[]>(['']);
   const [saving, setSaving] = useState(false);
-  const [formError, setFormError] = useState('');
 
   /** Das Token, dessen Adressliste gerade bearbeitet wird. */
   const [editing, setEditing] = useState<TokenRow | null>(null);
@@ -167,7 +172,8 @@ function ApiPage() {
       try {
         const res = await apiFetch('/api/settings/service-tokens');
         const data = await res.json();
-        if (data.success) setTokens(data.data as TokenRow[]);
+        if (!res.ok || !data.success) throw new Error(data.error);
+        setTokens(data.data as TokenRow[]);
         setError('');
       } catch {
         setError(t('Die Schlüssel konnten nicht geladen werden.'));
@@ -184,15 +190,18 @@ function ApiPage() {
 
   usePolling(() => load(true), 30_000);
 
-  async function copy(text: string, key: string) {
-    await navigator.clipboard.writeText(text);
-    setCopied(key);
-    setTimeout(() => setCopied((current) => (current === key ? null : current)), 1500);
+  async function copy(text: string) {
+    // Ohne HTTPS gibt es `navigator.clipboard` nicht: dann wirft schon der Zugriff.
+    try {
+      await navigator.clipboard.writeText(text);
+      notify({ message: t('Kopiert'), variant: 'success' });
+    } catch {
+      notify({ message: t('Kopieren nicht möglich. Bitte von Hand markieren.'), variant: 'error' });
+    }
   }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    setFormError('');
     setSaving(true);
     try {
       const res = await apiFetch('/api/settings/service-tokens', {
@@ -201,7 +210,7 @@ function ApiPage() {
         body: JSON.stringify({ name, description, allowedIps: newIps }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || t('Anlegen fehlgeschlagen'));
+      if (!res.ok) throw new Error(data.error || t('Der Vorgang ist fehlgeschlagen.'));
       setModalOpen(false);
       setIssued({ name: data.data.name, token: data.data.token });
       setName('');
@@ -209,7 +218,11 @@ function ApiPage() {
       setNewIps(['']);
       await load(true);
     } catch (err: unknown) {
-      setFormError(err instanceof Error ? err.message : t('Anlegen fehlgeschlagen'));
+      notify({
+        title: t('Anlegen fehlgeschlagen'),
+        message: errorText(err, t('HAPM hat nicht geantwortet. Bitte versuchen Sie es erneut.')),
+        variant: 'error',
+      });
     } finally {
       setSaving(false);
     }
@@ -225,7 +238,7 @@ function ApiPage() {
         body: JSON.stringify({ allowedIps: editIps }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || t('Speichern fehlgeschlagen'));
+      if (!res.ok) throw new Error(data.error || t('Der Vorgang ist fehlgeschlagen.'));
       setEditing(null);
       // Erst nachladen, dann melden: sonst steht „gespeichert" neben einer
       // Karte, die noch die alte Liste zeigt.
@@ -234,7 +247,7 @@ function ApiPage() {
     } catch (err: unknown) {
       notify({
         title: t('Speichern fehlgeschlagen'),
-        message: err instanceof Error ? err.message : t('Unbekannter Fehler.'),
+        message: errorText(err, t('HAPM hat nicht geantwortet. Bitte versuchen Sie es erneut.')),
         variant: 'error',
       });
     } finally {
@@ -246,22 +259,21 @@ function ApiPage() {
     await confirm({
       title: t('Schlüssel zurückziehen'),
       message: t(
-        '"{name}" gilt danach sofort nicht mehr. Ein Dienst, der ihn benutzt, bekommt ab dem nächsten Aufruf 401. Das betrifft auch Skripte, die gerade laufen. Der Eintrag bleibt bestehen, damit das Aktivitätsprotokoll auflösbar bleibt.',
+        '„{name}“ gilt danach sofort nicht mehr. Ein Dienst, der ihn benutzt, bekommt ab dem nächsten Aufruf 401. Das betrifft auch Skripte, die gerade laufen. Der Eintrag bleibt bestehen, damit das Aktivitätsprotokoll auflösbar bleibt.',
         { name: token.name }
       ),
       confirmLabel: t('Zurückziehen'),
       variant: 'danger',
+      failedTitle: t('Zurückziehen fehlgeschlagen'),
       onConfirm: async () => {
         const res = await apiFetch(`/api/settings/service-tokens/${token.$id}`, {
           method: 'DELETE',
         });
         const data = await res.json();
-        if (!res.ok) {
-          notify({ message: data.error || t('Zurückziehen fehlgeschlagen'), variant: 'error' });
-          throw new Error(data.error);
-        }
+        // Geworfen statt gemeldet: `useConfirm` zeigt den Text als Meldung und lässt den Dialog offen.
+        if (!res.ok) throw new Error(data.error || t('Der Schlüssel konnte nicht zurückgezogen werden.'));
         await load(true);
-        notify({ message: t('"{name}" gilt nicht mehr.', { name: token.name }), variant: 'success' });
+        notify({ message: t('„{name}“ gilt nicht mehr.', { name: token.name }), variant: 'success' });
       },
     });
   }
@@ -300,15 +312,18 @@ function ApiPage() {
         (loading ? (
           <SkeletonCards />
         ) : active.length === 0 ? (
-          <div className="empty-state">
-            <KeyRound size={40} />
-            <h3>{t('Noch kein Key')}</h3>
-            <p>
-              {t(
-                'Solange keiner existiert, erreicht kein anderer Dienst die Reverse-Proxy-API. Ein Deploy-Skript braucht einen, um Ziele anzulegen.'
-              )}
-            </p>
-          </div>
+          // Nach einem Ladefehler ist die Liste leer, weil sie unbekannt ist: dann steht nur die Meldung oben.
+          !error && (
+            <div className="empty-state">
+              <KeyRound size={40} />
+              <h3>{t('Noch kein Key')}</h3>
+              <p>
+                {t(
+                  'Solange keiner existiert, erreicht kein anderer Dienst die Reverse-Proxy-API. Ein Deploy-Skript braucht einen, um Ziele anzulegen.'
+                )}
+              </p>
+            </div>
+          )
         ) : (
           <EntityGrid>
             {active.map((token) => (
@@ -323,6 +338,7 @@ function ApiPage() {
                     <button
                       className="btn btn-ghost btn-icon btn-sm"
                       data-tooltip={t('Erlaubte Adressen')}
+                      aria-label={t('Erlaubte Adressen')}
                       onClick={() => {
                         setEditing(token);
                         setEditIps(token.allowedIps.length > 0 ? [...token.allowedIps] : ['']);
@@ -333,6 +349,7 @@ function ApiPage() {
                     <button
                       className="btn btn-ghost btn-icon btn-sm"
                       data-tooltip={t('Zurückziehen')}
+                      aria-label={t('Zurückziehen')}
                       onClick={() => handleRevoke(token)}
                     >
                       <Ban size={16} />
@@ -391,10 +408,11 @@ function ApiPage() {
                   type="button"
                   className="btn btn-secondary btn-icon"
                   data-tooltip={t('Kopieren')}
+                  aria-label={t('Kopieren')}
                   disabled={!baseUrl}
-                  onClick={() => copy(baseUrl, 'base')}
+                  onClick={() => copy(baseUrl)}
                 >
-                  {copied === 'base' ? <Check size={16} /> : <Copy size={16} />}
+                  <Copy size={16} />
                 </button>
               </div>
             </div>
@@ -412,9 +430,10 @@ function ApiPage() {
                   type="button"
                   className="btn btn-secondary btn-icon"
                   data-tooltip={t('Kopieren')}
-                  onClick={() => copy('Authorization: Bearer ', 'header')}
+                  aria-label={t('Kopieren')}
+                  onClick={() => copy('Authorization: Bearer ')}
                 >
-                  {copied === 'header' ? <Check size={16} /> : <Copy size={16} />}
+                  <Copy size={16} />
                 </button>
               </div>
               <span className="form-hint">
@@ -463,7 +482,7 @@ function ApiPage() {
         </>
       )}
 
-      {area === 'mcp' && <McpAccess publicUrl={publicUrl} loading={settingsLoading} />}
+      {area === 'mcp' && <McpAccess publicUrl={publicUrl} loading={settingsState === 'loading'} failed={settingsState === 'failed'} />}
 
       {modalOpen && (
         <div
@@ -476,7 +495,6 @@ function ApiPage() {
             </div>
             <form onSubmit={handleSubmit}>
               <div className="modal-body">
-                {formError && <div className="alert alert-danger sys-block">{formError}</div>}
                 <div className="form-group">
                   <label className="form-label">
                     {t('Name')}
@@ -587,9 +605,10 @@ function ApiPage() {
                     type="button"
                     className="btn btn-secondary btn-icon"
                     data-tooltip={t('Kopieren')}
-                    onClick={() => copy(issued.token, 'issued')}
+                    aria-label={t('Kopieren')}
+                    onClick={() => copy(issued.token)}
                   >
-                    {copied === 'issued' ? <Check size={16} /> : <Copy size={16} />}
+                    <Copy size={16} />
                   </button>
                 </div>
                 <span className="form-hint">

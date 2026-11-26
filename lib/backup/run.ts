@@ -39,7 +39,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { createDocument, deleteWhere, listDocuments, updateDocument, Query } from '../db';
+import { createDocument, deleteWhere, getDocument, listDocuments, updateDocument, Query } from '../db';
 import { ApiError } from '../api';
 import { msg, msgid } from '../i18n';
 import { logAudit } from '../audit';
@@ -424,8 +424,8 @@ export async function listBackupRuns(limit = 20): Promise<BackupRun[]> {
 
 export const BACKUP_INTERRUPTED = msgid('HAPM wurde während der Sicherung neu gestartet.');
 
-/** Beim Start: ein offener Lauf ist mit dem vorigen Prozess gestorben. */
-export async function reconcileBackupRuns(): Promise<void> {
+/** Beim Start: ein offener Lauf ist mit dem vorigen Prozess gestorben. Gibt die Kennungen dieser Läufe zurück. */
+export async function reconcileBackupRuns(): Promise<string[]> {
   const open = await listDocuments<BackupRun>(BACKUP_RUNS, [Query.equal('status', 'running'), Query.limit(20)]);
   for (const run of open) {
     await updateDocument<BackupRun>(BACKUP_RUNS, run.$id, {
@@ -435,6 +435,17 @@ export async function reconcileBackupRuns(): Promise<void> {
     });
   }
   fs.rmSync(dataPath(STAGING), { recursive: true, force: true });
+  return open.map((run) => run.$id);
+}
+
+/** Wie viele dieser Läufe nach dem Abgleich des Zurückspielens noch als abgebrochen dastehen. */
+export async function stillInterruptedBackups(ids: string[]): Promise<number> {
+  let count = 0;
+  for (const id of ids) {
+    const run = await getDocument<BackupRun>(BACKUP_RUNS, id).catch(() => null);
+    if (run?.status === 'error' && run.error === BACKUP_INTERRUPTED) count++;
+  }
+  return count;
 }
 
 export async function pruneBackupRuns(olderThanIso: string): Promise<number> {

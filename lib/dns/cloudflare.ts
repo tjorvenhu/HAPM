@@ -163,10 +163,11 @@ async function listZones(token: string): Promise<ProviderZone[]> {
       }))
     );
     const total = body.result_info?.total_pages ?? 1;
-    if (page >= total) break;
+    if (page >= total) return zones;
     page += 1;
   }
-  return zones;
+  // Eine abgeschnittene Liste sähe aus wie „der Token sieht die Zone nicht".
+  throw new Error('Cloudflare liefert mehr als 1000 Zonen. So viele liest HAPM nicht.');
 }
 
 /**
@@ -189,10 +190,11 @@ async function listRecords(token: string, zoneId: string): Promise<DnsRecord[]> 
     );
     records.push(...body.result.map(toRecord));
     const total = body.result_info?.total_pages ?? 1;
-    if (page >= total) break;
+    if (page >= total) return records;
     page += 1;
   }
-  return records;
+  // Mit einer abgeschnittenen Liste legte HAPM einen Eintrag doppelt an, statt ihn zu ändern.
+  throw new Error('Die Zone hat mehr als 2000 Einträge. So viele liest HAPM nicht.');
 }
 
 function payload(input: RecordWrite): string {

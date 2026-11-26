@@ -42,7 +42,7 @@ export const shell: Dictionary = {
   'Seiten, Domains, Dienste, Backend-Adressen': 'Pages, domains, services, backend addresses',
   'TCP-Weiterleitungen': 'TCP forwards',
   'Mindestens {count} Zeichen eingeben.': 'Type at least {count} characters.',
-  'Suche läuft …': 'Searching …',
+  'Suche läuft…': 'Searching…',
   'Keine Treffer für „{query}“.': 'No results for “{query}”.',
   '{keys} zum Öffnen': '{keys} to open',
   '{key} zum Schließen': '{key} to close',
@@ -56,7 +56,7 @@ export const shell: Dictionary = {
   // Bausteine aus `ui/tool/`
   'Zum Bestätigen abtippen:': 'Type to confirm:',
   'Kennung kopieren': 'Copy identifier',
-  'Bitte auswählen...': 'Please select...',
+  'Bitte auswählen…': 'Please select…',
   'Keine Einträge vorhanden': 'No entries',
   'Meldungen': 'Notifications',
   'Meldung schließen': 'Dismiss notification',

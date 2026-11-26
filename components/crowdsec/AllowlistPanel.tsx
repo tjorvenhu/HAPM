@@ -7,7 +7,7 @@ import { useConfirm } from '@/components/ConfirmDialog';
 import Select from '@/components/Select';
 import { SkeletonRows } from '@/components/Skeleton';
 import { ALLOW_DURATIONS, parseAddress } from '@/lib/crowdsec/data';
-import { formatDateTime, msgid } from '@/lib/i18n';
+import { MISSING, formatDateTime, msgid } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
 import { useCrowdsecData, useCrowdsecSend } from './useCrowdsecData';
 import { DURATION_LABELS } from './DecisionsPanel';
@@ -183,7 +183,7 @@ export default function AllowlistPanel({ client }: { client: string | null }) {
                       {entry.value === client && <div className="detail-sub">{t('Eigene Adresse')}</div>}
                     </td>
                     <td data-label={t('Beschreibung')}>{entry.description}</td>
-                    <td data-label={t('Seit')}>{entry.createdAt ? formatDateTime(locale, entry.createdAt) : ''}</td>
+                    <td data-label={t('Seit')}>{entry.createdAt ? formatDateTime(locale, entry.createdAt) : MISSING}</td>
                     <td data-label={t('Gilt bis')}>{entry.expiresAt ? formatDateTime(locale, entry.expiresAt) : t(ALWAYS)}</td>
                     <td data-label="actions">
                       <div className="actions hapm-actions-end">

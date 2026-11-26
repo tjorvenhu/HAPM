@@ -19,8 +19,8 @@ import { logAudit, type AuditAction } from '../audit';
 import { containerInfo, engine, type ContainerInfo } from '../docker';
 import {
   HAPROXY_CFG,
+  HaproxyConfigError,
   parseCrowdsecGlobal,
-  parseGlobalSettings,
   parseHaproxyConfig,
   usesCrowdsec,
   type HaproxyService,
@@ -41,8 +41,12 @@ import {
   crowdsecInStack,
   crowdsecInstalled,
   crowdsecPresent,
+  crowdsecSwitchingOff,
+  setCrowdsecSwitchingOff,
   BOUNCER_NAME,
 } from './paths';
+import { precheckSettings } from '../haproxy/provision';
+import { addressInNetwork } from '../geoip/networks';
 import {
   ALLOW_DURATIONS,
   BAN_DURATIONS,
@@ -104,6 +108,7 @@ export function protection(text: string | null = readConfig()) {
     return {
       readable: false,
       global: null,
+      inUse: false,
       services: [] as { id: string; domains: string[]; own: boolean }[],
       total: 0,
       targets: [] as { id: string; label: string }[],
@@ -114,6 +119,8 @@ export function protection(text: string | null = readConfig()) {
   return {
     readable: true,
     global,
+    /** Ob die Datei den Bouncer irgendwo fragt, auch in einem von Hand geänderten Block. */
+    inUse: usesCrowdsec(text),
     services: services
       .filter((service) => global === true || service.crowdsec)
       .map((service) => ({ id: service.id, domains: service.domains, own: service.crowdsec })),
@@ -141,6 +148,8 @@ export interface CrowdsecStatus {
   /** Wann der Bouncer zuletzt Sperren geholt hat. `null`: nicht angemeldet oder unbekannt. */
   bouncerLastPull: string | null;
   bouncerRegistered: boolean | null;
+  /** Ein Lauf nimmt CrowdSec gerade aus `haproxy.cfg`, danach halten die Container an. */
+  switching: boolean;
   error: string | null;
 }
 
@@ -155,6 +164,7 @@ export async function crowdsecStatus(): Promise<CrowdsecStatus> {
     lapi: null,
     bouncerLastPull: null,
     bouncerRegistered: null,
+    switching: crowdsecSwitchingOff(),
     error: null,
   };
   try {
@@ -214,10 +224,32 @@ export async function communityBlocklistSize(): Promise<number | null> {
   return seen ? total : 0;
 }
 
+/**
+ * Ein Netz, das einen großen Teil des Internets trifft, ist fast immer ein
+ * Tippfehler: als Sperre legt es die Ziele lahm, als Freigabe schaltet es die
+ * WAF für alle ab. Kleiner als /8 (IPv4) oder /16 (IPv6) geht deshalb nicht.
+ */
+function assertNotTooWide(value: string): void {
+  const [base, prefix] = value.split('/');
+  if (prefix === undefined) return;
+  const min = base.includes(':') ? 16 : 8;
+  if (Number(prefix) < min) {
+    throw new ApiError(msg('Das Netz {value} ist zu groß. Das größte erlaubte ist /{min}.', { value, min: String(min) }));
+  }
+}
+
 export async function addDecision(body: unknown, actor: CrowdsecActor) {
   const raw = (body ?? {}) as Record<string, unknown>;
   const address = parseAddress(String(raw.value ?? ''));
   if (!address) throw new ApiError(msg('Bitte eine Adresse oder ein Netz angeben, etwa 203.0.113.7 oder 198.51.100.0/24.'));
+  assertNotTooWide(address.value);
+  // Wer sich selbst sperrt, kommt bei geprüfter Oberfläche nicht mehr herein, um es zurückzunehmen.
+  if (actor.ip && addressInNetwork(actor.ip, address.value)) {
+    throw new ApiError(
+      msg('{value} trifft Ihre eigene Adresse ({ip}). Sie sperrten sich damit selbst aus.', { value: address.value, ip: actor.ip }),
+      409
+    );
+  }
   const duration = String(raw.duration ?? '4h');
   if (!(BAN_DURATIONS as readonly string[]).includes(duration)) throw new ApiError(msg('Diese Dauer gibt es nicht.'));
   const reason = cleanNote(raw.reason) || 'Gesperrt in HAPM';
@@ -267,6 +299,7 @@ export async function addAllowlist(body: unknown, actor: CrowdsecActor) {
   const raw = (body ?? {}) as Record<string, unknown>;
   const address = parseAddress(String(raw.value ?? ''));
   if (!address) throw new ApiError(msg('Bitte eine Adresse oder ein Netz angeben, etwa 203.0.113.7 oder 198.51.100.0/24.'));
+  assertNotTooWide(address.value);
   const duration = raw.duration === null || raw.duration === undefined || raw.duration === '' ? null : String(raw.duration);
   if (duration !== null && !(ALLOW_DURATIONS as readonly string[]).includes(duration)) {
     throw new ApiError(msg('Diese Dauer gibt es nicht.'));
@@ -339,7 +372,11 @@ export async function listAlerts(options: { window?: unknown; service?: unknown;
   if (service && !targets.some((target) => target.id === service)) {
     throw new ApiError(msg('Das Ziel {id} gibt es nicht.', { id: service }), 404);
   }
-  const alerts: CrowdsecAlertRow[] = (await readAlerts(hours, options.limit ?? 500)).map((alert) => ({
+  // Gefiltert wird nach dem Lesen: für ein einzelnes Ziel deshalb tiefer lesen,
+  // sonst zeigte es nur seinen Anteil an den neuesten 500.
+  const limit = options.limit ?? (service ? 5000 : 500);
+  const read = await readAlerts(hours, limit);
+  const alerts: CrowdsecAlertRow[] = read.map((alert) => ({
     ...alert,
     targetId: alertTargetId(alert, targets),
   }));
@@ -347,13 +384,17 @@ export async function listAlerts(options: { window?: unknown; service?: unknown;
     window: key,
     service,
     alerts: service ? alerts.filter((alert) => alert.targetId === service) : alerts,
+    /** Es gibt im Zeitraum mehr, als gelesen wurde: die Liste zeigt nur die neuesten. */
+    truncated: read.length >= limit,
   };
 }
+
+const STATS_ALERT_LIMIT = 5000;
 
 export async function crowdsecStatistics(window: unknown) {
   const { key, hours } = readWindow(window);
   const targets = targetsOf(parseHaproxyConfig(readConfig() ?? ''));
-  const alerts = await readAlerts(hours, 5000);
+  const alerts = await readAlerts(hours, STATS_ALERT_LIMIT);
   const to = Date.now();
   const [decisions, community] = await Promise.all([
     listDecisions().catch(() => null),
@@ -362,6 +403,8 @@ export async function crowdsecStatistics(window: unknown) {
   return {
     window: key,
     stats: crowdsecStats(alerts, targets, to - hours * 3_600_000, to),
+    /** Im Zeitraum gab es mehr Ereignisse, als gelesen wurden: die Zahlen sind eine Untergrenze. */
+    truncated: alerts.length >= STATS_ALERT_LIMIT,
     activeDecisions: decisions?.length ?? null,
     communityBlocklist: community,
   };
@@ -526,7 +569,9 @@ export async function setCollection(body: unknown, actor: CrowdsecActor) {
   const raw = (body ?? {}) as Record<string, unknown>;
   const entry = OPTIONAL_COLLECTIONS.find((c) => c.name === raw.name);
   if (!entry) throw new ApiError(msg('Diese Regelsammlung lässt sich hier nicht schalten.'), 404);
-  const on = raw.installed === true;
+  // Fehlte das Feld, hieße das sonst „entfernen".
+  if (typeof raw.installed !== 'boolean') throw new ApiError(msg('Erwartet wird installed: true oder false.'));
+  const on = raw.installed;
   await cscliOk(['collections', on ? 'install' : 'remove', entry.name], 180_000);
   await reloadCrowdsec();
   await audit(actor, 'crowdsec_rules_updated', entry.name, `${entry.name}: ${on ? 'an' : 'aus'}`);
@@ -543,13 +588,19 @@ export async function setApp(body: unknown, actor: CrowdsecActor) {
   const raw = (body ?? {}) as Record<string, unknown>;
   const app = APP_RULES.find((entry) => entry.id === raw.app);
   if (!app) throw new ApiError(msg('Für diese Anwendung gibt es hier keine Regeln.'), 404);
-  const on = raw.installed === true;
+  if (typeof raw.installed !== 'boolean') throw new ApiError(msg('Erwartet wird installed: true oder false.'));
+  const on = raw.installed;
   if (!crowdsecInstalled()) throw new CrowdsecUnavailable();
-  for (const item of app.hub) {
-    await cscliOk([item.type, on ? 'install' : 'remove', item.name], 180_000);
+  try {
+    for (const item of app.hub) {
+      await cscliOk([item.type, on ? 'install' : 'remove', item.name], 180_000);
+    }
+    if (app.local) setAppWhitelist(app, on);
+  } finally {
+    // Auch nach einem Fehler mittendrin: was schon installiert oder entfernt
+    // ist, soll geladen sein und nicht erst beim nächsten Neustart wirken.
+    await reloadCrowdsec().catch(() => undefined);
   }
-  if (app.local) setAppWhitelist(app, on);
-  await reloadCrowdsec();
   await audit(actor, 'crowdsec_rules_updated', `app:${app.id}`, `${app.label}: ${on ? 'an' : 'aus'}`);
   return { app: app.id, installed: on };
 }
@@ -599,77 +650,191 @@ export async function crowdsecOverview() {
 
 /* ── Ganz ein- und ausschalten ── */
 
-/** So lange darf das Entfernen aus `haproxy.cfg` dauern, bevor der Schalter aufgibt. */
-const SWITCH_RUN_TIMEOUT_MS = 120_000;
+/** So lange wartet der Schalter auf den Lauf am Reverse-Proxy: er kann hinter einem Zertifikat anstehen. */
+const SWITCH_WAIT_MS = 30 * 60_000;
+
+/** Was `haproxy.cfg` zu CrowdSec sagt. `missing`: es gibt die Datei nicht, also auch nichts zu entfernen. */
+function configState(): 'missing' | 'unreadable' | 'in-use' | 'clean' {
+  if (!fs.existsSync(HAPROXY_CFG)) return 'missing';
+  const text = readConfig();
+  if (text === null) return 'unreadable';
+  return usesCrowdsec(text) ? 'in-use' : 'clean';
+}
+
+/**
+ * Der Lauf, der CrowdSec aus `haproxy.cfg` nimmt, global und aus jedem Ziel.
+ * `fromFile`: alles andere bleibt, wie es beim Lauf in der Datei steht.
+ */
+async function startRemovalRun(actor: CrowdsecActor): Promise<string> {
+  const server = localServer();
+  const settings = { httpsLines: [], adminIps: [], fromFile: true, crowdsec: false, crowdsecRemoveAll: true };
+  try {
+    await precheckSettings(server, settings);
+  } catch (err) {
+    if (err instanceof HaproxyConfigError) throw new ApiError(err, 409);
+    throw err;
+  }
+  const run = await startHaproxyRun({
+    server,
+    action: 'settings',
+    serviceId: 'globale-einstellungen',
+    settings,
+    actor: { userId: actor.userId, email: actor.userEmail, ip: actor.ip ?? null },
+  });
+  return run.$id;
+}
+
+const stopState = globalThis as unknown as { __hapmCrowdsecStopping?: Promise<void> | null };
+
+/**
+ * Beide Container anhalten. Das dauert bis zu einer halben Minute je Container
+ * und läuft deshalb oft im Hintergrund weiter. Solange es läuft, lässt sich
+ * nicht wieder einschalten (`stopState`): ein Start mitten im Anhalten scheitert.
+ */
+function stopCrowdsecContainers(): Promise<void> {
+  const run = (async () => {
+    for (const name of [bouncerContainerName(), crowdsecContainerName()]) {
+      await engine.stop(name).catch(() => undefined);
+    }
+  })();
+  const tracked = run.finally(() => {
+    if (stopState.__hapmCrowdsecStopping === tracked) stopState.__hapmCrowdsecStopping = null;
+  });
+  stopState.__hapmCrowdsecStopping = tracked;
+  return tracked;
+}
+
+/**
+ * Das Abschalten zu Ende bringen, wenn der Lauf fertig ist. Was zählt, steht
+ * in der Datei und nicht im Status des Laufs: nur wenn `haproxy.cfg` CrowdSec
+ * nicht mehr nennt, halten die Container an. Sonst bleibt alles an.
+ */
+async function finishSwitchOff(runId: string, actor: CrowdsecActor, stop: boolean): Promise<void> {
+  try {
+    const deadline = Date.now() + SWITCH_WAIT_MS;
+    let run = await waitForRun(runId, 60_000);
+    while (run.status === 'running' && Date.now() < deadline) run = await waitForRun(runId, 60_000);
+    if (configState() !== 'clean') return;
+    if (stop) {
+      setDisabledMarker(true);
+      await stopCrowdsecContainers();
+    }
+    forgetCrowdsecSummary();
+    await audit(actor, 'crowdsec_switched', 'crowdsec', stop ? 'CrowdSec: aus' : 'CrowdSec aus haproxy.cfg entfernt');
+  } catch (err) {
+    console.error(`[crowdsec] Abschalten nicht abgeschlossen: ${err instanceof Error ? err.message : String(err)}`);
+  } finally {
+    setCrowdsecSwitchingOff(false);
+  }
+}
 
 /**
  * CrowdSec ganz abschalten oder wieder einschalten.
  *
- * Aus: erst nimmt ein Lauf am Reverse-Proxy CrowdSec aus `haproxy.cfg` (global
- * und aus jedem Ziel, über `applyGlobalSettings` mit Prüfung und Reload). Erst
- * wenn er durch ist, hält HAPM beide Container an und setzt die Marke. Scheitert
- * der Lauf, bleibt alles, wie es war: eine Konfiguration, die einen angehaltenen
- * Bouncer fragt, ließe jede Anfrage ungeprüft durch, ohne dass es jemand sieht.
+ * Aus: ein Lauf am Reverse-Proxy nimmt CrowdSec aus `haproxy.cfg` (global und
+ * aus jedem Ziel, mit Prüfung und Reload). Die Antwort kommt sofort mit
+ * `pending: true` und der Kennung des Laufs: er kann hinter einem anderen
+ * anstehen, und eine Anfrage, die so lange wartet, schnitte HAProxy ab. Ist er
+ * durch, hält HAPM beide Container an und setzt die Marke (`finishSwitchOff`).
+ * Scheitert er, bleibt alles, wie es war: eine Konfiguration, die einen
+ * angehaltenen Bouncer fragt, bremste jede Anfrage, ohne dass es jemand sieht.
+ * Solange das läuft, nimmt kein Ziel CrowdSec neu auf (`crowdsecUsable`).
  *
- * An: Marke weg, Dateien schreiben, beide Container starten. Welche Ziele
- * geprüft werden, bleibt aus: das schaltet man danach wie gewohnt ein.
+ * Auch wo CrowdSec gar nicht im Stack ist, lässt es sich so aus der Datei
+ * nehmen (nach `install.sh --no-crowdsec` auf einer Installation, die es benutzt hat).
+ *
+ * An: Marke weg, Dateien schreiben, beide Container starten. Startet einer
+ * nicht, bleibt CrowdSec abgeschaltet. Welche Ziele geprüft werden, bleibt aus.
  */
 export async function setCrowdsecEnabled(body: unknown, actor: CrowdsecActor) {
   const raw = (body ?? {}) as Record<string, unknown>;
   if (typeof raw.enabled !== 'boolean') throw new ApiError(msg('Erwartet wird enabled: true oder false.'));
-  if (!crowdsecPresent()) throw new ApiError(msg('CrowdSec ist auf dieser Installation nicht vorhanden.'), 409);
-  const on = raw.enabled;
-  let runId: string | null = null;
+  if (crowdsecSwitchingOff()) {
+    throw new ApiError(msg('CrowdSec wird gerade abgeschaltet. Bitte warten, bis der Vorgang fertig ist.'), 409);
+  }
+  const present = crowdsecPresent();
+  const absent = () => new ApiError(msg('CrowdSec ist auf dieser Installation nicht vorhanden.'), 409);
 
-  if (!on) {
-    const text = readConfig();
-    if (text !== null && usesCrowdsec(text)) {
-      const current = parseGlobalSettings(text);
-      if (current.httpsLines === null) {
-        throw new ApiError(msg('Die globalen Einstellungen in {file} sind nicht lesbar. CrowdSec bleibt an.', { file: HAPROXY_CFG }), 409);
-      }
-      const run = await startHaproxyRun({
-        server: localServer(),
-        action: 'settings',
-        serviceId: 'globale-einstellungen',
-        settings: { httpsLines: current.httpsLines, adminIps: current.adminIps, crowdsec: false, crowdsecRemoveAll: true },
-        actor: { userId: actor.userId, email: actor.userEmail, ip: actor.ip ?? null },
-      });
-      runId = run.$id;
-      const done = await waitForRun(run.$id, SWITCH_RUN_TIMEOUT_MS);
-      if (done.status !== 'success' && done.status !== 'warning') {
-        throw new ApiError(
-          msg('HAProxy ließ sich nicht umstellen, CrowdSec bleibt an. Was gescheitert ist, steht unter Logs, Vorgänge.'),
-          409
-        );
-      }
+  if (raw.enabled) {
+    if (!present) throw absent();
+    // Eben erst abgeschaltet: die Container halten noch an, ein Start mittendrin
+    // scheiterte. Darauf zu warten dauerte länger, als HAProxy eine Anfrage hält.
+    if (stopState.__hapmCrowdsecStopping) {
+      throw new ApiError(msg('CrowdSec hält gerade noch an. Bitte in einer Minute noch einmal einschalten.'), 409);
     }
-    setDisabledMarker(true);
-    for (const name of [bouncerContainerName(), crowdsecContainerName()]) {
-      await engine.stop(name).catch(() => undefined);
-    }
-  } else {
     setDisabledMarker(false);
     writeCrowdsecFiles();
-    const missing: string[] = [];
+    const failed: string[] = [];
     for (const name of [crowdsecContainerName(), bouncerContainerName()]) {
-      await engine.start(name).catch(() => missing.push(name));
+      await engine.start(name).catch(() => {
+        failed.push(name);
+      });
     }
-    if (missing.length > 0) {
-      forgetCrowdsecSummary();
-      await audit(actor, 'crowdsec_switched', 'crowdsec', 'CrowdSec: an');
+    if (failed.length > 0) {
+      setDisabledMarker(true);
+      // Im Hintergrund: die Antwort mit dem Grund soll nicht auf das Anhalten warten.
+      void stopCrowdsecContainers();
       throw new ApiError(
-        msg('CrowdSec ist wieder an, aber {names} ließ sich nicht starten. Auf dem Server legt docker compose up -d im Ordner der Installation die Container an.', {
-          names: missing.join(', '),
+        msg('{names} ließ sich nicht starten, CrowdSec bleibt abgeschaltet. Auf dem Server legt docker compose up -d im Ordner der Installation die Container an.', {
+          names: failed.join(', '),
         }),
         409
       );
     }
+    forgetCrowdsecSummary();
+    await audit(actor, 'crowdsec_switched', 'crowdsec', 'CrowdSec: an');
+    return { enabled: true, runId: null, pending: false };
   }
 
+  const state = configState();
+  if (state === 'unreadable') {
+    throw new ApiError(msg('{file} ist nicht lesbar. CrowdSec bleibt an.', { file: HAPROXY_CFG }), 409);
+  }
+  if (state === 'in-use') {
+    setCrowdsecSwitchingOff(true);
+    let runId: string;
+    try {
+      runId = await startRemovalRun(actor);
+    } catch (err) {
+      setCrowdsecSwitchingOff(false);
+      throw err;
+    }
+    void finishSwitchOff(runId, actor, present);
+    return { enabled: false, runId, pending: true };
+  }
+  if (!present) throw absent();
+  setDisabledMarker(true);
+  // Das Anhalten wartet bis zu einer halben Minute je Container: nicht in der Anfrage.
+  void stopCrowdsecContainers();
   forgetCrowdsecSummary();
-  await audit(actor, 'crowdsec_switched', 'crowdsec', `CrowdSec: ${on ? 'an' : 'aus'}`);
-  return { enabled: on, runId };
+  await audit(actor, 'crowdsec_switched', 'crowdsec', 'CrowdSec: aus');
+  return { enabled: false, runId: null, pending: false };
+}
+
+const orphanAttempt = globalThis as unknown as { __hapmCrowdsecOrphanAt?: number };
+
+/**
+ * CrowdSec ist nicht eingeschaltet (abgewählt oder abgeschaltet), `haproxy.cfg`
+ * fragt den Bouncer aber noch: nach `install.sh --no-crowdsec` ohne vorheriges
+ * Ausschalten, oder nach dem Zurückspielen einer älteren Sicherung. HAProxy
+ * wartete dann bei jeder Anfrage auf eine Antwort, die nie kommt. Der Abgleich
+ * im Scheduler nimmt es deshalb selbst heraus. Höchstens alle sechs Stunden ein
+ * Versuch, damit ein Lauf, der scheitert, nicht die Historie füllt.
+ */
+export async function dropOrphanedCrowdsec(actor: CrowdsecActor): Promise<string | null> {
+  if (crowdsecInstalled() || crowdsecSwitchingOff() || configState() !== 'in-use') return null;
+  const last = orphanAttempt.__hapmCrowdsecOrphanAt ?? 0;
+  if (Date.now() - last < 6 * 3_600_000) return null;
+  orphanAttempt.__hapmCrowdsecOrphanAt = Date.now();
+  setCrowdsecSwitchingOff(true);
+  try {
+    const runId = await startRemovalRun(actor);
+    void finishSwitchOff(runId, actor, false);
+    return `CrowdSec ist nicht eingeschaltet, steht aber in haproxy.cfg. Lauf ${runId} nimmt es heraus.`;
+  } catch (err) {
+    setCrowdsecSwitchingOff(false);
+    throw err;
+  }
 }
 
 /** Eine Änderung an den Regeln: OWASP-Modus, eine Sammlung oder der Hub. */

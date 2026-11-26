@@ -15,6 +15,7 @@ export interface CrowdsecOverview {
   protection: {
     readable: boolean;
     global: boolean | null;
+    inUse: boolean;
     services: { id: string; domains: string[]; own: boolean }[];
     total: number;
     targets: { id: string; label: string }[];
@@ -44,6 +45,7 @@ export interface CrowdsecRules {
 export interface CrowdsecStatsResponse {
   window: string;
   stats: CrowdsecStats;
+  truncated?: boolean;
   activeDecisions: number | null;
   communityBlocklist: number | null;
 }

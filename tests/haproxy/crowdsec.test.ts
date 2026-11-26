@@ -198,6 +198,25 @@ describe('CrowdSec ganz abschalten (crowdsecRemoveAll)', () => {
     expect(syncCrowdsecBackend(off, ADDRESS)).not.toContain(CROWDSEC_SPOA_BACKEND);
   });
 
+  it('nimmt auch einen von Hand geänderten Block im Frontend mit', () => {
+    const on = applyGlobalSettings(BASE, settingsInput(BASE, true));
+    const edited = on.replace('timeout processing 500ms', 'timeout processing 2s').replace(CROWDSEC_LINES[1], `${CROWDSEC_LINES[1]} # von Hand`);
+    expect(parseGlobalSettings(edited).crowdsec).toBeNull();
+    const off = applyGlobalSettings(edited, { ...settingsInput(edited, false), crowdsecRemoveAll: true });
+    expect(usesCrowdsec(off)).toBe(false);
+    expect(parseGlobalSettings(off).crowdsec).toBe(false);
+  });
+
+  it('lässt mit fromFile stehen, was sonst in der Datei steht, auch wenn die Eingabe anderes nennt', () => {
+    const withIps = applyGlobalSettings(BASE, { ...settingsInput(BASE), adminIps: ['203.0.113.7'] });
+    const on = applyGlobalSettings(withIps, settingsInput(withIps, true));
+    // Die Eingabe trägt leere Listen: ohne fromFile fiele die Admin-IP weg.
+    const off = applyGlobalSettings(on, { httpsLines: [], adminIps: [], fromFile: true, crowdsec: false, crowdsecRemoveAll: true });
+    expect(parseGlobalSettings(off).adminIps).toEqual(['203.0.113.7']);
+    expect(parseGlobalSettings(off).httpsLines).toEqual(parseGlobalSettings(on).httpsLines);
+    expect(usesCrowdsec(off)).toBe(false);
+  });
+
   it('wirkt nur zusammen mit crowdsec: false', () => {
     const on = addService(BASE, SERVICE);
     const kept = applyGlobalSettings(on, { ...settingsInput(on), crowdsecRemoveAll: true });

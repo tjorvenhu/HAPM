@@ -9,6 +9,7 @@ import {
 import PageHeading from '@/components/PageHeading';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
+import { errorText } from '@/components/errorText';
 import { useConfirm } from '@/components/ConfirmDialog';
 import Select from '@/components/Select';
 import {
@@ -86,6 +87,9 @@ interface Draft {
   protection: ProtectionDraft | null;
 }
 
+/** So viele Abfragen eines Laufs dürfen in Folge scheitern, bevor die Seite ihn aufgibt. */
+const MAX_UNREAD_POLLS = 5;
+
 export default function ReverseProxySettingsPage() {
   // `useSearchParams` verlangt eine Suspense-Grenze, sonst scheitert der Build.
   return (
@@ -147,10 +151,9 @@ function SettingsPage() {
       try {
         const res = await apiFetch('/api/haproxy/settings');
         const data = await res.json();
-        if (data.success) {
-          setRows(data.data.rows);
-          setProtectionContext(data.data.protectionContext);
-        }
+        if (!res.ok || !data.success) throw new Error(data.error);
+        setRows(data.data.rows);
+        setProtectionContext(data.data.protectionContext);
         setError('');
       } catch {
         setError(t('Die Einstellungen konnten nicht geladen werden.'));
@@ -175,35 +178,63 @@ function SettingsPage() {
   useEffect(() => {
     if (!pendingRun) return;
     let cancelled = false;
+    // Ein Takt mit Nachladen dauert länger als drei Sekunden. Der nächste
+    // wartet, sonst zählte und meldete er dasselbe ein zweites Mal.
+    let busy = false;
+    // Abfragen in Folge ohne Antwort. Nach `MAX_UNREAD_POLLS` gibt die Seite den
+    // Lauf auf, sonst bliebe der Knopf für immer bei „Wird übernommen“.
+    let unread = 0;
 
     const poll = async () => {
-      const data = await apiFetch(`/api/haproxy/runs/${pendingRun.id}`)
-        .then((r) => r.json())
-        .catch(() => null);
-      if (cancelled || !data?.success || data.data.status === 'running') return;
-      // Erst nachladen, dann die Eingabe verwerfen und melden: sonst steht für
-      // einen Augenblick der alte Stand der Maschine da. Scheitert der Vorgang,
-      // bleibt die Eingabe, damit man sie korrigieren und erneut speichern kann.
-      const ok = data.data.status === 'success';
-      await load(true);
-      if (cancelled) return;
-      if (ok) {
-        setDraft((current) => {
-          if (JSON.stringify(current[pendingRun.rowId]) !== pendingRun.sent) return current;
-          const rest = { ...current };
-          delete rest[pendingRun.rowId];
-          return rest;
+      if (busy) return;
+      busy = true;
+      try {
+        const data = await apiFetch(`/api/haproxy/runs/${pendingRun.id}`)
+          .then((r) => r.json())
+          .catch(() => null);
+        if (cancelled) return;
+        if (!data?.success) {
+          unread += 1;
+          if (unread < MAX_UNREAD_POLLS) return;
+          // Die Eingabe bleibt: ob sie angekommen ist, weiß hier niemand.
+          clearInterval(interval);
+          setPendingRun(null);
+          notify({
+            variant: 'error',
+            title: pendingRun.label,
+            message: t('Der Stand des Vorgangs ließ sich nicht abfragen. Die Schritte stehen in den Logs.'),
+          });
+          return;
+        }
+        unread = 0;
+        if (data.data.status === 'running') return;
+        // Erst nachladen, dann die Eingabe verwerfen und melden: sonst steht für
+        // einen Augenblick der alte Stand der Maschine da. Scheitert der Vorgang,
+        // bleibt die Eingabe, damit man sie korrigieren und erneut speichern kann.
+        const ok = data.data.status === 'success';
+        await load(true);
+        if (cancelled) return;
+        if (ok) {
+          setDraft((current) => {
+            if (JSON.stringify(current[pendingRun.rowId]) !== pendingRun.sent) return current;
+            const rest = { ...current };
+            delete rest[pendingRun.rowId];
+            return rest;
+          });
+        }
+        clearInterval(interval);
+        setPendingRun(null);
+        notify({
+          variant: ok ? 'success' : 'error',
+          title: pendingRun.label,
+          message: ok
+            ? t('Durchgelaufen, HAProxy hat die neue Konfiguration übernommen.')
+            : t('Nicht durchgelaufen. Der erste fehlgeschlagene Schritt steht im Protokoll.'),
+          action: { label: t('Protokoll'), onClick: () => openRun({ kind: 'haproxy', id: pendingRun.id }) },
         });
+      } finally {
+        busy = false;
       }
-      setPendingRun(null);
-      notify({
-        variant: ok ? 'success' : 'error',
-        title: pendingRun.label,
-        message: ok
-          ? t('Durchgelaufen, HAProxy hat die neue Konfiguration übernommen.')
-          : t('Nicht durchgelaufen. Der erste fehlgeschlagene Schritt steht im Protokoll.'),
-        action: { label: t('Protokoll'), onClick: () => openRun({ kind: 'haproxy', id: pendingRun.id }) },
-      });
     };
 
     const interval = setInterval(poll, 3000);
@@ -349,7 +380,7 @@ function SettingsPage() {
       notify({
         variant: 'error',
         title: provider.label,
-        message: err instanceof Error ? err.message : t('Speichern fehlgeschlagen'),
+        message: errorText(err, t('HAPM hat nicht geantwortet. Bitte versuchen Sie es erneut.')),
       });
     } finally {
       setSavingCred(null);
@@ -389,7 +420,7 @@ function SettingsPage() {
       notify({
         variant: 'error',
         title: provider.label,
-        message: err instanceof Error ? err.message : t('Entfernen fehlgeschlagen'),
+        message: errorText(err, t('HAPM hat nicht geantwortet. Bitte versuchen Sie es erneut.')),
       });
     } finally {
       setSavingCred(null);
@@ -413,7 +444,7 @@ function SettingsPage() {
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || t('Speichern fehlgeschlagen'));
+      if (!res.ok) throw new Error(data.error || t('Der Vorgang ist fehlgeschlagen.'));
       const run = { id: data.data.runId, label: t('Einstellungen speichern'), rowId: row.$id, sent: JSON.stringify(value) };
       setPendingRun(run);
       openRun({ kind: 'haproxy', id: run.id });
@@ -421,7 +452,7 @@ function SettingsPage() {
       notify({
         variant: 'error',
         title: t('Speichern fehlgeschlagen'),
-        message: err instanceof Error ? err.message : t('Unbekannter Fehler.'),
+        message: errorText(err, t('HAPM hat nicht geantwortet. Bitte versuchen Sie es erneut.')),
       });
     } finally {
       setSaving(null);
@@ -476,15 +507,18 @@ function SettingsPage() {
         (loading ? (
           <SkeletonRows />
         ) : rows.length === 0 ? (
-          <div className="empty-state">
-            <Network size={40} />
-            <h3>{t('HAProxy antwortet nicht')}</h3>
-            <p>
-              {rich('Ohne HAProxy gibt es hier nichts einzustellen. Sein Zustand steht in der {overview}.', {
-                overview: <Link href="/dashboard">{t('Übersicht')}</Link>,
-              })}
-            </p>
-          </div>
+          // Nach einem Ladefehler ist die Liste leer, weil sie unbekannt ist: dann steht nur die Meldung oben.
+          !error && (
+            <div className="empty-state">
+              <Network size={40} />
+              <h3>{t('HAProxy antwortet nicht')}</h3>
+              <p>
+                {rich('Ohne HAProxy gibt es hier nichts einzustellen. Sein Zustand steht in der {overview}.', {
+                  overview: <Link href="/dashboard">{t('Übersicht')}</Link>,
+                })}
+              </p>
+            </div>
+          )
         ) : (
           rows.map((row) => {
             const value = valueOf(row);
@@ -547,6 +581,7 @@ function SettingsPage() {
                                     type="button"
                                     className="btn btn-ghost btn-icon"
                                     data-tooltip={t('Zeile entfernen')}
+                                    aria-label={t('Zeile entfernen')}
                                     disabled={value.httpsLines.length === 1}
                                     onClick={() =>
                                       edit(row, {
@@ -629,6 +664,7 @@ function SettingsPage() {
                                     type="button"
                                     className="btn btn-ghost btn-icon"
                                     data-tooltip={t('Zeile entfernen')}
+                                    aria-label={t('Zeile entfernen')}
                                     disabled={value.adminIps.length === 1}
                                     onClick={() =>
                                       edit(row, {
@@ -759,6 +795,7 @@ function SettingsPage() {
                                   type="button"
                                   className="btn btn-ghost btn-icon"
                                   data-tooltip={t('Token entfernen')}
+                                  aria-label={t('Token entfernen')}
                                   disabled={savingCred === `${row.$id}|${provider.hook}`}
                                   onClick={() => removeCredentials(row, provider)}
                                 >
@@ -791,7 +828,7 @@ function SettingsPage() {
                               <div className="form-group" key={field.name}>
                                 <label className="form-label">
                                   {t(field.label)}
-                                  {!field.required && ' (optional)'}
+                                  {!field.required && ` ${t('(optional)')}`}
                                 </label>
                                 {/* `type="password"`, weil daneben jemand steht. */}
                                 <input

@@ -6,7 +6,7 @@ import { useApp } from '@/components/AppShell';
 import { usePolling } from '@/components/usePolling';
 import Select from '@/components/Select';
 import { SkeletonRows } from '@/components/Skeleton';
-import { formatBytes, formatCount, formatDate, formatDateTime, formatMs, formatTime, msgid } from '@/lib/i18n';
+import { MISSING, formatBytes, formatCount, formatDate, formatDateTime, formatMs, formatTime, msgid } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
 import {
   LOG_FILTERS,
@@ -335,7 +335,7 @@ function TimeCell({ time }: { time: string | null }) {
   if (!time) {
     return (
       <td data-label={t('Zeit')}>
-        <span className="logs-muted">–</span>
+        <span className="logs-muted">{MISSING}</span>
       </td>
     );
   }
@@ -371,7 +371,7 @@ function LogRow({ entry }: { entry: LogEntry }) {
   const flow =
     entry.kind === 'connection'
       ? entry.frontend
-      : `${entry.frontend} → ${entry.backend ?? '–'}${entry.server ? `/${entry.server}` : ''}`;
+      : `${entry.frontend} → ${entry.backend ?? MISSING}${entry.server ? `/${entry.server}` : ''}`;
 
   return (
     <tr>
@@ -387,14 +387,14 @@ function LogRow({ entry }: { entry: LogEntry }) {
           <span className="logs-tip" data-tooltip={entry.text}>
             <span className="sys-trunc">
               {entry.method && <span className="logs-method">{entry.method}</span>}
-              {entry.path ?? '–'}
+              {entry.path ?? MISSING}
             </span>
           </span>
         ) : entry.kind === 'tcp' ? (
           <span className="logs-tip" data-tooltip={entry.text}>
             <span className="sys-trunc">
               <span className="logs-method">TCP</span>
-              {entry.bytes !== null ? formatBytes(locale, entry.bytes) : '–'}
+              {entry.bytes !== null ? formatBytes(locale, entry.bytes) : MISSING}
             </span>
           </span>
         ) : (
@@ -407,14 +407,14 @@ function LogRow({ entry }: { entry: LogEntry }) {
         ) : entry.kind === 'connection' ? (
           <span className="badge-status badge-danger">{t('Fehler')}</span>
         ) : (
-          <span className="logs-muted">–</span>
+          <span className="logs-muted">{MISSING}</span>
         )}
       </td>
       <td data-label={t('Dauer')} className="logs-end">
         {entry.kind !== 'connection' && entry.durationMs !== null ? (
           formatMs(locale, entry.durationMs)
         ) : (
-          <span className="logs-muted">–</span>
+          <span className="logs-muted">{MISSING}</span>
         )}
       </td>
     </tr>

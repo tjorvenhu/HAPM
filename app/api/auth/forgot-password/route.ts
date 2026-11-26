@@ -53,11 +53,13 @@ export async function POST(request: Request) {
       );
     }
 
-    try {
-      await (await auth()).api.requestPasswordReset({ body: { email: address } });
-    } catch (resetErr) {
-      console.error('[forgot-password] Anforderung fehlgeschlagen:', resetErr);
-    }
+    // Nicht abwarten: für ein vorhandenes Konto dauerte die Antwort sonst so
+    // lange wie der Versand, für ein unbekanntes kam sie sofort. Daran ließe
+    // sich ablesen, ob es das Konto gibt.
+    const instance = await auth();
+    void instance.api
+      .requestPasswordReset({ body: { email: address } })
+      .catch((resetErr: unknown) => console.error('[forgot-password] Anforderung fehlgeschlagen:', resetErr));
 
     await logAudit({
       userId: '',

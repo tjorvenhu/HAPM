@@ -2,7 +2,7 @@ import { getSingleton, updateDocument } from './db';
 import { deleteAllPasskeys } from './db/auth-tables';
 import { ApiError } from './api';
 import { encrypt } from './crypto';
-import { validateEmail, validateHostname } from './validation';
+import { validateAcmeEmail, validateEmail, validateHostname } from './validation';
 import { DEFAULT_SMTP_PORT, SMTP_SECURITIES, parseSender } from './mail/config';
 import { rememberPublicUrl } from './mail/installation';
 import { isLocale, msg, type Locale } from './i18n';
@@ -305,7 +305,7 @@ export function settingsPatch(
 
   if (input.acmeEmail !== undefined) {
     const email = input.acmeEmail?.trim() || null;
-    if (email && !validateEmail(email)) throw new ApiError(msg('Die E-Mail-Adresse für Let\'s Encrypt ist ungültig.'));
+    if (email && !validateAcmeEmail(email)) throw new ApiError(msg('Die E-Mail-Adresse für Let\'s Encrypt ist ungültig.'));
     patch.acmeEmail = email;
   }
   if (input.publicUrl !== undefined) {

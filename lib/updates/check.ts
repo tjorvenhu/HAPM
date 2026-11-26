@@ -209,7 +209,13 @@ export function settleAfterRuns(
   runs: { component: UpdateComponent; status: string; completedAt: string | null }[]
 ): void {
   if (running || Date.now() - lastSettle < SETTLE_RETRY_MS) return;
-  const stale = ORDER.some((component) =>
+  // Ein alter Lauf von CrowdSec, das inzwischen abgeschaltet ist, hat keinen
+  // Stand mehr und bekäme nie einen: ohne diese Auswahl gälte er für immer als
+  // ungeprüft, und jede halbe Minute liefe eine volle Prüfung.
+  const crowdsec = crowdsecInstalled();
+  const stale = ORDER.filter(
+    (component) => crowdsec || (component !== 'crowdsec' && component !== 'crowdsec-bouncer')
+  ).some((component) =>
     needsCheckAfterRun(
       runs.find((run) => run.component === component) ?? null,
       states.find((state) => state.component === component)

@@ -6,6 +6,7 @@ import { InfoHint } from '@/ui/primitives/InfoHint';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/ConfirmDialog';
+import { errorText } from '@/components/errorText';
 import { useMountedLoad } from '@/components/useMountedLoad';
 import { SkeletonRows } from '@/components/Skeleton';
 import {
@@ -46,6 +47,7 @@ export default function SavedTargetsPanel() {
   /** `new` für die Zeile zum Anlegen, sonst die Kennung der Zeile, die bearbeitet wird. */
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft>(EMPTY);
+  /** Nur die Prüfung vor dem Absenden. Was die Route antwortet, ist eine Meldung. */
   const [formError, setFormError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -88,6 +90,7 @@ export default function SavedTargetsPanel() {
       const isNew = editing === 'new';
       const res = await apiFetch(isNew ? '/api/haproxy/targets' : `/api/haproxy/targets/${editing}`, {
         method: isNew ? 'POST' : 'PUT',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(input),
       });
       const data = await res.json();
@@ -101,33 +104,33 @@ export default function SavedTargetsPanel() {
       setEditing(null);
       await load();
     } catch (err) {
-      setFormError(err instanceof Error && err.message ? err.message : t('Unbekannter Fehler.'));
+      notify({
+        variant: 'error',
+        title: t('Speichern fehlgeschlagen'),
+        message: errorText(err, t('Der Server ließ sich nicht speichern.')),
+      });
     } finally {
       setBusy(false);
     }
   }
 
   async function remove(target: SavedTarget) {
-    const ok = await confirm({
+    await confirm({
       title: t('Server {name} löschen?', { name: target.name }),
       message: t('Ziele, die diese Adresse benutzen, bleiben unverändert. Der Server steht danach nur nicht mehr zur Auswahl.'),
       confirmLabel: t('Löschen'),
       variant: 'danger',
+      failedTitle: t('Löschen fehlgeschlagen'),
+      // Im Dialog und nicht danach: solange er offen ist, liegt er über der
+      // Liste, und ein zweiter Klick auf dieselbe Zeile kommt nicht an.
+      onConfirm: async () => {
+        const res = await apiFetch(`/api/haproxy/targets/${target.$id}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error);
+        notify({ variant: 'success', message: t('Der Server {name} ist gelöscht.', { name: target.name }) });
+        await load();
+      },
     });
-    if (!ok) return;
-    try {
-      const res = await apiFetch(`/api/haproxy/targets/${target.$id}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error);
-      notify({ variant: 'success', message: t('Der Server {name} ist gelöscht.', { name: target.name }) });
-      await load();
-    } catch (err) {
-      notify({
-        variant: 'error',
-        title: t('Löschen fehlgeschlagen'),
-        message: err instanceof Error && err.message ? err.message : t('Unbekannter Fehler.'),
-      });
-    }
   }
 
   const form = (

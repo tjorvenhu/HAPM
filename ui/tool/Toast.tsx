@@ -31,10 +31,14 @@ import { useT } from '@/lib/i18n/react';
  * **Ein Fehler bleibt länger als ein Erfolg** (siehe `DURATIONS`). „Gespeichert"
  * hat man nach zwei Sekunden gelesen; „fehlgeschlagen: Reload verweigert" nicht.
  *
+ * Hierher gehört auch die Absage der Route nach dem Absenden eines Formulars
+ * oder Dialogs: als Fehler mit Titel („Speichern fehlgeschlagen"), das Fenster
+ * bleibt offen, die Eingabe steht noch da.
+ *
  * Nicht hierher gehört, was kein Ereignis ist, sondern ein Zustand: „Server
- * nicht erreichbar" oder ein Formularfehler bleiben als `alert` an ihrer Stelle
- * stehen. Sie verschwinden nicht von selbst, weil sie nicht von selbst
- * aufhören.
+ * nicht erreichbar" oder die Prüfung einer Eingabe VOR dem Absenden bleiben als
+ * `alert` oder Hinweis an ihrer Stelle stehen. Sie verschwinden nicht von
+ * selbst, weil sie nicht von selbst aufhören.
  */
 
 export type ToastVariant = 'success' | 'error' | 'warning' | 'info';

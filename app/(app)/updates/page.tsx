@@ -32,7 +32,7 @@ import {
   versionStep,
 } from '@/components/system/format';
 import { needsCheckAfterRun, remainingSteps } from '@/lib/updates/plan';
-import { msgid, type Translator } from '@/lib/i18n';
+import { MISSING, msgid, type Translator } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
 import type { HaproxyStep, UpdateComponent, UpdateRun, UpdateState } from '@/lib/types';
 
@@ -56,6 +56,13 @@ const COMPONENTS: UpdateComponent[] = ['haproxy', 'hapm', 'acme', 'crowdsec', 'c
 
 /** CrowdSec steht nur da, wenn der Stack es mitbringt: dann gibt es einen Stand dafür. */
 const OPTIONAL: UpdateComponent[] = ['crowdsec', 'crowdsec-bouncer'];
+
+/** Was auf dieser Installation zur Wahl steht: die optionalen nur, wenn es sie gibt. */
+function offeredComponents(states: UpdateState[]): UpdateComponent[] {
+  return COMPONENTS.filter(
+    (component) => !OPTIONAL.includes(component) || states.some((state) => state.component === component)
+  );
+}
 
 const COMPONENT_ICONS: Record<UpdateComponent, ReactNode> = {
   haproxy: <BrandLogo brand="haproxy" size={17} />,
@@ -111,7 +118,7 @@ function Digest({ digest }: { digest: string | null }) {
 }
 
 function triggeredByLabel(value: string | null, t: Translator['t']): string {
-  if (!value) return '';
+  if (!value) return MISSING;
   return value === 'scheduler' ? t('Zeitplan') : value;
 }
 
@@ -127,7 +134,7 @@ function RunSteps({ run }: { run: RunView }) {
 function runDuration(run: RunView, now: number): string {
   const start = Date.parse(run.startedAt);
   const end = run.completedAt ? Date.parse(run.completedAt) : now;
-  if (Number.isNaN(start) || Number.isNaN(end)) return '';
+  if (Number.isNaN(start) || Number.isNaN(end)) return MISSING;
   return formatClock(end - start);
 }
 
@@ -307,13 +314,15 @@ export default function UpdatesPage() {
           : current
       );
       setTimeDraft(null);
+      // Gespeichert bleiben auch Bestandteile, die es hier nicht gibt (CrowdSec ohne CrowdSec).
+      const active = offeredComponents(data?.states ?? []).filter((component) => saved.autoUpdate.includes(component));
       notify({
         variant: 'success',
         message:
-          saved.autoUpdate.length > 0
+          active.length > 0
             ? t('Selbsttätig aktualisiert wird täglich um {time} Uhr: {components}.', {
                 time: saved.autoUpdateTime,
-                components: saved.autoUpdate.map((component) => COMPONENT_LABELS[component]).join(', '),
+                components: active.map((component) => COMPONENT_LABELS[component]).join(', '),
               })
             : t('Nichts wird selbsttätig aktualisiert.'),
       });
@@ -337,7 +346,7 @@ export default function UpdatesPage() {
     <div className="page-header">
       <div>
         <h1 className="page-title">{t('Updates')}</h1>
-        <p className="page-subtitle">{t('Neue Abbilder für HAProxy und HAPM, neue Fassungen von acme.sh.')}</p>
+        <p className="page-subtitle">{t('Neue Abbilder der Container und neue Fassungen von acme.sh.')}</p>
       </div>
       <div className="page-actions">
         <button type="button" className="btn btn-secondary" onClick={check} disabled={!data || checking || locked}>
@@ -376,9 +385,7 @@ export default function UpdatesPage() {
   }
 
   const timeValue = timeDraft ?? data.settings.autoUpdateTime;
-  const autoComponents = COMPONENTS.filter(
-    (component) => !OPTIONAL.includes(component) || data.states.some((state) => state.component === component)
-  );
+  const autoComponents = offeredComponents(data.states);
 
   return (
     <>
@@ -585,7 +592,7 @@ export default function UpdatesPage() {
               type="time"
               className="form-input"
               value={timeValue}
-              disabled={savingSettings || data.settings.autoUpdate.length === 0}
+              disabled={savingSettings || !autoComponents.some((component) => data.settings.autoUpdate.includes(component))}
               onChange={(event) => setTimeDraft(event.target.value)}
               onBlur={() => {
                 if (timeDraft && timeDraft !== data.settings.autoUpdateTime) {

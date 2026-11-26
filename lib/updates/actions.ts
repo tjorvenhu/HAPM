@@ -16,6 +16,7 @@ import { parseSteps, stepsAsLog } from '../haproxy/runner';
 import { COLLECTIONS, type UpdateComponent, type UpdateRun } from '../types';
 import { checkUpdates, isCheckRunning, readUpdateStates, settleAfterRuns } from './check';
 import { listUpdateRuns, startUpdate, type UpdateActor } from './apply';
+import { crowdsecInstalled } from '../crowdsec/paths';
 
 export const UPDATE_COMPONENTS: readonly UpdateComponent[] = ['haproxy', 'hapm', 'acme', 'crowdsec', 'crowdsec-bouncer'];
 
@@ -55,6 +56,10 @@ export async function checkUpdatesNow(): Promise<UpdatesOverview> {
 export async function startComponentUpdate(component: unknown, actor: UpdateActor): Promise<{ runId: string }> {
   if (typeof component !== 'string' || !UPDATE_COMPONENTS.includes(component as UpdateComponent)) {
     throw new ApiError(msg('Diesen Bestandteil gibt es nicht.'), 404);
+  }
+  // Ein Update ersetzt den Container und startet ihn: abgeschaltet soll er stehen.
+  if ((component === 'crowdsec' || component === 'crowdsec-bouncer') && !crowdsecInstalled()) {
+    throw new ApiError(msg('CrowdSec ist auf dieser Installation nicht eingeschaltet.'), 409);
   }
   const run = await startUpdate(component as UpdateComponent, actor);
   return { runId: run.$id };

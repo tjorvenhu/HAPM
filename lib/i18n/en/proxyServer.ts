@@ -306,6 +306,13 @@ export const proxyServer: Dictionary = {
   'Lua-Aktionen übernimmt HAPM nicht.': 'HAPM does not import Lua actions.',
   'Die Regel gilt für alle Domains des Frontends. Was für alle gelten soll, steht in HAPM unter Reverse-Proxy, Einstellungen.':
     'The rule applies to all domains of the frontend. In HAPM, what applies to all is under Reverse proxy, Settings.',
+  'Die Regel „{rule}“ beschränkt den Zugriff für alle Domains dieses Frontends. HAPM übernimmt sie nicht, importiert wäre die Domain für jeden erreichbar. Erst unter Reverse-Proxy, Einstellungen den Zugriffsschutz einrichten oder die Sperre am Ziel setzen.':
+    'The rule “{rule}” restricts access for all domains of this frontend. HAPM does not import it; imported, the domain would be reachable for everyone. First set up access protection under Reverse proxy, Settings, or set the lock on the target.',
+  'Das Frontend ist abgeschaltet (disabled). Importiert liefe die Domain.': 'The frontend is switched off (disabled). Imported, the domain would be live.',
+  'Das Ziel bekäme keine Anfrage: {other} steht in der Konfiguration weiter oben und bedient {domains} schon mit einer Wildcard. Legen Sie es in dieselbe Gruppe wie {other}, dort stehen genaue Domains vor der Wildcard.':
+    'The target would receive no requests: {other} is further up in the configuration and already serves {domains} with a wildcard. Put it into the same group as {other}; there, exact domains come before the wildcard.',
+  'Die Wildcard nähme dem Ziel {other} alle Anfragen ab: seine Gruppe steht in der Konfiguration weiter unten. Legen Sie das Ziel in die Gruppe von {other}, dort stehen genaue Domains vor der Wildcard.':
+    'The wildcard would take all requests away from the target {other}: its group is further down in the configuration. Put the target into the group of {other}; there, exact domains come before the wildcard.',
   'Bindungen und Tabellen im Frontend bildet HAPM nicht ab.':
     'HAPM does not represent server bindings and stick tables in the frontend.',
   'Was keine Weiche trifft, ging an {backend}. In HAPM antwortet an dieser Stelle die Seite für unbekannte Domains.':

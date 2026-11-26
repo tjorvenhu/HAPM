@@ -7,7 +7,7 @@ import { useConfirm } from '@/components/ConfirmDialog';
 import Select from '@/components/Select';
 import { SkeletonRows } from '@/components/Skeleton';
 import { InfoHint } from '@/ui/primitives/InfoHint';
-import { msgid } from '@/lib/i18n';
+import { MISSING, msgid } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
 import { useCrowdsecData, useCrowdsecSend } from './useCrowdsecData';
 import type { CrowdsecAppRules, CrowdsecRules, CrsMode } from './types';
@@ -58,10 +58,12 @@ export default function RulesPanel() {
     try {
       await send('/api/crowdsec/rules', 'PATCH', body);
       notify({ variant: 'success', message: done });
-      await reload();
     } catch (err) {
       notify({ variant: 'error', title: t('Ändern fehlgeschlagen'), message: err instanceof Error ? err.message : String(err) });
     } finally {
+      // Auch nach einem Fehler: ein Teil kann schon installiert sein, und die
+      // Anfrage kann abgeschnitten worden sein, während CrowdSec fertig wurde.
+      await reload();
       setBusy(null);
     }
   }
@@ -145,7 +147,7 @@ export default function RulesPanel() {
               </div>
             </div>
             <div className="table-wrap">
-              <table className="table">
+              <table className="table cs-rules">
                 <thead>
                   <tr>
                     <th>{t('Anwendung')}</th>
@@ -241,7 +243,7 @@ export default function RulesPanel() {
               </button>
             </div>
             <div className="table-wrap">
-              <table className="table">
+              <table className="table cs-rules">
                 <thead>
                   <tr>
                     <th>{t('Sammlung')}</th>
@@ -256,7 +258,7 @@ export default function RulesPanel() {
                         <strong>{t(BASE_LABELS[entry.name] ?? entry.name)}</strong>
                         <div className="detail-sub mono">{entry.name}</div>
                       </td>
-                      <td data-label={t('Version')}>{entry.version ?? ''}</td>
+                      <td data-label={t('Version')}>{entry.version ?? MISSING}</td>
                       <td data-label={t('Aktiv')}>
                         {entry.installed ? (
                           <span className="badge-status badge-success">
@@ -264,7 +266,7 @@ export default function RulesPanel() {
                             {t('Immer an')}
                           </span>
                         ) : (
-                          <span className="badge-status badge-warning">{t('Fehlt')}</span>
+                          <span className="badge-status badge-danger">{t('Fehlt')}</span>
                         )}
                       </td>
                     </tr>
@@ -278,7 +280,7 @@ export default function RulesPanel() {
                         </span>
                         <div className="detail-sub mono">{entry.name}</div>
                       </td>
-                      <td data-label={t('Version')}>{entry.version ?? ''}</td>
+                      <td data-label={t('Version')}>{entry.version ?? MISSING}</td>
                       <td data-label={t('Aktiv')}>
                         <label className="toggle-switch">
                           <input

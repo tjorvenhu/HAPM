@@ -4,6 +4,8 @@ import { useEffect, useState, useRef, type FormEvent } from "react"
 import { useT } from "@/lib/i18n/react"
 import { ShieldCheck, Copy, Check, Download, Loader2, ArrowLeft, ArrowRight, X } from "lucide-react"
 import { RecoveryCodeGrid, useRecoveryCodeActions } from "./RecoveryCodes"
+import { useToast } from "../tool/Toast"
+import { errorText } from "../tool/errorText"
 
 export interface TwoFactorSetupProps {
   /**
@@ -33,19 +35,19 @@ type Step = "intro" | "loading" | "scan" | "verify" | "recovery" | "done"
  *
  * Die Anbindung gibt die Seite herein (`start`, `verify`): mal ein Abruf mit
  * CSRF-Kopfzeile, mal ohne. Form und Ablauf stehen hier, die Regeln dazu
- * (`.two-factor-*`) in `css/tool-vocabulary.css`.
+ * (`.two-factor-*`) in `css/tool-vocabulary.css`. Was scheitert, erscheint als
+ * Meldung: die Fläche braucht den `ToastProvider` des Rahmens.
  */
 export default function TwoFactorSetup({ start, verify, onComplete, onCancel, required = false, className }: TwoFactorSetupProps) {
   const { t, rich } = useT()
+  const { notify } = useToast()
   const [step, setStep] = useState<Step>("intro")
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState("")
   const [manualCode, setManualCode] = useState("")
   const [code, setCode] = useState("")
-  const [error, setError] = useState("")
-  const [copied, setCopied] = useState(false)
   const [verifying, setVerifying] = useState(false)
   const [recoveryCodes, setRecoveryCodes] = useState<string[]>([])
-  const recovery = useRecoveryCodeActions(recoveryCodes, setError)
+  const recovery = useRecoveryCodeActions(recoveryCodes)
   const codeInputRef = useRef<HTMLInputElement>(null)
 
   // Abbrechen geht bis zur Bestätigung des Codes. Danach ist der zweite Faktor
@@ -63,27 +65,33 @@ export default function TwoFactorSetup({ start, verify, onComplete, onCancel, re
 
   async function startSetup() {
     setStep("loading")
-    setError("")
     try {
       const data = await start()
       setQrCodeDataUrl(data.qrCodeDataUrl)
       setManualCode(data.manualCode)
       setStep("scan")
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : t("Fehler bei der Einrichtung"))
+      notify({
+        variant: "error",
+        title: t("Einrichtung fehlgeschlagen"),
+        message: errorText(err, t("Die Einrichtung ließ sich nicht starten.")),
+      })
       setStep("intro")
     }
   }
 
-  function copyManualCode() {
-    navigator.clipboard.writeText(manualCode)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+  async function copyManualCode() {
+    // Ohne HTTPS gibt es `navigator.clipboard` nicht: dann wirft schon der Zugriff.
+    try {
+      await navigator.clipboard.writeText(manualCode)
+      notify({ variant: "success", message: t("Kopiert") })
+    } catch {
+      notify({ variant: "error", message: t("Kopieren nicht möglich. Bitte von Hand markieren.") })
+    }
   }
 
   async function verifyCode(e: FormEvent) {
     e.preventDefault()
-    setError("")
     setVerifying(true)
     try {
       const data = await verify(code)
@@ -95,7 +103,11 @@ export default function TwoFactorSetup({ start, verify, onComplete, onCancel, re
         setTimeout(onComplete, 1500)
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : t("Verifizierung fehlgeschlagen"))
+      notify({
+        variant: "error",
+        title: t("Verifizierung fehlgeschlagen"),
+        message: errorText(err, t("Der Code ließ sich nicht prüfen.")),
+      })
       setCode("")
     } finally {
       setVerifying(false)
@@ -114,8 +126,6 @@ export default function TwoFactorSetup({ start, verify, onComplete, onCancel, re
           <ShieldCheck size={32} />
           <h2>{t("Zwei-Faktor-Authentifizierung einrichten")}</h2>
         </div>
-
-        {error && <div className="two-factor-error" style={{ margin: "0 0 16px" }}>{error}</div>}
 
         {step === "intro" && (
           <div className="two-factor-body">
@@ -145,7 +155,7 @@ export default function TwoFactorSetup({ start, verify, onComplete, onCancel, re
         {step === "loading" && (
           <div className="two-factor-body" style={{ textAlign: "center", alignItems: "center", padding: "32px 0" }}>
             <Loader2 size={32} className="spin" />
-            <p style={{ marginTop: 12, color: "var(--text-secondary)" }}>{t("QR-Code wird generiert...")}</p>
+            <p style={{ marginTop: 12, color: "var(--text-secondary)" }}>{t("QR-Code wird generiert…")}</p>
           </div>
         )}
 
@@ -170,14 +180,9 @@ export default function TwoFactorSetup({ start, verify, onComplete, onCancel, re
                 Platz nicht, rutscht der Knopf in die nächste Zeile. */}
             <div className="two-factor-secret">
               <code>{manualCode}</code>
-              <button
-                type="button"
-                className={copied ? "two-factor-copy is-copied" : "two-factor-copy"}
-                onClick={copyManualCode}
-                aria-label={t("Code kopieren")}
-              >
-                {copied ? <Check key="done" size={14} /> : <Copy key="copy" size={14} />}
-                <span>{copied ? t("Kopiert") : t("Kopieren")}</span>
+              <button type="button" className="two-factor-copy" onClick={copyManualCode} aria-label={t("Code kopieren")}>
+                <Copy size={14} />
+                <span>{t("Kopieren")}</span>
               </button>
             </div>
 
@@ -247,14 +252,8 @@ export default function TwoFactorSetup({ start, verify, onComplete, onCancel, re
             </div>
 
             <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
-              <button
-                type="button"
-                className={recovery.copied ? "two-factor-btn two-factor-btn--secondary is-copied" : "two-factor-btn two-factor-btn--secondary"}
-                style={{ flex: 1 }}
-                onClick={recovery.copy}
-              >
-                {recovery.copied ? <Check key="done" size={14} /> : <Copy key="copy" size={14} />}
-                {recovery.copied ? t("Kopiert") : t("Kopieren")}
+              <button type="button" className="two-factor-btn two-factor-btn--secondary" style={{ flex: 1 }} onClick={recovery.copy}>
+                <Copy size={14} /> {t("Kopieren")}
               </button>
               <button type="button" className="two-factor-btn two-factor-btn--secondary" style={{ flex: 1 }} onClick={recovery.download}>
                 <Download size={14} /> {t("Herunterladen")}
@@ -263,7 +262,7 @@ export default function TwoFactorSetup({ start, verify, onComplete, onCancel, re
             <button
               type="button"
               className="two-factor-btn two-factor-btn--primary"
-              onClick={() => { setError(""); setStep("done"); setTimeout(onComplete, 1500) }}
+              onClick={() => { setStep("done"); setTimeout(onComplete, 1500) }}
             >
               <Check size={15} /> {t("Codes gespeichert")}
             </button>
@@ -276,10 +275,7 @@ export default function TwoFactorSetup({ start, verify, onComplete, onCancel, re
               <Check size={32} strokeWidth={3} />
             </div>
             <p style={{ marginTop: 20, fontWeight: 600, fontSize: "1.0625rem", color: "var(--text)" }}>
-              {t("2FA erfolgreich aktiviert!")}
-            </p>
-            <p style={{ color: "var(--text-secondary)", fontSize: "0.875rem", marginTop: 6 }}>
-              {t("Sie werden weitergeleitet...")}
+              {t("2FA erfolgreich aktiviert")}
             </p>
           </div>
         )}

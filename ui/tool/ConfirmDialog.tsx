@@ -3,6 +3,8 @@
 import { createContext, useContext, useState, useCallback, useRef, type ReactNode } from 'react';
 import { AlertTriangle, Check, Copy, Loader2 } from 'lucide-react';
 import { useT } from '@/lib/i18n/react';
+import { useToast } from './Toast';
+import { errorText } from './errorText';
 
 interface ConfirmOptions {
   title?: string;
@@ -36,7 +38,14 @@ interface ConfirmOptions {
   requireText?: string;
   /** Was über dem Eingabefeld steht. Ohne Angabe eine neutrale Aufforderung. */
   requireTextLabel?: string;
+  /**
+   * Läuft bei offenem Dialog, der Knopf dreht so lange. Wirft es, bleibt der
+   * Dialog offen und der Text des Fehlers erscheint als Meldung: der Aufrufer
+   * wirft die Meldung der Route und meldet nicht selbst.
+   */
   onConfirm?: (checkboxChecked: boolean) => Promise<void>;
+  /** Der Titel dieser Meldung, etwa „Löschen fehlgeschlagen". Ohne Angabe „Fehlgeschlagen". */
+  failedTitle?: string;
 }
 
 type ConfirmFn = (options: ConfirmOptions) => Promise<boolean>;
@@ -51,6 +60,7 @@ export function useConfirm() {
 
 export function ConfirmProvider({ children }: { children: ReactNode }) {
   const { t } = useT();
+  const { notify } = useToast();
   const [dialog, setDialog] = useState<ConfirmOptions | null>(null);
   const [loading, setLoading] = useState(false);
   const [checked, setChecked] = useState(false);
@@ -87,7 +97,12 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
       setLoading(true);
       try {
         await dialog.onConfirm(checked);
-      } catch {
+      } catch (err) {
+        notify({
+          variant: 'error',
+          title: dialog.failedTitle ?? t('Fehlgeschlagen'),
+          message: errorText(err, t('Der Vorgang ist fehlgeschlagen.')),
+        });
         setLoading(false);
         return;
       }
@@ -170,9 +185,14 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
                     className="btn btn-ghost btn-icon btn-sm"
                     data-tooltip={copied ? t('Kopiert') : t('Kopieren')}
                     disabled={loading}
-                    onClick={() => {
-                      void navigator.clipboard.writeText(dialog.requireText ?? '');
-                      setCopied(true);
+                    onClick={async () => {
+                      // Ohne HTTPS gibt es `navigator.clipboard` nicht: dann wirft schon der Zugriff.
+                      try {
+                        await navigator.clipboard.writeText(dialog.requireText ?? '');
+                        setCopied(true);
+                      } catch {
+                        notify({ variant: 'error', message: t('Kopieren nicht möglich. Bitte von Hand markieren.') });
+                      }
                     }}
                     aria-label={t('Kennung kopieren')}
                   >

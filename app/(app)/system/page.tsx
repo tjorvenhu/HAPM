@@ -1,10 +1,11 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useState, type FormEvent } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { AlertTriangle, ArrowRightLeft, AtSign, Globe, Home, Loader2, Network, Save, ShieldCheck, ShieldHalf, Trash2 } from 'lucide-react';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
+import { errorText } from '@/components/errorText';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { SkeletonDetail } from '@/components/Skeleton';
 import AreaTabs, { useArea, type Area } from '@/components/AreaTabs';
@@ -72,12 +73,14 @@ function GeneralSettings() {
 
   const [settings, setSettings] = useState<SettingsView | null>(null);
   const [error, setError] = useState('');
-  /** Stand des Umzugs auf eine neue Adresse. Läuft einer, geht der Assistent beim Laden auf. */
+  /** Stand des Umzugs auf eine neue Adresse. Läuft einer, geht der Assistent beim ersten Laden auf. */
   const [moveView, setMoveView] = useState<AddressMoveView | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
+  // Nur beim ersten Laden: `closeWizard` lädt neu, und wer das Fenster eines
+  // laufenden Umzugs schließt, bekäme es sonst sofort wieder.
+  const openRunningMove = useRef(true);
   const [removingUrl, setRemovingUrl] = useState(false);
   const [emailDraft, setEmailDraft] = useState<string | null>(null);
-  const [emailError, setEmailError] = useState('');
   const [savingEmail, setSavingEmail] = useState(false);
   const [savingExposure, setSavingExposure] = useState(false);
 
@@ -89,11 +92,11 @@ function GeneralSettings() {
       setSettings(body.data as SettingsView);
       const moveRes = await apiFetch('/api/settings/address', { cache: 'no-store' });
       const moveBody = await moveRes.json();
-      if (moveBody.success) {
-        const next = moveBody.data as AddressMoveView;
-        setMoveView(next);
-        if (moveOutcome(next.move) === 'running') setWizardOpen(true);
-      }
+      if (!moveBody.success) throw new Error(moveBody.error);
+      const next = moveBody.data as AddressMoveView;
+      setMoveView(next);
+      if (openRunningMove.current && moveOutcome(next.move) === 'running') setWizardOpen(true);
+      openRunningMove.current = false;
       setError('');
     } catch {
       setError(t('Die Einstellungen konnten nicht geladen werden.'));
@@ -134,7 +137,7 @@ function GeneralSettings() {
       setSettings(result.settings);
       notify({ variant: 'success', message: t('Die Adresse ist entfernt. Mails enthalten keinen Link in die Oberfläche.') });
     } catch (err: unknown) {
-      notify({ variant: 'error', message: err instanceof Error ? err.message : t('Die Adresse ließ sich nicht speichern.') });
+      notify({ variant: 'error', message: errorText(err, t('Die Adresse ließ sich nicht speichern.')) });
     } finally {
       setRemovingUrl(false);
     }
@@ -148,7 +151,6 @@ function GeneralSettings() {
   async function saveEmail(event: FormEvent) {
     event.preventDefault();
     if (!settings || emailDraft === null) return;
-    setEmailError('');
     setSavingEmail(true);
     try {
       const result = await patch({ acmeEmail: emailDraft.trim() || null });
@@ -164,7 +166,11 @@ function GeneralSettings() {
         notify({ variant: 'success', message: t("Die Adresse für Let's Encrypt ist gespeichert.") });
       }
     } catch (err: unknown) {
-      setEmailError(err instanceof Error ? err.message : t('Die Adresse ließ sich nicht speichern.'));
+      notify({
+        variant: 'error',
+        title: t('Speichern fehlgeschlagen'),
+        message: errorText(err, t('Die Adresse ließ sich nicht speichern.')),
+      });
     } finally {
       setSavingEmail(false);
     }
@@ -175,8 +181,8 @@ function GeneralSettings() {
     const confirmed = await confirm({
       title:
         next === 'internal'
-          ? t('Auf „Nur im eigenen Netz" umstellen?')
-          : t('Auf „Aus dem Internet erreichbar" umstellen?'),
+          ? t('Auf „Nur im eigenen Netz“ umstellen?')
+          : t('Auf „Aus dem Internet erreichbar“ umstellen?'),
       message:
         next === 'internal'
           ? t(
@@ -186,6 +192,7 @@ function GeneralSettings() {
               "Neue Zertifikate werden danach über Port 80 geprüft. Erreicht Let's Encrypt den Server nicht, scheitert jeder neue Antrag. Bestehende Zertifikate behalten ihre Methode, auch bei der Erneuerung."
             ),
       confirmLabel: t('Umstellen'),
+      variant: 'warning',
     });
     if (!confirmed) return;
 
@@ -195,10 +202,7 @@ function GeneralSettings() {
       setSettings(result.settings);
       notify({ variant: 'success', message: t('Die Art der Installation ist umgestellt. Sie gilt für neue Zertifikate.') });
     } catch (err: unknown) {
-      notify({
-        variant: 'error',
-        message: err instanceof Error ? err.message : t('Die Einstellung ließ sich nicht speichern.'),
-      });
+      notify({ variant: 'error', message: errorText(err, t('Die Einstellung ließ sich nicht speichern.')) });
     } finally {
       setSavingExposure(false);
     }
@@ -277,7 +281,7 @@ function GeneralSettings() {
           </div>
 
           <div className="hapm-form-actions">
-            <button className="btn btn-primary" type="button" onClick={() => setWizardOpen(true)} disabled={!moveView}>
+            <button className="btn btn-primary" type="button" onClick={() => setWizardOpen(true)} disabled={!moveView || removingUrl}>
               <ArrowRightLeft size={16} strokeWidth={1.5} />
               {settings.publicUrl ? t('Adresse ändern') : t('Adresse einrichten')}
             </button>
@@ -362,8 +366,6 @@ function GeneralSettings() {
             </div>
 
             <form className="card-body" onSubmit={saveEmail}>
-              {emailError && <div className="alert alert-danger">{emailError}</div>}
-
               <div className="form-group">
                 <label className="form-label" htmlFor="acme-email">
                   {t('E-Mail-Adresse')}

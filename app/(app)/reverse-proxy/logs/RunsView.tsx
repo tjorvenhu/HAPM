@@ -8,10 +8,11 @@ import {
 import { useApp } from '@/components/AppShell';
 import { usePolling } from '@/components/usePolling';
 import { openRun, subscribeRunFinished } from '@/components/runs/runs';
+import { errorText } from '@/components/errorText';
 import Select from '@/components/Select';
 import type { HaproxyAction, HaproxyStep, RunStatus } from '@/lib/types';
 import { SkeletonRows } from '@/components/Skeleton';
-import { formatDateTime, msgid } from '@/lib/i18n';
+import { MISSING, formatDateTime, msgid } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
 
 /**
@@ -99,7 +100,7 @@ const STATUS_CLASS: Record<RunStatus, string> = {
 const PAGE_SIZE = 25;
 
 function formatDuration(seconds: number | null): string {
-  if (seconds === null) return '–';
+  if (seconds === null) return MISSING;
   if (seconds < 60) return `${seconds}s`;
   return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
@@ -113,7 +114,7 @@ const LIST_ROWS = 2;
 
 function ItemList({ value }: { value: string | null }) {
   const { t } = useT();
-  if (!value) return <span className="logs-muted">–</span>;
+  if (!value) return <span className="logs-muted">{MISSING}</span>;
   const items = value.split(/,\s*/).filter(Boolean);
   const rest = items.length - LIST_ROWS;
   return (
@@ -154,10 +155,11 @@ export default function RunsView() {
 
         const res = await apiFetch(`/api/haproxy/runs?${params}`);
         const data = await res.json();
-        if (data.success) setRuns(data.data);
+        if (!res.ok || !data.success) throw new Error(data.error);
+        setRuns(data.data);
         setError('');
-      } catch {
-        setError(t('Die Protokolle konnten nicht geladen werden.'));
+      } catch (err: unknown) {
+        setError(errorText(err, t('Die Protokolle konnten nicht geladen werden.')));
       } finally {
         setLoading(false);
       }
@@ -221,9 +223,10 @@ export default function RunsView() {
             }}
             options={[
               { value: '', label: t('Alle Status') },
-              { value: 'success', label: t(STATUS_LABELS.success) },
-              { value: 'error', label: t(STATUS_LABELS.error) },
-              { value: 'running', label: t(STATUS_LABELS.running) },
+              ...(Object.keys(STATUS_LABELS) as RunStatus[]).map((status) => ({
+                value: status,
+                label: t(STATUS_LABELS[status]),
+              })),
             ]}
           />
         </div>
@@ -240,124 +243,135 @@ export default function RunsView() {
       {loading ? (
         <SkeletonRows />
       ) : runs.length === 0 ? (
-        <div className="empty-state">
-          <ScrollText size={40} />
-          <h3>{t('Keine Protokolle')}</h3>
-          <p>
-            {actionFilter || statusFilter
-              ? t('Für diesen Filter gibt es keine Einträge.')
-              : t('Sobald ein Ziel angelegt, geändert oder gelöscht wurde, steht der Vorgang hier.')}
-          </p>
-        </div>
+        // Nach einem gescheiterten Laden steht nur die Meldung oben: ob es Einträge gibt, ist dann unbekannt.
+        error ? null : page > 0 ? (
+          /* „Weiter“ kennt die Gesamtzahl nicht: ist sie ein Vielfaches der
+             Seitengröße, führt der Knopf auf eine leere Seite. */
+          <div className="empty-state">
+            <ScrollText size={40} />
+            <h3>{t('Keine weiteren Protokolle')}</h3>
+            <p>{t('Die Einträge enden auf einer früheren Seite.')}</p>
+          </div>
+        ) : (
+          <div className="empty-state">
+            <ScrollText size={40} />
+            <h3>{t('Keine Protokolle')}</h3>
+            <p>
+              {actionFilter || statusFilter
+                ? t('Für diesen Filter gibt es keine Einträge.')
+                : t('Sobald ein Ziel angelegt, geändert oder gelöscht wurde, steht der Vorgang hier.')}
+            </p>
+          </div>
+        )
       ) : (
-        <>
-          <div className="table-wrap logs-table-wrap">
-            <table className="table logs-table logs-runs">
-              {/* „Ausgelöst von" steht unter dem Vorgang und die Dauer unter dem
-                  Zeitpunkt: neun Spalten passten neben der Seitenleiste nur mit
-                  seitlichem Scrollen in die Breite. */}
-              <colgroup>
-                <col className="logs-col-when" />
-                <col className="logs-col-action" />
-                <col />
-                <col />
-                <col />
-                <col className="logs-col-status" />
-                <col className="logs-col-details" />
-              </colgroup>
-              <thead>
-                <tr>
-                  <th>{t('Zeitpunkt')}</th>
-                  <th>{t('Vorgang')}</th>
-                  <th>{t('Dienst')}</th>
-                  <th>{t('Domains')}</th>
-                  <th>{t('Ziele')}</th>
-                  <th>{t('Status')}</th>
-                  <th className="logs-end">
-                    <span className="sr-only">{t('Details')}</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {runs.map((run) => (
-                  <tr key={run.$id}>
-                    <td data-label={t('Zeitpunkt')}>
-                      {formatDateTime(locale, run.startedAt)}
-                      <div className="detail-sub">
-                        {t('Dauer')}: {formatDuration(run.duration)}
+        <div className="table-wrap logs-table-wrap">
+          <table className="table logs-table logs-runs">
+            {/* „Ausgelöst von" steht unter dem Vorgang und die Dauer unter dem
+                Zeitpunkt: neun Spalten passten neben der Seitenleiste nur mit
+                seitlichem Scrollen in die Breite. */}
+            <colgroup>
+              <col className="logs-col-when" />
+              <col className="logs-col-action" />
+              <col />
+              <col />
+              <col />
+              <col className="logs-col-status" />
+              <col className="logs-col-details" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th>{t('Zeitpunkt')}</th>
+                <th>{t('Vorgang')}</th>
+                <th>{t('Dienst')}</th>
+                <th>{t('Domains')}</th>
+                <th>{t('Ziele')}</th>
+                <th>{t('Status')}</th>
+                <th className="logs-end">
+                  <span className="sr-only">{t('Details')}</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {runs.map((run) => (
+                <tr key={run.$id}>
+                  <td data-label={t('Zeitpunkt')}>
+                    {formatDateTime(locale, run.startedAt)}
+                    <div className="detail-sub">
+                      {t('Dauer')}: {formatDuration(run.duration)}
+                    </div>
+                  </td>
+                  <td data-label={t('Vorgang')}>
+                    <span className="logs-action">
+                      {ACTION_ICONS[run.action]}
+                      {t(ACTION_LABELS[run.action])}
+                    </span>
+                    {run.triggeredBy && (
+                      <div className="detail-sub" data-tooltip={t('Ausgelöst von')}>
+                        {run.triggeredBy}
                       </div>
-                    </td>
-                    <td data-label={t('Vorgang')}>
-                      <span className="logs-action">
-                        {ACTION_ICONS[run.action]}
-                        {t(ACTION_LABELS[run.action])}
-                      </span>
-                      {run.triggeredBy && (
-                        <div className="detail-sub" data-tooltip={t('Ausgelöst von')}>
-                          {run.triggeredBy}
-                        </div>
-                      )}
-                    </td>
-                    <td data-label={t('Dienst')}>
-                      <strong>{run.serviceId}</strong>
-                      {/* Beim Umbenennen sind das zwei Namen, und der neue ist
-                          der, unter dem der Eintrag jetzt in der Liste steht. */}
-                      {run.renamedTo && <div className="detail-sub">→ {run.renamedTo}</div>}
-                    </td>
-                    <td data-label={t('Domains')}>
-                      <ItemList value={run.domains} />
-                    </td>
-                    <td data-label={t('Ziele')}>
-                      <ItemList value={run.targets} />
-                    </td>
-                    <td data-label={t('Status')}>
-                      <span className={`badge-status ${STATUS_CLASS[run.status]}`}>
-                        {t(STATUS_LABELS[run.status])}
-                      </span>
-                    </td>
-                    <td data-label="actions" className="logs-end">
-                      <button
-                        className="btn btn-ghost btn-icon btn-sm"
-                        data-tooltip={t('Schritte anzeigen')}
-                        data-tooltip-pos="left"
-                        aria-label={t('Schritte anzeigen')}
-                        onClick={() => openRun({ kind: 'haproxy', id: run.$id })}
-                      >
-                        <Eye size={16} />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div
-            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}
-          >
-            <span style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)' }}>
-              {t('Seite {page}', { page: page + 1 })}
-            </span>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                className="btn btn-secondary btn-sm"
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
-                disabled={page === 0}
-              >
-                {t('Zurück')}
-              </button>
-              <button
-                className="btn btn-secondary btn-sm"
-                onClick={() => setPage((p) => p + 1)}
-                disabled={runs.length < PAGE_SIZE}
-              >
-                {t('Weiter')}
-              </button>
-            </div>
-          </div>
-        </>
+                    )}
+                  </td>
+                  <td data-label={t('Dienst')}>
+                    <strong>{run.serviceId}</strong>
+                    {/* Beim Umbenennen sind das zwei Namen, und der neue ist
+                        der, unter dem der Eintrag jetzt in der Liste steht. */}
+                    {run.renamedTo && <div className="detail-sub">→ {run.renamedTo}</div>}
+                  </td>
+                  <td data-label={t('Domains')}>
+                    <ItemList value={run.domains} />
+                  </td>
+                  <td data-label={t('Ziele')}>
+                    <ItemList value={run.targets} />
+                  </td>
+                  <td data-label={t('Status')}>
+                    <span className={`badge-status ${STATUS_CLASS[run.status]}`}>
+                      {t(STATUS_LABELS[run.status])}
+                    </span>
+                  </td>
+                  <td data-label="actions" className="logs-end">
+                    <button
+                      className="btn btn-ghost btn-icon btn-sm"
+                      data-tooltip={t('Schritte anzeigen')}
+                      data-tooltip-pos="left"
+                      aria-label={t('Schritte anzeigen')}
+                      onClick={() => openRun({ kind: 'haproxy', id: run.$id })}
+                    >
+                      <Eye size={16} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
+      {/* Außerhalb der Tabelle: von einer leeren Seite hinter der ersten führt nur „Zurück“ wieder weg. */}
+      {!loading && (runs.length > 0 || page > 0) && (
+        <div
+          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 }}
+        >
+          <span style={{ fontSize: '0.8125rem', color: 'var(--text-tertiary)' }}>
+            {t('Seite {page}', { page: page + 1 })}
+          </span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              disabled={page === 0}
+            >
+              {t('Zurück')}
+            </button>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => setPage((p) => p + 1)}
+              disabled={runs.length < PAGE_SIZE}
+            >
+              {t('Weiter')}
+            </button>
+          </div>
+        </div>
+      )}
     </>
   );
 }

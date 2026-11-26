@@ -91,10 +91,10 @@ const LOG = [
   'Feb  6 12:15:00 lb1 haproxy[1234]: Server kunde_shop/srv1 is DOWN, reason: Layer4 timeout',
 ].join('\n');
 
-function analyse(backend?: string) {
+function analyse(backend?: string, log: string = LOG) {
   dir = mkdtempSync(join(tmpdir(), 'haproxy-log-'));
   const file = join(dir, 'haproxy.log');
-  writeFileSync(file, `${LOG}\n`);
+  writeFileSync(file, `${log}\n`);
 
   const command = analyseCommand({
     // Im Betrieb kommt der Pfad aus LOG_CANDIDATES; hier ist es die Fixture.
@@ -188,6 +188,41 @@ describe('analyseCommand', () => {
     expect(stats.statusCodes.find((entry) => entry.key === '500')?.count).toBe(1);
   });
 
+  it('zählt die Zeile einer TCP-Weiterleitung nicht als Anfrage', () => {
+    // `option tcplog`: drei Zeiten statt fünf, und wo der Status stünde, stehen die Bytes.
+    const tcp =
+      'Feb  6 12:14:14 lb1 haproxy[1234]: 203.0.113.7:54321 [06/Feb/2026:12:14:14.123] tcp_5432 tcp_5432/server1 1/0/9000 51234 -- 3/1/0/0/0 0/0';
+    const short =
+      'Feb  6 12:14:15 lb1 haproxy[1234]: 203.0.113.7:54322 [06/Feb/2026:12:14:15.123] tcp_5432 tcp_5432/server1 1/0/20 512 -- 3/1/0/0/0 0/0';
+    const stats = analyse(undefined, [LOG, tcp, short].join('\n'));
+    expect(stats.parsed).toBe(8);
+    expect(stats.backends.find((entry) => entry.backend === 'tcp_5432')).toBeUndefined();
+    expect(stats.statusCodes.find((entry) => entry.key === '51234' || entry.key === '512')).toBeUndefined();
+  });
+
+  it('nimmt die Stunde aus dem Kopf, den HAPM schreibt (UTC), nicht aus der Ortszeit von HAProxy', () => {
+    const own = (iso: string, local: string) =>
+      `${iso} haproxy: 203.0.113.7:54321 [${local}] https-in~ kunde_shop/srv1 0/0/1/23/24 200 10 - - ---- 1/1/0/0/0 0/0 "GET / HTTP/1.1"`;
+    const stats = analyse(
+      undefined,
+      [own('2026-01-31T22:59:10Z', '31/Jan/2026:23:59:10.000'), own('2026-01-31T23:00:10Z', '01/Feb/2026:00:00:10.000')].join('\n')
+    );
+    expect(stats.hours).toEqual([
+      { hour: '2026-01-31T22:00:00Z', count: 1 },
+      { hour: '2026-01-31T23:00:00Z', count: 1 },
+    ]);
+    expect(stats.from).toBe('2026-01-31T22:00:00Z');
+    expect(stats.to).toBe('2026-01-31T23:00:00Z');
+  });
+
+  it('verwechselt Anfang und Ende über einen Monatswechsel nicht', () => {
+    const at = (day: string, hour: string) =>
+      `Feb  1 00:00:00 lb1 haproxy[1]: 203.0.113.7:1 [${day}:${hour}:00:00.000] https-in~ kunde_shop/srv1 0/0/1/23/24 200 10 - - ---- 1/1/0/0/0 0/0 "GET / HTTP/1.1"`;
+    const stats = analyse(undefined, [at('31/Jan/2026', '23'), at('01/Feb/2026', '00')].join('\n'));
+    expect(stats.from).toBe('2026-01-31T23:00:00');
+    expect(stats.to).toBe('2026-02-01T00:00:00');
+  });
+
   it('legt die Stunden in aufsteigender Folge ab', () => {
     const stats = analyse();
     expect(stats.hours).toEqual([
@@ -239,7 +274,7 @@ describe('toIsoHour', () => {
   });
 
   it('gibt bei einem unbekannten Format null zurück', () => {
-    expect(toIsoHour('2026-02-06T12')).toBeNull();
+    expect(toIsoHour('2026-02-06 12')).toBeNull();
     expect(toIsoHour('06/Xyz/2026:12')).toBeNull();
     expect(toIsoHour('')).toBeNull();
   });

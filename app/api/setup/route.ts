@@ -7,7 +7,7 @@ import { readSetupView } from '@/lib/setup';
 import { clear2FACookie } from '@/lib/two-factor';
 import { updateSettings } from '@/lib/settings';
 import { ensureAcme } from '@/lib/acme';
-import { validateEmail } from '@/lib/validation';
+import { validateAcmeEmail } from '@/lib/validation';
 import { logAudit, getClientIP } from '@/lib/audit';
 import { rateLimit } from '@/lib/rate-limit';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
@@ -65,7 +65,7 @@ export async function POST(request: Request) {
     // Vor dem Anlegen prüfen: scheiterte die Adresse erst danach, gäbe es das
     // Konto schon und die Einrichtung ließe sich nicht wiederholen.
     const acmeEmail = typeof body.acmeEmail === 'string' ? body.acmeEmail.trim() : '';
-    if (acmeEmail && !validateEmail(acmeEmail)) {
+    if (acmeEmail && !validateAcmeEmail(acmeEmail)) {
       throw new ApiError(msg("Die E-Mail-Adresse für Let's Encrypt ist ungültig."));
     }
 
@@ -81,7 +81,9 @@ export async function POST(request: Request) {
     // Das erste Konto bekommt die Benachrichtigungen, bis jemand die Empfänger
     // ändert. Verschickt wird erst, wenn ein SMTP-Konto eingerichtet ist.
     const settings = await updateSettings({
-      acmeEmail: acmeEmail || user.email,
+      // Die Adresse des Kontos nur, wenn sie auch für acme.sh taugt. Sonst bleibt
+      // der Kontakt leer und lässt sich unter Allgemein nachtragen.
+      acmeEmail: acmeEmail || (validateAcmeEmail(user.email) ? user.email : null),
       setupStatus: 'open',
       notifyRecipients: [user.email],
       mailLocale: await (await import('@/lib/i18n/server')).getRequestLocale(),

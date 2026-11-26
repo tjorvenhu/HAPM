@@ -137,6 +137,16 @@ export function readServiceSettingsInput(body: Record<string, unknown>): Setting
   if ('smtpPass' in body) {
     throw new ApiError(msg('Das SMTP-Passwort lässt sich über die API nicht setzen. Es steht in der Oberfläche unter Benachrichtigungen.'));
   }
+  // Wer den Server umstellt, bekommt die Mails: das gespeicherte Passwort bei
+  // der nächsten Anmeldung dort, und den Link zum Zurücksetzen eines Passworts,
+  // also ein Konto. Ein Key soll das nicht können.
+  for (const field of ['smtpHost', 'smtpPort', 'smtpSecurity', 'smtpUser'] as const) {
+    if (field in body) {
+      throw new ApiError(
+        msg('Der SMTP-Server lässt sich über die API nicht ändern ({field}). Er steht in der Oberfläche unter Benachrichtigungen.', { field })
+      );
+    }
+  }
   return readSettingsInput(body);
 }
 

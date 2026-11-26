@@ -17,7 +17,9 @@ import { useT } from '@/lib/i18n/react';
  * Anthropic (claude.ai, Claude Desktop) verbindet sich aus dem Internet, und
  * eine Adresse, unter der nur dieser Browser HAPM gerade erreicht (eine
  * interne IP, ein Tunnel), stünde dort falsch. Fehlt sie, steht ein Hinweis
- * statt einer Adresse, die nur halb stimmt. Siehe docs/mcp.md.
+ * statt einer Adresse, die nur halb stimmt. Ließ sie sich nicht laden
+ * (`failed`), steht genau das da: unbekannt ist nicht „nicht eingetragen“.
+ * Siehe docs/mcp.md.
  */
 
 type Client = 'claude-code' | 'connector' | 'mcp-json' | 'mcp-remote';
@@ -70,7 +72,15 @@ export function mcpSnippets(endpoint: string): Record<Exclude<Client, 'connector
   };
 }
 
-export default function McpAccess({ publicUrl, loading }: { publicUrl: string | null; loading: boolean }) {
+export default function McpAccess({
+  publicUrl,
+  loading,
+  failed,
+}: {
+  publicUrl: string | null;
+  loading: boolean;
+  failed: boolean;
+}) {
   const { t, rich } = useT();
   const { notify } = useToast();
   const [client, setClient] = useState<Client>('claude-code');
@@ -125,6 +135,10 @@ export default function McpAccess({ publicUrl, loading }: { publicUrl: string | 
           </div>
         ) : loading ? (
           <input className="form-input" value="" readOnly disabled />
+        ) : failed ? (
+          <div className="alert alert-danger">
+            <span>{t('Die Adresse von HAPM konnte nicht geladen werden. Bitte laden Sie die Seite neu.')}</span>
+          </div>
         ) : (
           <div className="alert alert-info">
             <span>

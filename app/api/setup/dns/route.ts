@@ -1,3 +1,4 @@
+import { assertSetupOpen } from '@/lib/setup/run';
 import { requireCsrf, requireSession } from '@/lib/session';
 import { ok, handleError, jsonBody, ApiError } from '@/lib/api';
 import { msg } from '@/lib/i18n';
@@ -34,6 +35,7 @@ export async function PUT(request: Request) {
   try {
     await requireCsrf(request);
     const session = await requireSession();
+    await assertSetupOpen();
     const body = await jsonBody<{
       hook?: unknown;
       values?: Record<string, unknown>;

@@ -27,7 +27,7 @@ hier, die Tabelle dort sagt, welche.
 | `POST /backup` | Sicherung jetzt → `{ runId }` |
 | `GET /backup/runs/<id>` | Stand eines Sicherungslaufs |
 | `GET /settings` | `{ settings, notifications }`, ohne SMTP-Passwort (`smtpPassSet`) |
-| `PATCH /settings` | Teil-Patch wie `/api/settings`, ohne `publicUrl` und `smtpPass` |
+| `PATCH /settings` | Teil-Patch wie `/api/settings`, ohne `publicUrl`, `smtpPass` und den SMTP-Server (`smtpHost`, `smtpPort`, `smtpSecurity`, `smtpUser`) |
 | `PUT /settings/certificates` | `source`, `acmeDirectory`, `httpReachable`, ohne EAB-Schlüssel |
 | `GET /settings/address?domain=` | Prüfung einer neuen Adresse für HAPM, nur lesend |
 | `POST /mail/test` | `{ "to": "…" }`: Testmail, fünf je zehn Minuten und Key |
@@ -67,7 +67,10 @@ mit „ist schon das laufende Abbild"; vorher `GET /updates?check=1` fragen.
 Die Gründe stehen in [`mcp.md`](mcp.md), „Was es bewusst nicht gibt". Kurz:
 
 - `PATCH /settings` lehnt `publicUrl` ab (der Umzug ändert die Adresse der API
-  und löscht alle Passkeys) und `smtpPass` (ein Geheimnis).
+  und löscht alle Passkeys), `smtpPass` (ein Geheimnis) und den SMTP-Server
+  (`smtpHost`, `smtpPort`, `smtpSecurity`, `smtpUser`): wer ihn umstellt,
+  bekäme das gespeicherte Passwort bei der nächsten Anmeldung dort und die
+  Mails zum Zurücksetzen eines Passworts, also ein Konto.
 - `PUT /settings/certificates` lehnt `eabKeyId` und `eabHmacKey` ab.
 - `DELETE /haproxy/certificates` nimmt nur `?domain=` (acme.sh), kein
   hochgeladenes Zertifikat: Hochladen geht nur in der Oberfläche.

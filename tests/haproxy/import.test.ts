@@ -248,6 +248,28 @@ describe('parseImport: Einzelheiten', () => {
   const frontend = (rules: string, backends = 'backend web\n    server web 10.0.0.1:80\n') =>
     parseImport(`defaults\n    mode http\nfrontend f\n    bind :443 ssl crt /x/\n${rules}\n${backends}`);
 
+  it('übernimmt kein Ziel, dessen Frontend den Zugriff für alle beschränkt', () => {
+    // Nur aus dem Büro erreichbar: importiert fiele die Regel weg, und die Seite wäre offen.
+    for (const rule of ['http-request deny if !{ src 10.0.0.0/8 }', 'http-request auth realm intern', 'tcp-request connection reject if !{ src 10.0.0.0/8 }']) {
+      const r = frontend(`    ${rule}\n    acl a hdr(host) -i a.example.org\n    use_backend web if a`);
+      expect(r.entries[0].problems.join(' '), rule).toContain('beschränkt den Zugriff');
+    }
+    // Ein Header für alle bleibt ein Hinweis, kein Grund.
+    const harmless = frontend('    http-response set-header X-Frame-Options DENY\n    acl a hdr(host) -i a.example.org\n    use_backend web if a');
+    expect(harmless.entries[0].problems).toEqual([]);
+  });
+
+  it('übernimmt kein Ziel aus einem abgeschalteten Frontend', () => {
+    const r = frontend('    disabled\n    acl a hdr(host) -i a.example.org\n    use_backend web if a');
+    expect(r.entries[0].problems.join(' ')).toContain('abgeschaltet');
+  });
+
+  it('nimmt einen benannten defaults-Block als den, der für alles danach gilt', () => {
+    const r = parseImport('defaults web\n    mode http\nlisten app\n    bind :8080\n    server a 10.0.0.1:80 check\n');
+    // Kein TCP-Eintrag: der Abschnitt ist HTTP, weil der letzte defaults davor es sagt.
+    expect(r.entries.filter((entry) => entry.kind === 'tcp')).toEqual([]);
+  });
+
   it('ein Backend mit mode tcp passt nicht hinter ein HTTP-Frontend', () => {
     const r = parseImport(
       'frontend f\n    mode http\n    bind :443 ssl crt /x/\n    acl a hdr(host) -i a.example.org\n    use_backend web if a\nbackend web\n    mode tcp\n    server web 10.0.0.1:80\n'
