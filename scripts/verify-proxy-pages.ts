@@ -129,6 +129,7 @@ const service = (over: Partial<CreateServiceInput>): CreateServiceInput => ({
   requestHeaders: [],
   tunnel: false,
   crowdsec: false,
+  app: null,
   healthcheck: false,
   backendTls: 'off',
   ...over,

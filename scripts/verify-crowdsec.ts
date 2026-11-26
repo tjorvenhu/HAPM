@@ -75,6 +75,7 @@ function service(id: string, domain: string, crowdsec: boolean): CreateServiceIn
     requestHeaders: [],
     tunnel: false,
     crowdsec,
+    app: null,
     healthcheck: false,
     backendTls: 'off',
   };

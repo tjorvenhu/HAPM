@@ -1624,6 +1624,7 @@ function emptyService(domains: string[]): CreateServiceInput {
     requestHeaders: [],
     tunnel: false,
     crowdsec: false,
+    app: null,
     healthcheck: false,
     backendTls: 'off',
   };

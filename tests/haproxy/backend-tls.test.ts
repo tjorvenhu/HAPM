@@ -57,6 +57,7 @@ const INPUT: CreateServiceInput = {
   requestHeaders: [],
   tunnel: false,
   crowdsec: false,
+  app: null,
   healthcheck: true,
   backendTls: 'insecure',
 };
@@ -162,6 +163,7 @@ describe('Lesen und Rundreise', () => {
         backendTls: 'off',
         tunnel: true,
         crowdsec: false,
+        app: null,
         routes: [
           { name: 'api', paths: ['/api'], servers: [{ name: 'api', target: '10.0.0.7:8443' }], check: true, backendTls: 'verify' },
           { name: 'ws', paths: ['/ws'], servers: [{ name: 'ws', target: '10.0.0.7:6001' }], check: false, backendTls: 'insecure' },

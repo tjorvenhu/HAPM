@@ -65,6 +65,7 @@ const INPUT: CreateServiceInput = {
   requestHeaders: [],
   tunnel: false,
   crowdsec: false,
+  app: null,
   healthcheck: true,
   backendTls: 'off',
 };

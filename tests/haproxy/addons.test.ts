@@ -155,6 +155,7 @@ const INPUT: CreateServiceInput = {
   requestHeaders: [],
   tunnel: false,
   crowdsec: false,
+  app: null,
   healthcheck: false,
   backendTls: 'off',
 };
@@ -212,6 +213,7 @@ describe('Einträge aus der Preset-Zeit', () => {
       requestHeaders: [],
       tunnel: false,
       crowdsec: false,
+      app: null,
     });
     expect(readServiceInput({ ...base, preset: 'coolify' }).tunnel).toBe(true);
     expect(readServiceInput({ ...base, preset: 'nextcloud' }).responseHeaders).toHaveLength(2);
@@ -346,6 +348,7 @@ describe('Header schreiben und lesen', () => {
       id: 'shop',
       tunnel: true,
       crowdsec: false,
+      app: null,
       responseHeaders: [{ name: 'X-Frame-Options', value: 'DENY' }],
       requestHeaders: [{ name: 'X-Api', value: '2' }],
     }).map((line) => line.trim());

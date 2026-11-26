@@ -14,8 +14,7 @@ export async function GET() {
 }
 
 /**
- * `{ crs: off|block }`, `{ app, installed }` für eine Anwendung,
- * `{ name, installed }` für eine Sammlung oder `{ upgrade: true }` für den Hub.
+ * `{ crs: off|block }`, `{ name, installed }` für eine Sammlung oder `{ upgrade: true }` für den Hub.
  *
  * Antwortet sofort mit `{ runId, key }`: die Änderung läuft als Lauf im
  * Hintergrund (`lib/crowdsec/rule-jobs.ts`), zu lesen unter `rules/runs/<id>`.

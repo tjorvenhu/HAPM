@@ -616,6 +616,14 @@ Konfigurationstext nach.
   Zeile zum Kommentar, aus `code 301` würde nichts, und die Weiterleitung stünde
   ohne Code da. Leerzeichen trennen Argumente, ein Anführungszeichen bricht die
   Zeile auf.
+- **Die Anwendung hinter einem Ziel ist ein Kommentar im eigenen Backend**,
+  direkt unter `backend <id>`: `# hapm-app: nextcloud` (`APP_LINE_PREFIX`,
+  `knownApp`). HAProxy liest ihn nicht, HAPM richtet danach die Ausnahmen von
+  CrowdSec für das Ziel ein (docs/crowdsec.md, „Anwendungen“). Ein Kommentar
+  und keine Datenbank, weil `haproxy.cfg` die Wahrheit über die Ziele ist: mit
+  dem Ziel geht seine Anwendung. Nur im eigenen Backend, nicht in denen der
+  Pfad-Regeln; deren Backends rechnet `appUsage` dem Ziel zu. Eine unbekannte
+  Kennung liest sich als keine. Steht auf der Platte: nicht umbenennen.
 - **Zusätze statt Presets: jeder ist EINE Zeile in JEDEM Backend des
   Eintrags**, auch in denen der Pfad-Regeln. Es gibt drei: feste Header der
   Antwort (`http-response set-header`), feste Header der Anfrage

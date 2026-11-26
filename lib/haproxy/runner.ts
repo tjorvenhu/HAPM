@@ -284,6 +284,9 @@ function auditDetails(opts: RunOptions, failure: string | null): string {
  * vor den Aufruf: ein Namenskonflikt ist eine Auskunft an das Formular und
  * keine Zeile in der Historie.
  */
+/** Vorgänge, nach denen sich die Anwendungen der Ziele geändert haben können. */
+const APP_SYNC_ACTIONS = new Set<HaproxyAction>(['create', 'update', 'delete', 'import', 'scope-remove']);
+
 export async function startHaproxyRun(opts: RunOptions): Promise<HaproxyRun> {
   const { server, action, serviceId, input, actor } = opts;
   const startedAt = new Date();
@@ -458,6 +461,18 @@ export async function startHaproxyRun(opts: RunOptions): Promise<HaproxyRun> {
       details: auditDetails(opts, error ?? failed?.label ?? null),
       ip: actor.ip ?? undefined,
     }).catch(() => {});
+
+    /* Die Ausnahmen von CrowdSec hängen an den Anwendungen der Ziele
+     * (`# hapm-app:` im Backend). Nach jedem Vorgang, der Ziele ändert, auch
+     * einem teilweise gescheiterten: maßgeblich ist, was jetzt in der Datei
+     * steht. Ein eigener Lauf in der Warteschlange von CrowdSec, nur wenn sich
+     * etwas ändert. Dynamisch geladen: `lib/crowdsec/actions.ts` startet selbst
+     * Läufe über dieses Modul. */
+    if (APP_SYNC_ACTIONS.has(action)) {
+      void import('../crowdsec/actions')
+        .then(({ queueAppSync }) => queueAppSync({ userId: actor.userId, userEmail: actor.email, ip: actor.ip ?? undefined }))
+        .catch(() => undefined);
+    }
 
     // Benachrichtigung. Hält den Lauf nicht auf und wirft nie.
     if (status === 'error') {

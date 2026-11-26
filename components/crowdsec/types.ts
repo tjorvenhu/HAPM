@@ -32,6 +32,8 @@ export interface CrowdsecAppRules {
   logo: string | null;
   kinds: ('log' | 'waf' | 'owasp')[];
   items: string[];
+  /** Die Ziele, die diese Anwendung nennen (`# hapm-app:` im Backend). */
+  services: { id: string; domains: string[] }[];
   installed: boolean;
   /** Nur ein Teil liegt, etwa nach einem Eingriff mit `cscli`. */
   partial: boolean;

@@ -2,7 +2,16 @@ import { readdirSync } from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
 import { describe, it, expect } from 'vitest';
-import { APP_RULES, appLogo, localRuleExpression, renderAppWhitelist, type LocalRule } from '@/lib/crowdsec/apps';
+import {
+  APP_RULES,
+  appLogo,
+  crsPluginVariable,
+  localRuleExpression,
+  renderAppWhitelist,
+  renderCrsAppScopes,
+  type AppUse,
+  type LocalRule,
+} from '@/lib/crowdsec/apps';
 
 /**
  * Die eigenen Ausnahmen gegen die Fälle aus den Quellen. Dieselben Zeilen hat
@@ -95,7 +104,7 @@ describe('eigene Ausnahmen je Anwendung', () => {
 describe('renderAppWhitelist', () => {
   it('schreibt jeden Ausdruck als JSON-String mit der Quelle darüber', () => {
     const app = APP_RULES.find((entry) => entry.id === 'git')!;
-    const text = renderAppWhitelist(app);
+    const text = renderAppWhitelist(app, ['git']);
     expect(text).toContain('name: hapm/git-allowlist\n');
     expect(text).toContain('    # https://github.com/crowdsecurity/hub/issues/1774\n');
     const line = text.split('\n').find((l) => l.startsWith('    - '))!;
@@ -106,6 +115,56 @@ describe('renderAppWhitelist', () => {
     expect(localRuleExpression({ verbs: ['GET'], statuses: ['404'], path: String.raw`^/a\.b`, source: 'x' })).toBe(
       String.raw`evt.Meta.http_verb in ['GET'] && evt.Meta.http_status in ['404'] && !(evt.Meta.http_path contains '..') && evt.Meta.http_path matches '^/a\\.b'`
     );
+  });
+});
+
+describe('Anwendungen nur für ihre Ziele', () => {
+  const app = (id: string) => APP_RULES.find((entry) => entry.id === id)!;
+  const use = (id: string, domains: string[], backends: string[] = [id]): AppUse => ({
+    app: app(id),
+    services: [{ id: backends[0], domains }],
+    backends,
+    domains,
+  });
+
+  it('nimmt die Whitelist nur für die Backends der Ziele', () => {
+    const text = renderAppWhitelist(app('immich'), ['fotos', 'fotos_api']);
+    const filter = JSON.parse(text.split('\n').find((line) => line.startsWith('filter: '))!.slice(8));
+    expect(filter).toContain("evt.Parsed.backend_name in ['fotos', 'fotos_api']");
+  });
+
+  it('kennt die Variable jedes OWASP-Plugins', () => {
+    const owasp = APP_RULES.filter((entry) => entry.kinds.includes('owasp'));
+    expect(owasp.map(crsPluginVariable)).toEqual(owasp.map((entry) => `tx.${entry.id}-rule-exclusions-plugin_enabled`));
+    expect(crsPluginVariable(app('immich'))).toBeNull();
+  });
+
+  it('schaltet jedes OWASP-Plugin aus und nur für die Hosts seiner Ziele an', () => {
+    const text = renderCrsAppScopes([use('wordpress', ['blog.example.org', '*.news.example.org'], ['blog'])]);
+    const lines = text.trim().split('\n').slice(1);
+    const plugins = APP_RULES.filter((entry) => crsPluginVariable(entry));
+    // Je Plugin ein Aus, dazu ein An für WordPress.
+    expect(lines).toHaveLength(plugins.length + 1);
+    const off = lines.find((line) => line.includes('tx.wordpress-rule-exclusions-plugin_enabled=0'))!;
+    const on = lines.find((line) => line.includes('tx.wordpress-rule-exclusions-plugin_enabled=1'))!;
+    expect(off).toMatch(/^SecAction "id:95991\d\d,phase:1,pass,nolog,t:none,setvar:'tx\.wordpress-rule-exclusions-plugin_enabled=0'"$/);
+    expect(on).toContain(String.raw`"@rx ^(?:blog\.example\.org|[^.]+\.news\.example\.org)(?::[0-9]+)?$"`);
+    expect(on).toContain('t:lowercase');
+    const ids = lines.map((line) => /id:(\d+)/.exec(line)![1]);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('passt mit dem Muster auf genau die Hosts der Ziele', () => {
+    const text = renderCrsAppScopes([use('nextcloud', ['cloud.example.org', '*.files.example.org'])]);
+    const on = text.split('\n').find((line) => line.includes('nextcloud-rule-exclusions-plugin_enabled=1'))!;
+    const pattern = new RegExp(/"@rx ([^"]+)"/.exec(on)![1]);
+    expect(pattern.test('cloud.example.org')).toBe(true);
+    expect(pattern.test('cloud.example.org:443')).toBe(true);
+    expect(pattern.test('a.files.example.org')).toBe(true);
+    expect(pattern.test('a.b.files.example.org')).toBe(false);
+    expect(pattern.test('cloudxexample.org')).toBe(false);
+    expect(pattern.test('evil.example.org')).toBe(false);
+    expect(pattern.test('cloud.example.org.evil.net')).toBe(false);
   });
 });
 

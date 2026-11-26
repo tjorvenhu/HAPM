@@ -231,8 +231,25 @@ export const crowdsec: Readonly<Record<string, string>> = {
   // Regeln, Anwendungen
   Anwendungen: 'Applications',
   Anwendung: 'Application',
-  'Ausnahmen gegen bekannte Fehlsperren einzelner Anwendungen.':
-    'Exclusions against known false bans of individual applications.',
+  'Gewählt wird die Anwendung am Ziel, unter Zugriff und Schutz.':
+    'The application is chosen on the target, under Access and protection.',
+  'Kein Ziel': 'No target',
+  'Wird entfernt': 'Being removed',
+  Unvollständig: 'Incomplete',
+  Übrig: 'Left over',
+  'Die Regeln sind noch nicht vollständig installiert. HAPM holt sie beim nächsten Vorgang an einem Ziel oder beim nächsten Start.':
+    'The rules are not fully installed yet. HAPM fetches them with the next change to a target or the next start.',
+  'Kein Ziel nennt diese Anwendung mehr, ihre Regeln liegen aber noch. HAPM entfernt sie beim nächsten Vorgang an einem Ziel oder beim nächsten Start.':
+    'No target names this application any more, but its rules are still installed. HAPM removes them with the next change to a target or the next start.',
+  'Ausnahmen für Anwendungen abgleichen': 'Sync exclusions for applications',
+  'Die Anwendung wird am Ziel gewählt: Feld app beim Anlegen oder Ändern des Ziels.':
+    'The application is chosen on the target: field app when creating or changing the target.',
+  'Manche Anwendungen sehen im normalen Betrieb für CrowdSec wie ein Angriff aus, etwa viele Antworten mit 404 beim Laden von Vorschaubildern. Kennt HAPM die Anwendung, nimmt es diese Fälle für dieses Ziel aus der Prüfung. Bei WordPress kommen virtuelle Patches gegen bekannte Lücken dazu.':
+    'In normal operation some applications look like an attack to CrowdSec, for example many 404 responses while loading thumbnails. If HAPM knows the application, it exempts these cases for this target. For WordPress, virtual patches against known vulnerabilities are added.',
+  'Keine oder nicht in der Liste': 'None or not in the list',
+  'Diese Anwendung kennt HAPM nicht: {app}': 'HAPM does not know this application: {app}',
+  'Eine Anwendung gehört zu einem Backend mit Zielen. Eine Weiterleitung hat keine.':
+    'An application belongs to a backend with servers. A redirect has none.',
   'Wirkt auf': 'Applies to',
   Log: 'Log',
   OWASP: 'OWASP',
@@ -240,8 +257,6 @@ export const crowdsec: Readonly<Record<string, string>> = {
   'Virtuelle Patches in der WAF': 'Virtual patches in the WAF',
   'Ausnahmen für die OWASP-Regeln': 'Exclusions for the OWASP rules',
   'Wirkt erst, wenn die OWASP-Regeln an sind.': 'Only takes effect when the OWASP rules are on.',
-  'Nur ein Teil ist installiert. Einschalten holt den Rest.': 'Only part is installed. Switching on fetches the rest.',
-  Teilweise: 'Partial',
   'Overseerr und Jellyseerr': 'Overseerr and Jellyseerr',
 
   // Regeln ändern: der Lauf im Hintergrund (`lib/crowdsec/rule-jobs.ts`), Pille und Fenster
@@ -375,9 +390,8 @@ export const crowdsec: Readonly<Record<string, string>> = {
   '{value} steht nicht in der Freigabeliste.': '{value} is not on the allowlist.',
   'Das Ziel {id} gibt es nicht.': 'The target {id} does not exist.',
   'Diese Regelsammlung lässt sich hier nicht schalten.': 'This rule collection cannot be switched here.',
-  'Was soll sich ändern? Erwartet wird crs, app oder name mit installed, oder upgrade.':
-    'What should change? Expected crs, app or name with installed, or upgrade.',
-  'Für diese Anwendung gibt es hier keine Regeln.': 'There are no rules for this application here.',
+  'Was soll sich ändern? Erwartet wird crs, name mit installed, oder upgrade.':
+    'What should change? Expected crs, name with installed, or upgrade.',
   'CrowdSec ist nicht erreichbar: {detail}': 'CrowdSec is not reachable: {detail}',
   'CrowdSec ist nicht erreichbar. Läuft der Container {name}?': 'CrowdSec is not reachable. Is the container {name} running?',
   'CrowdSec lehnt ab: {detail}': 'CrowdSec refuses: {detail}',
@@ -386,7 +400,7 @@ export const crowdsec: Readonly<Record<string, string>> = {
   'In {file} war keine Stelle für CrowdSec zu finden: gesucht wird die letzte bind-Zeile des Frontends mit "{marker}".':
     'No place for CrowdSec found in {file}: looking for the last bind line of the frontend with "{marker}".',
   'Erkannte Angriffe stehen unter CrowdSec, Ereignisse.': 'Detected attacks are under CrowdSec, Events.',
-  'Der normale Betrieb mancher Anwendungen sieht für CrowdSec wie ein Angriff aus, etwa viele Antworten mit 404 in kurzer Zeit. Dann sperrt es die eigenen Nutzer. Die Ausnahmen nehmen diese bekannten Fälle aus der Prüfung. Für WordPress kommen virtuelle Patches gegen bekannte Lücken dazu.': 'The normal operation of some applications looks like an attack to CrowdSec, for example many 404 responses in a short time. It then bans your own users. The exclusions exempt these known cases from the check. For WordPress, virtual patches against known vulnerabilities are added.',
+  'Der normale Betrieb mancher Anwendungen sieht für CrowdSec wie ein Angriff aus, etwa viele Antworten mit 404 in kurzer Zeit. Dann sperrt es die eigenen Nutzer. Die Ausnahmen nehmen diese bekannten Fälle aus der Prüfung. Für WordPress kommen virtuelle Patches gegen bekannte Lücken dazu. Welche Anwendung hinter einem Ziel läuft, wählen Sie im Formular des Ziels unter Zugriff und Schutz. HAPM holt dann die Regeln und lässt die Ausnahmen nur für dieses Ziel gelten, wo CrowdSec das erlaubt: die eigenen Ausnahmen von HAPM und die für die OWASP-Regeln. Die Ausnahmen aus dem Hub für das Log gelten für alle Ziele.': 'The normal operation of some applications looks like an attack to CrowdSec, for example many 404 responses in a short time. It then bans your own users. The exclusions exempt these known cases from the check. For WordPress, virtual patches against known vulnerabilities are added. You choose which application runs behind a target in the target form under Access and protection. HAPM then fetches the rules and applies the exclusions to this target only where CrowdSec allows it: HAPM\'s own exclusions and those for the OWASP rules. The hub exclusions for the log apply to all targets.',
   'CrowdSec leeren?': 'Clear CrowdSec?',
   'Entfernt alle Ereignisse und hebt die Sperren auf, die CrowdSec daraus verhängt hat. Statistik und Zähler beginnen bei null. Sperren von Hand, Freigaben, Regeln und die Gemeinschaftsliste bleiben. Das dauert bis zu einer Minute.': 'Removes all events and lifts the bans CrowdSec imposed from them. Statistics and counters start at zero. Manual bans, the allowlist, rules and the community blocklist stay. This takes up to a minute.',
   'Leeren': 'Clear',

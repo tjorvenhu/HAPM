@@ -15,6 +15,8 @@ import { suggestPassword } from '@/components/suggestPassword';
 import Select from '@/components/Select';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import BrandLogo from '@/components/BrandLogo';
+import AppLogo from '@/components/crowdsec/AppLogo';
+import { APP_RULES, appLogo } from '@/lib/crowdsec/apps';
 import {
   HAPROXY_BALANCE,
   BALANCE_LABELS,
@@ -370,6 +372,8 @@ export default function ServiceFormModal({
   const [tunnel, setTunnel] = useState(edit?.service.tunnel ?? false);
   /** CrowdSec für dieses Ziel. Gilt es global, ist der Schalter an und gesperrt. */
   const [crowdsec, setCrowdsec] = useState(edit?.service.crowdsec ?? false);
+  /** Die Anwendung hinter dem Ziel, `''` heißt keine. */
+  const [app, setApp] = useState(edit?.service.app ?? '');
   /** Zugeklappt wie die Pfad-Regeln, aus demselben Grund. */
   const [addonsOpen, setAddonsOpen] = useState(true);
   const [healthcheck, setHealthcheck] = useState(edit?.service.healthcheck ?? true);
@@ -575,6 +579,7 @@ export default function ServiceFormModal({
     requestHeaders: redirecting ? [] : sentHeaders('request'),
     tunnel: !redirecting && tunnel,
     crowdsec: !redirecting && crowdsec,
+    app: redirecting || app === '' ? null : app,
     // Eine Wildcard als Hauptdomain schließt ihn aus. Der Schalter behält
     // dabei seinen Wert im Zustand — wer die Domain wieder ändert, findet ihn
     // so vor, wie er ihn gesetzt hat, statt ihn erneut umlegen zu müssen.
@@ -596,7 +601,7 @@ export default function ServiceFormModal({
   const tabCounts: Record<FormTab, number> = {
     domains: 0,
     ziel: 0,
-    schutz: (input.lockedDomains.length > 0 ? 1 : 0) + (input.crowdsec ? 1 : 0),
+    schutz: (input.lockedDomains.length > 0 ? 1 : 0) + (input.crowdsec ? 1 : 0) + (input.app ? 1 : 0),
     erweitert: input.routes.length + addonCount,
   };
 
@@ -2197,6 +2202,38 @@ export default function ServiceFormModal({
                       <span className="toggle-slider" />
                     </label>
                   </div>
+                  {/* Auch ohne eigenen Schalter: CrowdSec liest das Log jedes
+                      Ziels, und eine Sperre aus dem Log gilt überall, wo
+                      CrowdSec prüft. */}
+                  {(selectedProxy?.crowdsecInStack || app !== '') && (
+                    <div className="form-group">
+                      <div className="form-label-row">
+                        <label className="form-label" htmlFor="svc-app">
+                          {t('Anwendung')}
+                        </label>
+                        <InfoHint
+                          text={t(
+                            'Manche Anwendungen sehen im normalen Betrieb für CrowdSec wie ein Angriff aus, etwa viele Antworten mit 404 beim Laden von Vorschaubildern. Kennt HAPM die Anwendung, nimmt es diese Fälle für dieses Ziel aus der Prüfung. Bei WordPress kommen virtuelle Patches gegen bekannte Lücken dazu.'
+                          )}
+                        />
+                      </div>
+                      <Select<string>
+                        id="svc-app"
+                        value={app}
+                        onChange={setApp}
+                        searchable
+                        searchPlaceholder={t('Anwendung suchen…')}
+                        options={[
+                          { value: '', label: t('Keine oder nicht in der Liste') },
+                          ...APP_RULES.map((entry) => ({
+                            value: entry.id,
+                            label: t(entry.label),
+                            icon: <AppLogo logo={appLogo(entry)} size={18} />,
+                          })).sort((a, b) => a.label.localeCompare(b.label)),
+                        ]}
+                      />
+                    </div>
+                  )}
                 </section>
               )}
               </>)}

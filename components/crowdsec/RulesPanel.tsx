@@ -1,9 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Image from 'next/image';
 import ErrorNote from '@/components/ErrorNote';
-import { AlertTriangle, AppWindow, Check, ChevronDown, ChevronUp, Download, Loader2, Search, X } from 'lucide-react';
+import { AlertTriangle, Check, ChevronDown, ChevronUp, Download, Loader2, Search, X } from 'lucide-react';
 import { useToast } from '@/components/Toast';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { SkeletonRows } from '@/components/Skeleton';
@@ -13,6 +12,7 @@ import { InfoHint } from '@/ui/primitives/InfoHint';
 import { MISSING, msgid } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
 import { useCrowdsecData, useCrowdsecSend } from './useCrowdsecData';
+import AppLogo from './AppLogo';
 import type { CrowdsecAppRules, CrowdsecRules, CrsMode } from './types';
 
 /** Was man vor dem Einschalten wissen muss. Sichtbar und nicht hinter dem „i": es sind die Folgen. */
@@ -33,9 +33,7 @@ const BASE_LABELS: Record<string, string> = {
   'crowdsecurity/appsec-generic-rules': msgid('WAF: allgemeine Angriffsmuster'),
 };
 
-/** So viele Anwendungen zeigt die Liste, bis man sie aufklappt. Eingeschaltete stehen immer da. */
-const COLLAPSED_APPS = 4;
-/** Womit die zugeklappte Liste aufgefüllt wird: was hinter HAPM am häufigsten läuft. */
+/** Was die zugeklappte Liste zeigt, solange kein Ziel eine Anwendung nennt: was hinter HAPM am häufigsten läuft. */
 const FEATURED_APPS = ['nextcloud', 'wordpress', 'jellyfin', 'immich'];
 
 /** So oft liest die Seite nach, solange eine Änderung aussteht. */
@@ -49,9 +47,10 @@ const KIND_LABELS: Record<CrowdsecAppRules['kinds'][number], { label: string; hi
 
 /**
  * Welche Regeln CrowdSec anwendet. Die Grundausstattung bringt Compose mit,
- * dazuschalten lassen sich das OWASP Core Rule Set, Regeln je Anwendung
- * (`APP_RULES`) und eine feste Auswahl weiterer Sammlungen
- * (`OPTIONAL_COLLECTIONS`).
+ * dazuschalten lassen sich das OWASP Core Rule Set und eine feste Auswahl
+ * weiterer Sammlungen (`OPTIONAL_COLLECTIONS`). Die Regeln je Anwendung
+ * (`APP_RULES`) folgen den Zielen: gewählt wird die Anwendung im Formular des
+ * Ziels, hier steht nur, welche Ziele welche nennen.
  *
  * Eine Änderung holt Regeln aus dem Hub und dauert. Sie reiht sich deshalb als
  * Lauf im Hintergrund ein (`lib/crowdsec/rule-jobs.ts`): der Schalter zeigt
@@ -69,9 +68,6 @@ export default function RulesPanel() {
   const [sent, setSent] = useState<Record<string, boolean | string>>({});
   const [allApps, setAllApps] = useState(false);
   const [search, setSearch] = useState('');
-  // Was hier geschaltet wurde, bleibt sichtbar, auch wenn es wieder aus ist:
-  // sonst verschwindet die Zeile unter dem Mauszeiger.
-  const [touched, setTouched] = useState<ReadonlySet<string>>(new Set());
 
   // Was aussteht, weiß der Server (`pending`), auch nach einem Neuladen der
   // Seite. Nach einem Fehler beim Lesen ist der Stand alt: dann gilt er nicht.
@@ -128,25 +124,14 @@ export default function RulesPanel() {
     void change('crs', { crs: mode }, mode);
   }
 
-  function switchApp(id: string, on: boolean) {
-    setTouched((prev) => new Set(prev).add(id));
-    return change(`app:${id}`, { app: id, installed: on }, on);
-  }
-
   if (loading && !data) return <SkeletonRows />;
 
   const sortedApps = [...(data?.apps ?? [])].sort((a, b) => t(a.label).localeCompare(t(b.label), locale));
-  // Zugeklappt: was an ist oder gerade geschaltet wurde, aufgefüllt mit den
-  // häufigsten bis COLLAPSED_APPS. Die Reihenfolge bleibt alphabetisch.
-  const pinned = new Set(
-    sortedApps
-      .filter((app) => app.installed || app.partial || touched.has(app.id) || `app:${app.id}` in pending)
-      .map((app) => app.id)
-  );
-  for (const id of [...FEATURED_APPS, ...sortedApps.map((app) => app.id)]) {
-    if (pinned.size >= COLLAPSED_APPS) break;
-    pinned.add(id);
-  }
+  // Zugeklappt: was ein Ziel nennt oder noch von früher liegt. Nennt keins
+  // eine, die häufigsten, damit die Liste nicht leer aussieht.
+  const used = sortedApps.filter((app) => app.services.length > 0 || app.installed || app.partial);
+  const pinned = new Set(used.length > 0 ? used.map((app) => app.id) : FEATURED_APPS);
+  const syncing = 'apps' in pending;
   // Eine Suche geht über alle, auch die zugeklappten.
   const query = search.trim().toLocaleLowerCase(locale);
   const shownApps = query
@@ -227,11 +212,11 @@ export default function RulesPanel() {
                   {t('Anwendungen')}
                   <InfoHint
                     text={t(
-                      'Der normale Betrieb mancher Anwendungen sieht für CrowdSec wie ein Angriff aus, etwa viele Antworten mit 404 in kurzer Zeit. Dann sperrt es die eigenen Nutzer. Die Ausnahmen nehmen diese bekannten Fälle aus der Prüfung. Für WordPress kommen virtuelle Patches gegen bekannte Lücken dazu.'
+                      'Der normale Betrieb mancher Anwendungen sieht für CrowdSec wie ein Angriff aus, etwa viele Antworten mit 404 in kurzer Zeit. Dann sperrt es die eigenen Nutzer. Die Ausnahmen nehmen diese bekannten Fälle aus der Prüfung. Für WordPress kommen virtuelle Patches gegen bekannte Lücken dazu. Welche Anwendung hinter einem Ziel läuft, wählen Sie im Formular des Ziels unter Zugriff und Schutz. HAPM holt dann die Regeln und lässt die Ausnahmen nur für dieses Ziel gelten, wo CrowdSec das erlaubt: die eigenen Ausnahmen von HAPM und die für die OWASP-Regeln. Die Ausnahmen aus dem Hub für das Log gelten für alle Ziele.'
                     )}
                   />
                 </h2>
-                <p className="card-subtitle">{t('Ausnahmen gegen bekannte Fehlsperren einzelner Anwendungen.')}</p>
+                <p className="card-subtitle">{t('Gewählt wird die Anwendung am Ziel, unter Zugriff und Schutz.')}</p>
               </div>
               <div className="page-search cs-app-search">
                 <Search size={15} />
@@ -257,12 +242,12 @@ export default function RulesPanel() {
               </div>
             </div>
             <div className="table-wrap">
-              <table className="table cs-rules">
+              <table className="table cs-rules cs-apps">
                 <thead>
                   <tr>
                     <th>{t('Anwendung')}</th>
                     <th>{t('Wirkt auf')}</th>
-                    <th>{t('Aktiv')}</th>
+                    <th>{t('Ziele')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -270,13 +255,7 @@ export default function RulesPanel() {
                     <tr key={app.id}>
                       <td data-label="primary">
                         <div className="cs-app">
-                          {app.logo ? (
-                            <Image src={app.logo} alt="" width={28} height={28} className="cs-app-logo" unoptimized />
-                          ) : (
-                            <span className="cs-app-logo cs-app-logo-none">
-                              <AppWindow size={16} />
-                            </span>
-                          )}
+                          <AppLogo logo={app.logo} />
                           <div className="cs-app-text">
                             <span className="form-label-row">
                               <strong>{t(app.label)}</strong>
@@ -302,24 +281,8 @@ export default function RulesPanel() {
                           })}
                         </span>
                       </td>
-                      <td data-label={t('Aktiv')}>
-                        <span className="cs-kinds">
-                          <label className="toggle-switch">
-                            <input
-                              type="checkbox"
-                              checked={shown(`app:${app.id}`, app.installed)}
-                              disabled={`app:${app.id}` in pending}
-                              onChange={(e) => switchApp(app.id, e.target.checked)}
-                              aria-label={t(app.label)}
-                            />
-                            <span className="toggle-slider" />
-                          </label>
-                          {app.partial && !(`app:${app.id}` in pending) && (
-                            <span className="badge-status badge-warning" data-tooltip={t('Nur ein Teil ist installiert. Einschalten holt den Rest.')}>
-                              {t('Teilweise')}
-                            </span>
-                          )}
-                        </span>
+                      <td data-label={t('Ziele')}>
+                        <AppTargets app={app} syncing={syncing} />
                       </td>
                     </tr>
                   ))}
@@ -333,7 +296,7 @@ export default function RulesPanel() {
                 </tbody>
               </table>
             </div>
-            {!query && sortedApps.length > COLLAPSED_APPS && (
+            {!query && sortedApps.length > pinned.size && (
               <div className="cs-more">
                 <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAllApps((open) => !open)} aria-expanded={allApps}>
                   {allApps ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
@@ -423,5 +386,47 @@ export default function RulesPanel() {
         </>
       )}
     </>
+  );
+}
+
+/**
+ * Die Ziele, die eine Anwendung nennen, und ob ihre Regeln schon liegen. Fehlt
+ * etwas, holt es der nächste Abgleich (nach jedem Vorgang an einem Ziel und
+ * beim Start von HAPM).
+ */
+function AppTargets({ app, syncing }: { app: CrowdsecAppRules; syncing: boolean }) {
+  const { t } = useT();
+  const named = app.services.length > 0;
+  const ready = named ? app.installed : !app.installed && !app.partial;
+  return (
+    <div className="cs-app-targets">
+      {named ? (
+        app.services.map((service) => (
+          <span key={service.id} className="mono" title={service.domains.join(', ')}>
+            {service.domains[0] ?? service.id}
+          </span>
+        ))
+      ) : (
+        <span className="cs-app-none">{t('Kein Ziel')}</span>
+      )}
+      {!ready &&
+        (syncing ? (
+          <span className="badge-status badge-neutral">
+            <Loader2 size={12} className="spin" />
+            {t(named ? 'Wird eingerichtet' : 'Wird entfernt')}
+          </span>
+        ) : (
+          <span
+            className="badge-status badge-warning"
+            data-tooltip={t(
+              named
+                ? 'Die Regeln sind noch nicht vollständig installiert. HAPM holt sie beim nächsten Vorgang an einem Ziel oder beim nächsten Start.'
+                : 'Kein Ziel nennt diese Anwendung mehr, ihre Regeln liegen aber noch. HAPM entfernt sie beim nächsten Vorgang an einem Ziel oder beim nächsten Start.'
+            )}
+          >
+            {t(named ? 'Unvollständig' : 'Übrig')}
+          </span>
+        ))}
+    </div>
   );
 }

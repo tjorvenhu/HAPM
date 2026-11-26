@@ -1,7 +1,11 @@
 /**
  * Regeln für einzelne Anwendungen hinter HAPM: Ausnahmen gegen bekannte
- * Fehlsperren und, bei WordPress, virtuelle Patches. Eine Zeile je Anwendung,
- * ein Schalter installiert oder entfernt alles, was dazugehört.
+ * Fehlsperren und, bei WordPress, virtuelle Patches.
+ *
+ * Gewählt wird die Anwendung am Ziel (`# hapm-app: <id>` im Backend, siehe
+ * `APP_LINE_PREFIX` in `lib/haproxy/config.ts`). Was dazugehört, richtet
+ * `lib/crowdsec/app-sync.ts` ein: installiert ist, was mindestens ein Ziel
+ * nennt, und wo es geht, gilt es nur für diese Ziele (`appUsage`).
  *
  * Drei Arten:
  * - `parsers`/`collections` aus dem Hub von CrowdSec. Die Whitelists im Log
@@ -426,21 +430,124 @@ export function appWhitelistFile(id: string): string {
   return `config/parsers/s02-enrich/hapm-app-${id}.yaml`;
 }
 
+/** Was `appUsage` von einem Ziel braucht. Ein eigener Typ: `lib/haproxy/config.ts` importiert diese Datei. */
+export interface AppTarget {
+  id: string;
+  app: string | null;
+  domains: readonly string[];
+  routes: readonly { backend: string }[];
+}
+
+/** Eine Anwendung und die Ziele, die sie nennen. */
+export interface AppUse {
+  app: AppRules;
+  /** Die Ziele mit ihren Domains. */
+  services: { id: string; domains: string[] }[];
+  /** Ihre Backends samt denen der Pfad-Regeln: so heißen sie im Log (`backend_name`). */
+  backends: string[];
+  /** Ihre Domains, Wildcards als `*.example.org`. */
+  domains: string[];
+}
+
+/** Welche Anwendung an welchen Zielen läuft. Nur Anwendungen, die ein Ziel nennt, in der Reihenfolge von `APP_RULES`. */
+export function appUsage(services: readonly AppTarget[]): AppUse[] {
+  return APP_RULES.flatMap((app) => {
+    const users = services.filter((service) => service.app === app.id);
+    if (users.length === 0) return [];
+    const unique = (values: string[]) => [...new Set(values)];
+    return [
+      {
+        app,
+        services: users.map((service) => ({ id: service.id, domains: [...service.domains] })),
+        backends: unique(users.flatMap((service) => [service.id, ...service.routes.map((route) => route.backend)])),
+        domains: unique(users.flatMap((service) => service.domains.map((domain) => domain.toLowerCase()))),
+      },
+    ];
+  });
+}
+
+/** Was aus dem Hub zu einer Anwendung gehört, als `<typ>:<name>`. */
+export function hubItemsOf(app: AppRules): string[] {
+  return app.hub.map((item) => `${item.type}:${item.name}`);
+}
+
 /**
  * Die Whitelist einer Anwendung im Format eines Parsers. Jeder Ausdruck steht
  * als JSON-String: das ist gültiges YAML und maskiert Anführungszeichen und
  * Backslashes der Ausdrücke richtig.
+ *
+ * Sie gilt nur für die Zeilen der genannten Backends (`evt.Parsed.backend_name`
+ * aus dem Parser von HAProxy in `s01-parse`, also schon in dieser Stufe da):
+ * ein Scanner, der auf einer anderen Domain die Pfade von Nextcloud abklappert,
+ * bleibt erkannt.
  */
-export function renderAppWhitelist(app: AppRules): string {
+export function renderAppWhitelist(app: AppRules, backends: readonly string[]): string {
+  const filter = `${HTTP_FILTER} && evt.Parsed.backend_name in [${backends.map(exprString).join(', ')}]`;
   return [
-    '# Geschrieben von HAPM (Reverse-Proxy, CrowdSec, Regeln, Anwendungen). Änderungen gehen verloren.',
+    '# Geschrieben von HAPM (Ziele mit dieser Anwendung). Änderungen gehen verloren.',
     `name: hapm/${app.id}-allowlist`,
     `description: ${JSON.stringify(`HAPM: ${app.id}`)}`,
-    `filter: ${JSON.stringify(HTTP_FILTER)}`,
+    `filter: ${JSON.stringify(filter)}`,
     'whitelist:',
     `  reason: ${JSON.stringify(`HAPM: ${app.id}`)}`,
     '  expression:',
     ...(app.local ?? []).flatMap((rule) => [`    # ${rule.source}`, `    - ${JSON.stringify(localRuleExpression(rule))}`]),
     '',
   ].join('\n');
+}
+
+/**
+ * Die Variable, mit der ein Plugin des OWASP CRS ein- und ausgeschaltet wird.
+ * Jedes Ausnahme-Plugin aus dem Hub prüft in seiner `-before.conf`
+ * `TX:<name>-rule-exclusions-plugin_enabled "@eq 0"` und nimmt dann seine
+ * Ausnahmen heraus. Ohne gesetzte Variable gilt es für jede Anfrage.
+ */
+export function crsPluginVariable(app: AppRules): string | null {
+  for (const item of app.hub) {
+    const match = /^crowdsecurity\/appsec-crs-exclusion-plugin-([a-z0-9-]+)$/.exec(item.name);
+    if (match) return `tx.${match[1]}-rule-exclusions-plugin_enabled`;
+  }
+  return null;
+}
+
+/** Relativ zum Ordner von CrowdSec: neben der Methodenliste, im selben Plugin. */
+export const CRS_APPS_FILE = 'data/crs-plugins/hapm/hapm-apps-config.conf';
+
+/** Eine Domain als regulärer Ausdruck für den Host-Header. Eine Wildcard deckt genau eine Stufe ab, wie bei HAProxy. */
+function hostPattern(domain: string): string {
+  const wildcard = domain.startsWith('*.');
+  const rest = (wildcard ? domain.slice(2) : domain).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return wildcard ? `[^.]+\\.${rest}` : rest;
+}
+
+/**
+ * Die Ausnahme-Plugins des OWASP CRS nur für die Hosts ihrer Ziele.
+ *
+ * `crowdsecurity/crs` lädt alle `crs-plugins/*\/*-config.conf` vor allen
+ * `-before.conf`, diese Datei also, bevor ein Plugin seine Variable prüft.
+ * Jedes bekannte Plugin wird hier ausgeschaltet und für die Hosts der Ziele
+ * mit seiner Anwendung wieder an. Geprüft mit CrowdSec 1.8.2 und dem Plugin
+ * für WordPress: die Ausnahme für `/wp-admin/post.php` gilt auf dem Host des
+ * Ziels, auf jedem anderen weist das CRS dieselbe Anfrage ab.
+ *
+ * Die Kennungen liegen im Bereich, den das CRS Plugins vorbehält, hinter der
+ * Methodenliste (9599001). Fest je Stelle in `APP_RULES`: zwei Regeln je
+ * Anwendung.
+ */
+export function renderCrsAppScopes(uses: readonly AppUse[]): string {
+  const lines = ['# Von HAPM geschrieben: Ausnahmen für Anwendungen nur auf den Hosts ihrer Ziele.'];
+  APP_RULES.forEach((app, position) => {
+    const variable = crsPluginVariable(app);
+    if (!variable) return;
+    const id = 9599100 + position * 2;
+    lines.push(`SecAction "id:${id},phase:1,pass,nolog,t:none,setvar:'${variable}=0'"`);
+    const domains = uses.find((use) => use.app.id === app.id)?.domains ?? [];
+    if (domains.length === 0) return;
+    const hosts = domains.map(hostPattern).join('|');
+    lines.push(
+      `SecRule REQUEST_HEADERS:Host "@rx ^(?:${hosts})(?::[0-9]+)?$" "id:${id + 1},phase:1,pass,nolog,t:none,t:lowercase,setvar:'${variable}=1'"`
+    );
+  });
+  lines.push('');
+  return lines.join('\n');
 }

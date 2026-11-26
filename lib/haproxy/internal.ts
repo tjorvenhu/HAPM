@@ -195,6 +195,10 @@ export interface ServiceView {
   responseHeaders: HeaderRule[];
   requestHeaders: HeaderRule[];
   tunnel: boolean;
+  /** CrowdSec prüft die Anfragen an dieses Ziel (eigener Schalter, nicht global). */
+  crowdsec: boolean;
+  /** Die Anwendung hinter dem Ziel (`APP_RULES`), `null` keine. */
+  app: string | null;
   healthcheck: boolean;
   /** Wie HAProxy die Ziele anspricht: `off` HTTP, `insecure` HTTPS ohne
    *  Prüfung des Zertifikats, `verify` HTTPS gegen die CAs des Systems. */
@@ -246,6 +250,8 @@ export function serviceView(
     responseHeaders: service.responseHeaders,
     requestHeaders: service.requestHeaders,
     tunnel: service.tunnel,
+    crowdsec: service.crowdsec,
+    app: service.app,
     healthcheck: service.healthcheck,
     backendTls: service.backendTls,
     editable: service.editable,

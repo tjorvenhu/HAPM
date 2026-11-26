@@ -288,6 +288,14 @@ const serviceFields = {
       'true sends every request of this service through CrowdSec (WAF and IP bans, 403 on a hit). Default false. ' +
         'Not needed when CrowdSec is on for all services (get_proxy_settings: crowdsec). Ignored with redirect.'
     ),
+  app: z
+    .string()
+    .nullable()
+    .optional()
+    .describe(
+      'The application behind this service, an id from get_crowdsec_rules (apps), e.g. "nextcloud". HAPM then exempts its known ' +
+        'false bans from CrowdSec for this service only. Omit or null: none. Ignored with redirect.'
+    ),
   healthcheck: z
     .boolean()
     .optional()
@@ -930,7 +938,8 @@ export const TOOLS: ToolDefinition[] = [
     title: 'CrowdSec rules',
     description:
       'The OWASP CRS mode (off or block), the base collections, rules per application (apps: exclusions against known false bans, ' +
-      'for WordPress also virtual patches; partial = only some parts installed) and further optional collections.',
+      'for WordPress also virtual patches; services = the services that name this app in their "app" field, the rules are ' +
+      'installed while at least one does; partial = only some parts installed) and further optional collections.',
     input: {},
     annotations: READ_ONLY,
     run: () => crowdsecRules(),
@@ -941,11 +950,9 @@ export const TOOLS: ToolDefinition[] = [
     title: 'Change CrowdSec rules',
     description:
       'One change per call: {"crs":"off"|"block"} for the OWASP Core Rule Set (block rejects every request with a hit with 403, harmless ones too: check the alerts afterwards), ' +
-      '{"app":"<id>","installed":true|false} for the rules of an application from get_crowdsec_rules (apps), ' +
       '{"name":"<collection>","installed":true|false} for an optional collection, or {"upgrade":true} to update all rules from the hub.',
     input: {
       crs: z.enum(CRS_MODES as unknown as [string, ...string[]]).optional(),
-      app: z.string().optional(),
       name: z.string().optional(),
       installed: z.boolean().optional(),
       upgrade: z.boolean().optional(),

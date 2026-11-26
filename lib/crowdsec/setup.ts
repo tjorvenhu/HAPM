@@ -16,7 +16,17 @@ import { randomBytes } from 'node:crypto';
 import { engine } from '../docker';
 import { HAPROXY_LOG_FILE } from '../haproxy-log';
 import { cscli, cscliJson } from './cscli';
-import { APP_RULES, appWhitelistFile, renderAppWhitelist, type AppRules } from './apps';
+import { HAPROXY_CFG, parseHaproxyConfig } from '../haproxy/config';
+import {
+  APP_RULES,
+  CRS_APPS_FILE,
+  appUsage,
+  appWhitelistFile,
+  renderAppWhitelist,
+  renderCrsAppScopes,
+  type AppRules,
+  type AppUse,
+} from './apps';
 import {
   renderAcquis,
   renderBackendParser,
@@ -96,13 +106,10 @@ export function writeCrowdsecFiles(crs: CrsMode = currentCrsMode()): CrowdsecFil
   const parser = writeIfChanged(PARSER_FILE, renderBackendParser());
   // Auch bei abgeschalteten OWASP-Regeln: die Datei liest nur, wer sie lädt.
   const methods = writeIfChanged(CRS_METHODS_FILE, renderCrsMethods());
-  // Eingeschaltete Ausnahmen für Anwendungen auf den Stand dieser Version bringen.
-  let apps = false;
-  for (const app of APP_RULES) {
-    if (app.local && readText(appWhitelistFile(app.id)) !== null) {
-      apps = writeIfChanged(appWhitelistFile(app.id), renderAppWhitelist(app)) || apps;
-    }
-  }
+  // Die Ausnahmen der Anwendungen nach den Zielen in haproxy.cfg. Was dafür
+  // aus dem Hub fehlt oder übrig ist, holt `syncApps` nach, sobald CrowdSec läuft.
+  const uses = currentAppUsage();
+  const apps = uses ? writeAppFiles(uses) : false;
   const bouncer = writeIfChanged(BOUNCER_CONFIG_FILE, renderBouncerConfig(key), 0o600);
   // CrowdSec liest eine Datei, die beim Start fehlt, nicht nach.
   try {
@@ -130,15 +137,56 @@ export function appWhitelistPresent(app: AppRules): boolean {
   return readText(appWhitelistFile(app.id)) !== null;
 }
 
-/** Die eigene Whitelist einer Anwendung schreiben oder entfernen. Gibt zurück, ob sich etwas geändert hat. */
-export function setAppWhitelist(app: AppRules, on: boolean): boolean {
-  if (on) return writeIfChanged(appWhitelistFile(app.id), renderAppWhitelist(app));
+/**
+ * Welche Anwendung an welchen Zielen läuft, aus `haproxy.cfg`. Ohne Datei (noch
+ * nicht eingerichtet) an keinem. `null`, wenn sie da, aber nicht lesbar ist:
+ * dann bleiben die Ausnahmen, wie sie sind, statt mit den Zielen zu verschwinden.
+ */
+export function currentAppUsage(): AppUse[] | null {
+  if (!fs.existsSync(HAPROXY_CFG)) return [];
   try {
-    fs.unlinkSync(file(appWhitelistFile(app.id)));
-    return true;
+    return appUsage(parseHaproxyConfig(fs.readFileSync(HAPROXY_CFG, 'utf8')));
   } catch {
-    return false;
+    return null;
   }
+}
+
+/** Was in den Dateien der Anwendungen stehen soll: Pfad und Inhalt, `null` heißt keine Datei. */
+function appFiles(uses: readonly AppUse[]): [string, string | null][] {
+  return [
+    [CRS_APPS_FILE, renderCrsAppScopes(uses)],
+    ...APP_RULES.filter((app) => app.local).map((app): [string, string | null] => {
+      const use = uses.find((entry) => entry.app.id === app.id);
+      return [appWhitelistFile(app.id), use ? renderAppWhitelist(app, use.backends) : null];
+    }),
+  ];
+}
+
+/** Ob `writeAppFiles` etwas ändern würde. */
+export function appFilesDiffer(uses: readonly AppUse[]): boolean {
+  return appFiles(uses).some(([relative, content]) => readText(relative) !== content);
+}
+
+/**
+ * Die eigenen Whitelists (nur für die Backends der Ziele mit der Anwendung) und
+ * die Hosts der OWASP-Ausnahmen schreiben, die Whitelists ungenannter
+ * Anwendungen entfernen. Gibt zurück, ob sich etwas geändert hat.
+ */
+export function writeAppFiles(uses: readonly AppUse[]): boolean {
+  let changed = false;
+  for (const [relative, content] of appFiles(uses)) {
+    if (content !== null) {
+      changed = writeIfChanged(relative, content) || changed;
+      continue;
+    }
+    try {
+      fs.unlinkSync(file(relative));
+      changed = true;
+    } catch {
+      // Lag nicht da.
+    }
+  }
+  return changed;
 }
 
 /** Den Schalter der Oberfläche setzen (`crowdsecDisabled`). */

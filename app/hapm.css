@@ -695,6 +695,15 @@
   border-radius: var(--radius); background: var(--surface-muted); color: var(--text-tertiary);
 }
 .cs-app-search { flex: 0 1 16rem; min-width: 12rem; }
+/* Die Ziele einer Anwendung: je Ziel seine erste Domain, untereinander. */
+.cs-app-targets { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; font-size: 0.8125rem; }
+.cs-app-targets .mono { white-space: nowrap; }
+@media (max-width: 640px) {
+  .cs-app-targets .mono { white-space: normal; overflow-wrap: anywhere; }
+  /* Schmal fehlt der Platz: was die Regeln prüfen, ist Beiwerk, die Ziele nicht. */
+  .cs-apps :is(th, td):nth-child(2) { display: none; }
+}
+.cs-app-none { color: var(--text-tertiary); }
 .cs-app-empty { text-align: center; color: var(--text-secondary); }
 @media (max-width: 640px) {
   .cs-app-search { flex-basis: 100%; }

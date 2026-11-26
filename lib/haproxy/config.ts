@@ -23,6 +23,7 @@
  */
 
 import { interpolate, msg, msgid, type Message, type Params } from '../i18n/translate';
+import { APP_RULES } from '../crowdsec/apps';
 
 export const HAPROXY_CFG = '/etc/haproxy/haproxy.cfg';
 export const HAPROXY_CERT_DIR = '/etc/haproxy/certs';
@@ -221,6 +222,20 @@ export type HeaderDirection = 'request' | 'response';
  * Antwort hat als „lange".
  */
 export const TUNNEL_LINE = 'timeout tunnel 1h';
+
+/**
+ * Welche Anwendung hinter einem Ziel läuft: ein Kommentar direkt unter
+ * `backend <id>`. HAProxy liest ihn nicht, HAPM richtet danach die Ausnahmen
+ * von CrowdSec für dieses Ziel ein (`lib/crowdsec/app-sync.ts`). Ein Kommentar
+ * und keine Datenbank: `haproxy.cfg` ist die Wahrheit über die Ziele, und mit
+ * dem Ziel geht auch seine Anwendung. Steht auf der Platte, nicht umbenennen.
+ */
+export const APP_LINE_PREFIX = '# hapm-app:';
+
+/** Eine Kennung aus `APP_RULES`, sonst `null`. */
+export function knownApp(value: unknown): string | null {
+  return typeof value === 'string' && APP_RULES.some((app) => app.id === value) ? value : null;
+}
 
 /* ── CrowdSec ──
  *
@@ -1189,6 +1204,10 @@ export interface HaproxyService {
   /** `CROWDSEC_LINES` stehen im Backend: CrowdSec prüft die Anfragen dieses
    *  Ziels, auch wenn es global aus ist. */
   crowdsec: boolean;
+  /** Welche Anwendung hinter dem Ziel läuft (`APP_RULES`), aus `APP_LINE` im
+   *  Backend. Danach richtet HAPM die Ausnahmen von CrowdSec für dieses Ziel
+   *  ein. `null`: keine oder eine, die diese Version nicht kennt. */
+  app: string | null;
   /** Wie die Ziele des eigenen Backends angesprochen werden. Stehen dort
    *  verschiedene Arten nebeneinander, gilt die der ersten Zeile, und der
    *  Eintrag ist nur lesbar. */
@@ -1309,6 +1328,9 @@ export interface CreateServiceInput {
   /** CrowdSec prüft die Anfragen an dieses Ziel (`CROWDSEC_LINES` in jedem
    *  Backend). Setzt Ziele voraus wie die übrigen Zusätze. */
   crowdsec: boolean;
+  /** Die Anwendung hinter dem Ziel, eine Kennung aus `APP_RULES` oder `null`.
+   *  Setzt Ziele voraus. */
+  app: string | null;
   healthcheck: boolean;
   /** Wie HAProxy die Ziele des eigenen Backends anspricht. Gilt für jede
    *  server-Zeile darin, nicht für die der Pfad-Regeln (die haben ihr eigenes).
@@ -1363,6 +1385,10 @@ function validateService(input: CreateServiceInput, idGiven: boolean): Message |
   if (!BACKEND_TLS.includes(input.backendTls)) {
     return msg('Unbekannte Angabe, wie das Ziel angesprochen wird. Erlaubt sind off, insecure und verify.');
   }
+  // Auch die Anwendung geht als Wort in die Datei.
+  if (input.app !== null && knownApp(input.app) === null) {
+    return msg('Diese Anwendung kennt HAPM nicht: {app}', { app: input.app });
+  }
 
   if (input.domains.length === 0) return msg('Mindestens eine Domain wird benötigt.');
   for (const domain of input.domains) {
@@ -1408,6 +1434,9 @@ function validateService(input: CreateServiceInput, idGiven: boolean): Message |
     // Zeilen stünden wirkungslos da, also ablehnen, statt sie still wegzulassen.
     if (input.crowdsec) {
       return msg('CrowdSec prüft Anfragen an ein Backend mit Zielen. Eine Weiterleitung hat keine.');
+    }
+    if (input.app !== null) {
+      return msg('Eine Anwendung gehört zu einem Backend mit Zielen. Eine Weiterleitung hat keine.');
     }
     if (addonLines(input).length > 0) {
       return msg('Header und lange Verbindungen gehören zu einem Backend mit Zielen. Eine Weiterleitung hat keine.');
@@ -1769,6 +1798,8 @@ interface ParsedBackend {
    *  ausgewertet: CrowdSec zählt nur vollständig und in der Reihenfolge. */
   crowdsecLines: string[];
   crowdsec: boolean;
+  /** Aus `APP_LINE_PREFIX`, nur eine bekannte Kennung. */
+  app: string | null;
   /** Die Weiterleitung, wenn genau eine dasteht. Eine zweite ist ein
    *  `extras`-Eintrag: das Formular kennt eine. */
   redirect: RedirectTarget | null;
@@ -1865,6 +1896,11 @@ export function parseHaproxyConfig(text: string): HaproxyService[] {
       return;
     }
 
+    if (currentBackend !== null && line.startsWith(APP_LINE_PREFIX)) {
+      backends.get(currentBackend)!.app = knownApp(line.slice(APP_LINE_PREFIX.length).trim());
+      return;
+    }
+
     if (line.startsWith('#')) return;
 
     const backend = /^backend\s+(\S+)\s*$/.exec(line);
@@ -1880,6 +1916,7 @@ export function parseHaproxyConfig(text: string): HaproxyService[] {
           tunnel: false,
           crowdsecLines: [],
           crowdsec: false,
+          app: null,
           redirect: null,
           balance: null,
           stickyLine: false,
@@ -2284,6 +2321,9 @@ export function parseHaproxyConfig(text: string): HaproxyService[] {
       requestHeaders: backend?.requestHeaders ?? [],
       tunnel: backend?.tunnel ?? false,
       crowdsec: backend?.crowdsec ?? false,
+      // Eine Weiterleitung hat keine Anwendung: so schriebe das Formular sie
+      // nicht zurück, und die Prüfung lehnte sie ab.
+      app: redirect ? null : (backend?.app ?? null),
       backendTls: backendTls.tls,
       auto: autoIds.has(id),
       extras,
@@ -2512,6 +2552,7 @@ export function redirectLine(redirect: RedirectTarget): string {
 
 export function renderBackendBlock(input: CreateServiceInput): string[] {
   const lines = ['', `# AUTO: ${input.id}`, `backend ${input.id}`];
+  if (input.app && !input.redirect) lines.push(`    ${APP_LINE_PREFIX} ${input.app}`);
   // Die Zählung der Passwortsperre. Sie steht auch im Backend einer
   // Weiterleitung: gezählt wird im Frontend, hier liegt nur die Tabelle.
   const lockTable = passwordLockOf(input) !== null;
@@ -4530,6 +4571,7 @@ export function toCreateInput(service: HaproxyService): CreateServiceInput {
     requestHeaders: service.requestHeaders.map((rule) => ({ ...rule })),
     tunnel: service.tunnel,
     crowdsec: service.crowdsec,
+    app: service.app,
     healthcheck: service.healthcheck,
     backendTls: service.backendTls,
   };
@@ -4718,6 +4760,9 @@ export function readServiceInput(body: unknown): CreateServiceInput {
     // Wie die übrigen Zusätze nur mit Zielen. Bei einer Weiterleitung
     // normalisiert statt abgelehnt: ihr Formular zeigt die Frage nicht.
     crowdsec: raw.crowdsec === true && !redirect,
+    // Leer oder fehlend heißt keine. Ein unbekannter Wert geht durch und wird
+    // von der Prüfung abgelehnt, statt still zu verschwinden.
+    app: redirect || raw.app === undefined || raw.app === null || String(raw.app).trim() === '' ? null : String(raw.app).trim().toLowerCase(),
     // Eine Wildcard als Hauptdomain schließt den Healthcheck aus, siehe
     // `healthcheckPossible`. Normalisiert und nicht abgelehnt: das Formular
     // sperrt den Schalter bereits, und die Route soll dieselbe Eingabe

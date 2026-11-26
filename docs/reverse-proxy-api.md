@@ -228,6 +228,8 @@ type Service = {
   responseHeaders: { name: string; value: string }[];
   requestHeaders: { name: string; value: string }[];
   tunnel: boolean;             // `timeout tunnel 1h`: offene Verbindungen bleiben
+  crowdsec: boolean;           // eigener Schalter: CrowdSec prüft dieses Ziel
+  app: string | null;          // Anwendung hinter dem Ziel, Kennung aus get_crowdsec_rules
   healthcheck: boolean;
   // Wie HAProxy die Ziele anspricht: HTTP, HTTPS ohne Prüfung des Zertifikats
   // oder HTTPS mit Prüfung gegen die CAs des Systems.
@@ -271,6 +273,7 @@ Feld, bevor du aus einer leeren Liste einen Schluss ziehst.**
   "responseHeaders": [{ "name": "X-Frame-Options", "value": "SAMEORIGIN" }],   // optional
   "requestHeaders": [],               // optional
   "tunnel": false,                    // optional: lange Verbindungen (WebSocket, Terminal)
+  "app": "nextcloud",                 // optional: Anwendung hinter dem Ziel, für CrowdSec
   "healthcheck": true,
   "backendTls": "off",                // optional: "insecure" oder "verify", wenn das Ziel HTTPS spricht
   "dnsDomains": "auto",               // optional
@@ -330,7 +333,7 @@ oben).
 bekommt einen Eintrag ohne Domains, und die Prüfung lehnt ihn ab. Der Weg ist:
 `GET`, das Ergebnis ändern, `PATCH`. Die `id` im Pfad ist die **alte** — fehlt
 sie im Rumpf, bleibt sie, steht dort eine andere, wird umbenannt. Das gilt auch
-für `responseHeaders`, `requestHeaders` und `tunnel`: wer sie nicht mitschickt,
+für `responseHeaders`, `requestHeaders`, `tunnel`, `crowdsec` und `app`: wer sie nicht mitschickt,
 nimmt sie dem Eintrag weg. Ein Aufrufer, der noch `preset` schickt, sollte
 deshalb auf GET, ändern, PATCH umstellen, sonst gehen Header verloren, die
 jemand in der Oberfläche gesetzt hat.
@@ -633,6 +636,7 @@ Token weg, und auffallen würde es zwei Monate später.
 | `passwordLock` | Nur beim Ändern von Belang. **Fehlt das Feld, bleibt die Art der Sperre, wie sie ist**: ein Eintrag mit Passwort behält es, einer auf Admin-IPs bleibt dort. Wer GET, ändern, PATCH macht, muss also nichts tun. `"unchanged"` verlangt ausdrücklich, dass das bestehende Passwort bleibt (`409`, wenn keins da ist). `null` stellt auf die Admin-IPs um. Ein Hash oder Cookie-Wert wird nie angenommen. |
 | `responseHeaders`, `requestHeaders` | Feste Header an den Besucher bzw. an das Ziel, je `{ name, value }`, höchstens 20 je Richtung. Sie stehen in jedem Backend des Eintrags, auch in denen der Pfad-Regeln. `name`: Buchstaben, Ziffern, Bindestrich, je Richtung nur einmal; Header der Übertragung (`Content-Length`, `Transfer-Encoding`, `Connection`, `Upgrade` …) werden abgelehnt. `value`: druckbares ASCII, bis 1024 Zeichen, **wörtlich**: `%[src]` kommt als Text an und wird nicht ausgewertet. Ein Header der Antwort, den die globalen Einstellungen auch setzen, wird von dort überschrieben; einer der Anfrage ersetzt den globalen. Leere Einträge (`name` und `value` leer) fallen weg. |
 | `tunnel` | `true` schreibt `timeout tunnel 1h` in jedes Backend des Eintrags. Ohne das reißen WebSocket, Terminal und Live-Ansicht nach der Zeit aus dem `defaults`-Block ab, üblicherweise nach einer Minute ohne Daten. |
+| `app` | Welche Anwendung hinter dem Ziel läuft, eine Kennung aus `apps` von `GET /crowdsec/rules` (etwa `nextcloud`, `wordpress`). Steht als `# hapm-app: <id>` im Backend. HAPM holt danach die Ausnahmen von CrowdSec gegen bekannte Fehlsperren und lässt sie, wo CrowdSec das erlaubt, nur für dieses Ziel gelten (siehe docs/crowdsec.md, „Anwendungen“). **Fehlt das Feld, `null` oder leer: keine.** Wie bei den übrigen Feldern heißt ein PATCH ohne `app`, dass die Anwendung entfernt wird. Eine unbekannte Kennung ergibt `400`, bei einer Weiterleitung fällt das Feld weg. |
 | `preset` | Nur noch angenommen, nie gemeldet: `nextcloud` wird zu den beiden Headern der Antwort, `coolify` zu `tunnel: true`, `default` zu nichts. Ein anderer Wert ergibt `400`. |
 | `healthcheck` | **Geht nicht, wenn `domains[0]` eine Wildcard ist** — `*.kunde.example` ist als Host-Header kein gültiger Name, das Ziel antwortete mit 404 und HAProxy nähme ein funktionierendes Backend aus dem Betrieb. Der Wert wird in dem Fall stillschweigend auf `false` normalisiert, nicht abgelehnt. |
 | `backendTls` | Wie HAProxy die Ziele anspricht. **Fehlt oder `"off"`: HTTP**, wie bisher. `"insecure"`: HTTPS, das Zertifikat des Ziels wird nicht geprüft (`ssl verify none`), für selbst signierte wie bei Proxmox (8006) oder TrueNAS. `"verify"`: HTTPS, das Zertifikat muss von einer CA stammen, der das System vertraut, und für die aufgerufene Domain gelten (`ssl verify required ca-file @system-ca`); braucht HAProxy 2.6 oder neuer, sonst `400`. In beiden HTTPS-Fällen geht die Domain der Anfrage als SNI hinaus (`sni req.hdr(host)`), der Healthcheck bekommt `domains[0]` (`check-sni`). Gilt für alle `servers`; jede Pfad-Regel hat ein eigenes `routes[].backendTls` und erbt es **nicht**. Ein anderer Wert ergibt `400`, ebenso ein HTTPS-Wert zusammen mit `redirect`. |

@@ -39,7 +39,7 @@ import { reconcileRestore } from './backup/restore';
 import { notify } from './notifications';
 import { keepCrowdsecStopped, reconcileCrowdsec } from './crowdsec/setup';
 import { crowdsecDisabled, crowdsecInStack } from './crowdsec/paths';
-import { dropOrphanedCrowdsec } from './crowdsec/actions';
+import { dropOrphanedCrowdsec, queueAppSync } from './crowdsec/actions';
 import { ruleRunActive } from './crowdsec/rule-jobs';
 import { timeReached } from './schedule-time';
 
@@ -62,7 +62,18 @@ async function tickCrowdsec(): Promise<void> {
   if (ruleRunActive()) return;
   const notes = await reconcileCrowdsec();
   for (const note of notes) log(note);
+  // Einmal je Start, sobald CrowdSec läuft: holt aus dem Hub, was die
+  // Anwendungen der Ziele brauchen (etwa nach einem Update von HAPM oder
+  // einer von Hand geänderten haproxy.cfg). Danach erledigt das jeder Vorgang
+  // an einem Ziel selbst.
+  if (!crowdsecTick.appsChecked) {
+    const synced = await queueAppSync(systemActor());
+    crowdsecTick.appsChecked = synced.ok;
+    if (synced.runId) log(`Ausnahmen für Anwendungen werden abgeglichen (Lauf ${synced.runId}).`);
+  }
 }
+
+const crowdsecTick = globalThis as unknown as { appsChecked?: boolean };
 
 const UPDATE_CHECK_MS = 6 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;

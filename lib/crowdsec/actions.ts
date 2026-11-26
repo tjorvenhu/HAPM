@@ -63,17 +63,19 @@ import {
   type CrowdsecAlert,
 } from './data';
 import {
+  appFilesDiffer,
   appWhitelistPresent,
+  currentAppUsage,
   currentCrsMode,
   ensureAllowlist,
   reloadCrowdsec,
-  setAppWhitelist,
   setDisabledMarker,
+  writeAppFiles,
   writeCrowdsecFiles,
 } from './setup';
 import { localServer } from '../helpers';
 import { startHaproxyRun, waitForRun } from '../haproxy/runner';
-import { APP_RULES, appLogo, type AppRules } from './apps';
+import { APP_RULES, appLogo, hubItemsOf, type AppUse } from './apps';
 import { syncAllowFile } from './allow-file';
 import { enqueueRuleChange, pendingRuleChanges, ruleRunActive, type RuleJob } from './rule-jobs';
 
@@ -683,6 +685,7 @@ export async function crowdsecRules() {
   const installed = enabled('collections');
   const parsers = enabled('parsers');
   const versions = new Map<string, string>(items('collections').map((c: any) => [String(c.name), String(c.local_version ?? '')]));
+  const uses = currentAppUsage() ?? [];
   const apps = APP_RULES.map((app) => {
     const parts = [
       ...app.hub.map((item) => (item.type === 'parsers' ? parsers : installed).has(item.name)),
@@ -696,6 +699,8 @@ export async function crowdsecRules() {
       logo: appLogo(app),
       kinds: app.kinds,
       items: [...app.hub.map((item) => item.name), ...(app.local ? [`hapm/${app.id}-allowlist`] : [])],
+      /** Die Ziele, die diese Anwendung nennen. Leer: sie ist nicht eingerichtet. */
+      services: uses.find((use) => use.app.id === app.id)?.services ?? [],
       installed: count === parts.length,
       partial: count > 0 && count < parts.length,
     };
@@ -739,14 +744,6 @@ function wantedCollection(body: unknown): { entry: (typeof OPTIONAL_COLLECTIONS)
   return { entry, on: raw.installed };
 }
 
-function wantedApp(body: unknown): { app: AppRules; on: boolean } {
-  const raw = (body ?? {}) as Record<string, unknown>;
-  const app = APP_RULES.find((entry) => entry.id === raw.app);
-  if (!app) throw new ApiError(msg('Für diese Anwendung gibt es hier keine Regeln.'), 404);
-  if (typeof raw.installed !== 'boolean') throw new ApiError(msg('Erwartet wird installed: true oder false.'));
-  return { app, on: raw.installed };
-}
-
 /**
  * Die OWASP-Regeln schalten: Sammlung holen, Quellen umschreiben, CrowdSec neu
  * laden. Beim Ausschalten bleibt die Sammlung liegen: sie wirkt nur, wenn die
@@ -774,27 +771,99 @@ export async function setCollection(body: unknown, actor: CrowdsecActor, options
   return { name: entry.name, installed: on };
 }
 
-/**
- * Die Regeln einer Anwendung schalten: alles aus dem Hub installieren oder
- * entfernen, die eigene Whitelist schreiben oder löschen, CrowdSec neu starten.
- * Beim Entfernen bleibt, was noch eine andere Sammlung braucht (das regelt
- * `cscli`).
- */
-export async function setApp(body: unknown, actor: CrowdsecActor, options: RuleChangeOptions = {}) {
-  const { app, on } = wantedApp(body);
-  if (!crowdsecInstalled()) throw new CrowdsecUnavailable();
-  try {
-    for (const item of app.hub) {
-      await cscliOk([item.type, on ? 'install' : 'remove', item.name], 180_000);
+/* ── Anwendungen: aus den Zielen abgeleitet ── */
+
+/** Was aus dem Hub installiert ist, als `<typ>:<name>` (nur Parser und Sammlungen). */
+async function installedHubItems(): Promise<Set<string>> {
+  const json = await cscliJson<any>(['hub', 'list']);
+  const names = new Set<string>();
+  for (const type of ['parsers', 'collections']) {
+    for (const item of Array.isArray(json?.[type]) ? json[type] : []) {
+      if (String(item?.status ?? '').includes('enabled')) names.add(`${type}:${String(item.name)}`);
     }
-    if (app.local) setAppWhitelist(app, on);
-  } finally {
-    // Auch nach einem Fehler mittendrin: was schon installiert oder entfernt
-    // ist, soll geladen sein und nicht erst beim nächsten Neustart wirken.
-    if (options.reload !== false) await reloadCrowdsec().catch(() => undefined);
   }
-  await audit(actor, 'crowdsec_rules_updated', `app:${app.id}`, `${app.label}: ${on ? 'an' : 'aus'}`);
-  return { app: app.id, installed: on };
+  return names;
+}
+
+interface AppSyncPlan {
+  uses: AppUse[];
+  install: string[];
+  remove: string[];
+  files: boolean;
+}
+
+/**
+ * Was zu tun ist, damit CrowdSec zu den Anwendungen der Ziele passt: aus dem
+ * Hub fehlt, was ein Ziel braucht, übrig ist, was zu einer Anwendung gehört,
+ * die kein Ziel mehr nennt. Andere Sammlungen fasst der Abgleich nicht an.
+ * `null`: `haproxy.cfg` ist nicht lesbar, dann bleibt alles, wie es ist.
+ */
+async function planAppSync(): Promise<AppSyncPlan | null> {
+  const uses = currentAppUsage();
+  if (!uses) return null;
+  const installed = await installedHubItems();
+  const wanted = new Set(uses.flatMap((use) => hubItemsOf(use.app)));
+  const known = new Set(APP_RULES.flatMap(hubItemsOf));
+  return {
+    uses,
+    install: [...wanted].filter((item) => !installed.has(item)),
+    remove: [...known].filter((item) => !wanted.has(item) && installed.has(item)),
+    files: appFilesDiffer(uses),
+  };
+}
+
+function planEmpty(plan: AppSyncPlan): boolean {
+  return plan.install.length === 0 && plan.remove.length === 0 && !plan.files;
+}
+
+/** Den Abgleich ausführen, ohne neu zu laden: das tut die Warteschlange am Ende des Laufs. */
+async function syncApps(actor: CrowdsecActor) {
+  const plan = await planAppSync();
+  if (!plan || planEmpty(plan)) return { installed: [] as string[], removed: [] as string[] };
+  const cscliItem = (verb: 'install' | 'remove', item: string) => {
+    const [type, name] = item.split(':');
+    return cscliOk([type, verb, name], 180_000);
+  };
+  for (const item of plan.install) await cscliItem('install', item);
+  for (const item of plan.remove) await cscliItem('remove', item);
+  writeAppFiles(plan.uses);
+  const details = [
+    ...plan.install.map((item) => `+ ${item.split(':')[1]}`),
+    ...plan.remove.map((item) => `- ${item.split(':')[1]}`),
+  ];
+  await audit(
+    actor,
+    'crowdsec_rules_updated',
+    'apps',
+    `Anwendungen der Ziele: ${plan.uses.map((use) => use.app.id).join(', ') || 'keine'}${details.length > 0 ? ` (${details.join(', ')})` : ''}`
+  );
+  return { installed: plan.install, removed: plan.remove };
+}
+
+/**
+ * Nach einer Änderung an den Zielen: die Regeln der Anwendungen angleichen.
+ * Nur, wenn es etwas zu tun gibt, denn jeder Lauf startet CrowdSec neu, und
+ * dann gehen Anfragen für Sekunden ungeprüft durch. `ok: false`: der Stand
+ * ließ sich nicht lesen (CrowdSec läuft nicht). Wirft nie: ein Fehler hier darf
+ * den Vorgang am Ziel nicht nachträglich scheitern lassen, er steht im Log.
+ */
+export async function queueAppSync(actor: CrowdsecActor): Promise<{ ok: boolean; runId: string | null }> {
+  try {
+    if (!crowdsecInstalled()) return { ok: true, runId: null };
+    const plan = await planAppSync();
+    if (!plan) return { ok: false, runId: null };
+    if (planEmpty(plan)) return { ok: true, runId: null };
+    const queued = enqueueRuleChange({
+      key: 'apps',
+      wanted: true,
+      label: { text: msgid('Ausnahmen für Anwendungen abgleichen') },
+      run: () => syncApps(actor),
+    });
+    return { ok: true, runId: queued.runId };
+  } catch (err) {
+    console.error(`[crowdsec] Abgleich der Anwendungen: ${err instanceof Error ? err.message : String(err)}`);
+    return { ok: false, runId: null };
+  }
 }
 
 /** Hub und Sammlungen auf den neuesten Stand bringen (`cscli hub update`, `hub upgrade`). */
@@ -1034,7 +1103,6 @@ export async function dropOrphanedCrowdsec(actor: CrowdsecActor): Promise<string
 type RuleChangeResult =
   | Awaited<ReturnType<typeof setCrsMode>>
   | Awaited<ReturnType<typeof upgradeHub>>
-  | Awaited<ReturnType<typeof setApp>>
   | Awaited<ReturnType<typeof setCollection>>;
 
 const CRS_STEPS: Record<CrsMode, string> = {
@@ -1057,14 +1125,9 @@ function planRuleChange(body: unknown, actor: CrowdsecActor): RuleJob<RuleChange
     job = { key: 'crs', wanted: crs, label: { text: CRS_STEPS[crs] }, run: () => setCrsMode(raw, actor, late) };
   } else if (raw.upgrade === true) {
     job = { key: 'hub', wanted: true, label: { text: msgid('Regeln aktualisieren') }, run: () => upgradeHub(actor, late) };
-  } else if (typeof raw.app === 'string') {
-    const { app, on } = wantedApp(raw);
-    job = {
-      key: `app:${app.id}`,
-      wanted: on,
-      label: { text: on ? msgid('{name} einschalten') : msgid('{name} ausschalten'), name: app.label },
-      run: () => setApp(raw, actor, late),
-    };
+  } else if ('app' in raw) {
+    // Die Anwendung wählt man am Ziel (Feld `app` des Dienstes), nicht hier.
+    throw new ApiError(msg('Die Anwendung wird am Ziel gewählt: Feld app beim Anlegen oder Ändern des Ziels.'));
   } else if (typeof raw.name === 'string') {
     const { entry, on } = wantedCollection(raw);
     job = {
@@ -1074,7 +1137,7 @@ function planRuleChange(body: unknown, actor: CrowdsecActor): RuleJob<RuleChange
       run: () => setCollection(raw, actor, late),
     };
   } else {
-    throw new ApiError(msg('Was soll sich ändern? Erwartet wird crs, app oder name mit installed, oder upgrade.'));
+    throw new ApiError(msg('Was soll sich ändern? Erwartet wird crs, name mit installed, oder upgrade.'));
   }
   if (!crowdsecInstalled()) throw new CrowdsecUnavailable();
   return job;

@@ -79,6 +79,8 @@ da.
 | `crowdsec/config/parsers/s02-enrich/hapm-backend.yaml` | | | Von HAPM: Backend einer Anfrage als `target_backend` |
 | `crowdsec/data/` | `/var/lib/crowdsec/data` | | SQLite-Datenbank: Sperren, Ereignisse, Freigabelisten, dazu die Daten der Regeln |
 | `crowdsec/data/crs-plugins/hapm/hapm-config.conf` | | | Von HAPM: erlaubte Methoden der OWASP-Regeln, auch PUT, PATCH, DELETE (`renderCrsMethods`) |
+| `crowdsec/data/crs-plugins/hapm/hapm-apps-config.conf` | | | Von HAPM: Ausnahmen für OWASP nur auf den Hosts der Ziele mit der Anwendung (`renderCrsAppScopes`) |
+| `crowdsec/config/parsers/s02-enrich/hapm-app-<id>.yaml` | | | Von HAPM: eigene Whitelist einer Anwendung, nur für die Backends ihrer Ziele |
 | `crowdsec/secrets/bouncer_key_hapm` | `/run/secrets/bouncer_key_hapm` | | Schlüssel des Bouncers, von HAPM erzeugt (Rechte 600) |
 | `crowdsec/bouncer/crowdsec-spoa-bouncer.yaml` | | Konfiguration des Bouncers | Von HAPM: Adresse der API, Schlüssel, `listen_tcp` |
 | `log/` | `/var/log/haproxy` (nur lesend) | | Die Kopie des HAProxy-Logs, die HAPM ohnehin schreibt |
@@ -106,7 +108,7 @@ in eine eigene Datei daneben in `acquis.d/`.
 | `crowdsecurity/appsec-generic-rules` | immer | Allgemeine Regeln der WAF |
 | `crowdsecurity/appsec-crs-inband` | OWASP an | OWASP Core Rule Set, weist eine Anfrage mit Treffer mit 403 ab |
 | `crowdsecurity/http-dos` | Schalter | Erkennt HTTP-Fluten |
-| je Anwendung | Schalter | siehe „Anwendungen“ |
+| je Anwendung | ein Ziel nennt sie | siehe „Anwendungen“ |
 
 Die drei festen installiert Compose über `COLLECTIONS`. Die übrigen schaltet die
 Oberfläche unter „Regeln" (`cscli collections install`/`remove`). **Die Liste
@@ -130,8 +132,53 @@ noch TRACE.
 
 ### Anwendungen
 
-Eine Zeile je Anwendung (`APP_RULES` in `lib/crowdsec/apps.ts`), ein Schalter
-installiert oder entfernt alles, was dazugehört. Drei Arten:
+Eine Zeile je Anwendung (`APP_RULES` in `lib/crowdsec/apps.ts`). **Gewählt
+wird die Anwendung am Ziel**, nicht unter CrowdSec: im Formular des Ziels unter
+„Zugriff und Schutz“, in API und MCP als Feld `app` des Dienstes. Sie steht als
+Kommentar `# hapm-app: <id>` direkt unter `backend <id>` (`APP_LINE_PREFIX`,
+nicht umbenennen). Die Karte unter CrowdSec, Regeln zeigt nur, welche Ziele
+welche Anwendung nennen. Es gibt keinen Schalter mehr und keine Übernahme der
+früheren: was früher global eingeschaltet war und kein Ziel nennt, entfernt der
+erste Abgleich.
+
+**Der Abgleich** (`queueAppSync` in `lib/crowdsec/actions.ts`) liest die Ziele
+aus `haproxy.cfg` (`appUsage`), holt aus dem Hub, was eine genannte Anwendung
+braucht, entfernt, was zu keiner mehr gehört, und schreibt die eigenen Dateien.
+Er läuft nach jedem Lauf am Reverse-Proxy, der Ziele ändert (Anlegen, Ändern,
+Entfernen, Import, Gruppe entfernen), und einmal je Start, sobald CrowdSec
+läuft (Scheduler). Er reiht sich in die Warteschlange der Regeln ein, aber nur,
+wenn sich etwas ändert: jeder Lauf startet CrowdSec neu. Ist `haproxy.cfg`
+nicht lesbar, bleibt alles, wie es ist. Andere Sammlungen fasst er nicht an.
+
+**Was nur für das Ziel gilt und was für alle:**
+
+- Eigene Whitelists von HAPM: nur für die Backends der Ziele mit der Anwendung,
+  samt denen ihrer Pfad-Regeln (`evt.Parsed.backend_name in [...]` im `filter`,
+  aus dem Parser von HAProxy in `s01-parse`, also in `s02-enrich` schon da).
+  Geprüft mit `cscli explain` und CrowdSec 1.8.2: dieselbe Zeile ist auf dem
+  Backend des Ziels „whitelisted“, auf einem anderen nicht.
+- Ausnahmen für OWASP: nur für die Hosts der Ziele. Jedes Plugin aus dem Hub
+  prüft in seiner `-before.conf` `TX:<name>-rule-exclusions-plugin_enabled "@eq 0"`
+  und nimmt dann seine Ausnahmen heraus; ohne gesetzte Variable gilt es für
+  jede Anfrage. HAPM schreibt `crowdsec/data/crs-plugins/hapm/hapm-apps-config.conf`
+  (`renderCrsAppScopes`): jedes bekannte Plugin aus, für den Host-Header der
+  Ziele (mit Port, Wildcard genau eine Stufe) wieder an. `crowdsecurity/crs`
+  lädt alle `*-config.conf` vor allen `*-before.conf`. Geprüft mit 1.8.2 und
+  WordPress: `POST /wp-admin/post.php` mit `<script>` im Inhalt geht auf dem
+  Host des Ziels durch und wird auf jedem anderen mit 403 abgewiesen, ohne die
+  Datei auf jedem durchgelassen. Der Host kommt aus `X-Crowdsec-Appsec-Host`,
+  den der Bouncer setzt. Die Methodenliste (`hapm-config.conf`) bleibt eine
+  eigene Datei und gilt für alle Hosts.
+- Whitelists aus dem Hub und die virtuellen Patches für WordPress: für alle.
+  Die Parser aus dem Hub haben keine Bedingung für ein Ziel, eine Kopie bekäme
+  keine Updates mehr. Sie decken nur die Pfade ihrer Anwendung ab. Virtuelle
+  Patches schaden auf anderen Zielen nicht.
+
+CrowdSec liest das Log jedes Ziels, auch ohne eigenen Schalter, und eine Sperre
+aus dem Log gilt überall, wo CrowdSec prüft. Das Formular bietet die Auswahl
+deshalb an, sobald CrowdSec im Stack ist, nicht erst mit dem Schalter am Ziel.
+
+Drei Arten:
 
 - **Whitelists aus dem Hub** (`crowdsecurity/…-whitelist`, `…-allowlist`,
   Parser in `s02-enrich`). Sie prüfen `http_verb`, `http_status` und
@@ -146,8 +193,8 @@ installiert oder entfernt alles, was dazugehört. Drei Arten:
   am Anfang und, wo der Pfad dort endet, am Ende verankert, und `..` im Pfad
   nimmt keine Ausnahme: ein Muster, das irgendwo passen darf, träfe auch die
   Parameter, und ein Scanner hängte den ausgenommenen Pfad einfach an. HAPM schreibt sie
-  nach `config/parsers/s02-enrich/hapm-app-<id>.yaml` und beim Start neu, wenn
-  sich die Liste mit einem Update geändert hat. Aufgenommen ist nur, was in
+  nach `config/parsers/s02-enrich/hapm-app-<id>.yaml`, bei jedem Start und
+  jedem Abgleich neu. Aufgenommen ist nur, was in
   einem Ticket oder im Forum von CrowdSec **mit Pfad und Status** belegt ist;
   die Quelle steht am Eintrag und als Kommentar in der Datei. Fälle ohne Pfad
   (Kavita, Outline, Vaultwarden) oder mit einem Szenario, das HAPM nicht

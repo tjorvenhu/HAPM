@@ -104,7 +104,6 @@ const { createTranslator } = await import('@/lib/i18n');
 const actor = { userId: 'u1', userEmail: 'admin@example.org' };
 const { t } = createTranslator('de');
 const HTTP_DOS = 'crowdsecurity/http-dos';
-const DRUPAL = 'crowdsecurity/appsec-crs-exclusion-plugin-drupal';
 
 // `crowdsecInstalled()` fragt nach dem Ordner.
 const dir = mkdtempSync(join(tmpdir(), 'hapm-crowdsec-'));
@@ -146,11 +145,11 @@ describe('Warteschlange der Regeln', () => {
   it('arbeitet drei Änderungen nacheinander ab und lädt CrowdSec einmal neu, am Ende', async () => {
     const held = gate();
     world.cscliGate = held;
-    const first = queueRuleChange({ app: 'drupal', installed: true }, actor);
+    const first = queueRuleChange({ upgrade: true }, actor);
     const second = queueRuleChange({ name: HTTP_DOS, installed: true }, actor);
     const third = queueRuleChange({ crs: 'block' }, actor);
 
-    expect(first.key).toBe('app:drupal');
+    expect(first.key).toBe('hub');
     expect(second).toEqual({ runId: first.runId, key: HTTP_DOS });
     expect(third).toEqual({ runId: first.runId, key: 'crs' });
     expect(ruleRunActive()).toBe(true);
@@ -159,7 +158,8 @@ describe('Warteschlange der Regeln', () => {
     const run = await finished(first.runId);
 
     expect(world.calls).toEqual([
-      `collections install ${DRUPAL}`,
+      'hub update',
+      'hub upgrade',
       `collections install ${HTTP_DOS}`,
       'collections install crowdsecurity/appsec-crs-inband',
       'RELOAD',
@@ -169,7 +169,7 @@ describe('Warteschlange der Regeln', () => {
     expect(run.error).toBeNull();
     expect(run.completedAt).not.toBeNull();
     expect(run.steps).toEqual([
-      { label: 'Drupal einschalten', ok: true },
+      { label: 'Regeln aktualisieren', ok: true },
       { label: 'HTTP-Flut einschalten', ok: true },
       { label: 'OWASP-Regeln: an', ok: true },
       { label: 'CrowdSec neu laden', ok: true },
@@ -177,7 +177,7 @@ describe('Warteschlange der Regeln', () => {
     expect(run.pending).toEqual([]);
     // Das Audit bleibt je Änderung.
     expect(world.audits).toEqual([
-      { action: 'crowdsec_rules_updated', resourceId: 'app:drupal', details: 'Drupal: an' },
+      { action: 'crowdsec_rules_updated', resourceId: 'hub', details: 'Regeln aktualisiert.' },
       { action: 'crowdsec_rules_updated', resourceId: HTTP_DOS, details: `${HTTP_DOS}: an` },
       { action: 'crowdsec_rules_updated', resourceId: 'crs', details: 'OWASP-Regeln: block' },
     ]);
@@ -188,7 +188,7 @@ describe('Warteschlange der Regeln', () => {
   it('hängt eine Änderung an den laufenden Lauf an und nennt, was aussteht', async () => {
     const held = gate();
     world.cscliGate = held;
-    const first = queueRuleChange({ app: 'drupal', installed: true }, actor);
+    const first = queueRuleChange({ upgrade: true }, actor);
     await vi.waitFor(() => expect(world.calls).toHaveLength(1));
 
     const second = queueRuleChange({ name: HTTP_DOS, installed: false }, actor);
@@ -196,15 +196,15 @@ describe('Warteschlange der Regeln', () => {
     expect(view(first.runId)).toMatchObject({
       status: 'running',
       steps: [],
-      pending: ['Drupal einschalten', 'HTTP-Flut ausschalten', 'CrowdSec neu laden'],
+      pending: ['Regeln aktualisieren', 'HTTP-Flut ausschalten', 'CrowdSec neu laden'],
     });
     // So erfährt es die Seite, auch nach einem Neuladen.
-    expect((await crowdsecRules()).pending).toEqual({ 'app:drupal': true, [HTTP_DOS]: false });
+    expect((await crowdsecRules()).pending).toEqual({ hub: true, [HTTP_DOS]: false });
 
     held.open();
     const run = await finished(first.runId);
-    expect(run.steps.map((step) => step.label)).toEqual(['Drupal einschalten', 'HTTP-Flut ausschalten', 'CrowdSec neu laden']);
-    expect(world.calls).toEqual([`collections install ${DRUPAL}`, `collections remove ${HTTP_DOS}`, 'RELOAD']);
+    expect(run.steps.map((step) => step.label)).toEqual(['Regeln aktualisieren', 'HTTP-Flut ausschalten', 'CrowdSec neu laden']);
+    expect(world.calls).toEqual(['hub update', 'hub upgrade', `collections remove ${HTTP_DOS}`, 'RELOAD']);
   });
 
   it('ersetzt eine wartende Änderung durch die spätere mit demselben Schlüssel', async () => {
@@ -230,12 +230,12 @@ describe('Warteschlange der Regeln', () => {
     const held = gate();
     world.reloadGate = held;
     const first = queueRuleChange({ name: HTTP_DOS, installed: true }, actor);
-    const second = queueRuleChange({ app: 'drupal', installed: true }, actor);
+    const second = queueRuleChange({ upgrade: true }, actor);
     expect(second.runId).toBe(first.runId);
 
     // Während des Neuladens: die gescheiterte steht nicht mehr aus, die gelungene bis zum Ende.
     await vi.waitFor(() => expect(reloads()).toBe(1));
-    expect(pendingRuleChanges()).toEqual({ 'app:drupal': true });
+    expect(pendingRuleChanges()).toEqual({ hub: true });
     expect(view(first.runId)).toMatchObject({ status: 'running', error: null, pending: ['CrowdSec neu laden'] });
 
     held.open();
@@ -244,36 +244,36 @@ describe('Warteschlange der Regeln', () => {
     expect(run.error).toBe('CrowdSec lehnt ab: hub nicht erreichbar');
     expect(run.steps).toEqual([
       { label: 'HTTP-Flut einschalten', ok: false, detail: 'CrowdSec lehnt ab: hub nicht erreichbar' },
-      { label: 'Drupal einschalten', ok: true },
+      { label: 'Regeln aktualisieren', ok: true },
       { label: 'CrowdSec neu laden', ok: true },
     ]);
-    expect(world.calls).toEqual([`collections install ${HTTP_DOS}`, `collections install ${DRUPAL}`, 'RELOAD']);
-    expect(world.audits.map((entry) => entry.resourceId)).toEqual(['app:drupal']);
+    expect(world.calls).toEqual([`collections install ${HTTP_DOS}`, 'hub update', 'hub upgrade', 'RELOAD']);
+    expect(world.audits.map((entry) => entry.resourceId)).toEqual(['hub']);
     expect(pendingRuleChanges()).toEqual({});
   });
 
   it('beginnt mit einer Änderung während des Neuladens den nächsten Lauf', async () => {
     const held = gate();
     world.reloadGate = held;
-    const first = queueRuleChange({ app: 'drupal', installed: true }, actor);
+    const first = queueRuleChange({ upgrade: true }, actor);
     await vi.waitFor(() => expect(reloads()).toBe(1));
 
     const second = queueRuleChange({ name: HTTP_DOS, installed: true }, actor);
     expect(second.runId).not.toBe(first.runId);
     expect(view(second.runId)).toMatchObject({ status: 'running', steps: [] });
     // Solange CrowdSec neu startet, läuft kein `cscli`.
-    expect(world.calls).toEqual([`collections install ${DRUPAL}`, 'RELOAD']);
+    expect(world.calls).toEqual(['hub update', 'hub upgrade', 'RELOAD']);
 
     held.open();
     expect((await finished(first.runId)).status).toBe('success');
     expect((await finished(second.runId)).status).toBe('success');
-    expect(world.calls).toEqual([`collections install ${DRUPAL}`, 'RELOAD', `collections install ${HTTP_DOS}`, 'RELOAD']);
+    expect(world.calls).toEqual(['hub update', 'hub upgrade', 'RELOAD', `collections install ${HTTP_DOS}`, 'RELOAD']);
   });
 
   it('wartet nach der letzten Änderung kurz: der nächste Klick gehört noch zu diesem Lauf', async () => {
     setRuleGrace(150);
     try {
-      const first = await queueRuleChange({ app: 'drupal', installed: true }, actor);
+      const first = await queueRuleChange({ upgrade: true }, actor);
       // Die erste Änderung ist längst durch, der Lauf aber noch offen.
       await vi.waitFor(() => expect(world.calls.length).toBeGreaterThan(0));
       expect(reloads()).toBe(0);
@@ -290,10 +290,10 @@ describe('Warteschlange der Regeln', () => {
   });
 
   it('übersetzt die Schritte in die Sprache der Anfrage', async () => {
-    const queued = queueRuleChange({ app: 'drupal', installed: false }, actor);
+    const queued = queueRuleChange({ name: HTTP_DOS, installed: false }, actor);
     await finished(queued.runId);
     const english = ruleRunView(queued.runId, createTranslator('en').t);
-    expect(english?.steps.map((step) => step.label)).toEqual(['Switch off Drupal', 'Reload CrowdSec']);
+    expect(english?.steps.map((step) => step.label)).toEqual(['Switch off HTTP flood', 'Reload CrowdSec']);
   });
 
   it('kennt einen unbekannten Lauf nicht', () => {
@@ -317,14 +317,11 @@ describe('changeRules', () => {
 
     world.reloadGate = null;
     expect(await changeRules({ crs: 'block' }, actor)).toEqual({ crs: 'block' });
-    expect(await changeRules({ app: 'drupal', installed: false }, actor)).toEqual({ app: 'drupal', installed: false });
     expect(await changeRules({ upgrade: true }, actor)).toEqual({ output: 'fertig' });
     expect(world.calls).toEqual([
       `collections install ${HTTP_DOS}`,
       'RELOAD',
       'collections install crowdsecurity/appsec-crs-inband',
-      'RELOAD',
-      `collections remove ${DRUPAL}`,
       'RELOAD',
       'hub update',
       'hub upgrade',
@@ -335,7 +332,7 @@ describe('changeRules', () => {
   it('reiht sich hinter einen Lauf der Oberfläche ein, statt neben ihm zu arbeiten', async () => {
     const held = gate();
     world.cscliGate = held;
-    const queued = queueRuleChange({ app: 'drupal', installed: true }, actor);
+    const queued = queueRuleChange({ upgrade: true }, actor);
     await vi.waitFor(() => expect(world.calls).toHaveLength(1));
     const waiting = changeRules({ name: HTTP_DOS, installed: true }, actor);
     held.open();
@@ -351,26 +348,25 @@ describe('changeRules', () => {
     const held = gate();
     world.cscliGate = held;
     const failing = changeRules({ name: HTTP_DOS, installed: true }, actor);
-    const fine = changeRules({ app: 'drupal', installed: true }, actor);
+    const fine = changeRules({ upgrade: true }, actor);
     const outcome = Promise.allSettled([failing, fine]);
     held.open();
 
     const [first, second] = await outcome;
     expect(first).toMatchObject({ status: 'rejected', reason: { status: 409, message: 'CrowdSec lehnt ab: hub nicht erreichbar' } });
-    expect(second).toEqual({ status: 'fulfilled', value: { app: 'drupal', installed: true } });
+    expect(second).toEqual({ status: 'fulfilled', value: { output: 'fertig' } });
     expect(reloads()).toBe(1);
   });
 
   it('scheitert, wenn CrowdSec nicht neu lädt: die Änderung gilt dann nicht', async () => {
     world.reloadFails = true;
-    await expect(changeRules({ app: 'drupal', installed: true }, actor)).rejects.toThrow('Container startet nicht');
+    await expect(changeRules({ upgrade: true }, actor)).rejects.toThrow('Container startet nicht');
   });
 
   it('prüft vor dem Einreihen: was abgelehnt wird, kommt in keinen Lauf', async () => {
-    expect(() => queueRuleChange({ app: 'gibt-es-nicht', installed: true }, actor)).toThrow(
-      expect.objectContaining({ status: 404 })
-    );
-    expect(() => queueRuleChange({ app: 'drupal' }, actor)).toThrow('installed: true oder false');
+    // Die Anwendung wählt man am Ziel, nicht mehr hier.
+    expect(() => queueRuleChange({ app: 'drupal', installed: true }, actor)).toThrow('am Ziel gewählt');
+    expect(() => queueRuleChange({ name: HTTP_DOS }, actor)).toThrow('installed: true oder false');
     expect(() => queueRuleChange({ name: 'crowdsecurity/irgendwas', installed: true }, actor)).toThrow(
       expect.objectContaining({ status: 404 })
     );
@@ -381,7 +377,7 @@ describe('changeRules', () => {
 
     process.env.HAPM_CROWDSEC_OFF = '1';
     try {
-      expect(() => queueRuleChange({ app: 'drupal', installed: true }, actor)).toThrow(expect.objectContaining({ status: 503 }));
+      expect(() => queueRuleChange({ upgrade: true }, actor)).toThrow(expect.objectContaining({ status: 503 }));
     } finally {
       delete process.env.HAPM_CROWDSEC_OFF;
     }

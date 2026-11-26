@@ -283,6 +283,7 @@ export function hapmServiceInput(domain: string, listenPort: number, adminOnly =
     requestHeaders: [],
     tunnel: false,
     crowdsec: false,
+    app: null,
     // Der Check ruft `GET /` mit dem Host der Domain auf und erwartet 200 bis
     // 399. HAPM antwortet dort mit einer Weiterleitung auf die Übersicht.
     healthcheck: true,
