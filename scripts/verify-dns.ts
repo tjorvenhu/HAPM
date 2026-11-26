@@ -23,22 +23,34 @@
  * Der zweite Teil lässt den Hook von acme.sh (`dns_nsupdate`) mit genau den
  * Zeilen und der Schlüsseldatei arbeiten, die HAPM ablegt
  * (`lib/haproxy/dns-credentials.ts`): den TXT-Eintrag setzen und entfernen,
- * mit dem `nsupdate` aus dem Container. Dafür holt das Skript acme.sh von
- * GitHub. Ohne Netz dorthin entfällt dieser Teil und wird als übersprungen
- * gemeldet.
+ * mit dem `nsupdate` aus dem Container.
+ *
+ * Der dritte Teil stellt ein Zertifikat aus und erneuert es: acme.sh in einem
+ * Container wie dem von HAPM, Pebble als Zertifizierungsstelle, BIND als
+ * Nameserver. Er zeigt, dass acme.sh mit der festen Wartezeit (`--dnssleep`)
+ * nicht bei öffentlichen Resolvern nachfragt, dass die Erneuerung genauso
+ * wartet, und dass eine eigene Zertifizierungsstelle über `TRUST_SYNC` bei
+ * `curl` ankommt.
+ *
+ * Für Teil zwei und drei holt das Skript acme.sh von GitHub, für Teil drei
+ * dazu Pakete von Debian. Ohne Netz dorthin entfallen sie und werden als
+ * übersprungen gemeldet.
  *
  * Wer `lib/dns/dns-wire.ts`, `lib/dns/rfc2136.ts` oder die Zeilen für
  * `dns_nsupdate` ändert, lässt dieses Skript laufen.
  */
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { packAccess, type Rfc2136Access } from '../lib/dns/access';
 import { rfc2136 } from '../lib/dns/rfc2136';
 import type { DnsRecord } from '../lib/dns/records';
+import { challengeArgs, planChallenge } from '../lib/haproxy/challenge';
 import {
+  TRUST_DIR,
+  TRUST_SYNC,
   credentialFiles,
   credentialLines,
   credentialNamesToClear,
@@ -48,9 +60,17 @@ import {
   writeCredentialsCommand,
   type DnsCredentialInput,
 } from '../lib/haproxy/dns-credentials';
+import { buildCommand } from '../lib/shell';
 
 const IMAGE = process.env.HAPM_VERIFY_BIND_IMAGE ?? 'internetsystemsconsortium/bind9:9.20';
-const NAME = `${process.env.HAPM_VERIFY_PREFIX ?? 'hapm-dns-verify'}-bind`;
+const PEBBLE_IMAGE = process.env.HAPM_VERIFY_PEBBLE_IMAGE ?? 'ghcr.io/letsencrypt/pebble:latest';
+/** Dasselbe Abbild, auf dem HAPM läuft (`NODE_IMAGE` im Dockerfile). */
+const CLIENT_IMAGE = process.env.HAPM_VERIFY_CLIENT_IMAGE ?? 'node:24-bookworm-slim';
+const PREFIX = process.env.HAPM_VERIFY_PREFIX ?? 'hapm-dns-verify';
+const NAME = `${PREFIX}-bind`;
+const PEBBLE = `${PREFIX}-pebble`;
+const CLIENT = `${PREFIX}-acme`;
+const NETWORK = `${PREFIX}-net`;
 const PORT = Number(process.env.HAPM_VERIFY_DNS_PORT ?? 15353);
 
 const KEY_SECRET = 'c2VjcmV0LXNlY3JldC1zZWNyZXQtc2VjcmV0LTEyMzQ=';
@@ -224,9 +244,13 @@ async function provider(): Promise<void> {
   check('ein Schlüssel, den die update-policy nicht nennt, wird abgelehnt', /nicht ändern/.test(denied ?? ''), denied ?? 'kein Fehler');
 }
 
-/** Führt ein Skript im BIND-Container aus, die Eingabe über stdin, wie `withStdin` es tut. */
-function inContainer(script: string, input = ''): { ok: boolean; output: string } {
-  const run = spawnSync('docker', ['exec', '-i', NAME, 'sh', '-c', script], { encoding: 'utf8', input });
+/** Führt ein Skript in einem Container aus, die Eingabe über stdin, wie `withStdin` es tut. */
+function inContainer(script: string, input = '', container = NAME): { ok: boolean; output: string } {
+  const run = spawnSync('docker', ['exec', '-i', container, 'sh', '-c', script], {
+    encoding: 'utf8',
+    input,
+    maxBuffer: 32 * 1024 * 1024,
+  });
   return { ok: run.status === 0, output: `${run.stdout}${run.stderr}`.trim() };
 }
 
@@ -236,50 +260,69 @@ async function fetchText(url: string): Promise<string> {
   return response.text();
 }
 
-async function acmeHook(dir: string): Promise<void> {
-  console.log('\nacme.sh gegen BIND (dns_nsupdate mit den Zeilen von HAPM)');
+/** acme.sh und sein Hook für RFC 2136, wie das Abbild sie mitbringt (`ACME_VERSION=master`). */
+async function fetchAcme(dir: string): Promise<boolean> {
   const base = 'https://raw.githubusercontent.com/acmesh-official/acme.sh/master';
-  let acme: string;
-  let hook: string;
   try {
-    [acme, hook] = await Promise.all([fetchText(`${base}/acme.sh`), fetchText(`${base}/dnsapi/dns_nsupdate.sh`)]);
+    const [acme, hook] = await Promise.all([fetchText(`${base}/acme.sh`), fetchText(`${base}/dnsapi/dns_nsupdate.sh`)]);
+    mkdirSync(join(dir, 'acme', 'dnsapi'), { recursive: true });
+    writeFileSync(join(dir, 'acme', 'acme.sh'), acme, { mode: 0o755 });
+    writeFileSync(join(dir, 'acme', 'dnsapi', 'dns_nsupdate.sh'), hook);
+    return true;
   } catch (err) {
-    console.log(`  übersprungen: acme.sh ließ sich nicht holen (${err instanceof Error ? err.message : String(err)}).`);
-    return;
+    console.log(`\nacme.sh ließ sich nicht holen (${err instanceof Error ? err.message : String(err)}).`);
+    console.log('  übersprungen: der Hook dns_nsupdate und das Ausstellen eines Zertifikats.');
+    return false;
   }
-  mkdirSync(join(dir, 'acme', 'dnsapi'), { recursive: true });
-  writeFileSync(join(dir, 'acme', 'acme.sh'), acme);
-  writeFileSync(join(dir, 'acme', 'dnsapi', 'dns_nsupdate.sh'), hook);
-  docker(['cp', join(dir, 'acme'), `${NAME}:/opt/acme.sh`]);
+}
 
-  // Wie `lib/acme.ts` es hinterlässt: ein Ordner mit `account.conf` und den Hooks.
-  const prepared = inContainer(
+/** Wie `lib/acme.ts` es hinterlässt: ein Ordner mit `account.conf` und den Hooks. */
+function installAcme(dir: string, container: string): { ok: boolean; output: string } {
+  docker(['cp', join(dir, 'acme'), `${container}:/opt/acme.sh`]);
+  return inContainer(
     'mkdir -p /root/.acme.sh && cp -r /opt/acme.sh/dnsapi /root/.acme.sh/ && cp /opt/acme.sh/acme.sh /root/.acme.sh/ && ' +
-      "printf \"ACCOUNT_EMAIL='ops@example.test'\\n\" > /root/.acme.sh/account.conf && chmod 600 /root/.acme.sh/account.conf"
+      "chmod +x /root/.acme.sh/acme.sh && printf \"ACCOUNT_EMAIL='ops@example.test'\\n\" > /root/.acme.sh/account.conf && " +
+      'chmod 600 /root/.acme.sh/account.conf',
+    '',
+    container
   );
-  check('acme.sh liegt im Container', prepared.ok, prepared.output);
+}
 
-  const input: DnsCredentialInput = {
-    hook: 'dns_nsupdate',
-    values: {
-      NSUPDATE_SERVER: '127.0.0.1',
-      NSUPDATE_SERVER_PORT: '',
-      TSIG_NAME: 'hapm-key',
-      TSIG_ALGORITHM: '',
-      TSIG_SECRET: KEY_SECRET,
-    },
-    remove: false,
-  };
-  const nsupdate = findDnsProvider(input.hook)!;
+/** Die Zugangsdaten so ablegen, wie `writeDnsCredentials` es tut: erst die Dateien, dann die Zeilen. */
+function putCredentials(input: DnsCredentialInput, container: string): void {
+  const provider = findDnsProvider(input.hook)!;
   for (const file of credentialFiles(input)) {
-    const written = inContainer(writeCredentialFileCommand(file.path), file.content ?? '');
+    const written = inContainer(writeCredentialFileCommand(file.path), file.content ?? '', container);
     check(`HAPM legt ${file.path} ab`, written.ok, written.output);
   }
   const lines = inContainer(
-    writeCredentialsCommand(credentialNamesToClear(nsupdate, false), plainNamesToClear(nsupdate)),
-    `${credentialLines(input).join('\n')}\n`
+    writeCredentialsCommand(credentialNamesToClear(provider, false), plainNamesToClear(provider)),
+    `${credentialLines(input).join('\n')}\n`,
+    container
   );
   check('und die Zeilen in account.conf', lines.ok, lines.output);
+}
+
+const nsupdateInput = (server: string): DnsCredentialInput => ({
+  hook: 'dns_nsupdate',
+  values: {
+    NSUPDATE_SERVER: server,
+    NSUPDATE_SERVER_PORT: '',
+    TSIG_NAME: 'hapm-key',
+    TSIG_ALGORITHM: '',
+    TSIG_SECRET: KEY_SECRET,
+  },
+  remove: false,
+});
+
+function acmeHook(dir: string): Promise<void> {
+  console.log('\nacme.sh gegen BIND (dns_nsupdate mit den Zeilen von HAPM)');
+  const prepared = installAcme(dir, NAME);
+  check('acme.sh liegt im Container', prepared.ok, prepared.output);
+
+  const input = nsupdateInput('127.0.0.1');
+  const nsupdate = findDnsProvider(input.hook)!;
+  putCredentials(input, NAME);
   const mode = inContainer('stat -c %a /root/.acme.sh/hapm-nsupdate.key');
   check('die Schlüsseldatei ist nur für root lesbar', mode.output === '600', mode.output);
 
@@ -288,21 +331,120 @@ async function acmeHook(dir: string): Promise<void> {
   const harness = (call: string) =>
     `export LE_WORKING_DIR=/root/.acme.sh; . /root/.acme.sh/acme.sh >/dev/null 2>&1; _initpath; . /root/.acme.sh/dnsapi/dns_nsupdate.sh; ${call}`;
   const name = '_acme-challenge.app.example.test';
-  const added = inContainer(harness(`dns_nsupdate_add ${name} hapm-verify-token`));
-  check('der Hook setzt den TXT-Eintrag', added.ok, added.output.slice(-300));
-  const seen = await rfc2136.listRecords(access(), ZONE, [name]);
-  check('und er steht in der Zone', describe(seen) === 'TXT hapm-verify-token', describe(seen));
-  const removed = inContainer(harness(`dns_nsupdate_rm ${name}`));
-  check('der Hook entfernt ihn wieder', removed.ok && (await rfc2136.listRecords(access(), ZONE, [name])).length === 0, removed.output.slice(-300));
-  const saved = inContainer("grep -c '^SAVED_NSUPDATE_KEY=' /root/.acme.sh/account.conf");
-  check('acme.sh behält den Pfad der Schlüsseldatei für die Erneuerung', saved.output === '1', saved.output);
+  return (async () => {
+    const added = inContainer(harness(`dns_nsupdate_add ${name} hapm-verify-token`));
+    check('der Hook setzt den TXT-Eintrag', added.ok, added.output.slice(-300));
+    const seen = await rfc2136.listRecords(access(), ZONE, [name]);
+    check('und er steht in der Zone', describe(seen) === 'TXT hapm-verify-token', describe(seen));
+    const removed = inContainer(harness(`dns_nsupdate_rm ${name}`));
+    check('der Hook entfernt ihn wieder', removed.ok && (await rfc2136.listRecords(access(), ZONE, [name])).length === 0, removed.output.slice(-300));
+    const saved = inContainer("grep -c '^SAVED_NSUPDATE_KEY=' /root/.acme.sh/account.conf");
+    check('acme.sh behält den Pfad der Schlüsseldatei für die Erneuerung', saved.output === '1', saved.output);
 
-  const gone = inContainer(
-    writeCredentialsCommand(credentialNamesToClear(nsupdate, true), plainNamesToClear(nsupdate)),
-    ''
+    const gone = inContainer(writeCredentialsCommand(credentialNamesToClear(nsupdate, true), plainNamesToClear(nsupdate)), '');
+    const left = inContainer("grep -c 'NSUPDATE' /root/.acme.sh/account.conf");
+    check('beim Entfernen bleibt keine Zeile des Hooks zurück', gone.ok && left.output === '0', `${gone.output} ${left.output}`);
+  })();
+}
+
+/**
+ * Ein Zertifikat ausstellen und erneuern, mit allem, was HAPM dafür ablegt:
+ * acme.sh in einem Container wie dem von HAPM (Debian, `curl`, `nsupdate`),
+ * Pebble als Zertifizierungsstelle, die den TXT-Eintrag beim BIND nachfragt.
+ *
+ * Gezeigt wird, was sonst erst auf einem Server auffiele: dass acme.sh mit
+ * `--dnssleep` nicht bei öffentlichen Resolvern nach `example.test` fragt (das
+ * liefe 20 Minuten in den Abbruch), dass die Erneuerung genauso wartet, und
+ * dass eine eigene Zertifizierungsstelle über `TRUST_SYNC` bei `curl` ankommt:
+ * Pebble ist hier die „Appliance mit eigener CA".
+ */
+async function issue(dir: string): Promise<void> {
+  console.log('\nZertifikat über DNS-01 ausstellen und erneuern (acme.sh, Pebble, BIND)');
+  const ACME = '/root/.acme.sh/acme.sh';
+  const DIRECTORY = 'https://pebble:14000/dir';
+
+  try {
+    const bindIp = docker(['inspect', '-f', `{{(index .NetworkSettings.Networks "${NETWORK}").IPAddress}}`, NAME]).trim();
+    docker([
+      'run', '-d', '--name', PEBBLE, '--network', NETWORK, '--network-alias', 'pebble',
+      '-e', 'PEBBLE_VA_NOSLEEP=1', '-e', 'PEBBLE_WFE_NONCEREJECT=0', '-e', 'PEBBLE_AUTHZREUSE=0',
+      PEBBLE_IMAGE, '-config', '/test/config/pebble-config.json', '-dnsserver', `${bindIp}:53`,
+    ]);
+    docker(['run', '-d', '--name', CLIENT, '--network', NETWORK, CLIENT_IMAGE, 'sleep', '3600']);
+  } catch (err) {
+    console.log(`  übersprungen: die Container ließen sich nicht starten (${err instanceof Error ? err.message.split('\n')[0] : String(err)}).`);
+    return;
+  }
+
+  // Dieselben Pakete wie im `runner` des Dockerfile, soweit acme.sh sie braucht.
+  const packages = inContainer(
+    'apt-get update -qq >/dev/null 2>&1 && apt-get install -y --no-install-recommends ca-certificates curl openssl bind9-dnsutils >/dev/null 2>&1',
+    '',
+    CLIENT
   );
-  const left = inContainer("grep -c 'NSUPDATE' /root/.acme.sh/account.conf");
-  check('beim Entfernen bleibt keine Zeile des Hooks zurück', gone.ok && left.output === '0', `${gone.output} ${left.output}`);
+  if (!packages.ok) {
+    console.log('  übersprungen: die Pakete ließen sich nicht installieren (kein Netz zu den Paketquellen?).');
+    return;
+  }
+  check('nsupdate liegt im Container (bind9-dnsutils)', inContainer('command -v nsupdate', '', CLIENT).ok);
+  const prepared = installAcme(dir, CLIENT);
+  check('acme.sh liegt im Container', prepared.ok, prepared.output);
+
+  // Die Zertifizierungsstelle von Pebble ist keine öffentliche.
+  const untrusted = inContainer(`curl -fsS ${DIRECTORY} >/dev/null`, '', CLIENT);
+  check('ohne hinterlegte Stelle lehnt curl den ACME-Server ab', !untrusted.ok, untrusted.output.slice(-200));
+  // Das Abbild von Pebble hat keine Shell: die Datei wird herauskopiert.
+  docker(['cp', `${PEBBLE}:/test/certs/pebble.minica.pem`, join(dir, 'minica.pem')]);
+  const minica = readFileSync(join(dir, 'minica.pem'), 'utf8');
+  const stored = inContainer(writeCredentialFileCommand(`${TRUST_DIR}/pebble.pem`), minica, CLIENT);
+  const synced = inContainer(TRUST_SYNC, '', CLIENT);
+  check('HAPM legt die Stelle ab und in den Bestand des Containers', stored.ok && synced.ok, `${stored.output} ${synced.output}`);
+  const trusted = inContainer(`curl -fsS ${DIRECTORY} >/dev/null`, '', CLIENT);
+  check('danach vertraut curl ihr', trusted.ok, trusted.output.slice(-200));
+
+  putCredentials(nsupdateInput('bind'), CLIENT);
+
+  const domains = ['app.example.test', '*.example.test'];
+  const plan = planChallenge(
+    domains,
+    { exposure: 'internal', dnsHook: null, source: 'acme', acmeServer: DIRECTORY, httpReachable: false, dnsWait: 5 },
+    ['dns_nsupdate']
+  );
+  const args = challengeArgs(plan, '8888');
+  check('die Regel gibt acme.sh die feste Wartezeit mit', args.join(' ') === '--dns dns_nsupdate --dnssleep 5', args.join(' '));
+
+  const issued = inContainer(
+    `${buildCommand([ACME, '--home', '/root/.acme.sh', '--issue', '--server', DIRECTORY, ...domains.flatMap((domain) => ['-d', domain]), ...args])} 2>&1`,
+    '',
+    CLIENT
+  );
+  check('acme.sh stellt Domain und Wildcard aus', issued.ok, issued.output.slice(-600));
+  check('und wartet, statt öffentliche Resolver zu fragen', /Sleeping for .*5.* seconds/.test(issued.output) && !/check each DNS record/.test(issued.output));
+  check('das Zertifikat liegt da', inContainer('test -s /root/.acme.sh/app.example.test_ecc/fullchain.cer', '', CLIENT).ok);
+
+  const kept = inContainer("grep '^Le_DNSSleep=' /root/.acme.sh/app.example.test_ecc/app.example.test.conf", '', CLIENT);
+  check('acme.sh merkt sich die Wartezeit am Zertifikat', kept.output === "Le_DNSSleep='5'", kept.output);
+
+  const renewed = inContainer(
+    `${buildCommand([ACME, '--home', '/root/.acme.sh', '--renew', '-d', 'app.example.test', '--ecc', '--force'])} 2>&1`,
+    '',
+    CLIENT
+  );
+  check('die Erneuerung läuft mit den abgelegten Zugangsdaten', renewed.ok, renewed.output.slice(-600));
+  check('und wartet genauso', /Sleeping for .*5.* seconds/.test(renewed.output) && !/check each DNS record/.test(renewed.output));
+
+  const leftover = await rfc2136.listRecords(access(), ZONE, ['_acme-challenge.app.example.test', '_acme-challenge.example.test']);
+  check('die TXT-Einträge der Challenge sind wieder weg', leftover.length === 0, describe(leftover));
+}
+
+function remove(...names: string[]): void {
+  for (const name of names) {
+    try {
+      docker(['rm', '-f', name]);
+    } catch {
+      // Es gab keinen.
+    }
+  }
 }
 
 async function main(): Promise<void> {
@@ -314,10 +456,11 @@ async function main(): Promise<void> {
   }
 
   const dir = mkdtempSync(join(tmpdir(), 'hapm-dns-'));
+  remove(NAME, PEBBLE, CLIENT);
   try {
-    docker(['rm', '-f', NAME]);
+    docker(['network', 'rm', NETWORK]);
   } catch {
-    // Es gab keinen.
+    // Es gab keins.
   }
 
   try {
@@ -327,10 +470,14 @@ async function main(): Promise<void> {
     for (const zone of ['example.test', 'policy.test', 'closed.test']) {
       writeFileSync(join(dir, 'zones', `${zone}.zone`), zoneFile(zone));
     }
+    docker(['network', 'create', NETWORK]);
     // Erst anlegen, dann die Dateien hineinkopieren: ein eingebundener Ordner
     // des Rechners gehört unter Docker Desktop nicht dem Benutzer von BIND,
     // und der schreibt neben die Zonendatei sein Journal.
-    docker(['create', '--name', NAME, '-p', `127.0.0.1:${PORT}:53/tcp`, '-p', `127.0.0.1:${PORT}:53/udp`, IMAGE]);
+    docker([
+      'create', '--name', NAME, '--network', NETWORK, '--network-alias', 'bind',
+      '-p', `127.0.0.1:${PORT}:53/tcp`, '-p', `127.0.0.1:${PORT}:53/udp`, IMAGE,
+    ]);
     docker(['cp', join(dir, 'etc', 'named.conf'), `${NAME}:/etc/bind/named.conf`]);
     docker(['cp', `${join(dir, 'zones')}/.`, `${NAME}:/var/lib/bind/`]);
     docker(['start', NAME]);
@@ -338,7 +485,10 @@ async function main(): Promise<void> {
     await waitForBind();
 
     await provider();
-    await acmeHook(dir);
+    if (await fetchAcme(dir)) {
+      await acmeHook(dir);
+      await issue(dir);
+    }
   } catch (err) {
     check('Durchlauf', false, err instanceof Error ? err.message : String(err));
     try {
@@ -347,8 +497,9 @@ async function main(): Promise<void> {
       // Kein Container, kein Log.
     }
   } finally {
+    remove(NAME, PEBBLE, CLIENT);
     try {
-      docker(['rm', '-f', NAME]);
+      docker(['network', 'rm', NETWORK]);
     } catch {
       // Schon weg.
     }

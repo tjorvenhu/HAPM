@@ -9,6 +9,7 @@ import {
   normalizeDomain,
   providerOf,
   proxyRecordPlan,
+  zoneCovers,
   type DomainMatch,
 } from '@/lib/dns/zones';
 import type { DnsRecord } from '@/lib/dns/records';
@@ -67,9 +68,10 @@ export async function GET(request: Request) {
     const recordsOf = (zone: DnsZone) => {
       const running = cache.get(zone.$id);
       if (running) return running;
-      // Die Namen gehen mit: ein Anbieter, der eine Zone nicht als Ganzes liest,
-      // liest genau sie (`lib/dns/provider.ts`).
-      const started = withZone(zone, (token, ref) => providerFor(zone).listRecords(token, ref, domains));
+      // Die Namen dieser Zone gehen mit: ein Anbieter, der eine Zone nicht als
+      // Ganzes liest, liest genau sie (`lib/dns/provider.ts`).
+      const here = domains.filter((domain) => zoneCovers(zone.name, domain));
+      const started = withZone(zone, (token, ref) => providerFor(zone).listRecords(token, ref, here));
       cache.set(zone.$id, started);
       return started;
     };

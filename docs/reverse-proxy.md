@@ -898,6 +898,52 @@ nächsten Lauf **jede** andere Zugangsdatum mit. Die Liste ist bewusst kurz:
 acme.sh kennt über hundert Hooks, und die meisten brauchen andere Felder mit
 anderen Regeln. Ein weiterer Anbieter ist ein Eintrag, kein Umbau.
 
+**Zwei Anbieter passen nicht in „je Feld eine `SAVED_`-Zeile"**, und beschreiben
+deshalb selbst, was aus dem Formular wird (`build`, `validate`, `access` am
+Eintrag in `DNS_PROVIDERS`). Ihre Felder zeigt `components/dns/CredentialFields.tsx`
+(Text, Geheimnis, Auswahl, PEM), ihre Prüfung steht in `lib/dns/access.ts`, je
+Feld so eng, wie die Stelle es verlangt, an der der Wert landet.
+
+- **RFC 2136 (`dns_nsupdate`)**: acme.sh ruft `nsupdate -k <Datei>` auf. Name,
+  Verfahren und Geheimnis des TSIG-Schlüssels sind deshalb Felder des Formulars
+  und keine Variablen: aus ihnen entsteht `/root/.acme.sh/hapm-nsupdate.key`
+  (Rechte 600, in der Form von `tsig-keygen`). In `account.conf` stehen
+  `SAVED_NSUPDATE_SERVER`, `SAVED_NSUPDATE_SERVER_PORT` und `SAVED_NSUPDATE_KEY`
+  mit dem Pfad der Datei. **`NSUPDATE_ZONE` bleibt leer** und wird beim Setzen
+  mit herausgenommen: acme.sh kennt je Installation nur eine, und `nsupdate`
+  findet die Zone zu einem Namen selbst, indem es den genannten Nameserver
+  fragt. So gilt ein Schlüssel für jede Zone, die er ändern darf. Das Abbild
+  bringt `nsupdate` mit (`bind9-dnsutils` im `Dockerfile`).
+- **Infoblox (`dns_infoblox`)**: der Hook liest `Infoblox_Creds`
+  (`benutzer:passwort`), `Infoblox_Server` und `Infoblox_View` **ohne**
+  `SAVED_` (er benutzt `_saveaccountconf`). So stehen sie in `account.conf`
+  (`plainNames`). Die Erkennung der Hooks liest nur `SAVED_*`, darum steht der
+  Name der Appliance (kein Geheimnis) zusätzlich als `SAVED_Infoblox_Server` da.
+  `Infoblox_View` wird immer geschrieben: beim Entfernen des TXT-Eintrags setzt
+  der Hook keine Vorgabe ein und fände ihn sonst nicht. Das Passwort darf alles
+  außer Leerzeichen, Apostroph, Backslash und Umlauten, weil der Hook es mit
+  `printf "%b"` liest und acme.sh es als `'…'` ablegt.
+- **Dateien neben `account.conf`** (`credentialFiles`): ihr Inhalt geht über
+  stdin wie der Token, geschrieben wird unter `umask 077` neben das Ziel und
+  dann umbenannt. Beim Setzen entstehen sie vor der Zeile, die auf sie zeigt,
+  beim Entfernen gehen sie nach ihr. Sie liegen im Volume von acme.sh und damit
+  in jeder Sicherung.
+- **Die Zertifizierungsstelle der Appliance** (`Infoblox_CA`, wahlweise): acme.sh
+  prüft das Zertifikat der Appliance über `curl` gegen den Bestand des
+  Containers. Die eigene CA liegt als `/root/.acme.sh/hapm-trust/infoblox.pem`
+  im Volume und wird von dort in den Bestand gelegt (`TRUST_SYNC`:
+  `/usr/local/share/ca-certificates`, dann `update-ca-certificates`), nach dem
+  Speichern und bei jedem Start von HAPM (`ensureAcme`), weil ein neuer
+  Container sie sonst nicht kennt. **Nicht über `CA_BUNDLE`**: das gälte auch
+  für den ACME-Server und nähme ihm die öffentlichen Stellen weg. Wer in
+  `account.conf` von Hand ein `CA_BUNDLE` gesetzt hat, muss die CA der
+  Appliance dort selbst mit aufnehmen: `curl` liest dann nur diese Datei.
+
+`tests/haproxy/dns-credentials.test.ts` lässt eine echte Bash alles nachrechnen
+(auch, dass ein Passwort mit `"`, `$`, `&`, `|` und `` ` `` unverändert bei der
+Shell ankommt), `pnpm dns:verify` den Hook `dns_nsupdate` und ein ganzes
+Zertifikat gegen BIND und Pebble. Der Infoblox-Hook lief gegen keine Appliance.
+
 **Geschrieben wird synchron und nicht als abgekoppelter Lauf.** Jeder andere
 Schreibvorgang am Reverse-Proxy dauert Minuten (Zertifikat, `haproxy -c`, Reload);
 dieser fasst HAProxy gar nicht an. Eine Lauf-Zeile, eine Pille unten rechts und
@@ -930,7 +976,10 @@ desselben Anbieters gehen also nicht — der zweite überschreibt den ersten, un
 Erneuerung des ersten Zertifikats liefe danach mit dem falschen Token, sichtbar
 erst zwei Monate später. Ein Token je Anbieter, der alle nötigen
 Zonen abdeckt (bei Cloudflare ein Token über mehrere Zonen), ist deshalb keine
-Bequemlichkeit, sondern die Bedingung.
+Bequemlichkeit, sondern die Bedingung. Für RFC 2136 heißt das: ein Nameserver
+und ein Schlüssel für alle Zonen, für Infoblox: eine Appliance, ein Benutzer,
+eine View. Der Bereich „DNS" kennt die Grenze nicht, dort trägt jede Zone
+ihren eigenen Zugang.
 
 **Ist genau ein Hook eingerichtet, steht er im Dialog vorausgewählt** und die
 Auswahl trägt kein „Bitte wählen". Abgeleitet und nicht in den Zustand
@@ -1052,6 +1101,21 @@ dort **jedes** Zertifikat über DNS-01, nicht nur die Wildcard.
   Zertifikat in dessen Erneuerungseintrag. Wer die Art umstellt, ändert nur
   künftige Anträge: ein über HTTP-01 ausgestelltes Zertifikat wird weiter über
   HTTP-01 erneuert. Das steht auch auf der Seite „Allgemein" neben dem Schalter.
+- **Bei einem eigenen Nameserver und bei Infoblox wartet acme.sh, statt
+  nachzusehen.** Nach dem Setzen des TXT-Eintrags fragt acme.sh sonst
+  öffentliche Resolver (DNS over HTTPS), ob er sichtbar ist, bis zu 20 Minuten
+  lang. Eine Zone im eigenen Netz sieht dort niemand: der Antrag liefe in den
+  Abbruch, obwohl der Eintrag steht. Für Hooks mit `fixedWait`
+  (`dns_nsupdate`, `dns_infoblox`) gibt `planChallenge` deshalb eine Wartezeit
+  mit (`wait`), und `challengeArgs` macht daraus `--dnssleep <Sekunden>`. Der
+  Wert ist eine Einstellung (`Settings.dnsWait`, 5 bis 900, Vorgabe 30),
+  einzustellen bei den DNS-Zugangsdaten, sobald einer der beiden Hooks
+  eingerichtet ist (`components/reverse-proxy/DnsWaitSetting.tsx`), und über
+  `PATCH /settings`. Wer weitere Nameserver hat, die die Zone erst nachladen,
+  erhöht ihn. acme.sh legt den Wert als `Le_DNSSleep` im Erneuerungseintrag
+  des Zertifikats ab: die Erneuerung wartet so lange, wie beim Ausstellen
+  galt. `pnpm dns:verify` zeigt beides gegen Pebble und BIND. Bei Hetzner und
+  Cloudflare bleibt es bei der Prüfung von acme.sh.
 
 **Die Anbieter heißen so, wie das mitgelieferte acme.sh sie führt.** Hetzner
 ist `dns_hetznercloud` mit `HETZNER_TOKEN` (ein Token aus der Hetzner-Konsole,
@@ -1061,7 +1125,9 @@ danach als eingerichtet. `tests/haproxy/dns-credentials.test.ts` lässt deshalb
 eine echte Bash schreiben **und** erkennen und besteht darauf, dass der erkannte
 Hook der des Anbieters ist. Der Hetzner-Hook legt beim ersten Antrag selbst
 weitere `SAVED_*`-Zeilen ab (API-Adresse, TTL). Beim Entfernen gehen sie mit
-(`alsoSaved`), sonst gälte der Hook ohne Token weiter als eingerichtet.
+(`alsoSaved`), sonst gälte der Hook ohne Token weiter als eingerichtet. Ein
+eigener Nameserver ist `dns_nsupdate`, Infoblox `dns_infoblox`. Was die beiden
+anders machen, steht oben unter „Wildcards".
 
 ### Ein Zertifikat ohne Ziel
 
@@ -1215,7 +1281,10 @@ oder im Assistenten (`PUT /api/settings/certificates`, `/api/setup/certificates`
 - **Vertrauen in die eigene CA** ist Sache des Abbilds: acme.sh spricht die
   Directory-URL über HTTPS an, mit den Zertifikaten, denen der HAPM-Container
   vertraut. Eine CA, deren Wurzel dort fehlt, scheitert bei der Anmeldung mit
-  der Meldung von curl.
+  der Meldung von curl. Ein Feld dafür gibt es beim ACME-Server nicht. Die CA,
+  die bei den Zugangsdaten von Infoblox hinterlegt wird, landet allerdings im
+  selben Bestand (`TRUST_SYNC`, siehe „Wildcards"): stammt der ACME-Server von
+  derselben Stelle, vertraut acme.sh ihm damit auch.
 
 ### Die Zertifikatsseite: `/reverse-proxy/zertifikate`
 

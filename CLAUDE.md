@@ -61,9 +61,12 @@ Next.js (App Router) mit TypeScript strict, pnpm. Drei Container: HAPM, HAProxy
   ACME-Server beantragt wird (`acmeDirectory`, mit `acmeHttpReachable` geht
   HTTP-01 auch intern). Hochgeladene Zertifikate sind PEM-Dateien in
   `/etc/haproxy/certs`, die acme.sh nicht führt (`lib/haproxy/cert-upload.ts`).
-- **DNS bei zwei Anbietern** (`lib/dns/`): Cloudflare und Hetzner hinter einer
-  Schnittstelle (`provider.ts`). Die Tokens der Zonen liegen verschlüsselt in
-  der Datenbank, die Einträge werden bei jedem Aufruf vom Anbieter gelesen.
+- **DNS bei vier Anbietern** (`lib/dns/`): Cloudflare, Hetzner, ein eigener
+  Nameserver über RFC 2136 (`rfc2136.ts`, TSIG) und Infoblox (`infoblox.ts`,
+  WAPI) hinter einer Schnittstelle (`provider.ts`). Die letzten beiden zählen
+  nichts auf: wer liest, gibt Domain und Namen mit. Die Zugänge der Zonen
+  liegen verschlüsselt in der Datenbank, die Einträge werden bei jedem Aufruf
+  vom Anbieter gelesen.
   Hetzner rechnet in RRSets, die Abbildung auf einzelne Einträge steht in
   `hetzner-rrsets.ts`. Einen Zugang richtet nur `connectZone` ein
   (`connect.ts`), auch der Assistent.
@@ -155,5 +158,6 @@ sagen das. Wie man eines startet, steht in `tests/helpers/test-database.ts`.
 Was nur ein echtes HAProxy zeigen kann (Passwortsperre, Fehlerseiten), prüft
 `pnpm haproxy:verify-pages` mit Docker, HTTPS zum Ziel `pnpm haproxy:verify-tls`,
 CrowdSec (WAF, Sperren, Freigaben) gegen echtes HAProxy, CrowdSec und Bouncer
-`pnpm crowdsec:verify`. Den ganzen Stack lokal:
+`pnpm crowdsec:verify`, DNS über RFC 2136 samt acme.sh gegen BIND und Pebble
+`pnpm dns:verify`. Den ganzen Stack lokal:
 `docker compose -f docker-compose.dev.yml up -d --build`.

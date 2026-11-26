@@ -280,10 +280,16 @@ bleiben.
    sofort in den Einstellungen (`exposure`). An ihr hängt, ob Zertifikate über
    HTTP-01 oder immer über DNS-01 ausgestellt werden, siehe
    [`reverse-proxy.md`](reverse-proxy.md), „Interne Installation".
-3. **DNS-Anbieter** (Hetzner, Cloudflare oder „Eigener DNS-Server"). Der Token
-   eines Anbieters wird ihm einmal vorgezeigt (`lib/setup/token-check.ts`) und
-   geht dann über denselben Weg wie unter Reverse-Proxy, Einstellungen nach
-   `account.conf`. Lehnt der Anbieter ihn ab, wird nichts abgelegt.
+3. **DNS-Anbieter** (Hetzner, Cloudflare, RFC 2136, Infoblox oder „Eigener
+   DNS-Server"). Der Token eines Anbieters wird ihm einmal vorgezeigt
+   (`lib/setup/token-check.ts`) und geht dann über denselben Weg wie unter
+   Reverse-Proxy, Einstellungen nach `account.conf`. Lehnt der Anbieter ihn ab,
+   wird nichts abgelegt. **RFC 2136** (ein eigener Nameserver mit
+   TSIG-Schlüssel) und **Infoblox** haben statt des Tokens mehrere Felder
+   (`components/dns/CredentialFields.tsx`). Vorgezeigt werden sie über den
+   Anbieter selbst (`probe`): eine unterschriebene Frage an den Nameserver,
+   eine Anmeldung an der Appliance. Abgelehnt heißt auch hier: nichts wird
+   abgelegt. Nicht erreichbar heißt unbekannt, dann wird trotzdem abgelegt.
    **„Eigener DNS-Server"** (`dns: 'manual'`) heißt: HAPM richtet bei keinem
    Anbieter etwas ein und nennt stattdessen die Einträge (Name, Typ, Wert), die
    von Hand gesetzt werden. Die Karte ersetzt „Überspringen", das dasselbe hieß,
@@ -1027,14 +1033,25 @@ Namen schon benutzt, deshalb stehen beide hier.
 | Eigener ACME-Server | sein Port | acme.sh | Eintrag unter „Allgemein“ | nur dann |
 | `api.cloudflare.com` | 443 | HAPM, acme.sh (`dns_cf`) | DNS-Einträge, TXT-Einträge für DNS-01 | mit Cloudflare |
 | `api.hetzner.cloud` | 443 | HAPM, acme.sh (`dns_hetznercloud`) | dasselbe bei Hetzner | mit Hetzner |
-| `cloudflare-dns.com`, sonst `dns.google`, `dns.alidns.com` oder `doh.pub` | 443 | acme.sh | Nach dem Setzen des TXT-Eintrags fragt acme.sh über DNS over HTTPS, ob er sichtbar ist | für DNS-01 einer davon |
+| Der eigene Nameserver (primär) | 53 TCP und UDP, oder der eingetragene Port | HAPM (TCP), acme.sh über `nsupdate` (UDP, bei großen Nachrichten TCP) | DNS-Einträge und TXT-Einträge für DNS-01 über RFC 2136 | mit RFC 2136 |
+| Die Infoblox-Appliance (Grid Master) | 443, oder der eingetragene Port | HAPM, acme.sh (`dns_infoblox`) | dasselbe über die WAPI | mit Infoblox |
+| `cloudflare-dns.com`, sonst `dns.google`, `dns.alidns.com` oder `doh.pub` | 443 | acme.sh | Nach dem Setzen des TXT-Eintrags fragt acme.sh über DNS over HTTPS, ob er sichtbar ist | für DNS-01 bei Hetzner und Cloudflare einer davon |
 
 **Der letzte Punkt fällt leicht durch.** acme.sh nimmt den ersten der vier
 DoH-Dienste, der antwortet. Erreicht es keinen, wartet es 20 Minuten auf einen
 Eintrag, den es nie sieht, und bricht ab (`_check_dns_entries` in `acme.sh`).
-HAPM setzt `--dnssleep` nicht, die Prüfung läuft also bei jedem Zertifikat über
-DNS-01. Für eine interne Installation, die nur DNS-01 kennt, heißt das: ohne
-`cloudflare-dns.com` (oder einen der anderen) kein Zertifikat.
+Bei Hetzner und Cloudflare setzt HAPM `--dnssleep` nicht, die Prüfung läuft
+dort also bei jedem Zertifikat über DNS-01. Für eine interne Installation mit
+einem dieser beiden heißt das: ohne `cloudflare-dns.com` (oder einen der
+anderen) kein Zertifikat.
+
+**Mit RFC 2136 und Infoblox braucht es die DoH-Dienste nicht.** Dort wartet
+acme.sh eine feste Zeit (`--dnssleep`, die „Wartezeit nach dem DNS-Eintrag"
+unter Reverse-Proxy, Einstellungen, DNS-Zugangsdaten, Vorgabe 30 Sekunden) und
+fragt dann die Zertifizierungsstelle. Die muss den TXT-Eintrag selbst auflösen
+können: ein ACME-Server im eigenen Netz über den Nameserver des Netzes, Let's
+Encrypt nur, wenn die Zone auch im Internet ausgeliefert wird. Der Nameserver
+und die Appliance stehen im eigenen Netz und gehören in `NO_PROXY`.
 
 ### Updates, Länder, Mails (Container `hapm`)
 
@@ -1132,7 +1149,10 @@ Danach `docker compose up -d`.
   seit 24.0.0, Stabilität „Active Development“). Der Docker-Socket ist ein
   Unix-Socket und geht nie über den Proxy. acme.sh benutzt `curl`, und `curl`
   liest `HTTPS_PROXY` und `NO_PROXY` selbst. Ein eigener ACME-Server im
-  eigenen Netz gehört mit in `NO_PROXY`.
+  eigenen Netz gehört mit in `NO_PROXY`, eine Infoblox-Appliance ebenso
+  (acme.sh spricht sie über `curl` an). HAPMs eigene Aufrufe an die Appliance
+  (`node:https`) und an den Nameserver (DNS über TCP) gehen an keinem Proxy
+  vorbei und durch keinen hindurch: beide müssen direkt erreichbar sein.
 - **CrowdSec** beachtet `HTTP_PROXY`, `HTTPS_PROXY` und `NO_PROXY` laut seiner
   [Dokumentation](https://docs.crowdsec.net/docs/next/configuration/network_management).
   `cscli` spricht im Container die lokale API unter `http://0.0.0.0:8080` an,

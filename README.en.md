@@ -97,6 +97,8 @@ has HAProxy check it, reloads and fetches the certificates.
 - Let's Encrypt via acme.sh, renewed automatically
 - Wildcard certificates via DNS-01
 - Connect zones at Cloudflare and Hetzner
+- Your own name server over RFC 2136 (BIND with a TSIG key)
+- Infoblox through the WAPI (not yet tried against a real appliance)
 - Create the DNS record for a target in the same step
 - See in the dialog where a domain currently points
 - Servers on a private network only: every certificate via DNS-01
@@ -439,7 +441,8 @@ needs HTTPS (TCP 443) to these hosts:
   `production.cloudflare.docker.com`
 - **Certificates:** `acme-v02.api.letsencrypt.org`, with DNS-01 also
   `cloudflare-dns.com` and the API of the DNS provider (`api.cloudflare.com` or
-  `api.hetzner.cloud`)
+  `api.hetzner.cloud`). With your own name server (RFC 2136) port 53 (TCP and
+  UDP) to it instead, with Infoblox port 443 to the appliance
 - **Updates and countries:** `api.github.com`, `github.com`,
   `codeload.github.com`, `download.db-ip.com`
 - **CrowdSec:** `cdn-hub.crowdsec.net`, `hub-data.crowdsec.net`, and for the
@@ -464,7 +467,7 @@ After the start, `http://<server-ip>:7080` opens the wizard. It has seven steps:
 |---|---|
 | **1. Account** | You create the first account to manage HAPM |
 | **2. Reachability** | Reachable from the internet or only on your private network? This decides how certificates are issued |
-| **3. DNS** | Cloudflare or Hetzner with an API token, then HAPM creates DNS records itself. Or **your own DNS server**: HAPM tells you every record to set yourself |
+| **3. DNS** | Cloudflare or Hetzner with an API token, your own name server with a TSIG key (RFC 2136) or Infoblox: then HAPM creates DNS records itself. Or **your own DNS server**: HAPM tells you every record to set yourself |
 | **4. Certificates** | **Let's Encrypt** (default), **your own ACME server** with a directory URL, for example step-ca on your network, or **upload**: HAPM requests nothing, you upload certificate and key |
 | **5. Email** | The SMTP account HAPM sends email through: for passkeys, "Forgot password" and notifications. Can be skipped and set up later under "Notifications" |
 | **6. Web interface address** | The domain for HAPM itself, for example `hapm.example.org`. HAPM shows the required DNS record and creates it at the provider if one is connected |
@@ -859,8 +862,8 @@ with `systemctl disable --now apache2`. Then `docker compose up -d`.
   resolves to. A new DNS record can take a few minutes.
 - **Is port 80 reachable from the internet?** Let's Encrypt validates through
   it. If the server is only on your private network, there are three ways: a DNS
-  provider with an API (Cloudflare, Hetzner), your own ACME server on the
-  network, or uploaded certificates. The DNS provider goes under "Reverse proxy,
+  provider with an API (Cloudflare, Hetzner, your own name server over RFC 2136,
+  Infoblox), your own ACME server on the network, or uploaded certificates. The DNS provider goes under "Reverse proxy,
   Settings", the ACME server and the certificate source under "General",
   uploads under "Certificates".
 - **Too many attempts?** Let's Encrypt limits failed requests. Use
@@ -898,7 +901,7 @@ explains for almost every decision why it was made.
 | [`docs/reverse-proxy.md`](docs/reverse-proxy.md) | Targets, groups, certificates, wildcards, access rules, error pages, statistics, import |
 | [`docs/reverse-proxy-api.md`](docs/reverse-proxy-api.md) | The API for scripts and other services |
 | [`docs/mcp.md`](docs/mcp.md) | The MCP server for Claude and other clients |
-| [`docs/dns.md`](docs/dns.md) | DNS at Cloudflare and Hetzner |
+| [`docs/dns.md`](docs/dns.md) | DNS at Cloudflare, Hetzner, your own name server (RFC 2136) and Infoblox |
 | [`docs/crowdsec.md`](docs/crowdsec.md) | CrowdSec: architecture, rules, allowlist, limits, troubleshooting |
 | [`docs/i18n.md`](docs/i18n.md) | Translations of the web interface |
 
@@ -927,6 +930,8 @@ There is no warranty.
 - The Hetzner and Cloudflare logos come from
   [Simple Icons](https://simpleicons.org) (CC0). The trademarks belong to their
   owners. HAPM is not affiliated with either of them.
+- Infoblox and BIND are trademarks of their owners. HAPM talks to their
+  interfaces and is not affiliated with either of them.
 - HAProxy and CrowdSec are trademarks of their owners. Their logos appear in the
   web interface and here only to identify the respective program. HAPM is not
   affiliated with either of them.

@@ -35,7 +35,7 @@
 import { providerFor } from './provider';
 import { dnsProviderLabel } from './provider-info';
 import { listZoneRows, withZone } from './store';
-import { isProxyRecord, matchZone, normalizeDomain, proxyRecordPlan } from './zones';
+import { isProxyRecord, matchZone, normalizeDomain, proxyRecordPlan, zoneCovers } from './zones';
 import { PROVIDER_RULES, type DnsRecord } from './records';
 import type { DnsZone, HaproxyStep } from '../types';
 import { msgid } from '../i18n';
@@ -66,7 +66,8 @@ class ZoneRecords {
   async of(zone: DnsZone): Promise<DnsRecord[]> {
     const cached = this.cache.get(zone.$id);
     if (cached) return cached;
-    const records = await withZone(zone, (token, ref) => providerFor(zone).listRecords(token, ref, this.names));
+    const here = this.names.filter((name) => zoneCovers(zone.name, name));
+    const records = await withZone(zone, (token, ref) => providerFor(zone).listRecords(token, ref, here));
     this.cache.set(zone.$id, records);
     return records;
   }

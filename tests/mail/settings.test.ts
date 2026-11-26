@@ -151,6 +151,29 @@ describe('withDefaults', () => {
   });
 });
 
+describe('Wartezeit nach dem DNS-Eintrag', () => {
+  it('ist für eine Zeile von vor der Einstellung 30 Sekunden', () => {
+    expect(withDefaults({}).dnsWait).toBe(30);
+    expect(withDefaults({ dnsWait: 120 }).dnsWait).toBe(120);
+    // Ein gespeicherter Wert außerhalb der Grenzen gilt nicht.
+    expect(withDefaults({ dnsWait: 0 }).dnsWait).toBe(30);
+    expect(withDefaults({ dnsWait: 'lang' as unknown as number }).dnsWait).toBe(30);
+  });
+
+  it('nimmt ganze Sekunden von 5 bis 900 und sonst nichts', () => {
+    expect(settingsPatch({ dnsWait: 5 }, current, encryptPass).dnsWait).toBe(5);
+    expect(settingsPatch({ dnsWait: 900 }, current, encryptPass).dnsWait).toBe(900);
+    for (const bad of [4, 901, 30.5, -1, NaN, '60' as unknown as number]) {
+      expect(() => settingsPatch({ dnsWait: bad }, current, encryptPass), String(bad)).toThrow(/Wartezeit/);
+    }
+    expect('dnsWait' in settingsPatch({ acmeEmail: null }, current, encryptPass)).toBe(false);
+  });
+
+  it('geht mit den Einstellungen an den Browser', () => {
+    expect(settingsView({ ...withDefaults({ dnsWait: 45 }) } as Settings).dnsWait).toBe(45);
+  });
+});
+
 describe('Sprache der Mails', () => {
   it('ist für eine Zeile von vor der Einstellung Deutsch', () => {
     expect(withDefaults({}).mailLocale).toBe('de');
