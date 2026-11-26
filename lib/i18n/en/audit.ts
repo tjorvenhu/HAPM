@@ -239,6 +239,8 @@ export const audit: Dictionary = {
   'Zertifikat gescheitert': 'Certificate failed',
   'Zertifikat hochgeladen': 'Certificate uploaded',
   'Zertifikat entfernt': 'Certificate removed',
+  'Zertifizierungsstelle hinterlegt': 'Certificate authority stored',
+  'Zertifizierungsstelle entfernt': 'Certificate authority removed',
   'DNS-Zugangsdaten für Zertifikate geändert': 'DNS credentials for certificates changed',
   'DNS-Zone angebunden': 'DNS zone connected',
   'DNS-Zone geändert': 'DNS zone changed',

@@ -106,6 +106,8 @@ export const AUDIT_ACTIONS: Record<AuditAction, ActionInfo> = {
   haproxy_certificate_failed: info('certificates', msgid('Zertifikat gescheitert')),
   haproxy_certificate_uploaded: info('certificates', msgid('Zertifikat hochgeladen')),
   haproxy_certificate_removed: info('certificates', msgid('Zertifikat entfernt')),
+  haproxy_ca_uploaded: info('certificates', msgid('Zertifizierungsstelle hinterlegt')),
+  haproxy_ca_removed: info('certificates', msgid('Zertifizierungsstelle entfernt')),
   haproxy_dns_credentials_updated: info('certificates', msgid('DNS-Zugangsdaten für Zertifikate geändert')),
 
   dns_zone_created: info('dns', msgid('DNS-Zone angebunden')),
