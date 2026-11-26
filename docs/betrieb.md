@@ -580,7 +580,8 @@ einer Seite, sondern in einem Fenster (`RunOverlay.tsx`):
   danach die Liste nachladen.
 - Je Art liest das Fenster seinen Endpunkt (`sources.ts`):
   `/api/haproxy/runs/[id]`, `/api/updates/runs/[id]`, `/api/backup/runs/[id]`,
-  `/api/backup/restore/runs/[id]`. Ein Reverse-Proxy-Vorgang zeigt Phasen und
+  `/api/backup/restore/runs/[id]`, `/api/sync/runs/[id]` (Abgleich zwischen
+  Knoten). Ein Reverse-Proxy-Vorgang zeigt Phasen und
   Protokoll, die anderen ihre Schritte untereinander (`RunStepList.tsx`, auch
   in den Historien), samt der noch kommenden aus `lib/updates/plan.ts` und
   `lib/backup/plan.ts`.
@@ -603,7 +604,10 @@ In diesem Prozess, also genau eine Instanz: jede Minute die Zähler von HAProxy
 (Statistik), alle sechs Stunden die Update-Prüfung, täglich um 03:17 die
 Erneuerung der Zertifikate (`acme.sh --cron`) und das Aufräumen (Metriken nach
 14 Tagen, Historie nach 180, Protokoll nach 365). Alle zwei Minuten sieht er für
-die Benachrichtigungen nach, ob HAProxy läuft und die Ziele antworten.
+die Benachrichtigungen nach, ob HAProxy läuft und die Ziele antworten. Ein
+Hauptknoten fragt alle fünf Minuten seine Folgeknoten nach ihrem Stand, und auf
+einem Folgeknoten läuft die Erneuerung nicht
+([`hochverfuegbarkeit.md`](hochverfuegbarkeit.md)).
 
 **Tägliche Uhrzeiten** (Erneuerung, Sicherung, selbsttätige Updates) vergleicht
 er nicht mit der Minute der Uhr, sondern fragt, ob der Zeitpunkt seit dem
@@ -649,6 +653,7 @@ bekommt eine eigene Mail.
 | `update_available` | die Update-Prüfung findet eine neue Fassung, einmal je Fassung | `lib/updates/check.ts` |
 | `update_completed`, `update_failed` | Ende eines Update-Laufs, auch beim Abgleich nach dem Start | `lib/updates/apply.ts` |
 | `backup_failed` | die Sicherung ruft `notify({ type: 'backup_failed', detail })` | Sicherung |
+| `sync_failed` | ein Folgeknoten antwortet nicht oder übernimmt den Stand nicht, je Folgeknoten | Abgleich ([`hochverfuegbarkeit.md`](hochverfuegbarkeit.md)) |
 | `crowdsec_down` | der Container von CrowdSec oder des Bouncers läuft bei zwei Prüfungen in Folge nicht, solange CrowdSec ein Ziel schützt | alle zwei Minuten |
 | `crowdsec_report` | was CrowdSec in 24 Stunden gemeldet hat, nur wenn etwas war; **Vorgabe aus** | täglicher Lauf |
 

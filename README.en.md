@@ -128,6 +128,7 @@ has HAProxy check it, reloads and fetches the certificates.
 - The HAProxy and CrowdSec logs in your browser, with search and filters
 - One-click updates for HAPM, HAProxy, acme.sh and CrowdSec
 - Daily backups and restore from the web interface
+- High availability: a second server takes over configuration and certificates
 - Email alerts on outages, expiring certificates and errors
 - API with tokens for scripts and other services
 - MCP server: control HAPM from Claude and other AI clients
@@ -760,6 +761,28 @@ docker compose up -d
 Moving to another server is easiest with a backup: install HAPM there and
 upload the archive under "Backup".
 
+### High availability
+
+Two servers, each with a complete installation. One is the primary node, where
+changes are made. The other is a replica: after every change it receives
+`haproxy.cfg`, certificates, error pages and the acme.sh state, and serves
+traffic with them when the primary node fails.
+
+1. On the second server, choose the role "Replica" under "Sync" and create a
+   pairing key.
+2. On the first server, choose the role "Primary node" under "Sync" and add
+   the replica with its address (`http://<IP>:7080`) and the key.
+
+The transfer is encrypted with the pairing key, even without HTTPS. Targets
+and certificates cannot be changed on the replica.
+
+> [!IMPORTANT]
+> HAPM syncs, it does not fail over. Which server holds the shared address is
+> decided by keepalived or a load balancer in front. The database (accounts,
+> settings, statistics) and the CrowdSec bans stay per server. Setup, a
+> keepalived example and all limits:
+> [`docs/hochverfuegbarkeit.md`](docs/hochverfuegbarkeit.md) (German).
+
 ### Forgotten password
 
 If the HAPM address and an SMTP account are set up, the login page sends a link
@@ -900,6 +923,7 @@ explains for almost every decision why it was made.
 | [`docs/mcp.md`](docs/mcp.md) | The MCP server for Claude and other clients |
 | [`docs/dns.md`](docs/dns.md) | DNS at Cloudflare and Hetzner |
 | [`docs/crowdsec.md`](docs/crowdsec.md) | CrowdSec: architecture, rules, allowlist, limits, troubleshooting |
+| [`docs/hochverfuegbarkeit.md`](docs/hochverfuegbarkeit.md) | High availability: primary node and replicas, sync, shared address, limits |
 | [`docs/i18n.md`](docs/i18n.md) | Translations of the web interface |
 
 ## Contributing

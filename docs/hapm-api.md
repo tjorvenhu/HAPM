@@ -26,6 +26,9 @@ hier, die Tabelle dort sagt, welche.
 | `PATCH /backup` | Teil-Patch: `enabled`, `hostPath`, `time`, `keep` |
 | `POST /backup` | Sicherung jetzt → `{ runId }` |
 | `GET /backup/runs/<id>` | Stand eines Sicherungslaufs |
+| `GET /sync` | Abgleich zwischen Knoten: Rolle, Folgeknoten mit Zustand, Läufe ([`hochverfuegbarkeit.md`](hochverfuegbarkeit.md)) |
+| `POST /sync` | „Jetzt abgleichen", nur auf einem Hauptknoten → `{ runId }` |
+| `GET /sync/runs/<id>` | Stand eines Laufs des Abgleichs |
 | `GET /settings` | `{ settings, notifications }`, ohne SMTP-Passwort (`smtpPassSet`) |
 | `PATCH /settings` | Teil-Patch wie `/api/settings`, ohne `publicUrl`, `smtpPass` und den SMTP-Server (`smtpHost`, `smtpPort`, `smtpSecurity`, `smtpUser`) |
 | `PUT /settings/certificates` | `source`, `acmeDirectory`, `httpReachable`, ohne EAB-Schlüssel |
@@ -79,6 +82,10 @@ Die Gründe stehen in [`mcp.md`](mcp.md), „Was es bewusst nicht gibt". Kurz:
   (`readAddressMoveView`), und das soll das Fenster tun, das umzieht.
 - Kein Zurückspielen einer Sicherung, keine Benutzer, Passwörter, Passkeys,
   zweiter Faktor, API-Keys, DNS-Tokens, Design der Fehlerseiten, Darstellung.
+- Beim Abgleich zwischen Knoten nur Lesen und Anstoßen: Rolle,
+  Kopplungsschlüssel und Folgeknoten ändert nur die Oberfläche.
+- Auf einem Folgeknoten lehnt jede Route, die am Proxy etwas ändert, mit `409`
+  ab (`lib/sync/role.ts`): geändert wird am Hauptknoten.
 
 ## Für den, der die Routen ändert
 
@@ -86,8 +93,8 @@ Die Gründe stehen in [`mcp.md`](mcp.md), „Was es bewusst nicht gibt". Kurz:
   schreibende Funktion schreibt ihr Protokoll selbst. Sie stehen in
   `lib/updates/actions.ts`, `lib/backup/actions.ts`, `lib/settings-actions.ts`,
   `lib/haproxy/certificate-actions.ts`, `lib/haproxy/maintenance-actions.ts`,
-  `lib/haproxy/log-read.ts`, `lib/system/haproxy-container.ts` und
-  `lib/geoip/actions.ts`. Vorher stand die Logik in den Routen unter
+  `lib/haproxy/log-read.ts`, `lib/system/haproxy-container.ts`,
+  `lib/geoip/actions.ts` und `lib/sync/actions.ts`. Vorher stand die Logik in den Routen unter
   `app/api/`; dort steht jetzt nur noch Anmeldung, Rumpf und Aufruf.
 - **Der Actor ist `{ ...serviceActor(service), ip: getClientIP(request) }`**,
   bei Läufen am Reverse-Proxy `haproxyActor(serviceActor(service), request)`.

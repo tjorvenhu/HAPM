@@ -124,6 +124,7 @@ Konfiguration, prüft sie mit HAProxy, lädt neu und holt die Zertifikate.
 - Die Logs von HAProxy und CrowdSec im Browser, mit Suche und Filter
 - Updates von HAPM, HAProxy, acme.sh und CrowdSec auf Klick
 - Tägliche Sicherung und Zurückspielen über die Oberfläche
+- Hochverfügbarkeit: ein zweiter Server übernimmt Konfiguration und Zertifikate
 - Mails bei Ausfällen, ablaufenden Zertifikaten und Fehlern
 - API mit Token für Skripte und andere Dienste
 - MCP-Server: HAPM aus Claude und anderen KI-Clients steuern
@@ -768,6 +769,29 @@ docker compose up -d
 Auf einen anderen Server geht es am einfachsten über eine Sicherung: dort HAPM
 installieren und das Archiv unter „Sicherung“ hochladen.
 
+### Hochverfügbarkeit
+
+Zwei Server mit je einer vollständigen Installation. Einer ist der
+Hauptknoten, dort wird geändert. Der andere ist Folgeknoten: er bekommt nach
+jeder Änderung `haproxy.cfg`, Zertifikate, Fehlerseiten und den Stand von
+acme.sh und liefert damit aus, wenn der Hauptknoten ausfällt.
+
+1. Auf dem zweiten Server unter „Abgleich“ die Rolle „Folgeknoten“ wählen und
+   einen Kopplungsschlüssel erzeugen.
+2. Auf dem ersten Server unter „Abgleich“ die Rolle „Hauptknoten“ wählen und
+   den Folgeknoten mit seiner Adresse (`http://<IP>:7080`) und dem Schlüssel
+   eintragen.
+
+Die Übertragung ist mit dem Kopplungsschlüssel verschlüsselt, auch ohne HTTPS.
+Auf dem Folgeknoten lassen sich Ziele und Zertifikate nicht ändern.
+
+> [!IMPORTANT]
+> HAPM gleicht ab, es schaltet nicht um. Welcher Server die gemeinsame Adresse
+> hält, regelt keepalived oder ein Load Balancer davor. Die Datenbank (Konten,
+> Einstellungen, Statistik) und die Sperren von CrowdSec bleiben je Server.
+> Einrichtung, ein Beispiel für keepalived und alle Grenzen:
+> [`docs/hochverfuegbarkeit.md`](docs/hochverfuegbarkeit.md).
+
 ### Passwort vergessen
 
 Sind die Adresse von HAPM und ein SMTP-Konto eingerichtet, schickt die
@@ -912,6 +936,7 @@ jeder Entscheidung, warum sie so getroffen wurde.
 | [`docs/mcp.md`](docs/mcp.md) | Der MCP-Server für Claude und andere Clients |
 | [`docs/dns.md`](docs/dns.md) | DNS bei Cloudflare und Hetzner |
 | [`docs/crowdsec.md`](docs/crowdsec.md) | CrowdSec: Aufbau, Regeln, Freigaben, Grenzen, Fehlersuche |
+| [`docs/hochverfuegbarkeit.md`](docs/hochverfuegbarkeit.md) | Hochverfügbarkeit: Hauptknoten und Folgeknoten, Abgleich, gemeinsame Adresse, Grenzen |
 | [`docs/i18n.md`](docs/i18n.md) | Übersetzungen der Oberfläche |
 
 ## Mitmachen
