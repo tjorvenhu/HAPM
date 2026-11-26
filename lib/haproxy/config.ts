@@ -561,29 +561,15 @@ const NEXTCLOUD_HEADERS: HeaderRule[] = [
 ];
 
 /**
- * Vorschläge für Header der Antwort, im Dialog mit einem Klick einzufügen.
- *
- * Kein zweites Preset-System: ein Vorschlag fügt Zeilen ein, die danach
- * gewöhnliche Zeilen sind. Er wird nirgends gespeichert und nicht
- * zurückgelesen.
+ * Wo man nachliest, welche Header es gibt. Statt fester Vorschläge im Dialog:
+ * die gaben eine Auswahl vor, die zu den wenigsten Zielen passte, und man
+ * trägt Header ohnehin von Hand ein. Für die Antwort die Empfehlungen des
+ * OWASP Secure Headers Project, für die Anfrage die Übersicht bei MDN.
  */
-export const HEADER_SUGGESTIONS: { label: string; hint: string; headers: HeaderRule[] }[] = [
-  {
-    label: 'Nextcloud',
-    hint: msgid('Die beiden Header, die Nextcloud in seiner Sicherheitsprüfung erwartet.'),
-    headers: NEXTCLOUD_HEADERS,
-  },
-  {
-    label: 'X-Frame-Options',
-    hint: msgid('Die Seite lässt sich nicht in fremde Seiten einbetten.'),
-    headers: [{ name: 'X-Frame-Options', value: 'SAMEORIGIN' }],
-  },
-  {
-    label: 'X-Robots-Tag: noindex',
-    hint: msgid('Suchmaschinen nehmen die Seite nicht in ihren Index auf.'),
-    headers: [{ name: 'X-Robots-Tag', value: 'noindex' }],
-  },
-];
+export const HEADER_REFERENCES: Record<HeaderDirection, { label: string; url: string }> = {
+  response: { label: msgid('Empfohlene Header (OWASP)'), url: 'https://owasp.org/www-project-secure-headers/' },
+  request: { label: msgid('Übersicht der Header (MDN)'), url: 'https://developer.mozilla.org/docs/Web/HTTP/Headers' },
+};
 
 /**
  * Die früheren Presets, für Aufrufer von `/api/internal`, die `preset` noch

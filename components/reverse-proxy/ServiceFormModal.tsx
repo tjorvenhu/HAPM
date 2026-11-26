@@ -6,7 +6,7 @@ import Link from 'next/link';
 import {
   Plus, Trash2, Loader2, X, Server, Waypoints, Info, Globe, Lock,
   ChevronDown, ChevronRight, CornerUpRight, Scale, RefreshCw, ShieldCheck, SlidersHorizontal, Shield,
-  CircleCheck, CircleDashed, CircleAlert, Database,
+  CircleCheck, CircleDashed, CircleAlert, Database, ExternalLink,
 } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { useToast } from '@/components/Toast';
@@ -27,7 +27,7 @@ import {
   KEEP_PASSWORD,
   LOCK_PASSWORD_MIN,
   HEADER_DIRECTION_LABELS,
-  HEADER_SUGGESTIONS,
+  HEADER_REFERENCES,
   HEADERS_MAX,
   TUNNEL_LINE,
   locksEveryDomain,
@@ -474,20 +474,6 @@ export default function ServiceFormModal({
       ...current,
       [direction]: current[direction].map((rule, i) => (i === index ? { ...rule, ...patch } : rule)),
     }));
-  }
-
-  /** Ein Vorschlag fügt gewöhnliche Zeilen ein. Steht der Name schon da, wird
-   *  sein Wert ersetzt: zwei Zeilen desselben Namens nimmt die Prüfung nicht an. */
-  function insertHeaders(direction: HeaderDirection, rules: HeaderRule[]) {
-    setHeaders((current) => {
-      const next = current[direction].filter((row) => row.name.trim() !== '' || row.value !== '');
-      for (const rule of rules) {
-        const at = next.findIndex((row) => row.name.trim().toLowerCase() === rule.name.toLowerCase());
-        if (at === -1) next.push({ ...rule });
-        else next[at] = { ...rule };
-      }
-      return { ...current, [direction]: next };
-    });
   }
 
   /** Name und Wert, wie sie geschickt werden. Eine leere Zeile ist keine. */
@@ -2353,20 +2339,15 @@ export default function ServiceFormModal({
                           <Plus size={14} />
                           {t('Header hinzufügen')}
                         </button>
-                        {/* Vorschläge und kein Preset: ein Klick fügt Zeilen
-                            ein, die danach gewöhnliche Zeilen sind. */}
-                        {direction === 'response' &&
-                          HEADER_SUGGESTIONS.map((suggestion) => (
-                            <button
-                              key={suggestion.label}
-                              type="button"
-                              className="btn btn-ghost btn-sm"
-                              data-tooltip={t(suggestion.hint)}
-                              onClick={() => insertHeaders('response', suggestion.headers)}
-                            >
-                              {suggestion.label}
-                            </button>
-                          ))}
+                        <a
+                          className="btn btn-ghost btn-sm"
+                          href={HEADER_REFERENCES[direction].url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          {t(HEADER_REFERENCES[direction].label)}
+                          <ExternalLink size={14} />
+                        </a>
                       </div>
                     </div>
                   ))}

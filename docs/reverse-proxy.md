@@ -670,9 +670,12 @@ Konfigurationstext nach.
   Zusätze (`readServiceInput`); ein ausdrücklich genannter Header gewinnt.
   Gemeldet wird `preset` nirgends mehr, auch der Filter „Alle Presets" auf der
   Gruppenseite ist weg.
-  **Vorschläge sind kein zweites Preset-System** (`HEADER_SUGGESTIONS`). Ein
-  Klick im Dialog fügt Zeilen ein, die danach gewöhnliche Zeilen sind; sie
-  werden nirgends gespeichert und nicht als Vorschlag zurückgelesen.
+  **Keine Vorschläge im Dialog.** Es gab eine Zeit lang Knöpfe, die feste
+  Header einfügten (Nextcloud, `X-Frame-Options`, `X-Robots-Tag: noindex`).
+  Sie gaben eine Auswahl vor, die zu den wenigsten Zielen passte. Header trägt
+  man von Hand ein; daneben steht ein Verweis, wo man nachliest
+  (`HEADER_REFERENCES`: OWASP Secure Headers Project für die Antwort, MDN für
+  die Anfrage).
   **Ein Header gleichen Namens im Frontend ist zweierlei**
   (`parseGlobalHeaders`, geprüft gegen 2.4, 2.8 und 3.0): `http-request`-Regeln
   laufen erst im Frontend, dann im Backend, ein Header der Anfrage am Ziel
