@@ -280,9 +280,19 @@ function crowdsecComplete(lines: readonly string[]): boolean {
 /** Die SPOE-Datei, die `CROWDSEC_LINES` lädt. Die Namen der Nachrichten
  *  (`crowdsec-http-body`, `crowdsec-http-no-body`) erwartet der Bouncer genau
  *  so, andere beantwortet er nicht. */
+/**
+ * HTTP/3 geht als HTTP/2 an den Bouncer. Das OWASP Core Rule Set, wie CrowdSec
+ * es mitbringt, kennt HTTP/3 nicht als erlaubte Version (Regel 920430): jede
+ * Anfrage eines Browsers über QUIC zählte sonst als Angriff, im Modus
+ * „sperren" wäre die Oberfläche selbst gesperrt. Für die WAF ist eine Anfrage
+ * über HTTP/3 dieselbe wie über HTTP/2 (gleiche Header, gleiche Form).
+ * Abschalten lässt sich die Regel in CrowdSec 1.8 nicht: `RemoveOutBandRuleByID`
+ * greift bei den CRS-Regeln weder in `on_load` noch in `pre_eval`.
+ */
+const SPOE_VERSION = 'req.ver,regsub(^3,2)';
+
 export function crowdsecSpoeConfig(): string {
-  const args =
-    'remediation=var(txn.crowdsec.remediation) id=unique-id method=method path=path query=query version=req.ver headers=req.hdrs';
+  const args = `remediation=var(txn.crowdsec.remediation) id=unique-id method=method path=path query=query version=${SPOE_VERSION} headers=req.hdrs`;
   const tail = 'url=url ssl=ssl_fc src-ip=src src-port=src_port';
   return [
     '# Von HAPM geschrieben. Wird beim nächsten Schreiben ersetzt.',

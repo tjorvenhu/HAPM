@@ -240,4 +240,16 @@ describe('crowdsecSpoeConfig', () => {
     expect(spoe).toContain('option var-prefix crowdsec');
     expect(CROWDSEC_LINES[0]).toContain(CROWDSEC_SPOE_FILE);
   });
+
+  it('gibt HTTP/3 als HTTP/2 weiter, sonst zählt OWASP (Regel 920430) jede Anfrage über QUIC als Angriff', () => {
+    // Gegen echtes HAProxy geprüft: 3.0 → 2.0, 3 → 2, 2.0 und 1.1 bleiben.
+    const lines = crowdsecSpoeConfig()
+      .split('\n')
+      .filter((line) => line.trim().startsWith('args '));
+    expect(lines).toHaveLength(2);
+    for (const line of lines) {
+      expect(line).toContain(' version=req.ver,regsub(^3,2) ');
+      expect(line).not.toMatch(/version=req\.ver /);
+    }
+  });
 });

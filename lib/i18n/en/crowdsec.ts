@@ -189,6 +189,8 @@ export const crowdsec: Readonly<Record<string, string>> = {
   'Erkennt Adressen, die in kurzer Zeit sehr viele Anfragen schicken, und sperrt sie. Vorsicht bei Diensten, die viele Anfragen von einer Adresse bekommen, etwa Apps zum Abgleich hinter einem gemeinsamen Ausgang (Firmennetz, Mobilfunk). Solche Adressen gehören in die Freigaben.':
     'Detects addresses that send very many requests in a short time and bans them. Take care with services that get many requests from one address, such as sync apps behind a shared exit (company network, mobile carrier). Such addresses belong in the allowlist.',
 
+  'HAProxy hat die neue Anbindung an CrowdSec geladen.': 'HAProxy loaded the new CrowdSec connection.',
+
   // Ganz ab- und einschalten
   'CrowdSec abschalten': 'Switch off CrowdSec',
   'CrowdSec einschalten': 'Switch on CrowdSec',

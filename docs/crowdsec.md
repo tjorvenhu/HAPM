@@ -212,6 +212,20 @@ sie der Abgleich der Freigaben). Beide sind klein und werden nur geladen, wenn
 einer fehlenden Datei. Die Namen der Nachrichten (`crowdsec-http-body`,
 `crowdsec-http-no-body`) erwartet der Bouncer genau so.
 
+**HTTP/3 geht als HTTP/2 an die WAF** (`version=req.ver,regsub(^3,2)`). Das
+OWASP Core Rule Set in CrowdSec 1.8 kennt HTTP/3 nicht als erlaubte Version:
+Regel 920430 gab jeder Anfrage eines Browsers über QUIC 5 Punkte, „Nur melden“
+meldete die eigene Oberfläche hundertfach, „sperren“ hätte sie gesperrt. Die
+Regel in CrowdSec abzuschalten geht nicht: `RemoveOutBandRuleByID(920430)` und
+`RemoveInBandRuleByID` wirken bei den CRS-Regeln weder in `on_load` noch in
+`pre_eval` (geprüft mit 1.8.2). Eine AppSec-Konfiguration, die `acquis.d`
+nennt, die es aber nicht gibt, beendet CrowdSec beim Start (`fatal`). Ändert
+sich die SPOE-Datei mit einem Update, lädt `lib/bootstrap.ts` HAProxy neu
+(`reloadForCrowdsec`), sonst gälte sie erst nach dem nächsten Vorgang.
+Nebenbei: der Bouncer gibt das Argument `url` als Adresse an die WAF weiter, bei
+HTTP/2 und HTTP/3 ist das die volle Form (`https://host/pfad`). Das löst keine
+Regel aus.
+
 **Abgelehnt wird mit 403** über die Fehlerseite von HAPM (`errorfile 403`), also
 im Aussehen der übrigen Fehlerseiten.
 

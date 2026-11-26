@@ -23,6 +23,8 @@ import {
   LOCK_PAGE_DIR,
   crowdsecSpoeConfig,
 } from './haproxy/config';
+import { reloadForCrowdsec } from './haproxy/provision';
+import { localServer } from './helpers';
 import { writeCrowdsecFiles } from './crowdsec/setup';
 import { crowdsecInStack } from './crowdsec/paths';
 import { ERROR_DIR, renderBaseConfig } from './haproxy/base-config';
@@ -192,10 +194,10 @@ function ensureBaseConfig(errorStatuses: number[]): BootstrapStep {
  * `reconcileCrowdsec` im Scheduler an, sobald CrowdSec läuft: Compose startet
  * es erst, wenn HAPM gesund ist, also nach diesem Schritt.
  */
-function ensureCrowdsecFiles(): BootstrapStep | null {
+function ensureCrowdsecFiles(): { step: BootstrapStep | null; spoeChanged: boolean } {
   fs.mkdirSync(CROWDSEC_SPOE_DIR, { recursive: true });
   const spoe = crowdsecSpoeConfig();
-  let current = '';
+  let current: string | null = null;
   try {
     current = fs.readFileSync(CROWDSEC_SPOE_FILE, 'utf8');
   } catch {
@@ -203,12 +205,17 @@ function ensureCrowdsecFiles(): BootstrapStep | null {
   }
   if (current !== spoe) fs.writeFileSync(CROWDSEC_SPOE_FILE, spoe);
   if (!fs.existsSync(CROWDSEC_ALLOW_FILE)) fs.writeFileSync(CROWDSEC_ALLOW_FILE, '');
+  // Neu geschrieben über eine alte: ein laufendes HAProxy kennt nur die alte.
+  const spoeChanged = current !== null && current !== spoe;
 
-  if (!crowdsecInStack()) return null;
+  if (!crowdsecInStack()) return { step: null, spoeChanged };
   const files = writeCrowdsecFiles();
-  return files.mounted
-    ? { label: 'CrowdSec', ok: true }
-    : { label: 'CrowdSec', ok: true, detail: msgid('Der Ordner für CrowdSec ist nicht eingebunden.') };
+  return {
+    step: files.mounted
+      ? { label: 'CrowdSec', ok: true }
+      : { label: 'CrowdSec', ok: true, detail: msgid('Der Ordner für CrowdSec ist nicht eingebunden.') },
+    spoeChanged,
+  };
 }
 
 async function ensureHaproxyRunning(): Promise<BootstrapStep> {
@@ -263,14 +270,27 @@ export async function runBootstrap(acmeEmail: string | null): Promise<BootstrapS
     const acme = await ensureAcme(acmeEmail);
     add({ label: 'acme.sh', ok: acme.ok, detail: acme.detail });
 
+    let spoeChanged = false;
     try {
       const crowdsec = ensureCrowdsecFiles();
-      if (crowdsec) add(crowdsec);
+      spoeChanged = crowdsec.spoeChanged;
+      if (crowdsec.step) add(crowdsec.step);
     } catch (err) {
       add({ label: 'CrowdSec', ok: false, detail: err instanceof Error ? err.message : String(err) });
     }
 
-    add(await ensureHaproxyRunning());
+    const haproxy = await ensureHaproxyRunning();
+    add(haproxy);
+    // Lief HAProxy schon (Update von HAPM), lädt es die neue SPOE-Datei erst jetzt.
+    if (spoeChanged && haproxy.ok && haproxy.detail === msgid('läuft')) {
+      try {
+        if ((await reloadForCrowdsec(localServer())) === 'reloaded') {
+          add({ label: 'CrowdSec', ok: true, detail: msgid('HAProxy hat die neue Anbindung an CrowdSec geladen.') });
+        }
+      } catch (err) {
+        add({ label: 'CrowdSec', ok: false, detail: err instanceof Error ? err.message : String(err) });
+      }
+    }
     followPagesAfterStart();
   } catch (err) {
     add({ label: msgid('Einrichtung'), ok: false, detail: err instanceof Error ? err.message : String(err) });

@@ -917,6 +917,25 @@ export async function refreshCrowdsecAllowFile(server: Server, content: string):
 }
 
 /**
+ * HAProxy neu laden, wenn die Konfiguration CrowdSec benutzt: nach einer neuen
+ * SPOE-Datei beim Start von HAPM (`lib/bootstrap.ts`). HAProxy liest sie nur
+ * beim Laden, ohne diesen Schritt gälte sie erst nach dem nächsten Vorgang.
+ * Geprüft wird vor dem Neuladen.
+ */
+export async function reloadForCrowdsec(server: Server): Promise<'none' | 'reloaded'> {
+  return withProxyLock(server.$id, async () => {
+    const probe = await probeProxy(server);
+    if (!probe.configReadable || !usesCrowdsec(probe.raw)) return 'none';
+    const ssh = await getSSHConfig(server);
+    const check = await sshExec(ssh, buildCommand(['haproxy', '-c', '-f', HAPROXY_CFG]), SHORT_MS);
+    if (check.code !== 0) throw new Error(tail(check.stderr || check.stdout));
+    const reload = await sshExec(ssh, buildCommand(RELOAD_ARGV), RELOAD_MS);
+    if (reload.code !== 0) throw new Error(tail(reload.stderr || reload.stdout));
+    return 'reloaded';
+  });
+}
+
+/**
  * Eine Passwortsperre auf einer Maschine, deren HAProxy sie nicht kann.
  *
  * `haproxy -c` lehnte die Datei ohnehin ab, aber mit einer Meldung über ein

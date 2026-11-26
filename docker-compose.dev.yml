@@ -102,7 +102,7 @@ services:
       - haproxy-log:/var/log/haproxy:ro
     # Unter Docker Desktop liegen die Dateien in Volumes: Schlüssel, Quellen
     # und Parser werden vor dem Start an ihren Ort kopiert.
-    entrypoint: ["/bin/sh", "-c", "mkdir -p /run/secrets /etc/crowdsec/acquis.d /etc/crowdsec/parsers/s02-enrich && cp /hapm-crowdsec/secrets/* /run/secrets/ && cp /hapm-crowdsec/config/acquis.d/hapm.yaml /etc/crowdsec/acquis.d/ && cp /hapm-crowdsec/config/parsers/s02-enrich/hapm-backend.yaml /etc/crowdsec/parsers/s02-enrich/ && exec /bin/bash /docker_start.sh"]
+    entrypoint: ["/bin/sh", "-c", "mkdir -p /run/secrets /etc/crowdsec/acquis.d /etc/crowdsec/parsers/s02-enrich /etc/crowdsec/appsec-configs && cp /hapm-crowdsec/secrets/* /run/secrets/ && cp /hapm-crowdsec/config/acquis.d/hapm.yaml /etc/crowdsec/acquis.d/ && cp /hapm-crowdsec/config/parsers/s02-enrich/hapm-*.yaml /etc/crowdsec/parsers/s02-enrich/ && (cp /hapm-crowdsec/config/appsec-configs/hapm-*.yaml /etc/crowdsec/appsec-configs/ 2>/dev/null || true) && exec /bin/bash /docker_start.sh"]
 
   crowdsec-bouncer:
     image: crowdsecurity/spoa-bouncer:latest
