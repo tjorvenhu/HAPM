@@ -6,7 +6,9 @@ import {
   renderAcquis,
   renderBackendParser,
   renderBouncerConfig,
+  renderCrsMethods,
 } from '@/lib/crowdsec/files';
+import { CRS_METHODS_FILE } from '@/lib/crowdsec/paths';
 
 /**
  * Die Dateien für CrowdSec. Ob CrowdSec sie annimmt, prüft
@@ -42,6 +44,20 @@ describe('renderBackendParser', () => {
     expect(text).toContain('evt.Parsed.backend_name');
     // `onsuccess: next_stage` übersprünge http-logs, und kein Szenario spränge an.
     expect(text).not.toContain('onsuccess');
+  });
+});
+
+describe('renderCrsMethods', () => {
+  it('erlaubt PUT, PATCH und DELETE, aber nicht TRACE (Regel 911100)', () => {
+    const text = renderCrsMethods();
+    expect(text).toContain("setvar:'tx.allowed_methods=GET HEAD POST OPTIONS PUT PATCH DELETE'");
+    expect(text).not.toContain('TRACE');
+    // Eine Kennung aus dem Bereich der CRS-Plugins, phase:1 wie 901160.
+    expect(text).toMatch(/SecAction "id:95\d{5},phase:1,/);
+  });
+
+  it('liegt dort, wo crowdsecurity/crs Plugins sucht (crs-plugins/*/*-config.conf im Datenordner)', () => {
+    expect(CRS_METHODS_FILE).toMatch(/^data\/crs-plugins\/[^/]+\/[^/]+-config\.conf$/);
   });
 });
 

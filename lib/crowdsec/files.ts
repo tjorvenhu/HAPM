@@ -91,6 +91,30 @@ export function readCrsMode(acquis: string | null): CrsMode {
 }
 
 /**
+ * Die Methoden, die die OWASP-Regeln erlauben. Ab Werk sind es nur GET, HEAD,
+ * POST und OPTIONS: Regel 911100 wertet jedes PUT, PATCH und DELETE als
+ * kritisch (`anomaly: 5`). Die Oberfläche von HAPM und viele REST-APIs schicken
+ * genau diese, und gehäuft sperrt `crowdsec-appsec-outofband` die eigene Adresse.
+ */
+export const CRS_ALLOWED_METHODS: readonly string[] = ['GET', 'HEAD', 'POST', 'OPTIONS', 'PUT', 'PATCH', 'DELETE'];
+
+/**
+ * Ein CRS-Plugin, nur die Einstellung. `crowdsecurity/crs` lädt
+ * `crs-plugins/*\/*-config.conf` vor REQUEST-901, das `tx.allowed_methods` nur
+ * setzt, wenn es fehlt. Plugins wie Nextcloud hängen ihre Methoden an diese
+ * Liste an. Die Kennung liegt im Bereich, den das CRS Plugins vorbehält
+ * (9 500 000 bis 9 999 999): eine doppelte Kennung lässt CrowdSec die Regel
+ * verwerfen. Gegen CrowdSec 1.8.2 geprüft (docs/crowdsec.md).
+ */
+export function renderCrsMethods(): string {
+  return [
+    '# Von HAPM geschrieben. Wird bei jedem Start von HAPM neu geschrieben.',
+    `SecAction "id:9599001,phase:1,pass,nolog,t:none,setvar:'tx.allowed_methods=${CRS_ALLOWED_METHODS.join(' ')}'"`,
+    '',
+  ].join('\n');
+}
+
+/**
  * Ein Parser in der Stufe `s02-enrich`: das Backend aus der Zeile von HAProxy
  * als `target_backend`. Ohne `onsuccess: next_stage`, das übersprünge die
  * übrigen Parser der Stufe (darunter `http-logs`, ohne den kein Szenario

@@ -78,6 +78,7 @@ da.
 | `crowdsec/config/acquis.d/hapm.yaml` | | | Von HAPM: die Quellen (Log von HAProxy, WAF) |
 | `crowdsec/config/parsers/s02-enrich/hapm-backend.yaml` | | | Von HAPM: Backend einer Anfrage als `target_backend` |
 | `crowdsec/data/` | `/var/lib/crowdsec/data` | | SQLite-Datenbank: Sperren, Ereignisse, Freigabelisten, dazu die Daten der Regeln |
+| `crowdsec/data/crs-plugins/hapm/hapm-config.conf` | | | Von HAPM: erlaubte Methoden der OWASP-Regeln, auch PUT, PATCH, DELETE (`renderCrsMethods`) |
 | `crowdsec/secrets/bouncer_key_hapm` | `/run/secrets/bouncer_key_hapm` | | Schlüssel des Bouncers, von HAPM erzeugt (Rechte 600) |
 | `crowdsec/bouncer/crowdsec-spoa-bouncer.yaml` | | Konfiguration des Bouncers | Von HAPM: Adresse der API, Schlüssel, `listen_tcp` |
 | `log/` | `/var/log/haproxy` (nur lesend) | | Die Kopie des HAProxy-Logs, die HAPM ohnehin schreibt |
@@ -114,6 +115,19 @@ ist fest** (`OPTIONAL_COLLECTIONS` in `lib/crowdsec/files.ts`): der Name geht
 als Argument an `cscli`, und was dort installiert wird, läuft danach in der WAF
 jeder Anfrage. Ein freies Feld wäre ein Weg, beliebigen Code in den Pfad jeder
 Anfrage zu legen.
+
+**Erlaubte Methoden der OWASP-Regeln.** Ab Werk erlaubt das CRS nur GET, HEAD,
+POST und OPTIONS. Regel 911100 („Method is not allowed by policy“) gab jedem
+PUT, PATCH und DELETE 5 Punkte ohne Kategorie (`anomaly score out-of-band:
+anomaly: 5`), also auch jedem Klick in der Oberfläche von HAPM. Gehäuft hätte
+`crowdsec-appsec-outofband` die eigene Adresse gesperrt. HAPM schreibt deshalb
+ein CRS-Plugin, das nur die Liste setzt (`renderCrsMethods`,
+`crowdsec/data/crs-plugins/hapm/hapm-config.conf`). `crowdsecurity/crs` lädt
+`crs-plugins/*/*-config.conf` aus dem Datenordner vor REQUEST-901, und 901160
+setzt die Vorgabe nur, wenn die Liste fehlt. Plugins wie Nextcloud hängen ihre
+WebDAV-Methoden an. TRACE und andere bleiben verboten. Geprüft mit CrowdSec
+1.8.2: ohne die Datei melden PATCH, PUT und DELETE je `anomaly: 5`, mit ihr nur
+noch TRACE.
 
 ### Anwendungen
 

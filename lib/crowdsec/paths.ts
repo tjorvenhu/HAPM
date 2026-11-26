@@ -94,5 +94,7 @@ export const ALLOWLIST_NAME = 'hapm';
 
 export const ACQUIS_FILE = 'config/acquis.d/hapm.yaml';
 export const PARSER_FILE = 'config/parsers/s02-enrich/hapm-backend.yaml';
+/** Im Datenordner, weil `crowdsecurity/crs` seine Dateien dort sucht (`crs-plugins/*\/*-config.conf`). */
+export const CRS_METHODS_FILE = 'data/crs-plugins/hapm/hapm-config.conf';
 export const BOUNCER_KEY_FILE = `secrets/bouncer_key_${BOUNCER_NAME}`;
 export const BOUNCER_CONFIG_FILE = 'bouncer/crowdsec-spoa-bouncer.yaml';

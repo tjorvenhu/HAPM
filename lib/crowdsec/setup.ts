@@ -21,6 +21,7 @@ import {
   renderAcquis,
   renderBackendParser,
   renderBouncerConfig,
+  renderCrsMethods,
   readCrsMode,
   isValidBouncerKey,
   type CrsMode,
@@ -31,6 +32,7 @@ import {
   BOUNCER_CONFIG_FILE,
   BOUNCER_KEY_FILE,
   BOUNCER_NAME,
+  CRS_METHODS_FILE,
   PARSER_FILE,
   bouncerContainerName,
   crowdsecContainerName,
@@ -92,6 +94,8 @@ export function writeCrowdsecFiles(crs: CrsMode = currentCrsMode()): CrowdsecFil
   const key = bouncerKey();
   const acquis = writeIfChanged(ACQUIS_FILE, renderAcquis(crs));
   const parser = writeIfChanged(PARSER_FILE, renderBackendParser());
+  // Auch bei abgeschalteten OWASP-Regeln: die Datei liest nur, wer sie lädt.
+  const methods = writeIfChanged(CRS_METHODS_FILE, renderCrsMethods());
   // Eingeschaltete Ausnahmen für Anwendungen auf den Stand dieser Version bringen.
   let apps = false;
   for (const app of APP_RULES) {
@@ -109,7 +113,7 @@ export function writeCrowdsecFiles(crs: CrsMode = currentCrsMode()): CrowdsecFil
   } catch {
     // Ohne Log-Ordner gibt es auch keinen Mitschnitt; die WAF geht trotzdem.
   }
-  const result = { mounted: true, crowdsecChanged: acquis || parser || apps, bouncerChanged: bouncer };
+  const result = { mounted: true, crowdsecChanged: acquis || parser || methods || apps, bouncerChanged: bouncer };
   // Beim Start laufen die Container noch nicht (Compose startet sie nach HAPM)
   // oder noch mit den alten Dateien (Update von HAPM). Den Neustart holt
   // `reconcileCrowdsec` nach, sobald sie laufen.
