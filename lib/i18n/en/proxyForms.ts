@@ -455,8 +455,23 @@ export const proxyForms: Dictionary = {
   'HAProxy spricht unverschlüsselt mit dem Ziel.': 'HAProxy talks to the target unencrypted.',
   'Verschlüsselt. Das Zertifikat des Ziels wird nicht geprüft.': 'Encrypted. The target certificate is not verified.',
   'Verschlüsselt. Das Zertifikat muss von einer bekannten CA stammen.': 'Encrypted. The certificate must come from a known CA.',
-  'Für Ziele, die selbst verschlüsseln, etwa Proxmox auf 8006 oder TrueNAS. Ohne Prüfung passt das für selbst signierte Zertifikate. Mit Prüfung muss das Zertifikat von einer CA stammen, der das System vertraut, und für die aufgerufene Domain gelten. HAProxy schickt die Domain der Anfrage als SNI. In der Konfiguration: „{insecure}“ oder „{verify}“ an jeder server-Zeile.':
-    'For targets that encrypt themselves, such as Proxmox on 8006 or TrueNAS. Without verification this works for self-signed certificates. With verification the certificate must come from a CA the system trusts and be valid for the requested domain. HAProxy sends the domain of the request as SNI. In the configuration: "{insecure}" or "{verify}" on every server line.',
+  'Verschlüsselt. Das Zertifikat muss von dieser Stelle stammen.': 'Encrypted. The certificate must come from this authority.',
+  'Für Ziele, die selbst verschlüsseln, etwa Proxmox auf 8006 oder TrueNAS. Ohne Prüfung passt das für selbst signierte Zertifikate. Mit Prüfung muss das Zertifikat von einer CA stammen, der das System vertraut, oder von einer hinterlegten Zertifizierungsstelle, und für die aufgerufene Domain gelten. HAProxy schickt die Domain der Anfrage als SNI. In der Konfiguration: „{insecure}“ oder „{verify}“ an jeder server-Zeile, bei einer hinterlegten Stelle mit ihrer Datei statt @system-ca.':
+    'For targets that encrypt themselves, such as Proxmox on 8006 or TrueNAS. Without verification this works for self-signed certificates. With verification the certificate must come from a CA the system trusts, or from a certificate authority you added, and be valid for the requested domain. HAProxy sends the domain of the request as SNI. In the configuration: "{insecure}" or "{verify}" on every server line, for an added authority with its file instead of @system-ca.',
+  'Geprüft gegen': 'Verified against',
+  'Die CAs des Systems': 'The system CAs',
+  'Öffentlich ausgestellte Zertifikate, etwa von Let’s Encrypt': 'Publicly issued certificates, such as from Let’s Encrypt',
+  'Braucht HAProxy 2.6 oder neuer. Hier läuft {version}.': 'Needs HAProxy 2.6 or newer. This one runs {version}.',
+  'Hinterlegte Zertifizierungsstelle': 'Added certificate authority',
+  'Nicht hinterlegt': 'Not added',
+  'Die CAs des Systems kennen nur öffentlich ausgestellte Zertifikate. Für ein Ziel mit Zertifikat aus einer eigenen CA hinterlegen Sie deren Zertifikat unter Zertifikate, Reiter Zertifizierungsstellen, und wählen sie hier aus. Das Zertifikat des Ziels muss in beiden Fällen für die aufgerufene Domain gelten.':
+    'The system CAs only know publicly issued certificates. For a target with a certificate from your own CA, add its certificate under Certificates, tab Certificate authorities, and pick it here. In both cases the target certificate must be valid for the requested domain.',
+  'Noch keine eigene Zertifizierungsstelle hinterlegt.': 'No certificate authority of your own added yet.',
+  'Zertifizierungsstelle hinterlegen': 'Add certificate authority',
+  'Die Zertifizierungsstelle {name} ist nicht hinterlegt. Speichern geht erst, wenn sie hinterlegt ist.':
+    'The certificate authority {name} is not added. Saving works once it is added.',
+  'HAProxy spricht HTTPS mit dem Ziel und prüft das Zertifikat gegen die Zertifizierungsstelle {name}':
+    'HAProxy talks HTTPS to the target and verifies the certificate against the certificate authority {name}',
   'Die Prüfung braucht HAProxy 2.6 oder neuer. Hier läuft {version}.':
     'Verification needs HAProxy 2.6 or newer. This one runs {version}.',
   'Auf Port {port} spricht ein Ziel meist HTTPS.': 'A target on port {port} usually speaks HTTPS.',

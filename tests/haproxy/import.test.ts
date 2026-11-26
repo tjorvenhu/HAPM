@@ -426,9 +426,21 @@ describe('parseImport: Einzelheiten', () => {
       }
     });
 
+    it('verify required gegen eine hinterlegte Zertifizierungsstelle: übernommen, mit ihrem Namen', () => {
+      for (const sni of ['req.hdr(host)', 'req.hdr(host),field(1,:)']) {
+        const e = one(`server web 10.0.0.1:443 ssl verify required ca-file /etc/haproxy/hapm-ca/intern-root.pem sni ${sni}`);
+        expect(e.problems, sni).toEqual([]);
+        expect(e.service?.backendTls, sni).toBe('ca:intern-root');
+        expect(e.extras, sni).toContain('HTTPS zum Ziel, Zertifikat geprüft gegen intern-root');
+      }
+    });
+
     it('eine Prüfung, die HAPM anders hielte, wird nicht übernommen', () => {
       const cases: [string, string][] = [
-        ['server web 10.0.0.1:443 ssl verify required ca-file /etc/ssl/intern.pem sni req.hdr(host)', 'eigene CA-Datei'],
+        ['server web 10.0.0.1:443 ssl verify required ca-file /etc/ssl/intern.pem sni req.hdr(host)', 'liegt nicht bei den hinterlegten Zertifizierungsstellen'],
+        ['server web 10.0.0.1:443 ssl verify required ca-file /etc/haproxy/hapm-ca/Intern.pem sni req.hdr(host)', 'liegt nicht bei den hinterlegten Zertifizierungsstellen'],
+        ['server web 10.0.0.1:443 ssl verify required ca-file /etc/haproxy/hapm-ca/intern-root.pem', 'anders geprüft'],
+        ['server web 10.0.0.1:443 ssl verify required ca-file /etc/haproxy/hapm-ca/intern-root.pem sni str(intern.lan)', 'anders geprüft'],
         ['server web 10.0.0.1:443 ssl verify required ca-file @system-ca', 'anders geprüft'],
         ['server web 10.0.0.1:443 ssl verify required ca-file @system-ca sni str(intern.lan)', 'anders geprüft'],
         ['server web 10.0.0.1:443 ssl', 'ohne ca-file'],

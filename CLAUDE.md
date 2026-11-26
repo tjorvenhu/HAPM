@@ -139,7 +139,7 @@ Next.js (App Router) mit TypeScript strict, pnpm. Drei Container: HAPM, HAProxy
   `lib/i18n/format.ts`; Englisch steht in `lib/i18n/en/`. Siehe
   [`docs/i18n.md`](docs/i18n.md).
 - Kennungen, die in `haproxy.cfg` oder auf der Platte stehen (`hapm_lock_…`,
-  `/etc/haproxy/hapm-lock`, Cookie `HAPMSRV`, `.hapm-original`, `# hapm-app:`), werden nicht
+  `/etc/haproxy/hapm-lock`, `/etc/haproxy/hapm-ca/<name>.pem`, Cookie `HAPMSRV`, `.hapm-original`, `# hapm-app:`), werden nicht
   umbenannt: bestehende Konfigurationen hängen daran.
 
 ## Fertig heißt

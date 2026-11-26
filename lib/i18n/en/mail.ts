@@ -383,6 +383,21 @@ export const mail: Dictionary = {
     'What to do: The output names the domain that caused it. Common causes are a DNS record that no longer points to this server and an expired token for the DNS check. The next run is tomorrow.',
   'Zertifikate ansehen': 'View certificates',
   'Zertifikate laufen ab': 'Certificates expiring',
+  // Hinterlegte Zertifizierungsstellen (Ereignis backend_ca_expiring)
+  'Zertifizierungsstelle läuft ab': 'Certificate authority expiring',
+  'Eine hinterlegte, die ein Ziel benutzt, unter 30 Tage gültig.': 'An added one that a target uses, valid for under 30 days.',
+  'Zertifizierungsstelle {name} ist abgelaufen': 'Certificate authority {name} has expired',
+  'Zertifizierungsstelle {name} läuft in weniger als 24 Stunden ab': 'Certificate authority {name} expires in less than 24 hours',
+  'Zertifizierungsstelle {name} läuft in einem Tag ab': 'Certificate authority {name} expires in one day',
+  'Zertifizierungsstelle {name} läuft in {count} Tagen ab': 'Certificate authority {name} expires in {count} days',
+  '{count} Zertifizierungsstellen laufen ab': '{count} certificate authorities are expiring',
+  'Zertifizierungsstellen laufen ab': 'Certificate authorities expiring',
+  'Auf {node} prüft HAProxy das Zertifikat von Zielen gegen eine hinterlegte Zertifizierungsstelle, die weniger als {days} Tage gültig oder schon abgelaufen ist.':
+    'On {node} HAProxy verifies the certificate of targets against an added certificate authority that is valid for less than {days} days or has already expired.',
+  'benutzt von {list}': 'used by {list}',
+  'Was zu tun ist: eine hinterlegte Zertifizierungsstelle erneuert niemand von selbst. Holen Sie das neue Zertifikat der CA und ersetzen Sie die Datei unter Reverse-Proxy, Zertifikate, Reiter Zertifizierungsstellen. Nach dem Ablauf lehnt HAProxy die Ziele ab, die dagegen prüfen, und Besucher bekommen dort einen Fehler 503.':
+    'What to do: nobody renews an added certificate authority automatically. Get the new certificate of the CA and replace the file under Reverse proxy, Certificates, tab Certificate authorities. After it expires HAProxy rejects the targets verified against it, and visitors get a 503 error there.',
+  'Zertifizierungsstellen ansehen': 'View certificate authorities',
   'Auf {node} ist ein Zertifikat weniger als {days} Tage gültig oder schon abgelaufen.':
     'On {node}, one certificate is valid for less than {days} days or has already expired.',
   'Auf {node} sind {count} Zertifikate weniger als {days} Tage gültig oder schon abgelaufen.':

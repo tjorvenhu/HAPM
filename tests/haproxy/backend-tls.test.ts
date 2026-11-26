@@ -83,6 +83,13 @@ describe('Schreiben', () => {
     ]);
   });
 
+  it('schreibt die Prüfung gegen eine hinterlegte Zertifizierungsstelle mit ihrer Datei', () => {
+    const text = addService(CONFIG, { ...INPUT, backendTls: 'ca:intern-root' });
+    expect(serverLines(text)).toEqual([
+      'server server1 10.0.0.5:8006 check ssl verify required ca-file /etc/haproxy/hapm-ca/intern-root.pem sni req.hdr(host) check-sni pve.example.org',
+    ]);
+  });
+
   it('lässt check-sni weg, wenn nicht geprüft wird', () => {
     const text = addService(CONFIG, { ...INPUT, healthcheck: false });
     expect(serverLines(text)).toEqual(['server server1 10.0.0.5:8006 ssl verify none sni req.hdr(host)']);
@@ -146,6 +153,30 @@ describe('Lesen und Rundreise', () => {
     ['mit Prüfung, mit Healthcheck', { backendTls: 'verify' }],
     ['ohne Prüfung, ohne Healthcheck', { healthcheck: false }],
     ['mit Prüfung, ohne Healthcheck', { backendTls: 'verify', healthcheck: false }],
+    ['mit hinterlegter Zertifizierungsstelle, mit Healthcheck', { backendTls: 'ca:intern-root' }],
+    ['mit hinterlegter Zertifizierungsstelle, ohne Healthcheck', { backendTls: 'ca:intern-root', healthcheck: false }],
+    [
+      'Lastverteilung gegen eine hinterlegte Zertifizierungsstelle',
+      {
+        servers: [
+          { name: 'a', target: '10.0.0.5:443', weight: 3 },
+          { name: 'b', target: '10.0.0.6:443', weight: null },
+        ],
+        balance: 'leastconn',
+        sticky: true,
+        backendTls: 'ca:intern-root',
+      },
+    ],
+    [
+      'Pfad-Regeln mit verschiedenen Zertifizierungsstellen',
+      {
+        backendTls: 'ca:intern-root',
+        routes: [
+          { name: 'api', paths: ['/api'], servers: [{ name: 'api', target: '10.0.0.7:8443' }], check: true, backendTls: 'ca:zweite' },
+          { name: 'ws', paths: ['/ws'], servers: [{ name: 'ws', target: '10.0.0.7:6001' }], check: false, backendTls: 'verify' },
+        ],
+      },
+    ],
     [
       'Lastverteilung mit Gewichtung und Bindung',
       {
@@ -192,6 +223,19 @@ describe('Lesen und Rundreise', () => {
     ]);
   });
 
+  it('meldet die Zertifizierungsstelle an jeder Zeile', () => {
+    const service = find(addService(CONFIG, { ...INPUT, backendTls: 'ca:intern-root' }), 'pve');
+    expect(service.backendTls).toBe('ca:intern-root');
+    expect(service.servers.map((server) => server.tls)).toEqual(['ca:intern-root']);
+  });
+
+  it('wechselt zwischen den CAs des Systems und einer hinterlegten, ohne Reste', () => {
+    const system = addService(CONFIG, { ...INPUT, backendTls: 'verify' });
+    const own = replaceService(system, 'pve', { ...INPUT, backendTls: 'ca:intern-root' });
+    expect(own).toBe(addService(CONFIG, { ...INPUT, backendTls: 'ca:intern-root' }));
+    expect(replaceService(own, 'pve', { ...INPUT, backendTls: 'verify' })).toBe(system);
+  });
+
   it('ändert die Art des Eintrags nicht', () => {
     // HTTPS gibt es im Reverse-Proxy- wie im Lastverteilungs-Formular. Ein
     // Ziel mit HTTPS bleibt ein Reverse-Proxy.
@@ -226,6 +270,11 @@ describe('Abwandlungen von Hand bleiben nur lesbar', () => {
     ['ssl ohne verify', 'server server1 10.0.0.5:8006 check ssl'],
     ['verify none ohne SNI', 'server server1 10.0.0.5:8006 check ssl verify none'],
     ['eine eigene CA-Datei', 'server server1 10.0.0.5:8006 check ssl verify required ca-file /etc/haproxy/ca.pem sni req.hdr(host) check-sni pve.example.org'],
+    ['eine Datei im Ordner der Zertifizierungsstellen mit einem Namen, den HAPM nicht vergibt', 'server server1 10.0.0.5:8006 check ssl verify required ca-file /etc/haproxy/hapm-ca/Intern.Root.pem sni req.hdr(host) check-sni pve.example.org'],
+    ['eine Datei neben dem Ordner der Zertifizierungsstellen', 'server server1 10.0.0.5:8006 check ssl verify required ca-file /etc/haproxy/hapm-ca/../certs/app.pem sni req.hdr(host) check-sni pve.example.org'],
+    ['eine hinterlegte Zertifizierungsstelle ohne SNI', 'server server1 10.0.0.5:8006 check ssl verify required ca-file /etc/haproxy/hapm-ca/intern-root.pem check-sni pve.example.org'],
+    ['eine hinterlegte Zertifizierungsstelle mit verifyhost', 'server server1 10.0.0.5:8006 check ssl verify required ca-file /etc/haproxy/hapm-ca/intern-root.pem sni req.hdr(host) check-sni pve.example.org verifyhost pve.lan'],
+    ['eine hinterlegte Zertifizierungsstelle mit verify none', 'server server1 10.0.0.5:8006 check ssl verify none ca-file /etc/haproxy/hapm-ca/intern-root.pem sni req.hdr(host) check-sni pve.example.org'],
     ['verify required ohne ca-file', 'server server1 10.0.0.5:8006 check ssl verify required sni req.hdr(host) check-sni pve.example.org'],
     ['ein fester SNI', 'server server1 10.0.0.5:8006 check ssl verify none sni str(pve.example.org) check-sni pve.example.org'],
     ['SNI ohne Port', 'server server1 10.0.0.5:8006 check ssl verify none sni req.hdr(host),field(1,:) check-sni pve.example.org'],
@@ -263,6 +312,24 @@ describe('Abwandlungen von Hand bleiben nur lesbar', () => {
     expect(service.editable).toBe(false);
   });
 
+  it('liest zwei verschiedene Zertifizierungsstellen in einem Backend als nicht bearbeitbar', () => {
+    const text = addService(CONFIG, {
+      ...INPUT,
+      healthcheck: false,
+      backendTls: 'ca:intern-root',
+      servers: [
+        { name: 'a', target: '10.0.0.5:8006', weight: null },
+        { name: 'b', target: '10.0.0.6:8006', weight: null },
+      ],
+    }).replace(/^( {4}server b .*)intern-root\.pem/m, '$1zweite.pem');
+    const service = find(text, 'pve');
+    expect(service.backendTls).toBe('ca:intern-root');
+    expect(service.extras).toEqual([
+      'server b 10.0.0.6:8006 ssl verify required ca-file /etc/haproxy/hapm-ca/zweite.pem sni req.hdr(host)',
+    ]);
+    expect(service.editable).toBe(false);
+  });
+
   it('liest eine Pfad-Regel mit einer Abwandlung als nicht bearbeitbar', () => {
     const text = addService(CONFIG, {
       ...INPUT,
@@ -276,7 +343,7 @@ describe('Abwandlungen von Hand bleiben nur lesbar', () => {
 
 describe('readServerParams und serverParams', () => {
   it('sind Gegenstücke', () => {
-    for (const tls of ['off', 'insecure', 'verify'] as const) {
+    for (const tls of ['off', 'insecure', 'verify', 'ca:intern-root'] as const) {
       for (const check of [true, false]) {
         const checkSni = backendCheckSni(check, tls, 'app.example.org');
         const written = serverParams({ check, weight: 4, cookie: 's1', tls, checkSni });
@@ -304,6 +371,34 @@ describe('Prüfen und Umformen', () => {
     expect(input.routes[0].backendTls).toBe('insecure');
   });
 
+  it('reicht eine hinterlegte Zertifizierungsstelle durch und nimmt sie an', () => {
+    const input = readServiceInput({
+      scope: 'INTERN',
+      domains: ['a.example.org'],
+      servers: [{ target: '10.0.0.1:443' }],
+      backendTls: 'ca:intern-root',
+      routes: [{ name: 'x', paths: ['/x'], servers: [{ target: '10.0.0.1:8443' }], backendTls: 'ca:zweite' }],
+    });
+    expect(input.backendTls).toBe('ca:intern-root');
+    expect(input.routes[0].backendTls).toBe('ca:zweite');
+    expect(validateCreateInput({ ...input, id: 'a' })).toBeNull();
+  });
+
+  it('lehnt einen Namen ab, der kein Dateiname von HAPM wäre', () => {
+    for (const value of ['ca:', 'ca:../../etc/passwd', 'ca:Intern', 'ca:intern root', 'ca:a/b']) {
+      expect(de(validateCreateInput({ ...INPUT, backendTls: value as never })), value).toMatch(/Unbekannte Angabe/);
+      expect(
+        de(
+          validateCreateInput({
+            ...INPUT,
+            routes: [{ name: 'x', paths: ['/x'], servers: [{ name: '', target: '10.0.0.1:81' }], check: false, backendTls: value as never }],
+          })
+        ),
+        value
+      ).toMatch(/Pfad-Regel „x"/);
+    }
+  });
+
   it('lehnt einen unbekannten Wert ab, statt ihn auf HTTP zu biegen', () => {
     const input = readServiceInput({ scope: 'INTERN', domains: ['a.example.org'], servers: [{ target: '10.0.0.1:443' }], backendTls: 'yes' });
     expect(input.backendTls).toBe('yes');
@@ -324,6 +419,7 @@ describe('Prüfen und Umformen', () => {
     expect(validateCreateInput({ ...redirect, backendTls: 'off' })).toBeNull();
     // Die Route biegt es wie `balance` auf den neutralen Wert.
     expect(readServiceInput({ redirect: { to: 'https://example.org' }, backendTls: 'verify' }).backendTls).toBe('off');
+    expect(de(validateCreateInput({ ...redirect, backendTls: 'ca:intern-root' }))).toMatch(/Weiterleitung hat keine/);
   });
 
   it('kennt die Grenze für @system-ca', () => {
@@ -339,6 +435,8 @@ describe('Prüfen und Umformen', () => {
         routes: [{ name: 'x', paths: ['/x'], servers: [], check: false, backendTls: 'verify' }],
       })
     ).toBe(true);
+    // Eine hinterlegte Zertifizierungsstelle braucht @system-ca nicht.
+    expect(usesSystemCa({ ...INPUT, backendTls: 'ca:intern-root' })).toBe(false);
   });
 });
 

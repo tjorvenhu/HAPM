@@ -424,6 +424,8 @@ export default function ServiceFormModal({
   /** Die Version, wenn sie `@system-ca` nicht kennt. Unbekannt sperrt nichts. */
   const verifyUnsupported =
     supportsSystemCa(proxyVersion) === false ? shortVersion(proxyVersion ?? '') : null;
+  /** Die hinterlegten Zertifizierungsstellen, gegen die ein Ziel prüfen kann. */
+  const backendCas = proxies.find((p) => p.$id === serverId)?.backendCas ?? [];
   /* Eine Art, der gerade etwas fehlt, lässt sich nicht wählen. Wer sie schon
    * hat, behält sie: der Eintrag soll sich öffnen lassen, auch wenn inzwischen
    * die Voraussetzung fehlt. */
@@ -1598,6 +1600,7 @@ export default function ServiceFormModal({
                     label={balancing ? msgid('Ziele sprechen') : msgid('Ziel spricht')}
                     targets={backends.map((b) => b.target)}
                     verifyUnsupported={verifyUnsupported}
+                    authorities={backendCas}
                   />
                 </div>
 
@@ -2089,6 +2092,7 @@ export default function ServiceFormModal({
                         label={msgid('Ziele dieser Regel sprechen')}
                         targets={route.servers.map((s) => s.target)}
                         verifyUnsupported={verifyUnsupported}
+                        authorities={backendCas}
                       />
 
                       <div className="form-subsection-head">

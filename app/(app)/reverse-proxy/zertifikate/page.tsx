@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState, useCallback, type ReactNode } from 'react';
+import { Suspense, useEffect, useRef, useState, useCallback, type ReactNode } from 'react';
 import ErrorNote from '@/components/ErrorNote';
 import Link from 'next/link';
-import { ShieldCheck, Loader2, RefreshCw, RotateCw, Network, Info, Upload, Replace, Trash2 } from 'lucide-react';
+import { ShieldCheck, Loader2, RefreshCw, RotateCw, Network, Info, Upload, Replace, Trash2, BadgeCheck } from 'lucide-react';
 import PageHeading from '@/components/PageHeading';
 import { useApp } from '@/components/AppShell';
 import { usePolling } from '@/components/usePolling';
@@ -14,12 +14,14 @@ import { errorText } from '@/components/errorText';
 import { subscribeRunFinished } from '@/components/runs/runs';
 import CertificateUploadDialog, { type UploadBody } from '@/components/reverse-proxy/CertificateUploadDialog';
 import CertificateIssueDialog from '@/components/reverse-proxy/CertificateIssueDialog';
+import CertificateAuthoritiesPanel, { type AuthoritiesHandle } from '@/components/reverse-proxy/CertificateAuthoritiesPanel';
+import AreaTabs, { useArea, type Area } from '@/components/AreaTabs';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import type { AcmeCertificate } from '@/lib/haproxy/certs';
 import type { UploadedCertificate } from '@/lib/haproxy/cert-upload';
 import type { CertificateSource } from '@/lib/types';
-import { SkeletonRows } from '@/components/Skeleton';
-import { MISSING, formatDate } from '@/lib/i18n';
+import { SkeletonDetail, SkeletonRows } from '@/components/Skeleton';
+import { MISSING, formatDate, msgid } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
 
 /**
@@ -48,7 +50,21 @@ import { useT } from '@/lib/i18n/react';
  *
  * Tabellen und keine Karten: hier wird verglichen (welche Domains, wann
  * erneuert oder abgelaufen, wer benutzt es).
+ *
+ * ── Zwei Reiter ──
+ *
+ * „Zertifikate" ist, was HAProxy den Besuchern ausliefert. Im zweiten Reiter
+ * stehen die Zertifizierungsstellen, gegen die HAProxy das Zertifikat eines
+ * Ziels prüft (`CertificateAuthoritiesPanel`): die andere Richtung, mit
+ * eigener Route und eigenem Takt.
  */
+
+type AreaKey = 'zertifikate' | 'zertifizierungsstellen';
+
+const AREAS: readonly Area<AreaKey>[] = [
+  { key: 'zertifikate', label: msgid('Zertifikate'), icon: ShieldCheck },
+  { key: 'zertifizierungsstellen', label: msgid('Zertifizierungsstellen'), icon: BadgeCheck },
+];
 
 interface CertificateUser {
   id: string;
@@ -88,7 +104,19 @@ const UPLOAD_WARN_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export default function ReverseProxyCertificatesPage() {
+  // `useArea` liest die Adresse (`useSearchParams`), und das verlangt eine Suspense-Grenze.
+  return (
+    <Suspense fallback={<SkeletonDetail />}>
+      <Certificates />
+    </Suspense>
+  );
+}
+
+function Certificates() {
   const { apiFetch } = useApp();
+  const [area, selectArea] = useArea(AREAS, '/reverse-proxy/zertifikate');
+  /** Der Reiter der Zertifizierungsstellen lädt selbst. „Aktualisieren" stößt ihn an. */
+  const authorities = useRef<AuthoritiesHandle>(null);
   const { notify } = useToast();
   const confirm = useConfirm();
   const { t, plural, rich, locale } = useT();
@@ -147,7 +175,10 @@ export default function ReverseProxyCertificatesPage() {
   async function refresh() {
     setRefreshing(true);
     try {
-      await Promise.all([load(true), new Promise((resolve) => setTimeout(resolve, 400))]);
+      await Promise.all([
+        area === 'zertifizierungsstellen' ? authorities.current?.reload() : load(true),
+        new Promise((resolve) => setTimeout(resolve, 400)),
+      ]);
     } finally {
       setRefreshing(false);
     }
@@ -427,16 +458,23 @@ export default function ReverseProxyCertificatesPage() {
             {refreshing ? <Loader2 size={16} className="spin" /> : <RefreshCw size={16} />}
             {t('Aktualisieren')}
           </button>
-          <button className="btn btn-primary" onClick={() => setUploading({ replace: null })} disabled={loading || rows.length === 0 || removing !== null}>
-            <Upload size={16} />
-            {t('Hochladen')}
-          </button>
+          {/* Hochgeladen wird hier ein Zertifikat für Besucher. Eine Zertifizierungsstelle hinterlegt ihr Reiter. */}
+          {area === 'zertifikate' && (
+            <button className="btn btn-primary" onClick={() => setUploading({ replace: null })} disabled={loading || rows.length === 0 || removing !== null}>
+              <Upload size={16} />
+              {t('Hochladen')}
+            </button>
+          )}
         </div>
       </div>
 
-      {error && <div className="alert alert-danger sys-block"><ErrorNote text={error} /></div>}
+      <AreaTabs areas={AREAS} value={area} onChange={selectArea} />
 
-      {loading ? (
+      {area === 'zertifizierungsstellen' && <CertificateAuthoritiesPanel ref={authorities} />}
+
+      {area === 'zertifikate' && error && <div className="alert alert-danger sys-block"><ErrorNote text={error} /></div>}
+
+      {area !== 'zertifikate' ? null : loading ? (
         <SkeletonRows />
       ) : rows.length === 0 ? (
         // Nach einem gescheiterten Laden steht nur die Meldung oben: über HAProxy ist dann nichts bekannt.

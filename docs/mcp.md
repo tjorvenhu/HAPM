@@ -131,6 +131,8 @@ Stunde (`429`), zurückgezogen heißt `401`.
 | `get_haproxy_log` | lesen | letzte Zeilen des Logs, gefiltert |
 | `delete_certificate` | schreiben | übriges Zertifikat von acme.sh entfernen |
 | `reissue_certificate` | schreiben | nie ausgestellten Antrag erneut stellen → `runId` |
+| `list_certificate_authorities` | lesen | hinterlegte Zertifizierungsstellen für die Prüfung der Ziele, samt „benutzt von" |
+| `upload_certificate_authority`, `delete_certificate_authority` | schreiben | Zertifizierungsstelle hinterlegen oder ersetzen, entfernen |
 | `get_base_config_diff`, `apply_base_config` | lesen, schreiben | Abgleich mit der Grundkonfiguration, Auswahl übernehmen |
 | `get_error_pages`, `redeploy_error_pages` | lesen, schreiben | Fehlerseiten, im gespeicherten Design neu schreiben |
 | `get_geoip`, `refresh_geoip`, `set_geoip_auto_refresh` | lesen, schreiben | Länder-Tabelle |
@@ -141,6 +143,7 @@ Welche Route zu welchem Werkzeug gehört:
 |---|---|---|
 | Reverse-Proxy | `haproxy/proxies`, `services`, `streams`, `scopes`, `settings`, `runs` | `get_proxy` bis `list_runs` |
 | Zertifikate | `GET`/`DELETE haproxy/certificates`, `POST haproxy/certificates/issue` | `list_certificates`, `delete_certificate`, `reissue_certificate` |
+| Zertifizierungsstellen | `GET`/`POST`/`DELETE haproxy/certificate-authorities` | `list_certificate_authorities`, `upload_certificate_authority`, `delete_certificate_authority` |
 | Systemstatus | `GET system` | `get_system_status` |
 | Statistik | `GET haproxy/stats` | `get_traffic_stats` |
 | DNS | `GET dns/zones` | `list_dns_zones` |
@@ -215,7 +218,7 @@ Gilt für API und MCP gleich; die Funktionen lehnen es ab, nicht die Werkzeuge.
 | Bereich | Warum nicht |
 |---|---|
 | Geheimnisse anlegen oder ausgeben: DNS-Tokens (Zonen anbinden, Token tauschen), DNS-Zugangsdaten für Wildcards, SMTP-Passwort, EAB-Schlüssel, API-Keys erzeugen | Ein Geheimnis gehört nicht in den Verlauf eines Sprachmodells und nicht in ein Skript. Gelesen wird nur, ob es gesetzt ist (`smtpPassSet`). Zu den Wildcard-Zugangsdaten außerdem [`reverse-proxy-api.md`](reverse-proxy-api.md), „Was es hier bewusst nicht gibt“. |
-| Zertifikate hochladen, hochgeladene entfernen | Der private Schlüssel stünde im Rumpf oder im Verlauf. Und was die API nicht hochladen kann, soll sie nicht löschen, weil sie es nicht zurückbringt. Zertifikate von acme.sh entfernen geht (`delete_certificate`), aber nur, wenn kein Ziel sie hält. |
+| Zertifikate hochladen, hochgeladene entfernen | Der private Schlüssel stünde im Rumpf oder im Verlauf. Und was die API nicht hochladen kann, soll sie nicht löschen, weil sie es nicht zurückbringt. Zertifikate von acme.sh entfernen geht (`delete_certificate`), aber nur, wenn kein Ziel sie hält. Zertifizierungsstellen für die Prüfung der Ziele gehen dagegen (`upload_certificate_authority`): in ihrer Datei steht kein Schlüssel, ein privater wird abgelehnt, und ein Key kann ein Ziel ohnehin auf „nicht prüfen" stellen. |
 | Sicherung zurückspielen | Die Oberfläche verlangt dafür das Passwort eines Menschen, und ein Key hat keins. Das Zurückspielen ersetzt die Datenbank samt Konten und API-Keys (der Key, der es auslöst, ist danach womöglich ungültig) und startet HAPM neu. Wer zurückspielt, sieht vorher in der Oberfläche, was im Archiv steht. Sichern, Einstellungen und Läufe gehen. |
 | Adresse von HAPM ändern (Umzug) | Er ändert die Adresse, über die API und MCP selbst erreichbar sind, und löscht alle Passkeys. Den Stand eines laufenden Umzugs liest die API auch nicht: wer ihn liest, gibt das alte Ziel zum Entfernen frei, und das soll das Fenster tun, das umzieht. Die Prüfung einer neuen Domain geht (`check_address`), die aktuelle Adresse steht in `get_settings`. |
 | Benutzer, Passwörter, zweiter Faktor, Passkeys, Konto | Ein Key ist kein Mensch. Wer über einen Key Konten anlegen oder Passwörter setzen könnte, hätte aus einem zurückziehbaren Schlüssel einen Zugang gemacht, der nach dem Zurückziehen bleibt. |

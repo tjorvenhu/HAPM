@@ -969,22 +969,92 @@ export interface HaproxyBackendServer {
  * Wie HAProxy mit dem Ziel spricht: `off` ist HTTP, `insecure` HTTPS ohne
  * Prüfung des Zertifikats (`ssl verify none`, für selbst signierte wie bei
  * Proxmox oder TrueNAS), `verify` HTTPS mit Prüfung gegen die CAs des Systems
- * (`ssl verify required ca-file @system-ca`).
+ * (`ssl verify required ca-file @system-ca`), `ca:<name>` HTTPS mit Prüfung
+ * gegen eine hinterlegte Zertifizierungsstelle
+ * (`ssl verify required ca-file /etc/haproxy/hapm-ca/<name>.pem`, siehe
+ * `lib/haproxy/backend-ca.ts`).
  *
- * EIN Feld mit drei Werten und nicht zwei Schalter: „prüfen ohne HTTPS" gibt
- * es nicht, und ein Modell, das den Zustand zulässt, braucht eine Regel mehr,
- * die ihn ablehnt. Siehe docs/reverse-proxy.md, „Ziele, die HTTPS sprechen".
+ * EIN Feld und nicht zwei Schalter: „prüfen ohne HTTPS" gibt es nicht, und ein
+ * Modell, das den Zustand zulässt, braucht eine Regel mehr, die ihn ablehnt.
+ * Aus demselben Grund steht der Name der Zertifizierungsstelle im Wert und
+ * nicht in einem zweiten Feld: „eigene CA ohne Namen" und „Name ohne eigene
+ * CA" gibt es so nicht. Siehe docs/reverse-proxy.md, „Ziele, die HTTPS
+ * sprechen".
  */
 export const BACKEND_TLS = ['off', 'insecure', 'verify'] as const;
-export type BackendTls = (typeof BACKEND_TLS)[number];
 
-/** Die Parameter je Art, genau in dieser Reihenfolge geschrieben und gelesen. */
-const BACKEND_TLS_PARAMS: Record<Exclude<BackendTls, 'off'>, readonly string[]> = {
-  // Ohne `verify none` lehnt HAProxy die Zeile ab: `ssl-server-verify` steht
-  // in `global` auf `required`, und ohne `ca-file` gibt es nichts zu prüfen.
-  insecure: ['ssl', 'verify', 'none'],
-  verify: ['ssl', 'verify', 'required', 'ca-file', '@system-ca'],
-};
+/** Davor steht `ca:`, dahinter der Name der hinterlegten Zertifizierungsstelle. */
+export const BACKEND_CA_PREFIX = 'ca:';
+
+export type BackendTls = (typeof BACKEND_TLS)[number] | `${typeof BACKEND_CA_PREFIX}${string}`;
+
+/** Die Arten, wie das Formular sie zur Wahl stellt: die drei festen und die eigene Zertifizierungsstelle. */
+export const BACKEND_TLS_KINDS = [...BACKEND_TLS, 'ca'] as const;
+export type BackendTlsKind = (typeof BACKEND_TLS_KINDS)[number];
+
+/**
+ * Wo die hinterlegten Zertifizierungsstellen liegen. Der Ordner steht in jeder
+ * server-Zeile, die eine benutzt, und wird von dort zurückgelesen: er ändert
+ * sich nicht mehr (feste Kennung wie `/etc/haproxy/hapm-lock`).
+ */
+export const BACKEND_CA_DIR = '/etc/haproxy/hapm-ca';
+
+/**
+ * Der Name einer Zertifizierungsstelle: Kleinbuchstaben, Ziffern und
+ * Bindestriche, höchstens 40 Zeichen. Eng, weil er als Dateiname auf die
+ * Platte und als Wort in eine server-Zeile geht: kein Punkt (also kein `..`),
+ * kein Schrägstrich, kein Leerzeichen.
+ */
+export function isValidCaName(name: string): boolean {
+  return /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/.test(name);
+}
+
+/** Die Datei einer Zertifizierungsstelle, wie HAProxy sie in `ca-file` liest. */
+export function backendCaFile(name: string): string {
+  return `${BACKEND_CA_DIR}/${name}.pem`;
+}
+
+/** Der Wert für `backendTls`, der gegen diese Zertifizierungsstelle prüft. */
+export function backendCaTls(name: string): `${typeof BACKEND_CA_PREFIX}${string}` {
+  return `${BACKEND_CA_PREFIX}${name}`;
+}
+
+/** Der Name der Zertifizierungsstelle, gegen die geprüft wird, sonst `null`. */
+export function backendCaName(tls: BackendTls): string | null {
+  return tls.startsWith(BACKEND_CA_PREFIX) ? tls.slice(BACKEND_CA_PREFIX.length) : null;
+}
+
+/** Der Name aus einem `ca-file`-Pfad, wenn er auf eine hinterlegte Zertifizierungsstelle zeigt. */
+export function caNameFromFile(file: string): string | null {
+  const prefix = `${BACKEND_CA_DIR}/`;
+  if (!file.startsWith(prefix) || !file.endsWith('.pem')) return null;
+  const name = file.slice(prefix.length, -'.pem'.length);
+  return isValidCaName(name) ? name : null;
+}
+
+/** Ob ein Wert eine Art ist, die HAPM schreibt: eine der festen oder `ca:` mit gültigem Namen. */
+export function isBackendTls(value: unknown): value is BackendTls {
+  if (typeof value !== 'string') return false;
+  if ((BACKEND_TLS as readonly string[]).includes(value)) return true;
+  return value.startsWith(BACKEND_CA_PREFIX) && isValidCaName(value.slice(BACKEND_CA_PREFIX.length));
+}
+
+/** Die Art ohne den Namen, für Beschriftungen und die Wahl im Formular. */
+export function backendTlsKind(tls: BackendTls): BackendTlsKind {
+  return backendCaName(tls) === null ? (tls as BackendTlsKind) : 'ca';
+}
+
+/**
+ * Die HTTPS-Wörter je Art, genau in dieser Reihenfolge geschrieben und
+ * gelesen. Ohne `verify none` lehnt HAProxy die Zeile ab: `ssl-server-verify`
+ * steht in `global` auf `required`, und ohne `ca-file` gibt es nichts zu
+ * prüfen.
+ */
+function backendTlsWords(tls: Exclude<BackendTls, 'off'>): readonly string[] {
+  if (tls === 'insecure') return ['ssl', 'verify', 'none'];
+  const ca = backendCaName(tls);
+  return ['ssl', 'verify', 'required', 'ca-file', ca === null ? '@system-ca' : backendCaFile(ca)];
+}
 
 /** SNI aus dem Host der Anfrage: dasselbe, was der Browser bei HAProxy als SNI
  *  geschickt hat. Ein Ziel mit mehreren Zertifikaten wählt danach. */
@@ -992,7 +1062,7 @@ const BACKEND_SNI = ['sni', 'req.hdr(host)'] as const;
 
 /** Die Parameter einer HTTPS-Zeile als Text, für Doku, Hinweise und Tests. */
 export function backendTlsParams(tls: BackendTls): string {
-  return tls === 'off' ? '' : [...BACKEND_TLS_PARAMS[tls], ...BACKEND_SNI].join(' ');
+  return tls === 'off' ? '' : [...backendTlsWords(tls), ...BACKEND_SNI].join(' ');
 }
 
 /**
@@ -1368,8 +1438,8 @@ function validateService(input: CreateServiceInput, idGiven: boolean): Message |
   }
   // Dasselbe für HTTPS zum Ziel: die Art entscheidet über Wörter auf der
   // server-Zeile, also nur, was die Liste kennt.
-  if (!BACKEND_TLS.includes(input.backendTls)) {
-    return msg('Unbekannte Angabe, wie das Ziel angesprochen wird. Erlaubt sind off, insecure und verify.');
+  if (!isBackendTls(input.backendTls)) {
+    return msg('Unbekannte Angabe, wie das Ziel angesprochen wird. Erlaubt sind off, insecure, verify und ca: mit dem Namen einer hinterlegten Zertifizierungsstelle.');
   }
   // Auch die Anwendung geht als Wort in die Datei.
   if (input.app !== null && knownApp(input.app) === null) {
@@ -1506,7 +1576,7 @@ function validateService(input: CreateServiceInput, idGiven: boolean): Message |
       seenPaths.add(path);
     }
 
-    if (!BACKEND_TLS.includes(route.backendTls)) {
+    if (!isBackendTls(route.backendTls)) {
       return msg('Unbekannte Angabe, wie die Ziele der Pfad-Regel „{name}" angesprochen werden.', { name });
     }
 
@@ -1728,8 +1798,13 @@ export function readServerParams(rest: string): {
    * `ca-file` oder ein `alpn h2` bleiben stehen und machen die Zeile nur
    * lesbar: neu geschrieben fehlte, was dort steht. */
   let tls: BackendTls = 'off';
-  for (const mode of ['insecure', 'verify'] as const) {
-    const expected = [...BACKEND_TLS_PARAMS[mode], ...BACKEND_SNI];
+  // Eine hinterlegte Zertifizierungsstelle steht an der Stelle von
+  // `@system-ca`, ihr Pfad sagt, welche. Ein fremder Pfad ergibt keinen Namen,
+  // und die Zeile bleibt wie bisher nur lesbar.
+  const ca = tokens[at + 3] === 'ca-file' ? caNameFromFile(tokens[at + 4] ?? '') : null;
+  const modes: Exclude<BackendTls, 'off'>[] = ['insecure', 'verify', ...(ca === null ? [] : [backendCaTls(ca)])];
+  for (const mode of modes) {
+    const expected = [...backendTlsWords(mode), ...BACKEND_SNI];
     if (expected.every((word, offset) => tokens[at + offset] === word)) {
       tls = mode;
       at += expected.length;
@@ -3073,6 +3148,20 @@ export function supportsSystemCa(version: string | null): boolean | null {
 /** Ob eine Eingabe irgendwo `verify` verlangt, im Backend oder in einer Regel. */
 export function usesSystemCa(input: Pick<CreateServiceInput, 'backendTls' | 'routes'>): boolean {
   return input.backendTls === 'verify' || input.routes.some((route) => route.backendTls === 'verify');
+}
+
+/**
+ * Die hinterlegten Zertifizierungsstellen, gegen die eine Eingabe oder ein
+ * gelesener Eintrag prüft, im Backend oder in einer Regel. Jede einmal.
+ */
+export function usedBackendCas(input: {
+  backendTls: BackendTls;
+  routes: readonly { backendTls: BackendTls }[];
+}): string[] {
+  const names = [input.backendTls, ...input.routes.map((route) => route.backendTls)]
+    .map(backendCaName)
+    .filter((name): name is string => name !== null);
+  return [...new Set(names)];
 }
 
 /** Ob diese Konfiguration die Seiten der Abfrage braucht. Sie müssen auf der

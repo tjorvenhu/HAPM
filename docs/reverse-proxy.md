@@ -64,7 +64,8 @@ Backend-Adresse (`matchesSearch`, rein und getestet).
   Adressen binden. Siehe [`reverse-proxy-api.md`](reverse-proxy-api.md).
 - **Feste Kennungen**, die in `haproxy.cfg` oder auf der Platte stehen und
   zurückgelesen werden: Cookie `HAPMSRV`, `hapm_lock_<id>`,
-  `/etc/haproxy/hapm-lock/`, `.hapm-original` / `.hapm-previous`,
+  `/etc/haproxy/hapm-lock/`, `/etc/haproxy/hapm-ca/<name>.pem` (hinterlegte
+  Zertifizierungsstellen), `.hapm-original` / `.hapm-previous`,
   `haproxy.cfg.hapm-new`, das Token-Präfix `hapm_`. Sie zu ändern hieße, dass
   bestehende Einträge nicht mehr wiedererkannt werden.
 
@@ -215,25 +216,32 @@ ein Ziel trotzdem eine, bleibt er bedienbar, damit sie sich entfernen lässt.
 Manche Ziele sprechen selbst nur HTTPS: Proxmox auf 8006, TrueNAS, eine
 Anwendung mit eigenem Zertifikat. Ohne Zusatz spricht HAProxy dort Klartext
 und bekommt einen Fehler oder einen Verbindungsabbruch zurück. Das Feld dafür
-heißt `backendTls` und hat drei Werte; geschrieben wird es auf **jede**
-server-Zeile des Backends (`serverParams`, `backendTlsParams`):
+heißt `backendTls` und hat drei feste Werte und einen mit Namen; geschrieben
+wird es auf **jede** server-Zeile des Backends (`serverParams`,
+`backendTlsParams`):
 
 | `backendTls` | Formular | An der server-Zeile |
 |---|---|---|
 | `off` (Vorgabe) | HTTP | nichts |
 | `insecure` | HTTPS | `ssl verify none sni req.hdr(host)` |
-| `verify` | HTTPS, Zertifikat prüfen | `ssl verify required ca-file @system-ca sni req.hdr(host)` |
+| `verify` | HTTPS, Zertifikat prüfen, geprüft gegen „Die CAs des Systems" | `ssl verify required ca-file @system-ca sni req.hdr(host)` |
+| `ca:<name>` | HTTPS, Zertifikat prüfen, geprüft gegen eine hinterlegte Zertifizierungsstelle | `ssl verify required ca-file /etc/haproxy/hapm-ca/<name>.pem sni req.hdr(host)` |
 
 Mit Healthcheck (beim Dienst) bzw. Verbindungsprüfung (bei einer Regel) kommt
 `check-sni <Hauptdomain>` dazu, siehe unten. Die Belege stehen im Handbuch der
 Fassung hinter `haproxy:lts` (heute 3.4,
 <https://www.haproxy.org/download/3.4/doc/configuration.txt>, Abschnitt 5.2).
 
-- **Ein Feld mit drei Werten und nicht zwei Schalter.** „Prüfen ohne HTTPS"
+- **Ein Feld und nicht zwei Schalter.** „Prüfen ohne HTTPS"
   gibt es nicht, und ein Modell, das den Zustand zulässt, braucht eine Regel
-  mehr, die ihn ablehnt. Die Werte kommen aus einer Allow-Liste
+  mehr, die ihn ablehnt. Die festen Werte kommen aus einer Allow-Liste
   (`BACKEND_TLS`), aus demselben Grund wie bei `balance`: die Art entscheidet
-  über Wörter in der Datei.
+  über Wörter in der Datei. Die hinterlegte Zertifizierungsstelle steht aus
+  demselben Grund **im Wert** (`ca:<name>`) und nicht in einem zweiten Feld:
+  „eigene CA ohne Namen" und „Name ohne eigene CA" gibt es so nicht, und was
+  heute `backendTls` durchreicht (Formular, API, MCP, Import), reicht den Namen
+  mit durch. `isBackendTls` prüft beides, `backendTlsKind` gibt die Art ohne
+  den Namen (für Beschriftungen).
 - **Je Backend und nicht je Zeile.** Die Ziele einer Lastverteilung sind
   gleichartige Server; eine Wahl je Zeile wäre eine Spalte, die fast immer
   dieselbe Antwort hat. Gelesen wird trotzdem je Zeile
@@ -256,9 +264,22 @@ Fassung hinter `haproxy:lts` (heute 3.4,
   `ca-certificates` (Dockerfile von 3.4, mit dem Kommentar „@system-ca").
   Auf einem älteren HAProxy lehnt die Vorabprüfung `verify` mit Grund ab
   (`assertTlsSupported` in `provision.ts`), und das Formular sperrt die Wahl.
-  Eine eigene CA-Datei (interne CA) bietet HAPM nicht an: die Datei müsste
-  HAPM verwalten. Eine Zeile mit eigener `ca-file` wird gelesen und ist nur
-  lesbar.
+- **`ca:<name>` prüft gegen eine hinterlegte Zertifizierungsstelle**, für Ziele
+  mit Zertifikat aus einer internen CA (siehe „Hinterlegte
+  Zertifizierungsstellen" weiter unten). Der Pfad in `ca-file` ist absolut,
+  ein `ca-base` in `global` stört ihn nicht. Zurückgelesen wird nur ein Pfad
+  in `/etc/haproxy/hapm-ca/` mit einem Namen, den HAPM vergibt
+  (`caNameFromFile`); eine Zeile mit einer anderen `ca-file` wird gelesen und
+  ist nur lesbar. Sonst gilt für `ca:<name>` alles, was für `verify` gilt:
+  derselbe SNI, derselbe `check-sni`, dieselbe Reihenfolge der Wörter. Die
+  Grenze 2.6 gilt hier nicht, eine `ca-file` aus einer Datei kennt jedes
+  HAProxy.
+- **Geprüft wird in beiden Fällen gegen die Domain der Anfrage.** Das Ziel
+  braucht ein Zertifikat, das die öffentliche Domain nennt, auch wenn eine
+  interne CA es ausgestellt hat. Ein Zertifikat nur für den internen Namen
+  (`app01.intern.example`) fällt durch: `pnpm haproxy:verify-tls` zeigt das
+  (503). Eine Prüfung gegen den Hostnamen des Ziels (`verifyhost`, fester SNI)
+  schreibt HAPM nicht; eine solche Zeile ist nur lesbar.
 - **SNI ist die Domain der Anfrage, `sni req.hdr(host)`.** Das Handbuch sagt
   zu `sni`: „SNI in HTTPS must always match the Host field" und verweist für
   HTTPS auf `req.hdr(host)`. Die Hauptdomain als fester SNI wäre bei einem
@@ -321,7 +342,12 @@ Fassung hinter `haproxy:lts` (heute 3.4,
     (`req.hdr(host)`, auch mit `,field(1,:)` oder `,lower`) wird `verify`.
     Ohne `sni` oder mit festem prüfte HAProxy den Namen anders als HAPM
     danach, und ein Ziel, das heute durchkommt, fiele durch: ein Grund, kein
-    Hinweis. Eine eigene `ca-file` ebenso.
+    Hinweis.
+  - `verify required ca-file /etc/haproxy/hapm-ca/<name>.pem` mit SNI aus dem
+    Host wird `ca:<name>`. Ob die Datei auf dieser Maschine liegt, prüft die
+    Vorabprüfung beim Anlegen (`assertCasPresent`). Eine `ca-file` an einem
+    anderen Ort ist ein Grund: die Datei gehört HAPM nicht, und der Hinweis
+    sagt, wo sie hinterlegt wird.
   - `ssl` ohne `verify` gilt nach `ssl-server-verify none` in `global` als
     `insecure`, sonst lädt HAProxy die Zeile nicht.
   - `check-ssl` und `check-sni` entfallen: das eine ist bei `ssl` die
@@ -1165,6 +1191,103 @@ vorhandenes Zertifikat es abdeckt. Der Dialog sagt das vor dem Speichern, mit
 dem Weg zur Zertifikatsseite. Was acme.sh schon führt, erneuert es weiter: die
 Erneuerung fragt diese Einstellung nicht.
 
+### Hinterlegte Zertifizierungsstellen: `lib/haproxy/backend-ca.ts`
+
+Ein Ziel im eigenen Netz trägt meist ein Zertifikat aus einer internen CA. Die
+CAs des Systems kennen sie nicht, also blieb für solche Ziele nur „HTTPS ohne
+Prüfung". Auf der Zertifikatsseite, Reiter „Zertifizierungsstellen"
+(`?bereich=zertifizierungsstellen`), hinterlegt der Betreiber das Zertifikat
+der CA unter einem Namen, und ein Ziel wählt sie unter „HTTPS, Zertifikat
+prüfen" bei „Geprüft gegen" aus (`backendTls: 'ca:<name>'`, siehe „Ziele, die
+HTTPS sprechen"). Das ist die andere Richtung als alles Übrige auf der Seite:
+dort stehen Zertifikate, die HAProxy Besuchern ausliefert, hier
+Vertrauensanker, gegen die es selbst prüft.
+
+- **Die Platte ist die Wahrheit, auch hier.** Eine Zertifizierungsstelle ist
+  eine Datei `/etc/haproxy/hapm-ca/<name>.pem`. Keine Collection, aus demselben
+  Grund wie bei den hochgeladenen Zertifikaten. Der Ordner liegt unter
+  `/etc/haproxy`, weil HAProxy nur den sieht. Eine Datei, die jemand von Hand
+  dorthin legt, zählt genauso; eine, deren Name keiner ist, den HAPM vergibt,
+  wird nicht gezeigt und nicht angefasst (`listedCas`).
+- **Der Name ist eine feste Kennung.** Kleinbuchstaben, Ziffern, Bindestriche,
+  höchstens 40 Zeichen (`isValidCaName`). Eng, weil er Dateiname wird und als
+  Wort in jeder server-Zeile steht, die ihn benutzt: kein Punkt, kein
+  Schrägstrich, kein Leerzeichen. Umbenennen gibt es nicht, es hieße, jede
+  Zeile umzuschreiben, die ihn nennt.
+- **In der Datei stehen nur Zertifikate.** `inspectCaUpload` lehnt einen
+  privaten Schlüssel ab, bevor etwas auf die Platte geht: der Schlüssel einer
+  CA gehört nicht auf einen Reverse-Proxy. Deshalb darf die Liste den ganzen
+  Inhalt lesen (`caListingCommand`, anders als `certListingCommand`, das nach
+  dem ersten Zertifikat aufhört), die Datei hat die Rechte 644, und die API
+  darf hochladen (siehe unten).
+- **Geprüft wird vor dem Schreiben, mit node:crypto.** Lesbares PEM, ein
+  Zertifikat oder ein Bündel (Root und Zwischenstellen hintereinander, die
+  Reihenfolge ist HAProxy gleich), höchstens 300 KB. Abgelehnt wird, womit
+  HAProxy nichts erfolgreich prüfen könnte:
+  - **ein abgelaufenes Zertifikat**, auch eines unter mehreren im Bündel, mit
+    seinem Namen in der Meldung. Der früheste Ablauf ist der der ganzen Datei
+    (`earliest`), die Liste zeigte die Stelle sonst ab dem ersten Tag als
+    abgelaufen und die Erinnerung käme täglich.
+  - **das Zertifikat eines Servers, das eine CA ausgestellt hat** (weder CA
+    noch selbst signiert): OpenSSL vertraut ihm nicht als Anker. Die Meldung
+    nennt die Stelle, deren Zertifikat stattdessen gebraucht wird.
+  - Ein **selbst signiertes Zertifikat eines Servers** (CA:FALSE, wie eine
+    Appliance es mitbringt) geht dagegen, mit einem Hinweis: HAProxy nimmt
+    dann genau dieses Zertifikat an. `pnpm haproxy:verify-tls` zeigt das.
+  - Eine **selbst signierte Root der Fassung 1** hat keine Erweiterungen, also
+    kein `CA:TRUE`. Sie gilt trotzdem als CA, wie bei OpenSSL
+    (`X509_check_ca`). `X509Certificate` nennt die Fassung nicht, `isVersion1`
+    liest sie aus dem DER.
+  Geschrieben wird eine normalisierte Datei: jedes Zertifikat einmal, als PEM,
+  ohne den Text drumherum.
+- **Synchron und ohne Lauf**, wie die hochgeladenen Zertifikate
+  (`uploadBackendCa`, `removeBackendCa` in `provision.ts`): es wird nichts
+  beantragt. Dieselben Riegel: der Lock, die bisherige Datei als Rückweg
+  (`hapm-ca.pem.hapm-previous`, **neben** dem Ordner: was darin liegt und
+  `.pem` heißt, ist eine Zertifizierungsstelle), `haproxy -c` vor dem Neuladen.
+- **Neu geladen wird nur, wenn `haproxy.cfg` die Datei nennt** (`caReferenced`).
+  HAProxy liest eine `ca-file` beim Laden der Konfiguration. Eine neue, die noch
+  kein Ziel benutzt, ändert nichts an dem, was läuft. Wird eine benutzte
+  ersetzt, lädt HAProxy neu, und Ziele, deren Zertifikat die neue Datei nicht
+  bestätigt, antworten danach mit 503: der Dialog sagt das vor dem Klick und
+  nennt die Ziele.
+- **Ersetzen nur ausdrücklich** (`replace: true`). Ein vergebener Name wird
+  sonst nicht überschrieben (409): wer unter ihm eine andere CA ablegt,
+  ändert, wem die Ziele vertrauen, die ihn nennen.
+- **Entfernen nur, wenn `haproxy.cfg` die Datei nirgends nennt**, geprüft im
+  Lock und am Text der Datei, nicht an der Liste der Ziele. Mit einer
+  `ca-file`, die fehlt, lädt HAProxy die **ganze** Konfiguration nicht mehr
+  („unable to load CA file", geprüft von `pnpm haproxy:verify-tls`), und das
+  fiele beim nächsten Neuladen auf, nicht heute. Deshalb zählt auch eine Zeile
+  von Hand, die die Datei nennt. Kommentare zählen nicht.
+- **Ein Ziel, das eine Stelle nennt, die nicht hinterlegt ist, wird vor dem
+  Lauf abgelehnt** (`assertCasPresent`, 409 mit dem Weg zum Hinterlegen) und im
+  Lauf unter dem Lock noch einmal: dazwischen kann sie jemand entfernt haben.
+  `validateCreateInput` prüft nur die Form des Namens, es sieht die Platte nicht.
+- **„Benutzt von"** sind die Ziele, die im Backend oder in einer Pfad-Regel
+  gegen die Stelle prüfen (`caUsers`), mit Link zum Bearbeiten wie bei den
+  Zertifikaten. Der Knopf zum Entfernen steht nur an einer unbenutzten.
+- **Der Fingerabdruck steht ganz da** (SHA-256 je Zertifikat der Datei). Er
+  beantwortet die Frage, um die es bei einer Root geht: ist es die richtige.
+  Im Protokoll (`haproxy_ca_uploaded`, `haproxy_ca_removed`) stehen Name,
+  Inhaber, Ablauf und Fingerabdruck, nie der Inhalt.
+- **Erinnerung vor dem Ablauf**: das Ereignis `backend_ca_expiring` meldet eine
+  Stelle 30 Tage vorher (`CA_WARN_DAYS`), aber nur, wenn ein Ziel sie benutzt.
+  Eine Datei, gegen die niemand prüft, lässt nichts ausfallen. Die Liste
+  markiert den Ablauf in jedem Fall.
+- **API und MCP** (`lib/haproxy/ca-actions.ts`, `/api/internal/haproxy/certificate-authorities`,
+  `list_certificate_authorities`, `upload_certificate_authority`,
+  `delete_certificate_authority`): dieselben Funktionen wie die Seite. Hochladen
+  geht hier, anders als bei den Zertifikaten der Domains. In der Datei steht
+  kein Geheimnis, und ein Key kann ein Ziel ohnehin auf „nicht prüfen"
+  stellen: eine Zertifizierungsstelle zu hinterlegen gibt ihm nichts, was er
+  nicht hatte. Der Fall dafür ist ein Skript, das eine interne Root auf
+  mehrere Installationen verteilt.
+- **Die Sicherung nimmt sie mit**: sie liegt unter `/etc/haproxy`.
+- Die Namen der hinterlegten Stellen stehen in der Antwort von
+  `/api/haproxy/services` (`backendCas`), neben `presentCertificates`: der
+  Dialog eines Ziels braucht sie für die Auswahl und fragt nicht selbst.
+
 ### Ein eigener ACME-Server: `lib/acme-server.ts`, `lib/certificate-settings.ts`
 
 Für die ganze Installation, nicht je Ziel: eine Directory-URL (etwa step-ca im
@@ -1219,7 +1342,12 @@ oder im Assistenten (`PUT /api/settings/certificates`, `/api/setup/certificates`
 
 ### Die Zertifikatsseite: `/reverse-proxy/zertifikate`
 
-Was acme.sh führt und was hochgeladen ist, mit den abgedeckten Domains, dem
+**Zwei Reiter** (`AreaTabs`): „Zertifikate" und „Zertifizierungsstellen"
+(`?bereich=zertifizierungsstellen`, `CertificateAuthoritiesPanel`, siehe
+„Hinterlegte Zertifizierungsstellen"). Der zweite lädt selbst und hat seinen
+eigenen Knopf „Hinterlegen"; „Hochladen" im Kopf der Seite gilt nur dem ersten.
+
+Im ersten Reiter: was acme.sh führt und was hochgeladen ist, mit den abgedeckten Domains, dem
 Erneuerungstermin oder Ablauf und den Diensten, die es benutzen. **Was acme.sh
 führt, entsteht und vergeht mit einem Dienst und lässt sich hier nur löschen,
 wenn es niemand hält.** Ein gebrauchtes hier zu löschen hieße, dem
@@ -2441,7 +2569,8 @@ still darin: TLS und Zertifikat, der Name des Cookies der Sitzungsbindung
   dessen Hauptweiche `if host_acl` ist. Domains mit demselben Weg werden ein
   Eintrag.
 - Backends: `server` (Name, `host:port`, `weight`, `check`, HTTPS zum Ziel
-  mit `ssl verify none` oder `ssl verify required ca-file @system-ca`), `balance` aus der
+  mit `ssl verify none`, `ssl verify required ca-file @system-ca` oder der Datei
+  einer hinterlegten Zertifizierungsstelle als `ca-file`), `balance` aus der
   Allow-Liste, `cookie … insert` mit Marke auf jeder server-Zeile (als
   Sitzungsbindung), `option httpchk`/`http-check` (nur als „Healthcheck an",
   HAPM prüft GET / mit 200 bis 399), `http-request`/`http-response set-header`

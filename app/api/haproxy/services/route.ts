@@ -8,6 +8,7 @@ import {
   probeProxy,
   precheckCreate,
   readPemCoverage,
+  readBackendCas,
 } from '@/lib/haproxy/provision';
 import { diffBaseConfig } from '@/lib/haproxy/base-config-diff';
 import { startHaproxyRun } from '@/lib/haproxy/runner';
@@ -68,6 +69,8 @@ interface ProxyRow {
   httpChallenge: boolean;
   /** Die Domains jeder gültigen PEM-Datei. Deckt eine davon ein Ziel ab, wird nichts beantragt. */
   presentCertificates: string[][];
+  /** Die Namen der hinterlegten Zertifizierungsstellen, für die Auswahl im Dialog (`backendTls: 'ca:<name>'`). */
+  backendCas: string[];
   services: HaproxyService[];
   /**
    * Das Ziel, über das die Adresse von HAPM läuft, und seine Gruppe. Beide
@@ -141,6 +144,7 @@ export async function GET() {
               acmeReady: probe.acmeReady,
               dnsHooks: probe.dnsHooks,
               presentCertificates: [],
+              backendCas: [],
               services: [],
               surface: null,
               streams: [],
@@ -161,6 +165,7 @@ export async function GET() {
             acmeReady: probe.acmeReady,
             dnsHooks: probe.dnsHooks,
             presentCertificates: await readPemCoverage(server),
+            backendCas: ((await readBackendCas(server)) ?? []).map((ca) => ca.name),
             // Ohne Hash und Cookie-Wert der Passwortsperre: der Cookie-Wert
             // ist der Durchlass selbst und gehört nicht in den Browser.
             services: probe.services.map(withoutLockSecret),
@@ -196,6 +201,7 @@ export async function GET() {
             acmeReady: false,
             dnsHooks: [],
             presentCertificates: [],
+            backendCas: [],
             services: [],
             surface: null,
             streams: [],

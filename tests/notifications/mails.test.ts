@@ -148,6 +148,15 @@ const SAMPLES: { event: NotificationEvent; subject: string; text: string[]; path
     text: ['proxy01', 'WAF-Treffer: 4', 'Jetzt aktive Sperren: 3', 'crowdsecurity/http-probing: 6', '203.0.113.58: 9', 'shop_example_org: 10', 'Freigaben'],
     path: '/reverse-proxy/crowdsec?bereich=ereignisse',
   },
+  {
+    event: {
+      type: 'backend_ca_expiring',
+      authorities: [{ name: 'intern-root', expiresAt: '2026-12-06T12:00:00.000Z', daysLeft: 12, usedBy: ['kunde_shop', 'intern_wiki'] }],
+    },
+    subject: 'Zertifizierungsstelle intern-root läuft in 12 Tagen ab',
+    text: ['intern-root', 'in 12 Tagen', 'benutzt von kunde_shop, intern_wiki', 'proxy01', 'Was zu tun ist', '503'],
+    path: '/reverse-proxy/zertifikate?bereich=zertifizierungsstellen',
+  },
 ];
 
 describe('notificationMail', () => {
@@ -195,6 +204,30 @@ describe('notificationMail', () => {
       expect(mail.text).toContain('HAPM-Installation auf dem Server proxy01');
       expect(mail.text).toContain('unter „Benachrichtigungen“');
     });
+  });
+
+  it('fasst mehrere Zertifizierungsstellen in einer Mail zusammen, die dringendste zuerst', () => {
+    const mail = notificationMail(
+      {
+        type: 'backend_ca_expiring',
+        authorities: [
+          { name: 'intern-root', expiresAt: '2026-12-06T12:00:00.000Z', daysLeft: 12, usedBy: ['kunde_shop'] },
+          { name: 'alt-root', expiresAt: '2026-11-22T12:00:00.000Z', daysLeft: -2, usedBy: ['intern_wiki'] },
+        ],
+      },
+      ctx
+    );
+    expect(mail.subject).toBe('2 Zertifizierungsstellen laufen ab');
+    expect(mail.text.indexOf('alt-root')).toBeLessThan(mail.text.indexOf('intern-root'));
+    expect(mail.text).toContain('seit dem 22.11.2026 abgelaufen, benutzt von intern_wiki');
+    const single = (daysLeft: number) =>
+      notificationMail(
+        { type: 'backend_ca_expiring', authorities: [{ name: 'intern-root', expiresAt: '2026-11-24T18:00:00.000Z', daysLeft, usedBy: ['a'] }] },
+        ctx
+      ).subject;
+    expect(single(-1)).toBe('Zertifizierungsstelle intern-root ist abgelaufen');
+    expect(single(0)).toBe('Zertifizierungsstelle intern-root läuft in weniger als 24 Stunden ab');
+    expect(single(1)).toBe('Zertifizierungsstelle intern-root läuft in einem Tag ab');
   });
 
   it('maskiert, was von außen kommt', () => {

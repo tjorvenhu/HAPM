@@ -98,6 +98,7 @@ Konfiguration, prüft sie mit HAProxy, lädt neu und holt die Zertifikate.
 - Server nur im eigenen Netz: jedes Zertifikat über DNS-01
 - Eigener ACME-Server, etwa step-ca im eigenen Netz
 - Zertifikate hochladen, wenn HAPM nichts beantragen soll
+- Eigene Zertifizierungsstellen hinterlegen: Ziele mit Zertifikat aus einer internen CA werden geprüft statt ungeprüft angebunden
 - Eigener DNS-Server: HAPM nennt die Einträge, statt sie anzulegen
 
 </td>

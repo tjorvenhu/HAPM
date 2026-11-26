@@ -1,28 +1,40 @@
 'use client';
 
+import Link from 'next/link';
 import { Info } from 'lucide-react';
 import { InfoHint } from '@/ui/primitives/InfoHint';
+import Select, { type SelectOption } from '@/components/Select';
 import {
-  BACKEND_TLS,
   HTTPS_PORT_HINTS,
+  backendCaName,
+  backendCaTls,
+  backendTlsKind,
   backendTlsParams,
   type BackendTls,
 } from '@/lib/haproxy/config';
 import { msgid } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
 
-const LABELS: Record<BackendTls, string> = {
+/** Die drei Knöpfe. Wogegen „prüfen" prüft, steht in der Auswahl darunter. */
+const MODES = ['off', 'insecure', 'verify'] as const;
+type Mode = (typeof MODES)[number];
+
+const LABELS: Record<Mode, string> = {
   off: msgid('HTTP'),
   insecure: msgid('HTTPS'),
   verify: msgid('HTTPS, Zertifikat prüfen'),
 };
 
 /** Ein Satz je Art, sichtbar unter der Auswahl. Die lange Erklärung steht im „i". */
-const SUMMARIES: Record<BackendTls, string> = {
+const SUMMARIES: Record<Mode | 'ca', string> = {
   off: msgid('HAProxy spricht unverschlüsselt mit dem Ziel.'),
   insecure: msgid('Verschlüsselt. Das Zertifikat des Ziels wird nicht geprüft.'),
   verify: msgid('Verschlüsselt. Das Zertifikat muss von einer bekannten CA stammen.'),
+  ca: msgid('Verschlüsselt. Das Zertifikat muss von dieser Stelle stammen.'),
 };
+
+/** Wo Zertifizierungsstellen hinterlegt werden. */
+const BACKEND_CA_PAGE = '/reverse-proxy/zertifikate?bereich=zertifizierungsstellen';
 
 /** Der Port einer Adresse `host:port`, sonst `null`. */
 function portOf(target: string): number | null {
@@ -39,10 +51,13 @@ interface Props {
   targets: string[];
   /**
    * Die Version von HAProxy, wenn sie `@system-ca` nicht kennt (vor 2.6). Dann
-   * steht „Zertifikat prüfen" nicht zur Wahl, außer es ist schon gewählt: der
-   * Eintrag soll sich öffnen lassen, auch wenn die Voraussetzung fehlt.
+   * stehen die CAs des Systems nicht zur Wahl, außer sie sind schon gewählt:
+   * der Eintrag soll sich öffnen lassen, auch wenn die Voraussetzung fehlt.
+   * Eine hinterlegte Zertifizierungsstelle geht auf jeder Version.
    */
   verifyUnsupported: string | null;
+  /** Die Namen der hinterlegten Zertifizierungsstellen. */
+  authorities: string[];
 }
 
 /**
@@ -50,13 +65,50 @@ interface Props {
  * Lastverteilungs-Formular für das Backend, und noch einmal je Pfad-Regel:
  * eine Regel zeigt auf einen anderen Port, und ob dort HTTPS spricht, ist eine
  * Eigenschaft dieses Ports (docs/reverse-proxy.md, „Ziele, die HTTPS sprechen").
+ *
+ * Drei Knöpfe und nicht vier: „prüfen" ist eine Entscheidung, wogegen geprüft
+ * wird, die zweite. Sie steht darunter, sobald geprüft wird. Der Wert bleibt
+ * ein Feld (`verify` oder `ca:<name>`).
  */
-export default function BackendTlsPick({ value, onChange, label, targets, verifyUnsupported }: Props) {
+export default function BackendTlsPick({ value, onChange, label, targets, verifyUnsupported, authorities }: Props) {
   const { t } = useT();
+  const kind = backendTlsKind(value);
+  const mode: Mode = kind === 'ca' ? 'verify' : kind;
+  const chosenCa = backendCaName(value);
   const httpsPort =
     value === 'off'
       ? (targets.map(portOf).find((port) => port !== null && HTTPS_PORT_HINTS.includes(port)) ?? null)
       : null;
+
+  const systemBlocked = verifyUnsupported !== null && value !== 'verify';
+  /** Ohne die CAs des Systems bleibt nur eine hinterlegte Stelle. Gibt es keine, gibt es nichts zu prüfen. */
+  const verifyBlocked = systemBlocked && authorities.length === 0 && mode !== 'verify';
+
+  // Eine gewählte Stelle, die nicht (mehr) in der Liste steht, bleibt wählbar und sagt, was mit ihr ist.
+  const names = chosenCa !== null && !authorities.includes(chosenCa) ? [...authorities, chosenCa] : authorities;
+  const options: SelectOption<BackendTls>[] = [
+    {
+      value: 'verify',
+      label: t('Die CAs des Systems'),
+      hint: t('Öffentlich ausgestellte Zertifikate, etwa von Let’s Encrypt'),
+      disabled: systemBlocked,
+      disabledReason: systemBlocked
+        ? t('Braucht HAProxy 2.6 oder neuer. Hier läuft {version}.', { version: verifyUnsupported ?? '' })
+        : undefined,
+    },
+    ...names.map((name) => ({
+      value: backendCaTls(name) as BackendTls,
+      label: name,
+      hint: authorities.includes(name) ? t('Hinterlegte Zertifizierungsstelle') : t('Nicht hinterlegt'),
+    })),
+  ];
+
+  const pick = (next: Mode) => {
+    if (next !== 'verify') return onChange(next);
+    if (mode === 'verify') return;
+    // Ohne die CAs des Systems beginnt die Prüfung bei der ersten hinterlegten Stelle.
+    onChange(systemBlocked && authorities.length > 0 ? backendCaTls(authorities[0]) : 'verify');
+  };
 
   return (
     <div className="form-group">
@@ -64,29 +116,58 @@ export default function BackendTlsPick({ value, onChange, label, targets, verify
         <label className="form-label">{t(label)}</label>
         <InfoHint
           text={t(
-            'Für Ziele, die selbst verschlüsseln, etwa Proxmox auf 8006 oder TrueNAS. Ohne Prüfung passt das für selbst signierte Zertifikate. Mit Prüfung muss das Zertifikat von einer CA stammen, der das System vertraut, und für die aufgerufene Domain gelten. HAProxy schickt die Domain der Anfrage als SNI. In der Konfiguration: „{insecure}“ oder „{verify}“ an jeder server-Zeile.',
+            'Für Ziele, die selbst verschlüsseln, etwa Proxmox auf 8006 oder TrueNAS. Ohne Prüfung passt das für selbst signierte Zertifikate. Mit Prüfung muss das Zertifikat von einer CA stammen, der das System vertraut, oder von einer hinterlegten Zertifizierungsstelle, und für die aufgerufene Domain gelten. HAProxy schickt die Domain der Anfrage als SNI. In der Konfiguration: „{insecure}“ oder „{verify}“ an jeder server-Zeile, bei einer hinterlegten Stelle mit ihrer Datei statt @system-ca.',
             { insecure: backendTlsParams('insecure'), verify: backendTlsParams('verify') }
           )}
         />
       </div>
       <div>
         <div className="segmented" role="group" aria-label={t(label)}>
-          {BACKEND_TLS.map((mode) => (
+          {MODES.map((entry) => (
             <button
-              key={mode}
+              key={entry}
               type="button"
-              className={value === mode ? 'active' : ''}
-              aria-pressed={value === mode}
-              disabled={mode === 'verify' && verifyUnsupported !== null && value !== 'verify'}
-              onClick={() => onChange(mode)}
+              className={mode === entry ? 'active' : ''}
+              aria-pressed={mode === entry}
+              disabled={entry === 'verify' && verifyBlocked}
+              onClick={() => pick(entry)}
             >
-              {t(LABELS[mode])}
+              {t(LABELS[entry])}
             </button>
           ))}
         </div>
       </div>
-      <span className="form-hint">{t(SUMMARIES[value])}</span>
-      {verifyUnsupported !== null && (
+      <span className="form-hint">{t(SUMMARIES[kind])}</span>
+      {mode === 'verify' && (
+        <div className="form-group">
+          <div className="form-label-row">
+            <label className="form-label">{t('Geprüft gegen')}</label>
+            <InfoHint
+              text={t(
+                'Die CAs des Systems kennen nur öffentlich ausgestellte Zertifikate. Für ein Ziel mit Zertifikat aus einer eigenen CA hinterlegen Sie deren Zertifikat unter Zertifikate, Reiter Zertifizierungsstellen, und wählen sie hier aus. Das Zertifikat des Ziels muss in beiden Fällen für die aufgerufene Domain gelten.'
+              )}
+            />
+          </div>
+          <Select value={value} onChange={onChange} options={options} />
+          {authorities.length === 0 && (
+            <span className="form-hint">
+              {t('Noch keine eigene Zertifizierungsstelle hinterlegt.')}{' '}
+              <Link href={BACKEND_CA_PAGE}>{t('Zertifizierungsstelle hinterlegen')}</Link>
+            </span>
+          )}
+          {chosenCa !== null && !authorities.includes(chosenCa) && (
+            <div className="form-note">
+              <Info size={14} />
+              <span>
+                {t('Die Zertifizierungsstelle {name} ist nicht hinterlegt. Speichern geht erst, wenn sie hinterlegt ist.', {
+                  name: chosenCa,
+                })}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+      {verifyUnsupported !== null && chosenCa === null && (
         <span className="form-hint">
           {t('Die Prüfung braucht HAProxy 2.6 oder neuer. Hier läuft {version}.', {
             version: verifyUnsupported,

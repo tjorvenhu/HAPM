@@ -65,6 +65,9 @@ const more = vi.hoisted(() => ({
   checkAddressMove: vi.fn(),
   removeCertificate: vi.fn(async () => ({ mainDomain: 'x', reloaded: true })),
   reissueCertificate: vi.fn(async () => ({ runId: 'c1' })),
+  listCertificateAuthorities: vi.fn(async () => ({ warnDays: 30, authorities: [], error: null })),
+  saveCertificateAuthority: vi.fn(async () => ({ name: 'intern-root', reloaded: false })),
+  removeCertificateAuthority: vi.fn(async () => ({ name: 'intern-root' })),
   readBaseConfigRows: vi.fn(async () => [{ $id: 'local', diff: null }]),
   applyBaseConfig: vi.fn(async () => ({ steps: [] })),
   readErrorPageRows: vi.fn(async () => [{ $id: 'local', entries: [] }]),
@@ -115,6 +118,11 @@ vi.mock('@/lib/address-move', () => ({ checkAddressMove: more.checkAddressMove }
 vi.mock('@/lib/haproxy/certificate-actions', () => ({
   removeCertificate: more.removeCertificate,
   reissueCertificate: more.reissueCertificate,
+}));
+vi.mock('@/lib/haproxy/ca-actions', () => ({
+  listCertificateAuthorities: more.listCertificateAuthorities,
+  saveCertificateAuthority: more.saveCertificateAuthority,
+  removeCertificateAuthority: more.removeCertificateAuthority,
 }));
 vi.mock('@/lib/haproxy/maintenance-actions', () => ({
   readBaseConfigRows: more.readBaseConfigRows,
@@ -192,6 +200,9 @@ const OTHER_WRITING = [
   'restart_haproxy',
   'delete_certificate',
   'reissue_certificate',
+  // Zertifizierungsstellen sind kein Geheimnis: hochladen geht, anders als bei den Zertifikaten der Domains.
+  'upload_certificate_authority',
+  'delete_certificate_authority',
   'apply_base_config',
   'redeploy_error_pages',
   'refresh_geoip',
@@ -350,6 +361,9 @@ describe('Rechte: die übrigen schreibenden Werkzeuge schreiben unter dem Namen 
     ['restart_haproxy', {}, 'restartHaproxy', auditActor],
     ['delete_certificate', { mainDomain: 'old.example.com' }, 'removeCertificate', { allowUploaded: false }],
     ['reissue_certificate', { mainDomain: '*.example.com' }, 'reissueCertificate', actor],
+    // Das letzte Argument ist die Sprache des Aufrufers, für die Hinweise der Antwort.
+    ['upload_certificate_authority', { name: 'intern-root', certificate: 'PEM' }, 'saveCertificateAuthority', ctx.t],
+    ['delete_certificate_authority', { name: 'intern-root' }, 'removeCertificateAuthority', auditActor],
     ['apply_base_config', { ids: ['global|missing|x'] }, 'applyBaseConfig', auditActor],
     ['redeploy_error_pages', {}, 'redeployErrorPages', auditActor],
     ['refresh_geoip', {}, 'refreshGeoipNow', auditActor],

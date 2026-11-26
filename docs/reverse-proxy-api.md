@@ -149,6 +149,7 @@ Alle unter `/api/internal/haproxy/`.
 | `GET /certificates` | was acme.sh führt, samt „benutzt von" |
 | `DELETE /certificates?domain=` | ein übriges Zertifikat von acme.sh entfernen |
 | `POST /certificates/issue` | einen nie ausgestellten Antrag erneut stellen → `{ runId }` |
+| `GET`/`POST`/`DELETE /certificate-authorities` | Zertifizierungsstellen für die Prüfung der Ziele: auflisten, hinterlegen oder ersetzen, entfernen |
 
 Grundkonfiguration, Fehlerseiten, Log und Statistik liegen ebenfalls unter
 `/api/internal/haproxy/`, beschrieben in [`hapm-api.md`](hapm-api.md).
@@ -217,7 +218,7 @@ type Service = {
     paths: string[];
     servers: { name: string; target: string; check: boolean }[];
     check: boolean;
-    backendTls: 'off' | 'insecure' | 'verify';   // eigen je Regel, siehe unten
+    backendTls: 'off' | 'insecure' | 'verify' | `ca:${string}`;   // eigen je Regel, siehe unten
   }[];
   // Das Verteilverfahren. null heißt: keine balance-Zeile, es gilt der
   // defaults-Block der Konfiguration — nicht "roundrobin".
@@ -231,9 +232,10 @@ type Service = {
   crowdsec: boolean;           // eigener Schalter: CrowdSec prüft dieses Ziel
   app: string | null;          // Anwendung hinter dem Ziel, Kennung aus get_crowdsec_rules
   healthcheck: boolean;
-  // Wie HAProxy die Ziele anspricht: HTTP, HTTPS ohne Prüfung des Zertifikats
-  // oder HTTPS mit Prüfung gegen die CAs des Systems.
-  backendTls: 'off' | 'insecure' | 'verify';
+  // Wie HAProxy die Ziele anspricht: HTTP, HTTPS ohne Prüfung des Zertifikats,
+  // HTTPS mit Prüfung gegen die CAs des Systems oder gegen eine hinterlegte
+  // Zertifizierungsstelle ("ca:intern-root", Namen aus /certificate-authorities).
+  backendTls: 'off' | 'insecure' | 'verify' | `ca:${string}`;
   editable: boolean;           // false → PATCH wird abgelehnt
   removable: boolean;          // false → DELETE wird abgelehnt
   // true: über dieses Ziel läuft die Adresse von HAPM. DELETE wird abgelehnt,
@@ -275,7 +277,7 @@ Feld, bevor du aus einer leeren Liste einen Schluss ziehst.**
   "tunnel": false,                    // optional: lange Verbindungen (WebSocket, Terminal)
   "app": "nextcloud",                 // optional: Anwendung hinter dem Ziel, für CrowdSec
   "healthcheck": true,
-  "backendTls": "off",                // optional: "insecure" oder "verify", wenn das Ziel HTTPS spricht
+  "backendTls": "off",                // optional: "insecure", "verify" oder "ca:<name>", wenn das Ziel HTTPS spricht
   "dnsDomains": "auto",               // optional
   "dnsHook": "dns_cf"                 // nur für DNS-01, und nur bei mehreren Hooks nötig
 }
@@ -608,6 +610,63 @@ type ProxyCertificates = {
 };
 ```
 
+### `GET`, `POST`, `DELETE /certificate-authorities`
+
+Die hinterlegten Zertifizierungsstellen, gegen die ein Ziel das Zertifikat
+seines Backends prüfen kann (`backendTls: "ca:<name>"`). Gedacht für Ziele mit
+Zertifikat aus einer internen CA. Das sind Vertrauensanker und keine
+Zertifikate, die HAProxy Besuchern ausliefert (die stehen unter
+`/certificates`).
+
+```ts
+type CertificateAuthorities = {
+  warnDays: number;            // ab so vielen Tagen vor dem Ablauf gilt eine Stelle als „läuft bald ab"
+  authorities: {
+    name: string;              // "intern-root": so heißt sie in backendTls ("ca:intern-root")
+    file: string;              // "/etc/haproxy/hapm-ca/intern-root.pem"
+    certificates: {            // leer: die Datei ist nicht lesbar
+      subject: string;
+      issuer: string;
+      notBefore: string;       // ISO
+      notAfter: string;
+      fingerprint: string;     // SHA-256, "AB:CD:…"
+      selfSigned: boolean;
+      ca: boolean;
+    }[];
+    notAfter: string | null;   // der früheste Ablauf der Datei
+    daysLeft: number | null;   // negativ: abgelaufen
+    usedBy: { id: string; slug: string | null }[];   // Ziele, die gegen sie prüfen
+  }[];
+  error: string | null;        // gesetzt: nicht lesbar, die Liste heißt dann „unbekannt"
+};
+```
+
+`POST` mit `{ "name": "intern-root", "certificate": "-----BEGIN CERTIFICATE-----…", "replace"?: true }`
+hinterlegt eine Stelle. `certificate` ist PEM, ein Zertifikat oder mehrere
+hintereinander (Root und Zwischenstellen). Der Name: Kleinbuchstaben, Ziffern
+und Bindestriche, höchstens 40 Zeichen. Er wird zum Dateinamen und bleibt.
+Synchron, Antwort `{ name, file, certificates, notAfter, reloaded, usedBy, warnings }`.
+
+- **Hochladen geht hier**, anders als bei `/certificates`: in der Datei steht
+  kein Geheimnis. Ein privater Schlüssel im Text ergibt `400`, ebenso ein
+  abgelaufenes Zertifikat und das Zertifikat eines Servers, das weder eine CA
+  noch selbst signiert ist.
+- **Ohne `replace: true` wird ein vergebener Name nicht überschrieben** (`409`).
+  Mit `replace` wird die Datei einer vorhandenen Stelle ausgetauscht (`404`,
+  wenn es sie nicht gibt). Benutzt ein Ziel sie, prüft HAProxy die
+  Konfiguration und lädt neu (`reloaded: true`). Ziele, deren Zertifikat die
+  neue Datei nicht bestätigt, antworten danach mit 503.
+- `warnings` ist eine Liste von Sätzen, etwa dass ein selbst signiertes
+  Zertifikat eines Servers nur genau dieses Ziel durchlässt.
+
+`DELETE /certificate-authorities?name=<name>` entfernt eine Stelle, aber nur,
+solange `haproxy.cfg` ihre Datei nirgends nennt (`409` mit den Zielen sonst):
+mit einer `ca-file`, die fehlt, lädt HAProxy die ganze Konfiguration nicht
+mehr. Antwort `{ name }`.
+
+Ein Ziel mit `backendTls: "ca:<name>"`, dessen Stelle nicht hinterlegt ist,
+wird beim Anlegen und Ändern mit `409` abgelehnt, bevor ein Lauf startet.
+
 ### Was es hier bewusst nicht gibt
 
 **Die DNS-Zugangsdaten für Wildcards** (in der Oberfläche unter Reverse-Proxy →
@@ -639,7 +698,7 @@ Token weg, und auffallen würde es zwei Monate später.
 | `app` | Welche Anwendung hinter dem Ziel läuft, eine Kennung aus `apps` von `GET /crowdsec/rules` (etwa `nextcloud`, `wordpress`). Steht als `# hapm-app: <id>` im Backend. HAPM holt danach die Ausnahmen von CrowdSec gegen bekannte Fehlsperren und lässt sie, wo CrowdSec das erlaubt, nur für dieses Ziel gelten (siehe docs/crowdsec.md, „Anwendungen“). **Fehlt das Feld, `null` oder leer: keine.** Wie bei den übrigen Feldern heißt ein PATCH ohne `app`, dass die Anwendung entfernt wird. Eine unbekannte Kennung ergibt `400`, bei einer Weiterleitung fällt das Feld weg. |
 | `preset` | Nur noch angenommen, nie gemeldet: `nextcloud` wird zu den beiden Headern der Antwort, `coolify` zu `tunnel: true`, `default` zu nichts. Ein anderer Wert ergibt `400`. |
 | `healthcheck` | **Geht nicht, wenn `domains[0]` eine Wildcard ist** — `*.kunde.example` ist als Host-Header kein gültiger Name, das Ziel antwortete mit 404 und HAProxy nähme ein funktionierendes Backend aus dem Betrieb. Der Wert wird in dem Fall stillschweigend auf `false` normalisiert, nicht abgelehnt. |
-| `backendTls` | Wie HAProxy die Ziele anspricht. **Fehlt oder `"off"`: HTTP**, wie bisher. `"insecure"`: HTTPS, das Zertifikat des Ziels wird nicht geprüft (`ssl verify none`), für selbst signierte wie bei Proxmox (8006) oder TrueNAS. `"verify"`: HTTPS, das Zertifikat muss von einer CA stammen, der das System vertraut, und für die aufgerufene Domain gelten (`ssl verify required ca-file @system-ca`); braucht HAProxy 2.6 oder neuer, sonst `400`. In beiden HTTPS-Fällen geht die Domain der Anfrage als SNI hinaus (`sni req.hdr(host)`), der Healthcheck bekommt `domains[0]` (`check-sni`). Gilt für alle `servers`; jede Pfad-Regel hat ein eigenes `routes[].backendTls` und erbt es **nicht**. Ein anderer Wert ergibt `400`, ebenso ein HTTPS-Wert zusammen mit `redirect`. |
+| `backendTls` | Wie HAProxy die Ziele anspricht. **Fehlt oder `"off"`: HTTP**, wie bisher. `"insecure"`: HTTPS, das Zertifikat des Ziels wird nicht geprüft (`ssl verify none`), für selbst signierte wie bei Proxmox (8006) oder TrueNAS. `"verify"`: HTTPS, das Zertifikat muss von einer CA stammen, der das System vertraut, und für die aufgerufene Domain gelten (`ssl verify required ca-file @system-ca`); braucht HAProxy 2.6 oder neuer, sonst `400`. `"ca:<name>"`: wie `"verify"`, aber gegen eine hinterlegte Zertifizierungsstelle statt der CAs des Systems, für Ziele mit Zertifikat aus einer internen CA (`ssl verify required ca-file /etc/haproxy/hapm-ca/<name>.pem`); der Name kommt aus `GET /certificate-authorities`, eine nicht hinterlegte Stelle ergibt `409`. Auch dann muss das Zertifikat des Ziels für die aufgerufene Domain gelten. In allen HTTPS-Fällen geht die Domain der Anfrage als SNI hinaus (`sni req.hdr(host)`), der Healthcheck bekommt `domains[0]` (`check-sni`). Gilt für alle `servers`; jede Pfad-Regel hat ein eigenes `routes[].backendTls` und erbt es **nicht**. Ein anderer Wert ergibt `400`, ebenso ein HTTPS-Wert zusammen mit `redirect`. |
 | `dnsDomains` | Fehlt → beim DNS-Anbieter wird nichts angefasst. `"auto"` → jede Domain, für die unter `/dns` eine Zone eingerichtet ist. Eine Liste → genau diese, geschnitten mit `domains`. |
 | `dnsHook` | Der acme.sh-Hook für DNS-01, aus `dnsHooks` von `GET /proxies`. DNS-01 gilt bei einer Wildcard und, in einer als intern eingerichteten Installation, bei jeder Domain. Ist genau ein Hook eingerichtet, darf das Feld fehlen. Bei mehreren muss es gesetzt sein. |
 

@@ -20,11 +20,23 @@ export interface ExpiringCertificate {
   uploaded?: boolean;
 }
 
+/** Eine hinterlegte Zertifizierungsstelle (`lib/haproxy/backend-ca.ts`), die ein Ziel benutzt und bald abläuft. */
+export interface ExpiringAuthority {
+  name: string;
+  /** Der früheste Ablauf unter den Zertifikaten der Datei. */
+  expiresAt: string;
+  /** Ganze Tage bis zum Ablauf, abgerundet. Negativ heißt abgelaufen. */
+  daysLeft: number;
+  /** Die Ziele, die gegen sie prüfen: sie sind es, die nach dem Ablauf ausfallen. */
+  usedBy: string[];
+}
+
 export type TargetKind = 'service' | 'stream';
 
 export type NotificationEvent =
   | { type: 'certificate_renewal_failed'; output: string }
   | { type: 'certificate_expiring'; certificates: ExpiringCertificate[] }
+  | { type: 'backend_ca_expiring'; authorities: ExpiringAuthority[] }
   | {
       type: 'backend_down';
       kind: TargetKind;
@@ -139,6 +151,11 @@ export const NOTIFICATION_EVENT_GROUPS: NotificationEventGroup[] = [
         label: msgid('Zertifikat läuft ab'),
         description: msgid('Unter 14 Tage gültig, ein hochgeladenes unter 30. Einmal am Tag.'),
       },
+      {
+        type: 'backend_ca_expiring',
+        label: msgid('Zertifizierungsstelle läuft ab'),
+        description: msgid('Eine hinterlegte, die ein Ziel benutzt, unter 30 Tage gültig.'),
+      },
     ],
   },
   {
@@ -227,6 +244,9 @@ export function eventSubject(event: NotificationEvent): string {
     // Eine Mail für alle fälligen Zertifikate: fällt die Erneuerung aus, sind es meist alle zugleich.
     case 'certificate_expiring':
       return 'certificates';
+    // Wie bei den Zertifikaten: eine Mail für alle, die fällig sind.
+    case 'backend_ca_expiring':
+      return 'authorities';
     case 'backend_down':
     case 'backend_recovered':
       return `${event.kind}:${event.id}`;

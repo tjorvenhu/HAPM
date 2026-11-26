@@ -11,12 +11,15 @@ import {
   BALANCE_LABELS,
   BALANCE_HINTS,
   shortTarget,
+  backendCaName,
   type BackendTls,
+  type BackendTlsKind,
   type HaproxyService,
   type ServiceHealth,
 } from '@/lib/haproxy/config';
 import { msgid } from '@/lib/i18n';
 import { useT } from '@/lib/i18n/react';
+import type { Translator } from '@/lib/i18n/translate';
 import type { ProxyRow } from './types';
 import BrandLogo from '@/components/BrandLogo';
 import { findSavedTarget, type SavedTarget } from '@/lib/haproxy/saved-targets';
@@ -136,10 +139,21 @@ interface Tag {
 const MAX_TAGS = 2;
 
 /** Was das Schloss an einer Zeile heißt, im Tooltip. */
-const TLS_TOOLTIPS: Record<Exclude<BackendTls, 'off'>, string> = {
+const TLS_TOOLTIPS: Record<Exclude<BackendTlsKind, 'off' | 'ca'>, string> = {
   insecure: msgid('HAProxy spricht HTTPS mit dem Ziel, ohne das Zertifikat zu prüfen'),
   verify: msgid('HAProxy spricht HTTPS mit dem Ziel und prüft das Zertifikat'),
 };
+
+/** Der Satz zum Schloss. Bei einer hinterlegten Zertifizierungsstelle nennt er sie. */
+function tlsTooltip(tls: Exclude<BackendTls, 'off'>, t: Translator['t']): string {
+  const ca = backendCaName(tls);
+  if (ca !== null) {
+    return t('HAProxy spricht HTTPS mit dem Ziel und prüft das Zertifikat gegen die Zertifizierungsstelle {name}', {
+      name: ca,
+    });
+  }
+  return t(TLS_TOOLTIPS[tls as 'insecure' | 'verify']);
+}
 
 /**
  * Der Zustand steckt in der Healthcheck-Marke, nicht in einem eigenen Zeichen.
@@ -498,7 +512,7 @@ export default function ServiceCard({
               <div
                 className="rp-row"
                 key={server.name}
-                data-tooltip={server.tls === 'off' ? address : `${address} · ${t(TLS_TOOLTIPS[server.tls])}`}
+                data-tooltip={server.tls === 'off' ? address : `${address} · ${tlsTooltip(server.tls, t)}`}
               >
                 <span className="rp-row-icon">
                   <Server size={14} />
@@ -549,7 +563,7 @@ export default function ServiceCard({
                 className="rp-row rp-route"
                 key={route.name}
                 data-tooltip={`${route.paths.join(' ')} → ${route.servers.map((s) => s.target).join(', ')}${
-                  route.backendTls === 'off' ? '' : ` · ${t(TLS_TOOLTIPS[route.backendTls])}`
+                  route.backendTls === 'off' ? '' : ` · ${tlsTooltip(route.backendTls, t)}`
                 }`}
               >
                 <span className="rp-chip is-accent">{route.paths.join(' ')}</span>

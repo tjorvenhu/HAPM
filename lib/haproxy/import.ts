@@ -44,9 +44,13 @@
  */
 
 import {
+  BACKEND_CA_DIR,
   HAPROXY_BALANCE,
   STICKY_COOKIE,
   assignServiceId,
+  backendCaName,
+  backendCaTls,
+  caNameFromFile,
   domainCovers,
   findDomainConflict,
   healthcheckPossible,
@@ -743,12 +747,16 @@ function readServerTls(
       problem: t('server {name}: ssl prüft das Zertifikat, aber ohne ca-file. So lädt HAProxy die Zeile nicht.', { name }),
     };
   }
-  if (params.caFile !== '@system-ca') {
+  // Eine Datei im Ordner der hinterlegten Zertifizierungsstellen ist eine von
+  // HAPM (`backend-ca.ts`). Ob sie auf dieser Maschine liegt, prüft die
+  // Vorabprüfung beim Anlegen (`assertCasPresent`).
+  const ca = caNameFromFile(params.caFile);
+  if (params.caFile !== '@system-ca' && ca === null) {
     return {
-      problem: t('server {name}: Eine eigene CA-Datei ({file}) kennt HAPM nicht, nur die CAs des Systems (@system-ca).', {
-        name,
-        file: params.caFile,
-      }),
+      problem: t(
+        'server {name}: Die CA-Datei {file} liegt nicht bei den hinterlegten Zertifizierungsstellen ({dir}). Hinterlegen Sie sie unter Zertifikate und wählen Sie sie danach am Ziel aus.',
+        { name, file: params.caFile, dir: BACKEND_CA_DIR }
+      ),
     };
   }
   if (!params.sni || !HOST_SNI.test(params.sni)) {
@@ -759,7 +767,7 @@ function readServerTls(
       ),
     };
   }
-  return 'verify';
+  return ca === null ? 'verify' : backendCaTls(ca);
 }
 
 function readServer(words: string[], problems: string[], global: GlobalRead = NO_GLOBAL): ServerRead | null {
@@ -1603,10 +1611,17 @@ function backendTlsOf(read: ProxyRead, problems: string[], where?: string): Back
   return modes[0] ?? 'off';
 }
 
-const TLS_LABELS: Record<Exclude<BackendTls, 'off'>, string> = {
+const TLS_LABELS: Record<'insecure' | 'verify', string> = {
   insecure: msgid('HTTPS zum Ziel'),
   verify: msgid('HTTPS zum Ziel, Zertifikat geprüft'),
 };
+
+/** Was die Vorschau zu einer Art sagt. Eine hinterlegte Zertifizierungsstelle nennt sie beim Namen. */
+function tlsLabel(tls: Exclude<BackendTls, 'off'>): string {
+  const ca = backendCaName(tls);
+  if (ca !== null) return t('HTTPS zum Ziel, Zertifikat geprüft gegen {name}', { name: ca });
+  return t(TLS_LABELS[tls as 'insecure' | 'verify']);
+}
 
 function emptyService(domains: string[]): CreateServiceInput {
   return {
@@ -1779,8 +1794,8 @@ function httpEntry(
       ...service.requestHeaders.map((h) => t('Header an das Ziel: {name}', { name: h.name })),
       ...service.responseHeaders.map((h) => t('Header an den Besucher: {name}', { name: h.name })),
       ...(service.tunnel ? [t('Lange Verbindungen')] : []),
-      ...(service.backendTls !== 'off' ? [t(TLS_LABELS[service.backendTls])] : []),
-      ...unique(service.routes.filter((r) => r.backendTls !== 'off').map((r) => t(TLS_LABELS[r.backendTls as Exclude<BackendTls, 'off'>]))).map(
+      ...(service.backendTls !== 'off' ? [tlsLabel(service.backendTls)] : []),
+      ...unique(service.routes.filter((r) => r.backendTls !== 'off').map((r) => tlsLabel(r.backendTls as Exclude<BackendTls, 'off'>))).map(
         (label) => t('Pfad-Regel: {what}', { what: label })
       ),
     ],
