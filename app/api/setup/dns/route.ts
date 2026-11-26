@@ -5,7 +5,7 @@ import { msg } from '@/lib/i18n';
 import { logAudit, getClientIP } from '@/lib/audit';
 import { localServer } from '@/lib/helpers';
 import { probeProxy, writeDnsCredentials } from '@/lib/haproxy/provision';
-import { findDnsProvider, validateDnsCredentials } from '@/lib/haproxy/dns-credentials';
+import { findDnsProvider, validateDnsCredentials, zoneAccess } from '@/lib/haproxy/dns-credentials';
 import { readSetupView } from '@/lib/setup';
 import { checkDnsToken } from '@/lib/setup/token-check';
 import { getSetupState, setDnsAccess, updateSetupState } from '@/lib/setup/store';
@@ -26,10 +26,11 @@ import { getSetupState, setDnsAccess, updateSetupState } from '@/lib/setup/store
  * (`writeDnsCredentials`): der Token geht nach `account.conf`. Über Erfolg
  * entscheidet der Rückabgleich: was acme.sh danach über seine Hooks sagt.
  *
- * Kann der Anbieter auch Zonen verwalten (`apiTokenField`), hält der Assistent
- * das Token verschlüsselt, bis die Einrichtung zu Ende ist: mit der Domain aus
- * Schritt 4 richtet er die Zone unter „DNS" ein und setzt auf Wunsch den
- * Eintrag der Oberfläche. Im Protokoll steht es nie.
+ * Kann der Anbieter auch Zonen verwalten (`zoneAccess`: der Token, bei
+ * RFC 2136 und Infoblox die Zugangsdaten), hält der Assistent den Zugang
+ * verschlüsselt, bis die Einrichtung zu Ende ist: mit der Domain aus Schritt 4
+ * richtet er die Zone unter „DNS" ein und setzt auf Wunsch den Eintrag der
+ * Oberfläche. Im Protokoll steht er nie.
  */
 export async function PUT(request: Request) {
   try {
@@ -119,7 +120,7 @@ export async function PUT(request: Request) {
     }
 
     await updateSetupState({ dns: 'configured', dnsHook: hook });
-    const apiToken = provider.apiTokenField ? values[provider.apiTokenField] : '';
+    const apiToken = zoneAccess(provider, values);
     await setDnsAccess(apiToken ? { hook, token: apiToken } : null);
     await logAudit({
       userId: session.userId,

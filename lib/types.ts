@@ -187,10 +187,14 @@ export interface DnsZone extends DbDoc {
    * Fehlt an Zeilen aus der Zeit, in der es nur Cloudflare gab. Gelesen wird
    * deshalb über `providerOf` (`lib/dns/zones.ts`), nie über das Feld.
    */
-  provider?: 'cloudflare' | 'hetzner';
+  provider?: 'cloudflare' | 'hetzner' | 'rfc2136' | 'infoblox';
   name: string;
   /** Die Kennung der Zone beim Anbieter. */
   zoneId: string;
+  /**
+   * Der Zugang, verschlüsselt. Bei Cloudflare und Hetzner der API-Token, bei
+   * RFC 2136 und Infoblox die Zugangsdaten als JSON (`lib/dns/access.ts`).
+   */
   apiToken: string;
   status: DnsZoneStatus;
   lastCheckedAt: string | null;
@@ -276,6 +280,12 @@ export interface Settings extends DbDoc {
    * eigenen Server bedeutungslos.
    */
   acmeHttpReachable: boolean;
+  /**
+   * Sekunden, die acme.sh bei DNS-01 nach dem TXT-Eintrag wartet, wenn der
+   * Anbieter ein eigener Nameserver oder Infoblox ist
+   * (`lib/haproxy/challenge.ts`, „Warten statt nachsehen").
+   */
+  dnsWait: number;
   /**
    * Der Stand der Einrichtung nach dem ersten Konto. `null` steht in jeder
    * Zeile, die es vor dem Assistenten gab: mit Konto gilt sie als abgeschlossen.

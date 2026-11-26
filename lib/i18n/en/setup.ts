@@ -171,6 +171,11 @@ export const setup: Dictionary = {
   "Bitte geben Sie den Absender ein.": "Please enter the sender.",
   'Im eigenen Netz erreicht Let\'s Encrypt den Server nicht, Zertifikate kommen deshalb über Ihren DNS-Anbieter. Im Internet prüft Let\'s Encrypt jede Domain über Port 80.': 'On your own network, Let\'s Encrypt cannot reach the server, so certificates come through your DNS provider. On the internet, Let\'s Encrypt checks every domain over port 80.',
   'HAPM speichert den Token verschlüsselt.': 'HAPM stores the token encrypted.',
+  'HAPM speichert die Zugangsdaten verschlüsselt.': 'HAPM stores the credentials encrypted.',
+  'Mit den Zugangsdaten stellt acme.sh Zertifikate aus. HAPM richtet damit auch die Zone unter „DNS“ ein und speichert sie dafür verschlüsselt.':
+    'acme.sh uses the credentials to issue certificates. HAPM also uses them to set up the zone under "DNS" and stores them encrypted for that.',
+  '{provider} war nicht erreichbar. Ob die Zugangsdaten gelten, zeigt sich beim Ausstellen des Zertifikats.':
+    '{provider} could not be reached. Whether the credentials are valid will show when the certificate is issued.',
   'Ihre eigene Adresse {ip} steht nicht in der Liste. Die Oberfläche wäre danach für Sie nicht mehr aufrufbar.':
     'Your own address {ip} is not in the list. You could no longer open the interface afterwards.',
   'Bitte tragen Sie mindestens eine Adresse ein, oder schalten Sie die Beschränkung aus.':

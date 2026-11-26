@@ -88,7 +88,33 @@ describe('planChallenge', () => {
     });
 
     it('genau ein Hook gilt, ohne dass ihn jemand nennt', () => {
-      expect(plan([...domains], exposure, ['dns_cf'])).toEqual({ method: 'dns', hook: 'dns_cf' });
+      expect(plan([...domains], exposure, ['dns_cf'])).toEqual({ method: 'dns', hook: 'dns_cf', wait: null });
+    });
+
+    it('ein eigener Nameserver oder Infoblox: acme.sh wartet, statt öffentlich nachzusehen', () => {
+      // Die Zone im eigenen Netz sieht kein öffentlicher Resolver: ohne feste
+      // Wartezeit liefe der Antrag 20 Minuten lang in den Abbruch.
+      expect(plan([...domains], exposure, ['dns_nsupdate'])).toEqual({ method: 'dns', hook: 'dns_nsupdate', wait: 30 });
+      expect(plan([...domains], exposure, ['dns_cf', 'dns_infoblox'], 'dns_infoblox')).toEqual({
+        method: 'dns',
+        hook: 'dns_infoblox',
+        wait: 30,
+      });
+      expect(
+        planChallenge(
+          [...domains],
+          { exposure, dnsHook: null, source: 'acme', acmeServer: 'letsencrypt', httpReachable: false, dnsWait: 120 },
+          ['dns_nsupdate']
+        )
+      ).toEqual({ method: 'dns', hook: 'dns_nsupdate', wait: 120 });
+      // Bei einem Anbieter im Internet bleibt es bei der Prüfung von acme.sh.
+      expect(
+        planChallenge(
+          [...domains],
+          { exposure, dnsHook: null, source: 'acme', acmeServer: 'letsencrypt', httpReachable: false, dnsWait: 120 },
+          ['dns_hetznercloud']
+        )
+      ).toEqual({ method: 'dns', hook: 'dns_hetznercloud', wait: null });
     });
 
     it('bei mehreren muss er gewählt sein', () => {
@@ -101,6 +127,7 @@ describe('planChallenge', () => {
       expect(plan([...domains], exposure, ['dns_cf', 'dns_hetznercloud'], 'dns_hetznercloud')).toEqual({
         method: 'dns',
         hook: 'dns_hetznercloud',
+        wait: null,
       });
     });
 
@@ -130,6 +157,7 @@ describe('planChallenge', () => {
       expect(plan(WILDCARD, 'internal', ['dns_cf'], null, { httpReachable: true })).toEqual({
         method: 'dns',
         hook: 'dns_cf',
+        wait: null,
       });
       expect(plan(WILDCARD, 'internal', [], null, { httpReachable: true }).method).toBe('unavailable');
     });
@@ -184,6 +212,13 @@ describe('challengeChoice', () => {
     ).toBe(true);
   });
 
+  it('reicht die Wartezeit durch, wenn sie eine ist', () => {
+    expect(challengeChoice({ ...settings(), dnsWait: 90 }, null, undefined).dnsWait).toBe(90);
+    expect(challengeChoice(settings(), null, undefined).dnsWait).toBeUndefined();
+    // Ein Wert außerhalb der Grenzen gilt als nicht gesetzt.
+    expect(challengeChoice({ ...settings(), dnsWait: 0 }, null, undefined).dnsWait).toBeUndefined();
+  });
+
   it('reicht Art und Herkunft durch', () => {
     const choice = challengeChoice(settings({ certificateSource: 'upload', exposure: 'public' }), null, undefined);
     expect(choice.source).toBe('upload');
@@ -197,7 +232,16 @@ describe('challengeArgs', () => {
   });
 
   it('DNS-01 nennt den Hook', () => {
-    expect(challengeArgs({ method: 'dns', hook: 'dns_cf' }, '8888')).toEqual(['--dns', 'dns_cf']);
+    expect(challengeArgs({ method: 'dns', hook: 'dns_cf', wait: null }, '8888')).toEqual(['--dns', 'dns_cf']);
+  });
+
+  it('DNS-01 mit fester Wartezeit sagt acme.sh, wie lange', () => {
+    expect(challengeArgs({ method: 'dns', hook: 'dns_nsupdate', wait: 45 }, '8888')).toEqual([
+      '--dns',
+      'dns_nsupdate',
+      '--dnssleep',
+      '45',
+    ]);
   });
 
   it('ohne Weg gibt es kein Kommando', () => {

@@ -254,11 +254,11 @@ export const proxyPages: Dictionary = {
   'Die Einstellungen konnten nicht geladen werden.': 'The settings could not be loaded.',
   'Zugangsdaten abgelegt. Wildcard-Zertifikate lassen sich ab jetzt ausstellen, auch für neue Domains derselben Zone.':
     'Credentials stored. Wildcard certificates can be issued from now on, including for new domains in the same zone.',
-  'Die Datei wurde geschrieben, acme.sh erkennt daraus aber keinen Hook. Steht der Token unter dem erwarteten Namen?':
-    'The file was written, but acme.sh does not recognize a hook from it. Is the token stored under the expected name?',
+  'Die Datei wurde geschrieben, acme.sh erkennt daraus aber keinen Hook. Stehen die Zugangsdaten unter dem erwarteten Namen?':
+    'The file was written, but acme.sh does not recognize a hook from it. Are the credentials stored under the expected name?',
   '{provider}-Zugangsdaten entfernen?': 'Remove {provider} credentials?',
-  'Der Token wird aus der acme.sh-Konfiguration gestrichen. Bestehende Zertifikate bleiben, aber ihre automatische Erneuerung scheitert ab dann, und eine neue Wildcard lässt sich nicht mehr ausstellen.':
-    'The token is deleted from the acme.sh configuration. Existing certificates stay, but their automatic renewal fails from then on, and no new wildcard can be issued.',
+  'Die Zugangsdaten werden aus der acme.sh-Konfiguration gestrichen. Bestehende Zertifikate bleiben, aber ihre automatische Erneuerung über DNS scheitert ab dann, und eine neue Wildcard lässt sich nicht mehr ausstellen.':
+    'The credentials are removed from the acme.sh configuration. Existing certificates stay, but their automatic renewal over DNS fails from then on, and no new wildcard can be issued.',
   'Die Zugangsdaten sind entfernt.': 'The credentials are removed.',
   'Einstellungen speichern': 'Save settings',
   'Was für alle Dienste gilt': 'What applies to all services',
@@ -282,11 +282,18 @@ export const proxyPages: Dictionary = {
   '{acl} steht mehr als einmal in der Konfiguration. HAProxy verodert die Zeilen; sie hier zu einer zusammenzuschreiben wäre eine Änderung, die niemand angefordert hat.':
     '{acl} appears more than once in the configuration. HAProxy combines the lines with OR; merging them into one here would be a change nobody asked for.',
   'DNS-Zugangsdaten für Wildcards': 'DNS credentials for wildcards',
-  'Eine Wildcard lässt Let’s Encrypt nur über DNS-01 ausstellen. Der Token liegt in der Konfiguration von {acme} und wird dort für jede Erneuerung wiederverwendet. Anzeigen lässt er sich danach nicht mehr.':
-    'Let’s Encrypt issues a wildcard only over DNS-01. The token is stored in the {acme} configuration and reused there for every renewal. It cannot be displayed afterwards.',
-  'Kein Token hinterlegt.': 'No token stored.',
+  'Eine Wildcard gibt es nur über DNS-01, und eine interne Installation stellt jedes Zertifikat so aus. Die Zugangsdaten liegen in der Konfiguration von {acme} und werden dort für jede Erneuerung wiederverwendet. Anzeigen lassen sie sich danach nicht mehr.':
+    'A wildcard is only available over DNS-01, and an internal installation issues every certificate that way. The credentials are stored in the {acme} configuration and reused there for every renewal. They cannot be displayed afterwards.',
+  'Keine Zugangsdaten hinterlegt.': 'No credentials stored.',
   'Token gesetzt': 'Token set',
-  'Token entfernen': 'Remove token',
+  'Zugangsdaten gesetzt': 'Credentials set',
+  'Zugangsdaten entfernen': 'Remove credentials',
+  'Wartezeit nach dem DNS-Eintrag': 'Wait after the DNS record',
+  'So lange wartet acme.sh nach dem Setzen des TXT-Eintrags, bevor die Zertifizierungsstelle ihn prüft. Gilt für RFC 2136 und Infoblox: eine Zone im eigenen Netz kann acme.sh nicht von außen nachsehen. Erhöhen Sie den Wert, wenn weitere Nameserver die Zone erst nachladen.':
+    'This is how long acme.sh waits after setting the TXT record before the certificate authority checks it. Applies to RFC 2136 and Infoblox: acme.sh cannot look up a zone on your own network from outside. Increase the value if further name servers have to reload the zone first.',
+  '{min} bis {max} Sekunden': '{min} to {max} seconds',
+  'Gespeichert. Die Wartezeit gilt für Zertifikate, die ab jetzt ausgestellt werden.':
+    'Saved. The wait applies to certificates issued from now on.',
   'Token beim Anbieter anlegen': 'Create a token at the provider',
 
   // API (`api/page.tsx`)

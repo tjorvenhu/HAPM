@@ -35,9 +35,11 @@ FROM ${NODE_IMAGE} AS runner
 
 # Was die Kommandos aus lib/haproxy/ auf der Maschine erwarten: bash, socat
 # (Stats-Socket, ACME-Challenge), ss (belegte Ports), openssl und curl (acme.sh),
-# dazu die üblichen Textwerkzeuge.
+# dazu die üblichen Textwerkzeuge. bind9-dnsutils bringt nsupdate mit: acme.sh
+# ruft es für DNS-01 über RFC 2136 auf (Hook dns_nsupdate).
 RUN apt-get update && apt-get install -y --no-install-recommends \
       bash ca-certificates coreutils curl gawk grep iproute2 openssl procps sed socat tzdata \
+      bind9-dnsutils \
     && rm -rf /var/lib/apt/lists/*
 
 ARG HAPM_VERSION=dev

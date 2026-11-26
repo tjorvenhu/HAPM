@@ -67,7 +67,9 @@ export async function GET(request: Request) {
     const recordsOf = (zone: DnsZone) => {
       const running = cache.get(zone.$id);
       if (running) return running;
-      const started = withZone(zone, (token, ref) => providerFor(zone).listRecords(token, ref));
+      // Die Namen gehen mit: ein Anbieter, der eine Zone nicht als Ganzes liest,
+      // liest genau sie (`lib/dns/provider.ts`).
+      const started = withZone(zone, (token, ref) => providerFor(zone).listRecords(token, ref, domains));
       cache.set(zone.$id, started);
       return started;
     };

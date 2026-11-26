@@ -34,9 +34,9 @@ export async function checkZones(locale: Locale): Promise<CheckedZone[]> {
       const lastCheckedAt = new Date().toISOString();
       try {
         const found = await withZone(zone, async (token) => {
-          const visible = await providerFor(zone).listZones(token);
+          const visible = await providerFor(zone).listZones(token, zone.name);
           const match = visible.find((seen) => normalizeDomain(seen.name) === normalizeDomain(zone.name));
-          if (!match) throw new ApiError(msg('Der Token sieht diese Zone nicht mehr.'), 404);
+          if (!match) throw new ApiError(msg('Der Zugang sieht diese Zone nicht mehr.'), 404);
           return match;
         });
         return {

@@ -12,8 +12,10 @@ import { useToast } from '@/components/Toast';
 import { errorText } from '@/components/errorText';
 import EntityCard, { EntityGrid, EntityField } from '@/components/EntityCard';
 import ProviderName, { ProviderLogo } from '@/components/dns/ProviderName';
+import CredentialFields from '@/components/dns/CredentialFields';
 import { validateZoneName, normalizeDomain, type DnsProviderId } from '@/lib/dns/zones';
-import { DNS_PROVIDER_INFOS, dnsProviderInfo } from '@/lib/dns/provider-info';
+import { DNS_PROVIDER_INFOS, accessFromInput, dnsProviderInfo, type DnsProviderInfo } from '@/lib/dns/provider-info';
+import { PROVIDER_RULES } from '@/lib/dns/records';
 import { SkeletonCards } from '@/components/Skeleton';
 import { InfoHint } from '@/ui/primitives/InfoHint';
 import { formatRelative } from '@/lib/i18n';
@@ -29,7 +31,17 @@ import { useT } from '@/lib/i18n/react';
  * Eine Karte je Zone: ein Dutzend Domains mit wenigen Angaben, genau dafür
  * gibt es `EntityCard`. Ob der Zugang funktioniert, prüft die Route bei jedem
  * Aufruf beim Anbieter.
+ *
+ * Der Zugang ist bei Cloudflare und Hetzner ein Token, bei einem eigenen
+ * Nameserver (RFC 2136) und Infoblox sind es mehrere Angaben
+ * (`DnsProviderInfo.form`). Beide Dialoge zeigen dann die Felder des Anbieters
+ * (`CredentialFields`) statt des einen Token-Felds.
  */
+
+/** Ob jedes Pflichtfeld etwas trägt. Was darin stehen darf, prüft `accessFromInput`. */
+function filled(info: DnsProviderInfo, given: Record<string, string>): boolean {
+  return info.fields.every((field) => !field.required || (given[field.name] ?? '').trim() !== '');
+}
 
 interface ZoneRow {
   $id: string;
@@ -59,12 +71,15 @@ export default function DnsZonesPage() {
   const [provider, setProvider] = useState<DnsProviderId | null>(null);
   const [name, setName] = useState('');
   const [apiToken, setApiToken] = useState('');
+  /** Die Felder eines Anbieters mit mehreren Angaben, nach Namen. */
+  const [values, setValues] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
 
-  /** Die Zone, deren Token gerade ausgetauscht wird. */
+  /** Die Zone, deren Zugang gerade ausgetauscht wird. */
   const [rotating, setRotating] = useState<ZoneRow | null>(null);
   const [newToken, setNewToken] = useState('');
+  const [newValues, setNewValues] = useState<Record<string, string>>({});
 
   const load = useCallback(
     async (quiet = false) => {
@@ -94,11 +109,13 @@ export default function DnsZonesPage() {
 
   const nameError = name.trim() === '' ? null : validateZoneName(name);
   const chosen = provider ? dnsProviderInfo(provider) : null;
+  const rotatingInfo = rotating ? dnsProviderInfo(rotating.provider) : null;
 
   function openModal() {
     setProvider(null);
     setName('');
     setApiToken('');
+    setValues({});
     setFormError('');
     setModalOpen(true);
   }
@@ -111,19 +128,30 @@ export default function DnsZonesPage() {
       setFormError(t(invalid));
       return;
     }
+    // Dieselbe Prüfung wie in der Route.
+    const access = accessFromInput(chosen.id, { token: apiToken, values });
+    if ('error' in access) {
+      setFormError(t(access.error));
+      return;
+    }
     setFormError('');
     setSaving(true);
     try {
       const res = await apiFetch('/api/dns/zones', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider: chosen.id, name: normalizeDomain(name), apiToken }),
+        body: JSON.stringify({
+          provider: chosen.id,
+          name: normalizeDomain(name),
+          ...(chosen.form ? { values } : { apiToken }),
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || t('Die Domain ließ sich nicht anbinden.'));
       const added = data.data as { name: string; created: boolean; delegated: boolean | null };
       setModalOpen(false);
       setApiToken('');
+      setValues({});
       notify({
         variant: 'success',
         message: added.created
@@ -155,25 +183,31 @@ export default function DnsZonesPage() {
 
   async function handleRotate(e: FormEvent) {
     e.preventDefault();
-    if (!rotating) return;
+    if (!rotating || !rotatingInfo) return;
+    const access = accessFromInput(rotating.provider, { token: newToken, values: newValues });
+    if ('error' in access) {
+      notify({ variant: 'error', title: rotatingInfo.label, message: t(access.error) });
+      return;
+    }
     setSaving(true);
     try {
       const res = await apiFetch(`/api/dns/zones/${rotating.$id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apiToken: newToken }),
+        body: JSON.stringify(rotatingInfo.form ? { values: newValues } : { apiToken: newToken }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || t('Der Token ließ sich nicht austauschen.'));
-      notify({ variant: 'success', message: t('Der Token für {name} ist ausgetauscht.', { name: rotating.name }) });
+      if (!res.ok) throw new Error(data.error || t('Der Zugang ließ sich nicht austauschen.'));
+      notify({ variant: 'success', message: t('Der Zugang für {name} ist ausgetauscht.', { name: rotating.name }) });
       setRotating(null);
       setNewToken('');
+      setNewValues({});
       await load(true);
     } catch (err: unknown) {
       notify({
         variant: 'error',
         title: t('Speichern fehlgeschlagen'),
-        message: errorText(err, t('Der Token ließ sich nicht austauschen.')),
+        message: errorText(err, t('Der Zugang ließ sich nicht austauschen.')),
       });
     } finally {
       setSaving(false);
@@ -184,7 +218,7 @@ export default function DnsZonesPage() {
     await confirm({
       title: t('Anbindung entfernen?'),
       message: t(
-        'Bei {provider} ändert sich nichts: die Zone {zone} und ihre Einträge bleiben. HAPM legt danach für Ziele unter dieser Domain keinen DNS-Eintrag mehr an. Der API-Token wird entfernt.',
+        'Bei {provider} ändert sich nichts: die Zone {zone} und ihre Einträge bleiben. HAPM legt danach für Ziele unter dieser Domain keinen DNS-Eintrag mehr an. Der gespeicherte Zugang wird entfernt.',
         { provider: dnsProviderInfo(zone.provider).label, zone: zone.name }
       ),
       confirmLabel: t('Entfernen'),
@@ -218,7 +252,7 @@ export default function DnsZonesPage() {
             }
             back={{ label: t('Ziele'), href: '/reverse-proxy' }}
           />
-          <p className="page-subtitle">{t('Angebundene Domains und ihr Zugang zu Hetzner oder Cloudflare.')}</p>
+          <p className="page-subtitle">{t('Angebundene Domains und ihr Zugang zum DNS-Anbieter.')}</p>
         </div>
         <div className="page-actions">
           <button className="btn btn-primary" onClick={openModal}>
@@ -240,7 +274,7 @@ export default function DnsZonesPage() {
           <h3>{t('Noch keine Domain angebunden')}</h3>
           <p>
             {t(
-              'Dafür braucht es die Domain und einen API-Token von Hetzner oder Cloudflare, der die Einträge der Zone bearbeiten darf.'
+              'Dafür braucht es die Domain und den Zugang zu ihrer Zone: einen API-Token von Hetzner oder Cloudflare, einen TSIG-Schlüssel des eigenen Nameservers oder ein Konto bei Infoblox.'
             )}
           </p>
         </div>
@@ -262,11 +296,12 @@ export default function DnsZonesPage() {
                 <>
                   <button
                     className="btn btn-ghost btn-icon btn-sm"
-                    data-tooltip={t('API-Token austauschen')}
-                    aria-label={t('API-Token austauschen')}
+                    data-tooltip={t('Zugang austauschen')}
+                    aria-label={t('Zugang austauschen')}
                     onClick={() => {
                       setRotating(zone);
                       setNewToken('');
+                      setNewValues({});
                     }}
                   >
                     <KeyRound size={16} />
@@ -285,16 +320,27 @@ export default function DnsZonesPage() {
               <EntityField label={t('Anbieter')}>
                 <ProviderName provider={zone.provider} />
               </EntityField>
-              <EntityField label={t('Nameserver')}>
-                {zone.delegated === null
-                  ? t('Unbekannt')
-                  : zone.delegated
-                    ? t('Zeigen auf {provider}', { provider: dnsProviderInfo(zone.provider).label })
-                    : t('Zeigen nicht auf {provider}', { provider: dnsProviderInfo(zone.provider).label })}
-              </EntityField>
-              <EntityField label={t('Zone-ID')} mono>
-                {zone.zoneId}
-              </EntityField>
+              {/* Ein eigener Nameserver und eine Appliance sind selbst die Stelle,
+                  die antwortet: wohin die Domain delegiert ist, sagen sie nicht.
+                  Ihre Kennung nennt dafür, wen HAPM anspricht. */}
+              {PROVIDER_RULES[zone.provider].listsZones ? (
+                <>
+                  <EntityField label={t('Nameserver')}>
+                    {zone.delegated === null
+                      ? t('Unbekannt')
+                      : zone.delegated
+                        ? t('Zeigen auf {provider}', { provider: dnsProviderInfo(zone.provider).label })
+                        : t('Zeigen nicht auf {provider}', { provider: dnsProviderInfo(zone.provider).label })}
+                  </EntityField>
+                  <EntityField label={t('Zone-ID')} mono>
+                    {zone.zoneId}
+                  </EntityField>
+                </>
+              ) : (
+                <EntityField label={zone.provider === 'infoblox' ? t('Appliance und View') : t('Primärer Nameserver')} mono>
+                  {zone.zoneId}
+                </EntityField>
+              )}
               <EntityField label={t('Zuletzt geprüft')}>
                 {zone.lastCheckedAt ? formatRelative(locale, now, zone.lastCheckedAt) : t('noch nie')}
               </EntityField>
@@ -361,37 +407,60 @@ export default function DnsZonesPage() {
                       {nameError && <div className="alert alert-warning">{t(nameError)}</div>}
                     </div>
 
-                    <div className="form-group">
-                      <label className="form-label">
-                        {t('API-Token')}
-                        <InfoHint
-                          text={
-                            (chosen.tokenHint ? `${t(chosen.tokenHint)} ` : '') +
-                            t('Er wird verschlüsselt gespeichert und verlässt den Server nicht.')
-                          }
+                    {chosen.form ? (
+                      <>
+                        <CredentialFields
+                          fields={chosen.fields}
+                          values={values}
+                          onChange={(field, value) => setValues((before) => ({ ...before, [field]: value }))}
+                          skin="form"
+                          idPrefix="dnsNew"
+                          disabled={saving}
                         />
-                      </label>
-                      <input
-                        className="form-input"
-                        type="password"
-                        value={apiToken}
-                        onChange={(e) => setApiToken(e.target.value)}
-                        autoComplete="off"
-                        required
-                      />
-                      {chosen.consoleUrl && (
-                        <span className="form-hint">
-                          <a href={chosen.consoleUrl} target="_blank" rel="noreferrer">
-                            {t('Token bei {provider} anlegen', { provider: chosen.label })} <ExternalLink size={12} />
-                          </a>
-                        </span>
-                      )}
-                    </div>
+                        <div className="form-note">
+                          <Info size={14} />
+                          <span>
+                            {t('Die Zugangsdaten werden beim Anbinden sofort geprüft und verschlüsselt gespeichert.')}
+                          </span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="form-group">
+                          <label className="form-label">
+                            {t('API-Token')}
+                            <InfoHint
+                              text={
+                                (chosen.tokenHint ? `${t(chosen.tokenHint)} ` : '') +
+                                t('Er wird verschlüsselt gespeichert und verlässt den Server nicht.')
+                              }
+                            />
+                          </label>
+                          <input
+                            className="form-input"
+                            type="password"
+                            value={apiToken}
+                            onChange={(e) => setApiToken(e.target.value)}
+                            autoComplete="off"
+                            required
+                          />
+                          {chosen.consoleUrl && (
+                            <span className="form-hint">
+                              <a href={chosen.consoleUrl} target="_blank" rel="noreferrer">
+                                {t('Token bei {provider} anlegen', { provider: chosen.label })} <ExternalLink size={12} />
+                              </a>
+                            </span>
+                          )}
+                        </div>
 
-                    <div className="form-note">
-                      <Info size={14} />
-                      <span>{t('Der Token wird beim Anbinden sofort bei {provider} geprüft.', { provider: chosen.label })}</span>
-                    </div>
+                        <div className="form-note">
+                          <Info size={14} />
+                          <span>
+                            {t('Der Token wird beim Anbinden sofort bei {provider} geprüft.', { provider: chosen.label })}
+                          </span>
+                        </div>
+                      </>
+                    )}
                   </>
                 )}
               </div>
@@ -407,7 +476,13 @@ export default function DnsZonesPage() {
                 <button
                   type="submit"
                   className="btn btn-primary"
-                  disabled={saving || !chosen || !!nameError || apiToken.trim() === ''}
+                  disabled={
+                    saving ||
+                    !chosen ||
+                    !!nameError ||
+                    name.trim() === '' ||
+                    (chosen.form ? !filled(chosen, values) : apiToken.trim() === '')
+                  }
                 >
                   {saving && <Loader2 size={16} className="spin" />}
                   {t('Anbinden')}
@@ -418,37 +493,60 @@ export default function DnsZonesPage() {
         </div>
       )}
 
-      {rotating && (
+      {rotating && rotatingInfo && (
         <div
           className="modal-overlay"
           onClick={(e) => e.target === e.currentTarget && !saving && setRotating(null)}
         >
           <div className="modal">
             <div className="modal-header">
-              <h2 className="modal-title">{t('API-Token für „{name}“', { name: rotating.name })}</h2>
+              <h2 className="modal-title">
+                {rotatingInfo.form
+                  ? t('Zugangsdaten für „{name}“', { name: rotating.name })
+                  : t('API-Token für „{name}“', { name: rotating.name })}
+              </h2>
             </div>
             <form onSubmit={handleRotate}>
               <div className="modal-body">
-                <div className="form-group">
-                  <div className="form-label-row">
-                    <label className="form-label" htmlFor="dnsNewToken">
-                      {t('Neuer Token von {provider}', { provider: dnsProviderInfo(rotating.provider).label })}
-                    </label>
-                    <InfoHint
-                      text={t('Der neue Token muss dieselbe Zone sehen. Sonst wird er abgelehnt, und der bisherige bleibt stehen.')}
+                {rotatingInfo.form ? (
+                  <>
+                    <CredentialFields
+                      fields={rotatingInfo.fields}
+                      values={newValues}
+                      onChange={(field, value) => setNewValues((before) => ({ ...before, [field]: value }))}
+                      skin="form"
+                      idPrefix="dnsRotate"
+                      disabled={saving}
                     />
+                    <div className="form-note">
+                      <Info size={14} />
+                      <span>
+                        {t('Die bisherigen Zugangsdaten werden ersetzt, sobald die neuen die Zone erreichen.')}
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="form-group">
+                    <div className="form-label-row">
+                      <label className="form-label" htmlFor="dnsNewToken">
+                        {t('Neuer Token von {provider}', { provider: rotatingInfo.label })}
+                      </label>
+                      <InfoHint
+                        text={t('Der neue Token muss dieselbe Zone sehen. Sonst wird er abgelehnt, und der bisherige bleibt stehen.')}
+                      />
+                    </div>
+                    <input
+                      id="dnsNewToken"
+                      className="form-input"
+                      type="password"
+                      value={newToken}
+                      onChange={(e) => setNewToken(e.target.value)}
+                      autoComplete="off"
+                      required
+                    />
+                    <span className="form-hint">{t('Der bisherige Token wird ersetzt.')}</span>
                   </div>
-                  <input
-                    id="dnsNewToken"
-                    className="form-input"
-                    type="password"
-                    value={newToken}
-                    onChange={(e) => setNewToken(e.target.value)}
-                    autoComplete="off"
-                    required
-                  />
-                  <span className="form-hint">{t('Der bisherige Token wird ersetzt.')}</span>
-                </div>
+                )}
               </div>
               <div className="modal-footer">
                 <button
@@ -462,7 +560,7 @@ export default function DnsZonesPage() {
                 <button
                   type="submit"
                   className="btn btn-primary"
-                  disabled={saving || newToken.trim() === ''}
+                  disabled={saving || (rotatingInfo.form ? !filled(rotatingInfo, newValues) : newToken.trim() === '')}
                 >
                   {saving && <Loader2 size={16} className="spin" />}
                   {t('Speichern')}

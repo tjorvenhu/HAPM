@@ -68,6 +68,7 @@ const FIELD_LABELS: Record<keyof SettingsInput, string> = {
   certificateSource: 'Herkunft der Zertifikate',
   acmeDirectory: 'ACME-Server',
   acmeHttpReachable: 'ACME-Server erreicht HAPM über Port 80',
+  dnsWait: 'Wartezeit nach dem DNS-Eintrag',
   setupStatus: 'Einrichtung',
 };
 
@@ -122,6 +123,9 @@ export function readSettingsInput(body: Record<string, unknown>): SettingsInput 
     }
     input.exposure = body.exposure as Exposure;
   }
+
+  // Ob die Zahl im erlaubten Bereich liegt, prüft `updateSettings`.
+  if ('dnsWait' in body) input.dnsWait = body.dnsWait as number;
 
   if (Object.keys(input).length === 0) throw new ApiError(msg('Es wurde nichts zum Ändern übergeben.'));
   return input;

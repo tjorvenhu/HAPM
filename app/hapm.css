@@ -350,10 +350,15 @@
 .hapm-provider { display: inline-flex; align-items: center; gap: 8px; }
 
 /* Die Anbieter im Dialog „Domain hinzufügen" unter „DNS": nur Zeichen und Name,
- * deshalb nebeneinander und mittig statt untereinander mit Text darunter. */
-.hapm-choices-row { flex-direction: row; }
+ * deshalb nebeneinander und mittig statt untereinander mit Text darunter. Vier
+ * passen nicht in eine Zeile des Dialogs: sie brechen um, zwei je Zeile. */
+.hapm-choices-row { flex-flow: row wrap; }
 
-.hapm-choices-row .hapm-choice { align-items: center; }
+.hapm-choices-row .hapm-choice { align-items: center; flex: 1 1 11rem; width: auto; }
+
+/* Ein Anbieter ohne eigenes Zeichen trägt ein Symbol. Es steht mittig wie das
+ * Zeichen daneben, nicht an der ersten Zeile ausgerichtet. */
+.hapm-choices-row .hapm-choice > svg { margin-top: 0; }
 
 /* In einem Fließtext (Kopf einer Zone) sitzt das Zeichen auf der Zeile. */
 .page-subtitle .hapm-provider { gap: 6px; vertical-align: bottom; color: var(--text); }

@@ -19,9 +19,21 @@
  *
  * Die Erneuerung fragt hier nicht nach: acme.sh merkt sich Methode und Server
  * je Zertifikat. Eine umgestellte Installation ändert nur künftige Anträge.
+ *
+ * ── Warten statt nachsehen ──
+ *
+ * Nach dem Setzen des TXT-Eintrags fragt acme.sh öffentliche Resolver (DNS
+ * over HTTPS), ob er sichtbar ist, bis zu 20 Minuten lang. Eine Zone im
+ * eigenen Netz sieht dort niemand: der Antrag liefe in den Abbruch, obwohl der
+ * Eintrag steht. Für die Anbieter, die man selbst betreibt (RFC 2136,
+ * Infoblox, `fixedWait` in `dns-credentials.ts`), geht deshalb `--dnssleep`
+ * mit: acme.sh wartet die eingestellte Zeit und fragt dann die
+ * Zertifizierungsstelle. Den Wert legt acme.sh als `Le_DNSSleep` im
+ * Erneuerungseintrag des Zertifikats ab, die Erneuerung wartet also genauso.
  */
 
 import { isWildcardDomain } from './config';
+import { findDnsProvider } from './dns-credentials';
 import { effectiveAcmeServer } from '../acme-server';
 import { germanText, msg, type Message } from '../i18n/translate';
 import type { CertificateSource, Exposure, Settings } from '../types';
@@ -37,14 +49,39 @@ export interface ChallengeChoice {
   acmeServer: string;
   /** Der ACME-Server erreicht HAPM über Port 80, auch wenn die Installation intern ist. */
   httpReachable: boolean;
+  /**
+   * Sekunden, die acme.sh nach dem TXT-Eintrag wartet, bei einem Hook mit
+   * `fixedWait`. Fehlt die Angabe, gilt `DEFAULT_DNS_WAIT`.
+   */
+  dnsWait?: number;
 }
 
 export type ChallengePlan =
   | { method: 'http' }
-  | { method: 'dns'; hook: string }
+  /** `wait`: feste Wartezeit in Sekunden statt der öffentlichen Prüfung, sonst `null`. */
+  | { method: 'dns'; hook: string; wait: number | null }
   | { method: 'unavailable'; message: Message };
 
-type CertificateSettings = Pick<Settings, 'exposure' | 'certificateSource' | 'acmeDirectory' | 'acmeHttpReachable'>;
+/** Zwischen dem TXT-Eintrag und der Frage an die Zertifizierungsstelle. */
+export const DEFAULT_DNS_WAIT = 30;
+export const MIN_DNS_WAIT = 5;
+export const MAX_DNS_WAIT = 900;
+
+export function validDnsWait(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= MIN_DNS_WAIT && value <= MAX_DNS_WAIT;
+}
+
+/** Ob acme.sh bei diesem Hook wartet, statt öffentlich nachzusehen. */
+export function hookWaits(hook: string): boolean {
+  return findDnsProvider(hook)?.fixedWait === true;
+}
+
+function dnsPlan(hook: string, choice: ChallengeChoice): ChallengePlan {
+  return { method: 'dns', hook, wait: hookWaits(hook) ? (choice.dnsWait ?? DEFAULT_DNS_WAIT) : null };
+}
+
+type CertificateSettings = Pick<Settings, 'exposure' | 'certificateSource' | 'acmeDirectory' | 'acmeHttpReachable'> &
+  Partial<Pick<Settings, 'dnsWait'>>;
 
 /**
  * Die Angabe zum Vorgang aus den Einstellungen. `httpReachable` gilt nur mit
@@ -62,6 +99,7 @@ export function challengeChoice(
     source: settings.certificateSource,
     acmeServer: effectiveAcmeServer(settings.acmeDirectory, envServer),
     httpReachable: settings.acmeDirectory !== null && settings.acmeHttpReachable,
+    ...(validDnsWait(settings.dnsWait) ? { dnsWait: settings.dnsWait } : {}),
   };
 }
 
@@ -107,7 +145,7 @@ export function planChallenge(
   }
 
   if (choice.dnsHook) {
-    if (dnsHooks.includes(choice.dnsHook)) return { method: 'dns', hook: choice.dnsHook };
+    if (dnsHooks.includes(choice.dnsHook)) return dnsPlan(choice.dnsHook, choice);
     return {
       method: 'unavailable',
       message: msg('Der DNS-Hook "{hook}" ist nicht eingerichtet. Zur Auswahl stehen: {hooks}.', {
@@ -117,7 +155,7 @@ export function planChallenge(
     };
   }
 
-  if (dnsHooks.length === 1) return { method: 'dns', hook: dnsHooks[0] };
+  if (dnsHooks.length === 1) return dnsPlan(dnsHooks[0], choice);
 
   return {
     method: 'unavailable',
@@ -133,7 +171,9 @@ export function planChallenge(
 /** Die Argumente für `acme.sh --issue`. */
 export function challengeArgs(plan: ChallengePlan, httpPort: string): string[] {
   if (plan.method === 'http') return ['--standalone', '--httpport', httpPort];
-  if (plan.method === 'dns') return ['--dns', plan.hook];
+  if (plan.method === 'dns') {
+    return plan.wait === null ? ['--dns', plan.hook] : ['--dns', plan.hook, '--dnssleep', String(plan.wait)];
+  }
   // Kommt hier nur an, wenn die Vorabprüfung umgangen wurde.
   throw new Error(germanText(plan.message));
 }

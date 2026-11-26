@@ -25,7 +25,7 @@
  *
  * ── Derselbe Eintrag bei jedem Anbieter ──
  *
- * Ein CNAME auf die Zone selbst, bei Cloudflare wie bei Hetzner. Was abweicht,
+ * Ein CNAME auf die Zone selbst, bei jedem Anbieter. Was abweicht,
  * kommt aus `PROVIDER_RULES`: die TTL ist die Vorgabe des Anbieters, und
  * `proxied: false` geht nur dorthin mit, wo es einen Proxy gibt. Wie der Wert
  * beim Anbieter geschrieben wird (Hetzner: `example.org.` mit Punkt), ist
@@ -50,7 +50,14 @@ import { msgid } from '../i18n';
 class ZoneRecords {
   private readonly cache = new Map<string, DnsRecord[]>();
 
-  constructor(private readonly zones: DnsZone[]) {}
+  /**
+   * `names` sind die Namen, um die es in diesem Vorgang geht. Ein Anbieter,
+   * der eine Zone nicht als Ganzes liest (RFC 2136), liest genau sie.
+   */
+  constructor(
+    private readonly zones: DnsZone[],
+    private readonly names: readonly string[]
+  ) {}
 
   zoneOf(domain: string): DnsZone | null {
     return matchZone(domain, this.zones);
@@ -59,7 +66,7 @@ class ZoneRecords {
   async of(zone: DnsZone): Promise<DnsRecord[]> {
     const cached = this.cache.get(zone.$id);
     if (cached) return cached;
-    const records = await withZone(zone, (token, ref) => providerFor(zone).listRecords(token, ref));
+    const records = await withZone(zone, (token, ref) => providerFor(zone).listRecords(token, ref, this.names));
     this.cache.set(zone.$id, records);
     return records;
   }
@@ -121,7 +128,7 @@ export async function autoDnsDomains(domains: string[]): Promise<string[]> {
  */
 export async function ensureProxyRecords(domains: string[]): Promise<HaproxyStep[]> {
   if (domains.length === 0) return [];
-  const zones = new ZoneRecords(await listZoneRows());
+  const zones = new ZoneRecords(await listZoneRows(), domains.map(normalizeDomain));
   const steps: HaproxyStep[] = [];
 
   for (const raw of domains) {
@@ -214,7 +221,7 @@ export async function ensureProxyRecords(domains: string[]): Promise<HaproxyStep
  */
 export async function removeProxyRecords(domains: string[]): Promise<HaproxyStep[]> {
   if (domains.length === 0) return [];
-  const zones = new ZoneRecords(await listZoneRows());
+  const zones = new ZoneRecords(await listZoneRows(), domains.map(normalizeDomain));
   const steps: HaproxyStep[] = [];
 
   for (const raw of domains) {
