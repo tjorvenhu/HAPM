@@ -434,6 +434,46 @@ export const system: Dictionary = {
   'Das Zugriffsprotokoll und die Abbilder.': 'The access log and the images.',
   'Das Archiv enthält private Schlüssel und den Schlüssel zu den verschlüsselten Einstellungen. Es ist nicht verschlüsselt. Der Ordner gehört an einen Ort, an den nur Sie kommen.':
     'The archive contains private keys and the key to the encrypted settings. It is not encrypted. Keep the folder in a place only you can access.',
+  'Das Archiv enthält private Schlüssel und den Schlüssel zu den verschlüsselten Einstellungen. Es wird mit dem Sicherungsschlüssel verschlüsselt, bevor es in den Ordner geht.':
+    'The archive contains private keys and the key to the encrypted settings. It is encrypted with the backup passphrase before it reaches the folder.',
+  // Verschlüsselung der Sicherung: `components/backup/EncryptionCard.tsx`, `lib/backup/passphrase.ts`, `app/api/backup/encryption`
+  'Verschlüsselt': 'Encrypted',
+  'Sicherung verschlüsseln': 'Encrypt backups',
+  'Neue Archive werden mit dem Sicherungsschlüssel verschlüsselt.': 'New archives are encrypted with the backup passphrase.',
+  'Die Archive liegen unverschlüsselt im Ordner.': 'The archives are stored unencrypted in the folder.',
+  'Verschlüsselt wird mit gpg (AES-256), die Datei endet dann auf .tar.gz.gpg. Sie lässt sich auch ohne HAPM mit gpg und dem Sicherungsschlüssel entschlüsseln.':
+    'Encryption uses gpg (AES-256), and the file then ends in .tar.gz.gpg. It can also be decrypted without HAPM, using gpg and the backup passphrase.',
+  'Der gespeicherte Sicherungsschlüssel ist nicht mehr lesbar. Bis er neu eingetragen ist, scheitert jede Sicherung.':
+    'The stored backup passphrase can no longer be read. Every backup fails until it is entered again.',
+  'Der gespeicherte Sicherungsschlüssel ist nicht mehr lesbar. Bitte tragen Sie ihn unter „Sicherung“ neu ein.':
+    'The stored backup passphrase can no longer be read. Please enter it again under “Backup”.',
+  'Ohne den Sicherungsschlüssel lässt sich eine verschlüsselte Sicherung nicht zurückspielen. Er steht in keinem Archiv und wird hier nicht wieder angezeigt. Bewahren Sie ihn getrennt vom Server auf.':
+    'Without the backup passphrase, an encrypted backup cannot be restored. It is not part of any archive and is not shown here again. Keep it separate from the server.',
+  'Sicherungsschlüssel': 'Backup passphrase',
+  'Neuer Sicherungsschlüssel': 'New backup passphrase',
+  'Sicherungsschlüssel wiederholen': 'Repeat backup passphrase',
+  'Mindestens {min} Zeichen. Jetzt kopieren und ablegen.': 'At least {min} characters. Copy it now and store it.',
+  'Die beiden Eingaben stimmen nicht überein.': 'The two entries do not match.',
+  'Verschlüsselung einschalten': 'Turn on encryption',
+  'Verschlüsselung abschalten': 'Turn off encryption',
+  'Sicherungsschlüssel ändern': 'Change backup passphrase',
+  'Verschlüsselung abschalten?': 'Turn off encryption?',
+  'Neue Sicherungen liegen dann unverschlüsselt im Ordner, mit privaten Schlüsseln. Schon geschriebene Archive bleiben verschlüsselt und brauchen weiter ihren Sicherungsschlüssel.':
+    'New backups are then stored unencrypted in the folder, including private keys. Archives already written stay encrypted and still need their backup passphrase.',
+  'Sicherungsschlüssel ändern?': 'Change backup passphrase?',
+  'Der neue Sicherungsschlüssel gilt ab der nächsten Sicherung. Schon geschriebene Archive brauchen weiter den bisherigen: bewahren Sie beide auf.':
+    'The new backup passphrase applies from the next backup. Archives already written still need the previous one: keep both.',
+  'Ändern': 'Change',
+  'Die Verschlüsselung ließ sich nicht ändern.': 'The encryption could not be changed.',
+  'Neue Sicherungen werden nicht mehr verschlüsselt.': 'New backups are no longer encrypted.',
+  'Der Sicherungsschlüssel ist geändert. Er gilt ab der nächsten Sicherung.': 'The backup passphrase is changed. It applies from the next backup.',
+  'Neue Sicherungen werden mit dem Sicherungsschlüssel verschlüsselt.': 'New backups are encrypted with the backup passphrase.',
+  'Der Sicherungsschlüssel fehlt.': 'The backup passphrase is missing.',
+  'Der Sicherungsschlüssel darf keine Zeilenumbrüche und keine Steuerzeichen enthalten.':
+    'The backup passphrase must not contain line breaks or control characters.',
+  'Der Sicherungsschlüssel darf nicht mit einem Leerzeichen beginnen oder enden.': 'The backup passphrase must not start or end with a space.',
+  'Der Sicherungsschlüssel braucht mindestens {min} Zeichen.': 'The backup passphrase needs at least {min} characters.',
+  'Der Sicherungsschlüssel darf höchstens {max} Zeichen lang sein.': 'The backup passphrase can be at most {max} characters long.',
   'Im Ordner': 'In the folder',
   'Stand nach dem letzten Lauf.': 'As of the last run.',
   'Stand nach dem letzten Lauf in {path}.': 'As of the last run in {path}.',
@@ -465,6 +505,7 @@ export const system: Dictionary = {
   'Es ist kein Ordner für die Sicherung eingestellt.': 'No backup folder is set.',
   'Es läuft schon eine Sicherung.': 'A backup is already running.',
   'HAPM wurde während der Sicherung neu gestartet.': 'HAPM was restarted during the backup.',
+  'Der Sicherungsschlüssel wurde entfernt, als die Sicherung begann.': 'The backup passphrase was removed as the backup started.',
   'Der Ordner fehlt.': 'The folder is missing.',
   'Der Ordner muss mit / beginnen (ein Pfad auf dem Server).': 'The folder must start with / (a path on the server).',
   'Der Pfad ist zu lang.': 'The path is too long.',
@@ -520,8 +561,27 @@ export const system: Dictionary = {
   'Die Liste stammt aus einem früheren Ordner.': 'The list comes from an earlier folder.',
   'Ein Archiv lässt sich auch hochladen, etwa von einem anderen Server.': 'You can also upload an archive, for example from another server.',
   'Archiv hochladen': 'Upload archive',
-  'Ein Archiv von HAPM (.tar.gz), höchstens {max}.':
-    'A HAPM archive (.tar.gz), up to {max}.',
+  'Ein Archiv von HAPM (.tar.gz oder .tar.gz.gpg), höchstens {max}.':
+    'A HAPM archive (.tar.gz or .tar.gz.gpg), up to {max}.',
+  // Ein verschlüsseltes Archiv bereitlegen (`lib/backup/restore.ts`, `lib/backup/decrypt.ts`, `app/api/backup/restore/unlock`)
+  'Verschlüsselt: {name}': 'Encrypted: {name}',
+  'Ja, entschlüsselt mit dem gespeicherten Sicherungsschlüssel.': 'Yes, decrypted with the stored backup passphrase.',
+  'Ja, entschlüsselt mit dem eingegebenen Sicherungsschlüssel.': 'Yes, decrypted with the backup passphrase you entered.',
+  'Der gespeicherte Sicherungsschlüssel passt nicht zu diesem Archiv. Geben Sie den ein, mit dem es geschrieben wurde.':
+    'The stored backup passphrase does not match this archive. Enter the one it was written with.',
+  'Hier ist kein Sicherungsschlüssel gespeichert. Geben Sie den ein, mit dem das Archiv geschrieben wurde.':
+    'No backup passphrase is stored here. Enter the one the archive was written with.',
+  'Geprüft wird das Archiv danach. Zurückgespielt wird noch nichts.': 'The archive is checked afterward. Nothing is restored yet.',
+  'Entschlüsseln und prüfen': 'Decrypt and check',
+  'Entschlüsseln fehlgeschlagen': 'Decryption failed',
+  'Sie wird mit dem jetzt gespeicherten Sicherungsschlüssel verschlüsselt. Danach gilt der Sicherungsschlüssel aus der zurückgespielten Sicherung.':
+    'It is encrypted with the backup passphrase stored right now. Afterward, the backup passphrase from the restored backup applies.',
+  'Der Sicherungsschlüssel passt nicht zu diesem Archiv.': 'The backup passphrase does not match this archive.',
+  'Das Archiv lässt sich nicht entschlüsseln. Es ist beschädigt, unvollständig oder nicht mit gpg verschlüsselt.':
+    'The archive cannot be decrypted. It is damaged, incomplete, or not encrypted with gpg.',
+  'gpg fehlt in diesem Container. Ein verschlüsseltes Archiv lässt sich hier nicht entschlüsseln.':
+    'gpg is missing in this container. An encrypted archive cannot be decrypted here.',
+  'Das verschlüsselte Archiv liegt nicht mehr bereit. Bitte wählen Sie es erneut.': 'The encrypted archive is no longer ready. Please select it again.',
   // Prüfung des Archivs (`lib/backup/archive.ts`)
   'Das Archiv lässt sich nicht vollständig lesen. Es ist beschädigt, unvollständig oder kein .tar.gz-Archiv.':
     'The archive cannot be read completely. It is damaged, incomplete, or not a .tar.gz archive.',

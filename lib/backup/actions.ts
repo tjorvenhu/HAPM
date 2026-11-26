@@ -15,8 +15,9 @@ import { msg } from '../i18n';
 import { logAudit } from '../audit';
 import { ownContainer } from '../docker';
 import { parseSteps, stepsAsLog } from '../haproxy/runner';
-import { BACKUP_RUNS, getBackupSettings, updateBackupSettings } from './settings';
+import { BACKUP_RUNS, getBackupSettings, passphraseState, storePassphrase, updateBackupSettings } from './settings';
 import { backupRunning, listBackupRuns, startBackup, type BackupActor, type BackupFile, type BackupRun } from './run';
+import { checkPassphrase } from './passphrase';
 
 function forClient(run: BackupRun) {
   return {
@@ -37,6 +38,8 @@ export async function backupOverview() {
       hostPath: settings.hostPath,
       time: settings.time,
       keep: settings.keep,
+      // Vom Sicherungsschlüssel nur, ob einer gesetzt ist, und ob HAPM ihn noch lesen kann.
+      ...passphraseState(settings),
     },
     // Ohne Container gibt es keinen Helfer, der in den Ordner schreiben könnte.
     available: ownContainer() !== null,
@@ -75,6 +78,45 @@ export async function changeBackupSettings(body: Record<string, unknown>, actor:
   return backupOverview();
 }
 
+/**
+ * Den Sicherungsschlüssel setzen, ändern oder entfernen (`null`).
+ *
+ * Nur für die Oberfläche (`/api/backup/encryption`), nicht für API und MCP:
+ * ein Geheimnis gehört nicht in ein Skript und nicht in den Verlauf eines
+ * Sprachmodells (docs/mcp.md, „Was es bewusst nicht gibt"). Die Route verlangt
+ * dazu das Passwort des Kontos. Wer den Schlüssel tauschen kann, entscheidet,
+ * wer künftige Sicherungen lesen kann, und wer ihn entfernt, schreibt sie
+ * wieder im Klartext in den Ordner.
+ *
+ * Schon geschriebene Archive bleiben, wie sie sind: ein altes verlangt beim
+ * Zurückspielen weiter den Schlüssel, mit dem es geschrieben wurde.
+ */
+export async function changeBackupPassphrase(input: unknown, actor: BackupActor): Promise<BackupOverview> {
+  const before = passphraseState(await getBackupSettings()).encrypted;
+  if (input === null) {
+    await storePassphrase(null);
+    if (before) {
+      await logAudit({
+        ...actor,
+        action: 'backup_encryption_removed',
+        resource: 'backup',
+        details: 'Sicherungen werden nicht mehr verschlüsselt',
+      });
+    }
+    return backupOverview();
+  }
+  const checked = checkPassphrase(input);
+  if ('error' in checked) throw new ApiError(checked.error);
+  await storePassphrase(checked.passphrase);
+  await logAudit({
+    ...actor,
+    action: 'backup_encryption_set',
+    resource: 'backup',
+    details: before ? 'Sicherungsschlüssel geändert' : 'Sicherungen werden verschlüsselt',
+  });
+  return backupOverview();
+}
+
 /** Eine Sicherung jetzt. Läuft abgekoppelt, die Antwort trägt den Lauf. */
 export async function startBackupRun(actor: BackupActor): Promise<{ runId: string }> {
   const run = await startBackup(actor);
@@ -103,6 +145,7 @@ export async function getBackupRun(id: string, t: (text: string) => string) {
     completedAt: run.completedAt,
     hostPath: run.hostPath,
     fileName: run.fileName,
+    encrypted: run.encrypted === true,
     sizeBytes: run.sizeBytes,
     triggeredBy: run.triggeredBy,
     error: run.error === null ? null : t(run.error),

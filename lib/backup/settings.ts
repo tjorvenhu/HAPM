@@ -6,7 +6,8 @@
 
 import { getSingleton, updateDocument } from '../db';
 import { ApiError } from '../api';
-import { msg, type Message } from '../i18n';
+import { decrypt, encrypt } from '../crypto';
+import { msg, msgid, type Message } from '../i18n';
 import type { DbDoc } from '../types';
 
 export const BACKUP_SETTINGS = 'backup_settings';
@@ -22,6 +23,13 @@ export interface BackupSettings extends DbDoc {
   time: string;
   /** Wie viele Archive liegen bleiben. Ältere räumt der Lauf weg. */
   keep: number;
+  /**
+   * Der Sicherungsschlüssel, verschlüsselt mit `encryptionKey` (`lib/crypto.ts`).
+   * `null` heißt: die Archive werden nicht verschlüsselt. Er liegt hier und
+   * nicht nur im Kopf des Benutzers, weil der nächtliche Lauf ihn braucht.
+   * Nach außen geht nur, ob einer gesetzt ist (`./actions.ts`).
+   */
+  passphrase: string | null;
 }
 
 export type BackupSettingsInput = Partial<Pick<BackupSettings, 'enabled' | 'hostPath' | 'time' | 'keep'>>;
@@ -31,7 +39,48 @@ const DEFAULTS: Omit<BackupSettings, keyof DbDoc> = {
   hostPath: null,
   time: '02:30',
   keep: 14,
+  passphrase: null,
 };
+
+/** Gespeichert, aber mit dem Schlüssel, mit dem HAPM gerade läuft, nicht zu lesen. */
+export const PASSPHRASE_UNREADABLE = msgid(
+  'Der gespeicherte Sicherungsschlüssel ist nicht mehr lesbar. Bitte tragen Sie ihn unter „Sicherung“ neu ein.'
+);
+
+/**
+ * Der Sicherungsschlüssel im Klartext, `null` ohne Verschlüsselung.
+ *
+ * Wirft, wenn er sich nicht entschlüsseln lässt (`ENCRYPTION_KEY` wurde
+ * geändert). Wer hier `null` bekäme, schriebe die nächste Sicherung
+ * unverschlüsselt in einen Ordner, für den jemand Verschlüsselung eingestellt
+ * hat: der Lauf soll dann scheitern und es sagen.
+ */
+export function readPassphrase(settings: Pick<BackupSettings, 'passphrase'>): string | null {
+  if (!settings.passphrase) return null;
+  try {
+    return decrypt(settings.passphrase);
+  } catch {
+    throw new ApiError(PASSPHRASE_UNREADABLE);
+  }
+}
+
+export function passphraseState(settings: Pick<BackupSettings, 'passphrase'>): { encrypted: boolean; passphraseUnreadable: boolean } {
+  if (!settings.passphrase) return { encrypted: false, passphraseUnreadable: false };
+  try {
+    decrypt(settings.passphrase);
+    return { encrypted: true, passphraseUnreadable: false };
+  } catch {
+    return { encrypted: true, passphraseUnreadable: true };
+  }
+}
+
+/** Den Sicherungsschlüssel setzen (`null`: ab jetzt unverschlüsselt). Geprüft wird in `./passphrase.ts`. */
+export async function storePassphrase(passphrase: string | null): Promise<void> {
+  await getBackupSettings();
+  await updateDocument<BackupSettings>(BACKUP_SETTINGS, SETTINGS_ID, {
+    passphrase: passphrase === null ? null : encrypt(passphrase),
+  });
+}
 
 export const BACKUP_KEEP_MIN = 1;
 export const BACKUP_KEEP_MAX = 365;

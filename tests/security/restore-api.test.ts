@@ -44,14 +44,16 @@ const TOUCHES = [
   'prepareRestore(',
   'beginRestore(',
   'discardStaged(',
+  'unlockStaged(',
   'verifyPassword(',
 ];
 
 describe('die Routen des Zurückspielens', () => {
   it('findet alle Routen, damit ein kaputter Pfad die Suite nicht grün macht', () => {
-    // Fünf seit `runs/[id]`: der Stand eines Laufs für das Fenster, nur lesend.
-    expect(FILES).toHaveLength(5);
-    expect(CASES.map((c) => c.method).sort()).toEqual(['DELETE', 'GET', 'GET', 'POST', 'POST', 'POST']);
+    // Fünf seit `runs/[id]` (der Stand eines Laufs für das Fenster, nur lesend),
+    // sechs seit `unlock` (ein verschlüsseltes Archiv mit eingegebenem Schlüssel).
+    expect(FILES).toHaveLength(6);
+    expect(CASES.map((c) => c.method).sort()).toEqual(['DELETE', 'GET', 'GET', 'POST', 'POST', 'POST', 'POST']);
   });
 
   it.each(CASES)('$file $method verlangt eine Sitzung', ({ body }) => {
@@ -93,5 +95,54 @@ describe('die Routen des Zurückspielens', () => {
     const upload = WRITING.find((c) => c.file === join(DIR, 'upload', 'route.ts'))!.body;
     expect(upload.indexOf('RESTORE_MAX_BYTES')).toBeGreaterThan(-1);
     expect(upload.indexOf('RESTORE_MAX_BYTES')).toBeLessThan(upload.indexOf('stageUpload('));
+  });
+
+  it('das Entschlüsseln ist begrenzt, bevor gpg einen Schlüssel ableitet, und schreibt den Schlüssel nicht ins Protokoll', () => {
+    const unlock = WRITING.find((c) => c.file === join(DIR, 'unlock', 'route.ts'))!.body;
+    const limit = unlock.indexOf('rateLimit(');
+    expect(limit).toBeGreaterThan(-1);
+    expect(limit).toBeLessThan(unlock.indexOf('unlockStaged('));
+    const audit = unlock.slice(unlock.indexOf('logAudit('));
+    expect(audit.slice(0, audit.indexOf('});'))).not.toContain('passphrase');
+  });
+});
+
+/**
+ * Der Sicherungsschlüssel (`/api/backup/encryption`). Wer ihn setzt, entscheidet,
+ * wer die nächsten Sicherungen lesen kann, und wer ihn entfernt, schreibt sie
+ * wieder im Klartext: das verlangt das Passwort des Kontos. Und er ist ein
+ * Geheimnis: weder die interne API noch der MCP-Server setzen oder zeigen ihn.
+ */
+describe('die Route des Sicherungsschlüssels', () => {
+  const source = readFileSync('app/api/backup/encryption/route.ts', 'utf8');
+  const [put] = handlers(source);
+
+  it('kennt nur das Setzen, und das mit CSRF, Sitzung, Sperre und Passwort in dieser Reihenfolge', () => {
+    expect(handlers(source).map((handler) => handler.method)).toEqual(['PUT']);
+    const order = ['await requireCsrf(request)', 'await requireSession()', 'rateLimit(', 'await jsonBody', 'verifyPassword(', 'changeBackupPassphrase('].map(
+      (marker) => put.body.indexOf(marker)
+    );
+    for (const at of order) expect(at).toBeGreaterThan(-1);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(put.body).toContain('handleError(err)');
+  });
+
+  it('ist der einzige Weg zum Sicherungsschlüssel: nicht über die interne API, nicht über MCP', () => {
+    const outside = [...routeFiles('app/api/internal'), 'lib/mcp/tools.ts', 'app/api/mcp/route.ts', 'app/api/backup/route.ts'];
+    for (const file of outside) {
+      const text = readFileSync(file, 'utf8');
+      expect(text, file).not.toMatch(/changeBackupPassphrase|storePassphrase|readPassphrase/);
+    }
+  });
+
+  it('gibt den Schlüssel nie heraus: die Übersicht nennt nur, ob einer gesetzt ist', () => {
+    const actions = readFileSync('lib/backup/actions.ts', 'utf8');
+    const overview = actions.slice(actions.indexOf('export async function backupOverview'), actions.indexOf('export type BackupOverview'));
+    expect(overview).toContain('...passphraseState(settings)');
+    // Die Einstellungen werden Feld für Feld genannt, nie als Ganzes weitergereicht.
+    expect(overview).not.toMatch(/settings,\s*$|\.\.\.settings\b|settings\.passphrase/m);
+    const state = readFileSync('lib/backup/settings.ts', 'utf8');
+    const fn = state.slice(state.indexOf('export function passphraseState'), state.indexOf('export async function storePassphrase'));
+    expect(fn).not.toMatch(/return \{[^}]*passphrase:/);
   });
 });

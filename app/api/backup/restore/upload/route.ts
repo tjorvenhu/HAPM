@@ -30,7 +30,10 @@ export async function POST(request: Request) {
       userEmail: session.email,
       action: 'backup_restore_checked',
       resource: 'backup',
-      details: `${staged.name} hochgeladen und geprüft (${staged.sizeBytes} Bytes)`,
+      details:
+        'check' in staged
+          ? `${staged.name} hochgeladen und geprüft (${staged.sizeBytes} Bytes)`
+          : `${staged.name} hochgeladen (${staged.sizeBytes} Bytes), verschlüsselt: wartet auf den Sicherungsschlüssel`,
       ip,
     });
     return ok(await restoreOverview());

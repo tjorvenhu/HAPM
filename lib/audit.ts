@@ -82,6 +82,8 @@ export type AuditAction =
   | 'backup_restore_started'
   | 'backup_restore_completed'
   | 'backup_restore_failed'
+  | 'backup_encryption_set'
+  | 'backup_encryption_removed'
   | 'settings_updated'
   | 'branding_updated'
   | 'mail_test_sent'

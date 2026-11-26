@@ -28,7 +28,9 @@ Einige Eigenschaften sind gewollt und keine Lücke. Sie stehen in der
 
 - HAPM bindet den Docker-Socket ein. Wer sich an HAPM anmelden kann, hat damit
   Zugriff auf den Server.
-- Sicherungen enthalten private Schlüssel und sind nicht verschlüsselt.
+- Sicherungen enthalten private Schlüssel und sind in der Vorgabe nicht
+  verschlüsselt. Mit einem Sicherungsschlüssel (unter „Sicherung“) verschlüsselt
+  HAPM sie mit gpg.
 - Bis eine Domain eingerichtet ist, spricht die Oberfläche unverschlüsselt auf
   Port 7080.
 
@@ -56,5 +58,6 @@ newest tag). Older versions do not receive separate fixes.
 Some properties are intended and not a vulnerability, see the
 [README](README.en.md#security): HAPM mounts the Docker socket, so anyone who
 can log in to HAPM has access to the server. Backups contain private keys and
-are not encrypted. Until a domain is set up, the web interface speaks plain
-HTTP on port 7080.
+are not encrypted by default; with a backup passphrase (set under "Backup"),
+HAPM encrypts them with gpg. Until a domain is set up, the web interface speaks
+plain HTTP on port 7080.

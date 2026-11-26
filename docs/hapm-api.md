@@ -24,8 +24,8 @@ hier, die Tabelle dort sagt, welche.
 | `GET /updates` | Stand je Bestandteil, letzte Läufe, Schalter; `?check=1` prüft vorher |
 | `POST /updates/<component>` | Update von `haproxy`, `hapm` oder `acme` → `{ runId }` |
 | `GET /updates/runs/<id>` | Stand eines Update-Laufs: `status`, `steps`, `log` |
-| `GET /backup` | Einstellungen, Läufe, Archive im Ordner |
-| `PATCH /backup` | Teil-Patch: `enabled`, `hostPath`, `time`, `keep` |
+| `GET /backup` | Einstellungen, Läufe, Archive im Ordner. `settings.encrypted` sagt, ob mit einem Sicherungsschlüssel verschlüsselt wird |
+| `PATCH /backup` | Teil-Patch: `enabled`, `hostPath`, `time`, `keep`. Den Sicherungsschlüssel ändert er nicht |
 | `POST /backup` | Sicherung jetzt → `{ runId }` |
 | `GET /backup/runs/<id>` | Stand eines Sicherungslaufs |
 | `GET /settings` | `{ settings, notifications }`, ohne SMTP-Passwort (`smtpPassSet`) |
@@ -177,8 +177,10 @@ Die Gründe stehen in [`mcp.md`](mcp.md), „Was es bewusst nicht gibt". Kurz:
 - `GET /settings/address` prüft nur. Den Stand eines laufenden Umzugs liest
   die API nicht: wer ihn liest, gibt das alte Ziel zum Entfernen frei
   (`readAddressMoveView`), und das soll das Fenster tun, das umzieht.
-- Kein Zurückspielen einer Sicherung, keine Benutzer, Passwörter, Passkeys,
-  zweiter Faktor, API-Keys, DNS-Tokens, Design der Fehlerseiten, Darstellung.
+- Kein Zurückspielen einer Sicherung, kein Sicherungsschlüssel (setzen, ändern,
+  entfernen: nur in der Oberfläche, mit dem Passwort des Kontos), keine
+  Benutzer, Passwörter, Passkeys, zweiter Faktor, API-Keys, DNS-Tokens, Design
+  der Fehlerseiten, Darstellung.
 
 ## Für den, der die Routen ändert
 

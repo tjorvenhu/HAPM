@@ -35,9 +35,11 @@ FROM ${NODE_IMAGE} AS runner
 
 # Was die Kommandos aus lib/haproxy/ auf der Maschine erwarten: bash, socat
 # (Stats-Socket, ACME-Challenge), ss (belegte Ports), openssl und curl (acme.sh),
-# dazu die üblichen Textwerkzeuge.
+# dazu die üblichen Textwerkzeuge. gpg verschlüsselt die Sicherung (lib/backup/):
+# nur das Paket `gpg`, ohne gpg-agent und dirmngr, die `gnupg` mitbrächte.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       bash ca-certificates coreutils curl gawk grep iproute2 openssl procps sed socat tzdata \
+      gpg \
     && rm -rf /var/lib/apt/lists/*
 
 ARG HAPM_VERSION=dev

@@ -12,6 +12,11 @@
  *
  * Nicht im Archiv: das Log von HAProxy und die Abbilder.
  *
+ * Mit einem Sicherungsschlüssel (`./passphrase.ts`) verschlüsselt der Helfer
+ * das Archiv, während er es schreibt: `tar` reicht an `gpg` weiter, die Datei
+ * heißt `….tar.gz.gpg`, und im Ordner liegt zu keinem Zeitpunkt ein Archiv im
+ * Klartext. Der Ordner ist oft ein Netzlaufwerk, dafür ist die Verschlüsselung da.
+ *
  * ── Warum ein Helfer-Container ──
  *
  * Der Ordner liegt auf dem Server, nicht im Container, und er wird in der
@@ -47,8 +52,9 @@ import { dataPath } from '../paths';
 import { secrets } from '../secrets';
 import { engine, ownContainer } from '../docker';
 import type { DbDoc, HaproxyStep, RunStatus } from '../types';
-import { BACKUP_RUNS, getBackupSettings } from './settings';
+import { BACKUP_RUNS, getBackupSettings, readPassphrase } from './settings';
 import { MANIFEST_NAME, buildManifest, type BackupKind } from './manifest';
+import { ENCRYPTED_SUFFIX, isEncryptedName } from './passphrase';
 
 export interface BackupFile {
   name: string;
@@ -61,6 +67,8 @@ export interface BackupRun extends DbDoc {
   completedAt: string | null;
   hostPath: string;
   fileName: string | null;
+  /** Mit dem Sicherungsschlüssel verschlüsselt. Fehlt bei älteren Läufen: die waren es nie. */
+  encrypted?: boolean;
   sizeBytes: number | null;
   /** Was nach dem Lauf im Ordner liegt, als JSON-Text von `BackupFile[]`. */
   files: string | null;
@@ -93,6 +101,15 @@ export interface WrittenArchive {
 }
 
 const STAGING = '.backup-staging';
+/**
+ * Der Sicherungsschlüssel für den Helfer, als Datei im Daten-Ordner (600), nur
+ * für die Dauer eines Laufs. Nicht in der Umgebung des Helfers: die zeigt
+ * `docker inspect` jedem, der an Docker kommt. Der Helfer liest den
+ * Daten-Ordner ohnehin (nur lesend). Die Datei liegt neben `secrets.json`, mit
+ * dem sich der gespeicherte Schlüssel lesen lässt: sie verrät dort nichts, was
+ * nicht schon da liegt.
+ */
+const KEY_FILE = '.backup-passphrase';
 const LIST_MARK = '---HAPM-BACKUP-LIST---';
 const HELPER_TIMEOUT_MS = 20 * 60 * 1000;
 
@@ -106,9 +123,9 @@ export const BEFORE_RESTORE_SUFFIX = '-vor-ruecksicherung';
 /** Ohne eingestellten Ordner: eine Datei im Daten-Ordner, die vorige wird ersetzt. */
 export const BEFORE_RESTORE_DATA_FILE = 'hapm-before-restore.tar.gz';
 
-const ARCHIVE_NAME = /^hapm-backup-\d{8}-\d{6}(?:-vor-ruecksicherung)?\.tar\.gz$/;
+const ARCHIVE_NAME = /^hapm-backup-\d{8}-\d{6}(?:-vor-ruecksicherung)?\.tar\.gz(?:\.gpg)?$/;
 
-/** Ein Archiv von HAPM im Ordner, mit oder ohne Zusatz. */
+/** Ein Archiv von HAPM im Ordner, mit oder ohne Zusatz, verschlüsselt oder nicht. */
 export function isBackupArchiveName(name: string): boolean {
   return ARCHIVE_NAME.test(name);
 }
@@ -134,14 +151,43 @@ function postgresContainer(): string {
   return process.env.HAPM_POSTGRES_CONTAINER || 'hapm-postgres';
 }
 
-/** `hapm-backup-20261124-023000.tar.gz`: der Zeitpunkt sortiert die Archive. */
-export function backupFileName(now: Date, suffix = ''): string {
+/**
+ * `hapm-backup-20261124-023000.tar.gz`: der Zeitpunkt sortiert die Archive.
+ * Verschlüsselt mit `.gpg` dahinter, wie gpg selbst die Datei nennen würde.
+ */
+export function backupFileName(now: Date, suffix = '', encrypted = false): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   const stamp =
     `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-` +
     `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-  return `hapm-backup-${stamp}${suffix}.tar.gz`;
+  return `hapm-backup-${stamp}${suffix}.tar.gz${encrypted ? ENCRYPTED_SUFFIX : ''}`;
 }
+
+/**
+ * Wie gpg verschlüsselt. An einer Stelle, weil der Helfer, die Tests und
+ * `docs/betrieb.md` dasselbe meinen müssen.
+ *
+ *  - `--symmetric --cipher-algo AES256`: nur der Sicherungsschlüssel, kein
+ *    Schlüsselpaar. gpg schützt die Daten dabei gegen Veränderung (MDC) und
+ *    endet beim Entschlüsseln mit einem Fehler, wenn etwas nicht stimmt.
+ *  - `--s2k-*`: aus dem Sicherungsschlüssel wird der AES-Schlüssel mit SHA-512
+ *    und der höchsten Zahl an Runden abgeleitet, die OpenPGP kennt. Das bremst
+ *    das Durchprobieren, mehr nicht: ein kurzer Schlüssel bleibt ein kurzer.
+ *  - `--compress-algo none`: das Archiv ist schon gzip.
+ *  - `--batch --no-tty --pinentry-mode loopback`: ohne Rückfrage und ohne
+ *    Terminal. Der Schlüssel kommt über `--passphrase-file` aus einer Datei und
+ *    nie als Argument (das stünde in `ps`).
+ *  - `--no-symkey-cache`: gpg fragt keinen gpg-agent. Im Abbild liegt nur
+ *    `gpg`, kein Agent, und ein Helfer soll keinen Dienst starten.
+ *  - `--no-keyring`: es gibt kein Schlüsselpaar, also legt gpg auch keinen
+ *    Schlüsselbund an.
+ *
+ * Dazu je Lauf `--homedir` auf einen leeren Ordner: ohne ihn legt gpg seine
+ * Dateien in `~/.gnupg` an und scheitert, wenn es das nicht darf.
+ */
+export const GPG_ENCRYPT_FLAGS =
+  '--batch --yes --no-tty --quiet --no-symkey-cache --no-keyring --pinentry-mode loopback ' +
+  '--symmetric --cipher-algo AES256 --s2k-mode 3 --s2k-digest-algo SHA512 --s2k-count 65011712 --compress-algo none';
 
 /**
  * Was der Helfer ausführt. Fester Text: Name, Anzahl und Ziel kommen über die
@@ -151,22 +197,38 @@ export function backupFileName(now: Date, suffix = ''): string {
  * abgebrochener Lauf hinterlässt so kein Archiv, das wie ein fertiges aussieht
  * und als jüngstes ein gutes verdrängt.
  *
- * Aufgeräumt werden nur Namen ohne Zusatz. Die Liste am Ende nennt beide.
+ * Mit `BACKUP_ENCRYPT=1` geht die Ausgabe von tar durch gpg, der
+ * Sicherungsschlüssel kommt aus der Datei `BACKUP_KEY_FILE`. Dafür bash und
+ * `pipefail`: scheitert tar, soll kein halbes Archiv als gelungen gelten, nur
+ * weil gpg das Wenige sauber verschlüsselt hat. Eine leere Datei wird
+ * abgelehnt, sonst verschlüsselte gpg mit einem leeren Schlüssel.
+ *
+ * Aufgeräumt werden nur Namen ohne Zusatz, verschlüsselte und unverschlüsselte
+ * zählen zusammen. Die Liste am Ende nennt alle. `|| true` hinter grep, weil
+ * mit `pipefail` ein Ordner ohne Treffer sonst den Lauf beendete.
  */
 export const HELPER_SCRIPT = [
-  'set -eu',
+  'set -euo pipefail',
   'umask 077',
   'dir="${BACKUP_DIR:-/backup}"',
   'tmp="$dir/.${BACKUP_NAME}.tmp"',
-  'trap \'rm -f "$tmp"\' EXIT',
-  `tar -czf "$tmp" -C "/data/${STAGING}" . -C /etc haproxy -C /root .acme.sh`,
+  'gnupg=""',
+  'trap \'rm -f "$tmp"; if [ -n "$gnupg" ]; then rm -rf "$gnupg"; fi\' EXIT',
+  'if [ "${BACKUP_ENCRYPT:-0}" = 1 ]; then',
+  `  key="\${BACKUP_KEY_FILE:-/data/${KEY_FILE}}"`,
+  '  if [ ! -s "$key" ]; then echo "Der Sicherungsschlüssel fehlt." >&2; exit 1; fi',
+  '  gnupg="$(mktemp -d)"',
+  `  tar -czf - -C "/data/${STAGING}" . -C /etc haproxy -C /root .acme.sh | gpg --homedir "$gnupg" ${GPG_ENCRYPT_FLAGS} --passphrase-file "$key" -o "$tmp"`,
+  'else',
+  `  tar -czf "$tmp" -C "/data/${STAGING}" . -C /etc haproxy -C /root .acme.sh`,
+  'fi',
   'mv "$tmp" "$dir/${BACKUP_NAME}"',
   // Älteste zuerst weg. Der Name trägt den Zeitpunkt, also sortiert `ls` richtig.
   'if [ "${BACKUP_PRUNE:-1}" = 1 ]; then',
-  '  ls -1 "$dir" | grep -E "^hapm-backup-[0-9]{8}-[0-9]{6}\\.tar\\.gz$" | sort -r | tail -n "+$((BACKUP_KEEP + 1))" | while IFS= read -r old; do rm -f -- "$dir/$old"; done',
+  '  ls -1 "$dir" | { grep -E "^hapm-backup-[0-9]{8}-[0-9]{6}\\.tar\\.gz(\\.gpg)?$" || true; } | sort -r | tail -n "+$((BACKUP_KEEP + 1))" | while IFS= read -r old; do rm -f -- "$dir/$old"; done',
   'fi',
   `echo '${LIST_MARK}'`,
-  'ls -1 "$dir" | grep -E "^hapm-backup-[0-9]{8}-[0-9]{6}(-vor-ruecksicherung)?\\.tar\\.gz$" | sort -r | while IFS= read -r f; do printf "%s %s\\n" "$(stat -c %s "$dir/$f")" "$f"; done',
+  'ls -1 "$dir" | { grep -E "^hapm-backup-[0-9]{8}-[0-9]{6}(-vor-ruecksicherung)?\\.tar\\.gz(\\.gpg)?$" || true; } | sort -r | while IFS= read -r f; do printf "%s %s\\n" "$(stat -c %s "$dir/$f")" "$f"; done',
 ].join('\n');
 
 /** Die Liste am Ende der Ausgabe des Helfers: `<bytes> <name>` je Zeile. */
@@ -218,7 +280,11 @@ async function dumpDatabase(staging: string): Promise<number> {
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- Antworten der Engine */
-async function runHelper(target: BackupTarget, fileName: string): Promise<{ output: string; code: number }> {
+async function runHelper(
+  target: BackupTarget,
+  fileName: string,
+  encrypt: boolean
+): Promise<{ output: string; code: number }> {
   const own = ownContainer();
   if (!own) throw new Error(msgid('HAPM läuft nicht in einem Container. Die Sicherung braucht Docker.'));
   const self: any = await engine.inspectContainer(own);
@@ -227,13 +293,16 @@ async function runHelper(target: BackupTarget, fileName: string): Promise<{ outp
   const helper = `hapm-backup-${Date.now()}`;
   await engine.createContainer(helper, {
     Image: self.Image,
-    Entrypoint: ['sh', '-c'],
+    // bash wegen `pipefail`, siehe `HELPER_SCRIPT`.
+    Entrypoint: ['bash', '-c'],
     Cmd: [HELPER_SCRIPT],
     Env: [
       `BACKUP_NAME=${fileName}`,
       `BACKUP_KEEP=${folder ? target.keep : 0}`,
       `BACKUP_DIR=${folder ? '/backup' : '/data'}`,
       `BACKUP_PRUNE=${folder && target.prune ? 1 : 0}`,
+      // Nur der Schalter. Der Schlüssel selbst steht in einer Datei, siehe `KEY_FILE`.
+      `BACKUP_ENCRYPT=${encrypt ? 1 : 0}`,
     ],
     User: 'root',
     HostConfig: folder
@@ -267,6 +336,11 @@ async function runHelper(target: BackupTarget, fileName: string): Promise<{ outp
  * `keepDumpAt`: die herausgeschriebene Datenbank dorthin kopieren, bevor der
  * Zwischenordner verschwindet. Das Zurückspielen spielt sie bei einem Fehler
  * wieder ein.
+ *
+ * `passphrase`: der Sicherungsschlüssel im Klartext. Mit ihm muss der Name auf
+ * `.gpg` enden und ohne ihn nicht (`archiveNameFor` hält beides zusammen): ein
+ * verschlüsseltes Archiv unter einem Namen, der es nicht sagt, erkennte beim
+ * Aufräumen und in der Liste niemand wieder.
  */
 export async function writeArchive(options: {
   target: BackupTarget;
@@ -274,10 +348,16 @@ export async function writeArchive(options: {
   kind: BackupKind;
   onStep?: StepFn;
   keepDumpAt?: string;
+  passphrase?: string | null;
 }): Promise<WrittenArchive> {
   const { target, fileName } = options;
+  const passphrase = options.passphrase || null;
+  if ((passphrase !== null) !== isEncryptedName(fileName)) {
+    throw new Error('writeArchive: Name und Sicherungsschlüssel passen nicht zusammen.');
+  }
   const step: StepFn = options.onStep ?? (async () => undefined);
   const staging = dataPath(STAGING);
+  const keyFile = dataPath(KEY_FILE);
   try {
     fs.rmSync(staging, { recursive: true, force: true });
     fs.mkdirSync(path.join(staging, 'data'), { recursive: true, mode: 0o700 });
@@ -290,11 +370,16 @@ export async function writeArchive(options: {
       kind: options.kind,
       encryptionKey: secrets().encryptionKey,
       keyFromEnvironment: Boolean(process.env.ENCRYPTION_KEY),
+      encrypted: passphrase !== null,
     });
     fs.writeFileSync(path.join(staging, MANIFEST_NAME), `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
     await step(msgid('Schlüssel dazugelegt'), true);
 
-    const helper = await runHelper(target, fileName);
+    if (passphrase !== null) {
+      fs.rmSync(keyFile, { force: true });
+      fs.writeFileSync(keyFile, `${passphrase}\n`, { mode: 0o600 });
+    }
+    const helper = await runHelper(target, fileName, passphrase !== null);
     const files = target.kind === 'folder' ? parseBackupList(helper.output) : [];
     const location =
       target.kind === 'folder' ? `${target.hostPath}/${fileName}` : dataPath(fileName);
@@ -311,7 +396,7 @@ export async function writeArchive(options: {
           : `Das Archiv ließ sich nicht nach ${location} schreiben.`
       );
     }
-    await step(msgid('Archiv geschrieben'), true, location);
+    await step(msgid('Archiv geschrieben'), true, passphrase !== null ? `${location}, verschlüsselt` : location);
 
     if (options.keepDumpAt) {
       fs.mkdirSync(path.dirname(options.keepDumpAt), { recursive: true, mode: 0o700 });
@@ -322,7 +407,18 @@ export async function writeArchive(options: {
   } finally {
     // Der herausgeschriebene Stand der Datenbank soll nicht im Volume liegen bleiben.
     fs.rmSync(staging, { recursive: true, force: true });
+    fs.rmSync(keyFile, { force: true });
   }
+}
+
+/**
+ * Name und Sicherungsschlüssel für ein Archiv im Ordner, aus den Einstellungen.
+ * Wirft, wenn ein Schlüssel gespeichert, aber nicht lesbar ist: dann wird nicht
+ * ersatzweise unverschlüsselt geschrieben.
+ */
+export async function archiveNameFor(now: Date, suffix = ''): Promise<{ fileName: string; passphrase: string | null }> {
+  const passphrase = readPassphrase(await getBackupSettings());
+  return { fileName: backupFileName(now, suffix, passphrase !== null), passphrase };
 }
 
 async function execute(run: BackupRun, keep: number, actor: BackupActor): Promise<void> {
@@ -331,11 +427,19 @@ async function execute(run: BackupRun, keep: number, actor: BackupActor): Promis
   let failure: string | null = null;
 
   try {
+    // Im Lauf gelesen und nicht beim Start: ein Schlüssel, der sich nicht mehr
+    // lesen lässt, steht so als Fehler in der Historie und geht als Mail
+    // hinaus, auch nachts.
+    const passphrase = run.encrypted ? readPassphrase(await getBackupSettings()) : null;
+    if (run.encrypted && passphrase === null) {
+      throw new Error(msgid('Der Sicherungsschlüssel wurde entfernt, als die Sicherung begann.'));
+    }
     const written = await writeArchive({
       target: { kind: 'folder', hostPath: run.hostPath, keep, prune: true },
       fileName,
       kind: actor.userEmail === 'scheduler' ? 'scheduled' : 'manual',
       onStep: log.add,
+      passphrase,
     });
     await log.add(
       msgid('Alte Sicherungen aufgeräumt'),
@@ -402,7 +506,9 @@ export async function startBackup(actor: BackupActor): Promise<BackupRun> {
       startedAt: new Date().toISOString(),
       completedAt: null,
       hostPath: settings.hostPath,
-      fileName: backupFileName(new Date()),
+      // Ob verschlüsselt wird, steht mit dem Namen fest. Gelesen wird der Schlüssel erst im Lauf.
+      fileName: backupFileName(new Date(), '', Boolean(settings.passphrase)),
+      encrypted: Boolean(settings.passphrase),
       sizeBytes: null,
       files: null,
       steps: '[]',
@@ -435,6 +541,7 @@ export async function reconcileBackupRuns(): Promise<string[]> {
     });
   }
   fs.rmSync(dataPath(STAGING), { recursive: true, force: true });
+  fs.rmSync(dataPath(KEY_FILE), { force: true });
   return open.map((run) => run.$id);
 }
 
