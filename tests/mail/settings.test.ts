@@ -108,6 +108,14 @@ describe('settingsPatch', () => {
     );
     expect(() => settingsPatch({ notifyEvents: { backend_down: 'ja' } as never }, current, encryptPass)).toThrow();
   });
+
+  it('meldet einen Ausfall von CrowdSec von selbst, den Tagesbericht nur auf Wunsch', () => {
+    expect(current.notifyEvents.crowdsec_down).toBe(true);
+    expect(current.notifyEvents.crowdsec_report).toBe(false);
+    // Eine Zeile von vor den beiden Ereignissen bekommt dieselben Vorgaben.
+    const old = withDefaults({ notifyEvents: { backend_down: false } as never }).notifyEvents;
+    expect(old).toMatchObject({ backend_down: false, crowdsec_down: true, crowdsec_report: false });
+  });
 });
 
 describe('normalizeRecipients', () => {
@@ -132,7 +140,8 @@ describe('withDefaults', () => {
     expect(settings.smtpPort).toBe(587);
     expect(settings.smtpSecurity).toBe('starttls');
     expect(settings.notifyRecipients).toEqual([]);
-    for (const type of NOTIFICATION_EVENT_TYPES) expect(settings.notifyEvents[type]).toBe(true);
+    // Alles an, bis auf den Tagesbericht von CrowdSec: der ist eine Übersicht, keine Störung.
+    for (const type of NOTIFICATION_EVENT_TYPES) expect(settings.notifyEvents[type], type).toBe(type !== 'crowdsec_report');
   });
 
   it('schaltet ein Ereignis ein, das in den gespeicherten Schaltern fehlt', () => {

@@ -290,6 +290,13 @@ anspringt.
   Pfade, aktive Sperren, Größe der Community-Blocklist.
 - **Übersicht:** Kennzahlen und Zeilen zu CrowdSec.
 - **Updates:** beide Abbilder lassen sich wie HAProxy aktualisieren.
+- **Benachrichtigungen**, Gruppe „CrowdSec" (nur, wo CrowdSec installiert ist):
+  `crowdsec_down`, wenn CrowdSec oder der Bouncer zwei Prüfungen in Folge nicht
+  läuft. Gemeldet wird nur, solange CrowdSec ein Ziel schützt, denn dann lässt
+  HAProxy die Anfragen ungeprüft durch (fail-open). `crowdsec_report` einmal am
+  Tag nach dem Lauf von acme.sh, mit Zahlen, häufigsten Regeln, Adressen und
+  Zielen der letzten 24 Stunden, nur wenn es ein Ereignis gab. Vorgabe: Ausfall
+  an, Tagesbericht aus (`lib/notifications/checks.ts`).
 - **Interne API** unter `/api/internal/crowdsec`: `GET /`, `GET`/`POST`/`DELETE`
   `decisions`, `GET`/`POST`/`DELETE` `allowlist`,
   `GET alerts?window=24h|7d|30d&service=`, `GET stats?window=`,

@@ -588,6 +588,8 @@ bekommt eine eigene Mail.
 | `update_available` | die Update-Prüfung findet eine neue Fassung, einmal je Fassung | `lib/updates/check.ts` |
 | `update_completed`, `update_failed` | Ende eines Update-Laufs, auch beim Abgleich nach dem Start | `lib/updates/apply.ts` |
 | `backup_failed` | die Sicherung ruft `notify({ type: 'backup_failed', detail })` | Sicherung |
+| `crowdsec_down` | der Container von CrowdSec oder des Bouncers läuft bei zwei Prüfungen in Folge nicht, solange CrowdSec ein Ziel schützt | alle zwei Minuten |
+| `crowdsec_report` | was CrowdSec in 24 Stunden gemeldet hat, nur wenn etwas war; **Vorgabe aus** | täglicher Lauf |
 
 **Dämpfung.** Dasselbe Ereignis für dieselbe Sache (ein Eintrag, ein
 Bestandteil) kommt höchstens einmal am Tag, gerechnet mit 23 Stunden, damit ein

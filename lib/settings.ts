@@ -65,7 +65,8 @@ const DEFAULTS: SettingsData = {
   smtpPass: null,
   mailFrom: null,
   notifyRecipients: [],
-  notifyEvents: allEvents(true),
+  // Der Tagesbericht ist eine Übersicht, keine Störung: nur, wer ihn will.
+  notifyEvents: { ...allEvents(true), crowdsec_report: false },
   mailLocale: 'de',
   // Die Vorgabe ist das Verhalten vor dieser Einstellung: HTTP-01, DNS-01 nur für Wildcards.
   exposure: 'public',

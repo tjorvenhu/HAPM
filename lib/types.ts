@@ -394,6 +394,8 @@ export const NOTIFICATION_EVENT_TYPES = [
   'update_completed',
   'update_failed',
   'backup_failed',
+  'crowdsec_down',
+  'crowdsec_report',
 ] as const;
 
 export type NotificationEventType = (typeof NOTIFICATION_EVENT_TYPES)[number];

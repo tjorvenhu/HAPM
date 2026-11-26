@@ -17,7 +17,7 @@ import { LOCALES, LOCALE_NAMES, msgid, type Locale } from '@/lib/i18n';
 // Rein: Ports und Beschriftungen der Verschlüsselung.
 import { SMTP_DEFAULT_PORTS, SMTP_SECURITY_CHOICES } from '@/lib/mail/config';
 // Rein: nur Namen und Sätze der Ereignisse.
-import { NOTIFICATION_EVENT_GROUPS, NOTIFICATION_EVENT_LABELS } from '@/lib/notifications/events';
+import { CROWDSEC_EVENT_TYPES, NOTIFICATION_EVENT_GROUPS, NOTIFICATION_EVENT_LABELS } from '@/lib/notifications/events';
 // Nur Typen: die Dateien dahinter erreichen `lib/db` und `nodemailer`.
 import type { SettingsView } from '@/lib/settings';
 import type { NotificationStatus, TestMailResult } from '@/lib/notifications';
@@ -666,7 +666,9 @@ function Notifications() {
           </div>
 
           <div className="card-body">
-            {NOTIFICATION_EVENT_GROUPS.map((group) => (
+            {NOTIFICATION_EVENT_GROUPS.filter(
+              (group) => session.features?.crowdsec === true || !group.events.every((event) => CROWDSEC_EVENT_TYPES.includes(event.type))
+            ).map((group) => (
               <div key={group.title}>
                 <div className="form-section-title">{t(group.title)}</div>
                 <div className="hapm-switch-list">

@@ -118,6 +118,36 @@ const SAMPLES: { event: NotificationEvent; subject: string; text: string[]; path
     text: ['proxy01', 'Der Ordner /srv/hapm-backup ist nicht beschreibbar.', 'Was zu tun ist'],
     path: '/backup',
   },
+  {
+    event: {
+      type: 'crowdsec_down',
+      role: 'bouncer',
+      container: 'hapm-crowdsec-bouncer',
+      exists: true,
+      status: 'exited',
+      since: '2026-11-24T11:58:00.000Z',
+      global: false,
+      protectedServices: 3,
+    },
+    subject: 'Der Bouncer von CrowdSec läuft nicht',
+    text: ['hapm-crowdsec-bouncer', 'ungeprüft durch', 'exited', 'Geschützt: 3 Ziele', 'docker start hapm-crowdsec-bouncer'],
+    path: '/reverse-proxy/crowdsec',
+  },
+  {
+    event: {
+      type: 'crowdsec_report',
+      from: '2026-11-23T12:00:00.000Z',
+      to: '2026-11-24T12:00:00.000Z',
+      totals: { alerts: 12, waf: 4, scenario: 7, manual: 1, sources: 5 },
+      activeDecisions: 3,
+      scenarios: [{ key: 'crowdsecurity/http-probing', count: 6 }],
+      sources: [{ key: '203.0.113.58', count: 9 }],
+      targets: [{ key: 'shop_example_org', count: 10 }],
+    },
+    subject: 'CrowdSec: 12 Ereignisse in 24 Stunden',
+    text: ['proxy01', 'WAF-Treffer: 4', 'Jetzt aktive Sperren: 3', 'crowdsecurity/http-probing: 6', '203.0.113.58: 9', 'shop_example_org: 10', 'Freigaben'],
+    path: '/reverse-proxy/crowdsec?bereich=ereignisse',
+  },
 ];
 
 describe('notificationMail', () => {

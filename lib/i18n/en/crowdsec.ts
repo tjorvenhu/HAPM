@@ -189,6 +189,38 @@ export const crowdsec: Readonly<Record<string, string>> = {
   'Erkennt Adressen, die in kurzer Zeit sehr viele Anfragen schicken, und sperrt sie. Vorsicht bei Diensten, die viele Anfragen von einer Adresse bekommen, etwa Apps zum Abgleich hinter einem gemeinsamen Ausgang (Firmennetz, Mobilfunk). Solche Adressen gehören in die Freigaben.':
     'Detects addresses that send very many requests in a short time and bans them. Take care with services that get many requests from one address, such as sync apps behind a shared exit (company network, mobile carrier). Such addresses belong in the allowlist.',
 
+  // Benachrichtigungen
+  'CrowdSec prüft nicht': 'CrowdSec is not checking',
+  'CrowdSec oder Bouncer läuft nicht, Anfragen gehen ungeprüft durch.':
+    'CrowdSec or the bouncer is not running, requests pass unchecked.',
+  Tagesbericht: 'Daily report',
+  'Einmal am Tag, was CrowdSec erkannt hat. Nur, wenn etwas war.':
+    'Once a day, what CrowdSec detected. Only if something happened.',
+  'alle Ziele': 'all targets',
+  'Der Bouncer von CrowdSec läuft nicht': 'The CrowdSec bouncer is not running',
+  'Der Container {container} auf {node} läuft nicht.': 'The container {container} on {node} is not running.',
+  'HAProxy erreicht den Bouncer nicht und lässt jede Anfrage ungeprüft durch, damit die Ziele erreichbar bleiben. Weder WAF noch Sperren wirken.':
+    'HAProxy cannot reach the bouncer and lets every request through unchecked, so the targets stay reachable. Neither the WAF nor bans take effect.',
+  'Die WAF prüft keine Anfrage, und aus dem Log von HAProxy entstehen keine neuen Sperren. Die Ziele bleiben erreichbar.':
+    'The WAF checks no requests, and no new bans come from the HAProxy log. The targets stay reachable.',
+  Geschützt: 'Protected',
+  'CrowdSec ansehen': 'View CrowdSec',
+  'CrowdSec: {count} Ereignis in 24 Stunden': 'CrowdSec: {count} event in 24 hours',
+  'CrowdSec: {count} Ereignisse in 24 Stunden': 'CrowdSec: {count} events in 24 hours',
+  'Was CrowdSec erkannt hat': 'What CrowdSec detected',
+  'Zwischen {from} und {to} hat CrowdSec auf {node} {count} gemeldet.': 'Between {from} and {to}, CrowdSec on {node} reported {count}.',
+  '{count} Ereignis': '{count} event',
+  '{count} Ereignisse': '{count} events',
+  'Erkannt im Log': 'Detected in the log',
+  'Von Hand gesperrt': 'Banned manually',
+  'Jetzt aktive Sperren': 'Bans active now',
+  'Häufigste Regeln': 'Most frequent rules',
+  'Häufigste Adressen': 'Most frequent addresses',
+  'Betroffene Ziele': 'Affected targets',
+  'Was zu tun ist: Nichts, solange die Treffer von außen kommen. Steht eine eigene Adresse oder die eines Nutzers darunter, gehört sie unter CrowdSec in die Freigaben.':
+    'What to do: nothing, as long as the hits come from outside. If one of your own addresses or that of a user is listed, add it to the allowlist under CrowdSec.',
+  'Ereignisse ansehen': 'View events',
+
   // Regeln, Anwendungen
   Anwendungen: 'Applications',
   Anwendung: 'Application',

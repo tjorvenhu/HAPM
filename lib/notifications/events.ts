@@ -8,6 +8,7 @@
 
 import { msgid } from '../i18n';
 import type { HaproxyAction, NotificationEventType, UpdateComponent } from '../types';
+import type { CountRow } from '../crowdsec/data';
 
 export interface ExpiringCertificate {
   mainDomain: string;
@@ -86,7 +87,30 @@ export type NotificationEvent =
       error: string;
       triggeredBy: string | null;
     }
-  | { type: 'backup_failed'; detail: string };
+  | { type: 'backup_failed'; detail: string }
+  | {
+      type: 'crowdsec_down';
+      /** `bouncer`: HAProxy erreicht niemanden, der fragt. `crowdsec`: niemand prüft. */
+      role: 'crowdsec' | 'bouncer';
+      container: string;
+      exists: boolean;
+      status: string | null;
+      since: string;
+      /** `true`: alle Ziele, sonst die Zahl der Ziele mit eigenem Schalter. */
+      global: boolean;
+      protectedServices: number;
+    }
+  | {
+      type: 'crowdsec_report';
+      from: string;
+      to: string;
+      totals: { alerts: number; waf: number; scenario: number; manual: number; sources: number };
+      /** Jetzt aktive Sperren. `null`: nicht zu erfahren. */
+      activeDecisions: number | null;
+      scenarios: CountRow[];
+      sources: CountRow[];
+      targets: CountRow[];
+    };
 
 export interface NotificationEventInfo {
   type: NotificationEventType;
@@ -167,7 +191,25 @@ export const NOTIFICATION_EVENT_GROUPS: NotificationEventGroup[] = [
       },
     ],
   },
+  {
+    title: 'CrowdSec',
+    events: [
+      {
+        type: 'crowdsec_down',
+        label: msgid('CrowdSec prüft nicht'),
+        description: msgid('CrowdSec oder Bouncer läuft nicht, Anfragen gehen ungeprüft durch.'),
+      },
+      {
+        type: 'crowdsec_report',
+        label: msgid('Tagesbericht'),
+        description: msgid('Einmal am Tag, was CrowdSec erkannt hat. Nur, wenn etwas war.'),
+      },
+    ],
+  },
 ];
+
+/** Die Gruppe, die nur zeigt, wo CrowdSec installiert ist. */
+export const CROWDSEC_EVENT_TYPES: readonly NotificationEventType[] = ['crowdsec_down', 'crowdsec_report'];
 
 export const NOTIFICATION_EVENT_LABELS = Object.fromEntries(
   NOTIFICATION_EVENT_GROUPS.flatMap((group) => group.events.map((event) => [event.type, event.label]))
@@ -201,6 +243,11 @@ export function eventSubject(event: NotificationEvent): string {
       return event.component;
     case 'backup_failed':
       return 'backup';
+    case 'crowdsec_down':
+      return event.container;
+    // Einer am Tag; die Dämpfung von 23 Stunden fängt einen zweiten Lauf ab.
+    case 'crowdsec_report':
+      return 'report';
   }
 }
 

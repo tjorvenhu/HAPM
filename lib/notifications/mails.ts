@@ -15,7 +15,7 @@
  * Fehlermeldungen eines Laufs, Namen), bleibt, wie es ist.
  */
 
-import { createTranslator, formatDate, formatDateTime, msgid, type Translator } from '../i18n';
+import { createTranslator, formatCount, formatDate, formatDateTime, msgid, type Translator } from '../i18n';
 import {
   escapeHtml,
   escapeMultiline,
@@ -460,6 +460,85 @@ function draft(event: NotificationEvent, ctx: NotificationMailContext, w: Writer
           mailNote(machineHead(event.error, w), 'danger', t('Fehler')) +
           mailText(t('Was zu tun ist: Unter „Updates“ steht der Lauf in der Historie, mit jedem Schritt und dessen Ausgabe.')),
         action: { label: t('Updates ansehen'), path: '/updates' },
+      };
+    }
+
+    case 'crowdsec_down': {
+      const scope = event.global
+        ? t('alle Ziele')
+        : w.plural(event.protectedServices, { one: '{count} Ziel', other: '{count} Ziele' });
+      const subject = event.role === 'bouncer' ? t('Der Bouncer von CrowdSec läuft nicht') : t('CrowdSec läuft nicht');
+      return {
+        subject,
+        eyebrow: 'CrowdSec',
+        heading: subject,
+        body:
+          mailText(t('Der Container {container} auf {node} läuft nicht.', { container: code(event.container), node })) +
+          mailNote(
+            event.role === 'bouncer'
+              ? t('HAProxy erreicht den Bouncer nicht und lässt jede Anfrage ungeprüft durch, damit die Ziele erreichbar bleiben. Weder WAF noch Sperren wirken.')
+              : t('Die WAF prüft keine Anfrage, und aus dem Log von HAProxy entstehen keine neuen Sperren. Die Ziele bleiben erreichbar.'),
+            'warning'
+          ) +
+          mailFacts([
+            {
+              label: t('Zustand'),
+              value: event.exists ? (event.status ?? t('unbekannt')) : t('Der Container existiert nicht'),
+            },
+            { label: t('Seit'), value: w.when(event.since) },
+            { label: t('Geschützt'), value: scope },
+          ]) +
+          mailText(
+            event.exists
+              ? t('Was zu tun ist: Auf dem Server zeigt {logs}, warum er beendet wurde. {start} startet ihn wieder.', {
+                  logs: code(`docker logs ${event.container}`),
+                  start: code(`docker start ${event.container}`),
+                })
+              : t('Was zu tun ist: Auf dem Server legt {command} im Ordner der Installation den Container wieder an.', {
+                  command: code('docker compose up -d'),
+                })
+          ),
+        action: { label: t('CrowdSec ansehen'), path: '/reverse-proxy/crowdsec' },
+      };
+    }
+
+    case 'crowdsec_report': {
+      const { totals } = event;
+      const rows = (list: { key: string; count: number }[]) =>
+        list.slice(0, 5).map((row) => ({ label: row.key, value: formatCount(w.locale, row.count) }));
+      return {
+        subject: w.plural(totals.alerts, {
+          one: 'CrowdSec: {count} Ereignis in 24 Stunden',
+          other: 'CrowdSec: {count} Ereignisse in 24 Stunden',
+        }),
+        eyebrow: 'CrowdSec',
+        heading: t('Was CrowdSec erkannt hat'),
+        body:
+          mailText(
+            t('Zwischen {from} und {to} hat CrowdSec auf {node} {count} gemeldet.', {
+              from: w.when(event.from),
+              to: w.when(event.to),
+              node,
+              count: strong(w.plural(totals.alerts, { one: '{count} Ereignis', other: '{count} Ereignisse' })),
+            })
+          ) +
+          mailFacts([
+            { label: t('WAF-Treffer'), value: formatCount(w.locale, totals.waf) },
+            { label: t('Erkannt im Log'), value: formatCount(w.locale, totals.scenario) },
+            { label: t('Von Hand gesperrt'), value: formatCount(w.locale, totals.manual) },
+            { label: t('Verschiedene Adressen'), value: formatCount(w.locale, totals.sources) },
+            {
+              label: t('Jetzt aktive Sperren'),
+              value: event.activeDecisions === null ? t('unbekannt') : formatCount(w.locale, event.activeDecisions),
+            },
+          ]) +
+          mailFacts(rows(event.scenarios), { title: t('Häufigste Regeln') }) +
+          mailFacts(rows(event.sources), { title: t('Häufigste Adressen') }) +
+          mailFacts(rows(event.targets), { title: t('Betroffene Ziele') }) +
+          mailText(
+            t('Was zu tun ist: Nichts, solange die Treffer von außen kommen. Steht eine eigene Adresse oder die eines Nutzers darunter, gehört sie unter CrowdSec in die Freigaben.')
+          ),
+        action: { label: t('Ereignisse ansehen'), path: '/reverse-proxy/crowdsec?bereich=ereignisse' },
       };
     }
 

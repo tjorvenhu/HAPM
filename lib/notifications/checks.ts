@@ -15,6 +15,8 @@ import { probeProxy, readCertificateInventory } from '../haproxy/provision';
 import { HAPROXY_CERT_DIR, serviceHealth, type BackendServerState, type HaproxyRoute } from '../haproxy/config';
 import { pemFileName } from '../haproxy/certs';
 import { CERT_WARN_DAYS, UPLOAD_WARN_DAYS, certificateDue, pemExpiry, uploadedDue } from '../system/certificates';
+import { crowdsecStatistics, protection } from '../crowdsec/actions';
+import { bouncerContainerName, crowdsecContainerName, crowdsecInstalled } from '../crowdsec/paths';
 import { notify } from './index';
 import { pruneStates, resolveState } from './state';
 import { advanceStreaks, type Observed, type Streak } from './streaks';
@@ -27,12 +29,16 @@ interface CheckState {
   running: boolean;
   haproxy: Map<string, Streak>;
   targets: Map<string, Streak>;
+  crowdsec: Map<string, Streak>;
 }
 
 const globalState = globalThis as unknown as { __hapmNotifyChecks?: CheckState };
 
 function state(): CheckState {
-  return (globalState.__hapmNotifyChecks ??= { running: false, haproxy: new Map(), targets: new Map() });
+  const s = (globalState.__hapmNotifyChecks ??= { running: false, haproxy: new Map(), targets: new Map(), crowdsec: new Map() });
+  // Ein Zustand aus der Zeit vor CrowdSec (Neuladen im Betrieb) kennt das Feld nicht.
+  s.crowdsec ??= new Map();
+  return s;
 }
 
 function log(text: string, err: unknown): void {
@@ -162,7 +168,71 @@ async function checkTargets(now: string): Promise<void> {
   }
 }
 
-/** Alle zwei Minuten: läuft HAProxy, antworten die Ziele. */
+/**
+ * Laufen CrowdSec und der Bouncer, solange ein Ziel geschützt sein soll. Prüft
+ * niemand, lässt HAProxy die Anfragen durch: genau das soll nicht unbemerkt
+ * bleiben. Schützt CrowdSec nichts, ist ein gestoppter Container kein Ereignis.
+ */
+async function checkCrowdsec(now: string): Promise<void> {
+  const s = state();
+  const scope = protection();
+  if (!crowdsecInstalled() || !scope.readable || (scope.global !== true && scope.services.length === 0)) {
+    s.crowdsec = new Map();
+    return;
+  }
+
+  const containers = [
+    { role: 'crowdsec' as const, name: crowdsecContainerName() },
+    { role: 'bouncer' as const, name: bouncerContainerName() },
+  ];
+  let infos;
+  try {
+    infos = await Promise.all(containers.map((container) => containerInfo(container.name)));
+  } catch {
+    s.crowdsec = new Map();
+    return;
+  }
+
+  const observations = new Map<string, Observed>(
+    containers.map((container, index) => [container.name, infos[index]?.running ? 'up' : 'down'])
+  );
+  const step = advanceStreaks(s.crowdsec, observations, now);
+  s.crowdsec = step.streaks;
+  for (const entry of step.down) {
+    const index = containers.findIndex((container) => container.name === entry.id);
+    if (index < 0) continue;
+    await notify({
+      type: 'crowdsec_down',
+      role: containers[index].role,
+      container: entry.id,
+      exists: infos[index] !== null,
+      status: infos[index]?.status ?? null,
+      since: entry.since,
+      global: scope.global === true,
+      protectedServices: scope.services.length,
+    });
+  }
+}
+
+/** Was CrowdSec in den letzten 24 Stunden gemeldet hat, als eine Mail. Nichts gemeldet: keine Mail. */
+async function crowdsecReport(): Promise<void> {
+  if (!crowdsecInstalled()) return;
+  const result = await crowdsecStatistics('24h');
+  const { stats } = result;
+  if (stats.totals.alerts === 0) return;
+  await notify({
+    type: 'crowdsec_report',
+    from: stats.from,
+    to: stats.to,
+    totals: stats.totals,
+    activeDecisions: result.activeDecisions,
+    scenarios: stats.scenarios,
+    sources: stats.sources,
+    targets: stats.targets,
+  });
+}
+
+/** Alle zwei Minuten: läuft HAProxy, antworten die Ziele, prüft CrowdSec. */
 export async function runHealthChecks(): Promise<void> {
   const s = state();
   if (s.running) return;
@@ -171,6 +241,7 @@ export async function runHealthChecks(): Promise<void> {
     const now = new Date().toISOString();
     if (await checkHaproxy(now)) await checkTargets(now);
     else s.targets = new Map();
+    await checkCrowdsec(now);
   } catch (err) {
     log('Prüfung von HAProxy und Zielen gescheitert', err);
   } finally {
@@ -210,6 +281,9 @@ export async function runDailyChecks(renewal: { ok: boolean; output: string }): 
 
     const certificates = await expiringCertificates(Date.now());
     if (certificates.length > 0) await notify({ type: 'certificate_expiring', certificates });
+
+    // CrowdSec antwortet nicht: dann gibt es heute keinen Bericht, die Prüfung oben meldet den Ausfall.
+    await crowdsecReport().catch((err) => log('Tagesbericht von CrowdSec gescheitert', err));
 
     await pruneStates();
   } catch (err) {
