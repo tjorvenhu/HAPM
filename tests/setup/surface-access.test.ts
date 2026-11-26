@@ -145,3 +145,12 @@ describe('die Oberfläche nur von bestimmten Adressen', () => {
     expect(hapmServiceInput('hapm.example.org', 7080).lockedDomains).toEqual([]);
   });
 });
+
+describe('die Nameserver der Domain', () => {
+  it('sucht die Zone von der Domain aufwärts, nie bei der Top-Level-Domain', async () => {
+    const { zoneCandidates } = await import('@/lib/setup/address');
+    expect(zoneCandidates('hapm.intern.example.org')).toEqual(['hapm.intern.example.org', 'intern.example.org', 'example.org']);
+    expect(zoneCandidates('Example.ORG.')).toEqual(['example.org']);
+    expect(zoneCandidates('localhost')).toEqual([]);
+  });
+});

@@ -1340,6 +1340,72 @@ function verdictText(
   }
 }
 
+/** Wie oft gefragt wird, solange der Eintrag noch fehlt. */
+const DNS_WATCH_MS = 5000;
+/** Nach so langer Wartezeit darf man auch ohne sichtbaren Eintrag weiter. */
+const DNS_PATIENCE_MS = 45_000;
+
+/** Ob die Frage beantwortet ist: die Domain zeigt irgendwohin. Wohin, sagt die Meldung. */
+function recordVisible(check: AddressCheck | null, domain: string): boolean {
+  return Boolean(check && check.domain === domain && (check.verdict === 'matches' || check.verdict === 'elsewhere'));
+}
+
+/**
+ * Fragt, worauf die Domain zeigt, und fragt weiter, solange sie nicht auflöst.
+ *
+ * Ein DNS-Eintrag ist nach dem Anlegen nicht im selben Augenblick sichtbar.
+ * Eine einzelne Abfrage direkt danach sagt „kein Eintrag" und stimmt eine
+ * halbe Minute später nicht mehr. Die nächste Abfrage beginnt erst, wenn die
+ * vorige beantwortet ist: sie fragt mehrere Server und kann Sekunden dauern.
+ */
+function useAddressWatch(csrf: string, domain: string, active: boolean): AddressCheck | null {
+  const [check, setCheck] = useState<AddressCheck | null>(null);
+  const visible = recordVisible(check, domain);
+
+  useEffect(() => {
+    if (!active || !domain || visible) return;
+    let live = true;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const ask = async () => {
+      const result = await call<AddressCheck>(csrf, `/api/setup/address?domain=${encodeURIComponent(domain)}`).catch(
+        () => null
+      );
+      if (!live) return;
+      if (result) setCheck(result);
+      timer = setTimeout(() => void ask(), DNS_WATCH_MS);
+    };
+    void ask();
+    return () => {
+      live = false;
+      if (timer) clearTimeout(timer);
+    };
+  }, [active, csrf, domain, visible]);
+
+  return check && check.domain === domain ? check : null;
+}
+
+/** Die Zeile, solange auf den Eintrag gewartet wird. */
+function DnsWaiting({ domain, firstAnswer }: { domain: string; firstAnswer: boolean }) {
+  const { t } = useT();
+  return (
+    <div className="alert alert-info hapm-flag" role="status">
+      <Loader2 size={16} className="spin" />
+      <div className="hapm-flag-body">
+        <strong>
+          {firstAnswer
+            ? t('Warte auf den DNS-Eintrag für {domain}', { domain })
+            : t('Der DNS-Eintrag für {domain} wird geprüft', { domain })}
+        </strong>
+        {firstAnswer && (
+          <span>
+            {t('Noch ist er nicht zu sehen. Nach dem Anlegen dauert das meist unter einer Minute. Die Prüfung läuft von selbst weiter.')}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /**
  * Die Vorschläge für den Wert des DNS-Eintrags, der beste zuerst. Öffentlich
  * steht die Adresse aus der Adresszeile des Browsers vorn, wenn es eine
@@ -1372,8 +1438,8 @@ function AddressStep({
   // Bei „intern" vorbelegt an: weitere Ziele unter der Basis brauchen dann kein neues Zertifikat.
   const [wildcard, setWildcard] = useState(setup.domain ? setup.wildcard : internal && dnsReady);
   /** Nur was getippt wurde. Sonst folgt die Basis der Domain. */
-  const [check, setCheck] = useState<AddressCheck | null>(null);
-  const [checking, setChecking] = useState(false);
+  /** Für welche Domain die Prüfung läuft: gesetzt von „Eintrag prüfen" und nach „anlegen". */
+  const [watched, setWatched] = useState<string | null>(null);
   const [error, setError] = useState('');
   const { notify } = useToast();
   const [saving, setSaving] = useState(false);
@@ -1446,7 +1512,8 @@ function AddressStep({
             )
           : ''
       );
-      setCheck(null);
+      // Ab jetzt nachsehen, bis der Eintrag zu sehen ist.
+      setWatched(domain);
     } catch (err: unknown) {
       notify({ variant: 'error', title: t('Fehlgeschlagen'), message: message(err, msgid('Der Eintrag ließ sich nicht anlegen.'), t) });
     } finally {
@@ -1454,21 +1521,14 @@ function AddressStep({
     }
   }
 
-  async function runCheck() {
+  function runCheck() {
     const invalid = validateSetupDomain(domain);
     if (invalid) {
       setError(t(invalid));
       return;
     }
     setError('');
-    setChecking(true);
-    try {
-      setCheck(await call<AddressCheck>(csrf, `/api/setup/address?domain=${encodeURIComponent(domain)}`));
-    } catch (err: unknown) {
-      notify({ variant: 'error', title: t('Fehlgeschlagen'), message: message(err, msgid('Die Prüfung ist fehlgeschlagen.'), t) });
-    } finally {
-      setChecking(false);
-    }
+    setWatched(domain);
   }
 
   async function send(body: Record<string, unknown>) {
@@ -1503,10 +1563,16 @@ function AddressStep({
     void send({ domain, wildcard: wildcardOn, wildcardBase: wildcardOn ? base : null, surfaceIps: allowedIps });
   }
 
-  const verdict =
-    check && check.domain === domain
-      ? verdictText(check, issuanceOf(setup, certificateDomains({ domain, wildcard: wildcardOn, wildcardBase: base })), t)
-      : null;
+  // Die Prüfung gilt der Domain, für die sie begonnen wurde. Wer weitertippt, beendet sie.
+  const watching = watched !== null && watched === domain;
+  const check = useAddressWatch(csrf, domain, watching);
+  const checking = watching && !recordVisible(check, domain);
+  const issuance = issuanceOf(setup, certificateDomains({ domain, wildcard: wildcardOn, wildcardBase: base }));
+  // Die Zeile mit dem Spinner nur, wo auf den Eintrag gewartet werden muss
+  // (das Zertifikat über HTTP braucht ihn). Sonst sagt die Meldung, was sein
+  // Fehlen heißt, und die Prüfung läuft still weiter.
+  const waitingRow = checking && (check === null || (check.verdict === 'unresolved' && issuance === 'http'));
+  const verdict = watching && check && !waitingRow ? verdictText(check, issuance, t) : null;
   const shownDomain = domain || 'hapm.example.org';
 
   return (
@@ -1717,6 +1783,7 @@ function AddressStep({
 
       {recordNote && <div className="alert alert-success">{recordNote}</div>}
       {recordUnused && <div className="alert alert-warning">{recordUnused}</div>}
+      {waitingRow && <DnsWaiting domain={domain} firstAnswer={check !== null} />}
       {verdict && <div className={`alert ${verdict.tone}`}>{verdict.text}</div>}
       {error && <div className="auth-error" role="alert">{error}</div>}
 
@@ -1756,7 +1823,8 @@ function RunStep({
   const [error, setError] = useState('');
   const { notify } = useToast();
   const [starting, setStarting] = useState(false);
-  const [check, setCheck] = useState<AddressCheck | null>(null);
+  /** Nach längerem Warten: weiter auch ohne sichtbaren Eintrag. */
+  const [patient, setPatient] = useState(false);
 
   const [uploading, setUploading] = useState(false);
 
@@ -1776,19 +1844,25 @@ function RunStep({
     if (status.setup) onChanged(status.setup);
   }
 
-  // Vor dem Ausführen noch einmal sagen, worauf die Domain zeigt.
+  // Vor dem Ausführen sagen, worauf die Domain zeigt, und weiterfragen, bis
+  // sie auflöst: der Eintrag ist oft erst im Schritt davor entstanden.
+  const check = useAddressWatch(csrf, domain, outcome === 'idle');
+  const visible = recordVisible(check, domain);
+  /**
+   * Über HTTP ruft der ACME-Server die Domain auf: ohne Eintrag scheitert das
+   * Zertifikat sicher, und jeder Fehlversuch zählt bei Let's Encrypt gegen ein
+   * Kontingent. Deshalb geht es hier erst weiter, wenn der Eintrag zu sehen
+   * ist. Eine gescheiterte Abfrage (`unknown`) hält nicht auf: dann weiß
+   * dieser Server es nur nicht.
+   */
+  const recordMissing = issuance === 'http' && outcome === 'idle' && !visible && check?.verdict !== 'unknown';
+
+  // Wer lange wartet, bekommt den Weg ohne Prüfung: der Server sieht manche Einträge nie (eigener DNS im Netz).
   useEffect(() => {
-    if (outcome !== 'idle' || !domain) return;
-    let live = true;
-    call<AddressCheck>(csrf, `/api/setup/address?domain=${encodeURIComponent(domain)}`)
-      .then((result) => {
-        if (live) setCheck(result);
-      })
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
-  }, [csrf, domain, outcome]);
+    if (!recordMissing) return;
+    const timer = setTimeout(() => setPatient(true), DNS_PATIENCE_MS);
+    return () => clearTimeout(timer);
+  }, [recordMissing]);
 
   async function start() {
     setError('');
@@ -1805,7 +1879,9 @@ function RunStep({
 
   if (outcome === 'succeeded') return <SetupSuccess setup={setup} />;
 
-  const verdict = check && check.domain === domain ? verdictText(check, issuance, t) : null;
+  // Solange gewartet wird, steht die Zeile mit dem Spinner da, nicht die Warnung.
+  const verdict = check && !recordMissing && check.verdict !== 'unresolved' ? verdictText(check, issuance, t) : null;
+  const unresolvedNote = check && !recordMissing && check.verdict === 'unresolved' ? verdictText(check, issuance, t) : null;
 
   return (
     <Frame
@@ -1887,9 +1963,9 @@ function RunStep({
               )}
             </dl>
           </div>
-          {verdict && verdict.tone !== 'alert-success' && (
-            <div className={`alert ${verdict.tone}`}>{verdict.text}</div>
-          )}
+          {recordMissing && <DnsWaiting domain={domain} firstAnswer={check !== null} />}
+          {verdict && <div className={`alert ${verdict.tone}`}>{verdict.text}</div>}
+          {unresolvedNote && <div className={`alert ${unresolvedNote.tone}`}>{unresolvedNote.text}</div>}
           {uploadMissing && (
             <div className="hapm-setup-note">
               <div className="hapm-setup-note-head">
@@ -1919,7 +1995,12 @@ function RunStep({
         <>
           <div className="hapm-setup-nav">
             {back}
-            <button className="auth-submit" type="button" disabled={starting || (outcome === 'idle' && uploadMissing)} onClick={start}>
+            <button
+              className="auth-submit"
+              type="button"
+              disabled={starting || (outcome === 'idle' && (uploadMissing || recordMissing))}
+              onClick={start}
+            >
               {starting ? (
                 <span className="btn-spinner" aria-hidden="true" />
               ) : outcome === 'failed' ? (
@@ -1930,6 +2011,18 @@ function RunStep({
               {outcome === 'failed' ? t('Erneut versuchen') : t('Jetzt einrichten')}
             </button>
           </div>
+          {recordMissing && patient && (
+            <div className="hapm-setup-nav">
+              <button className="btn btn-ghost btn-sm" type="button" disabled={starting} onClick={start}>
+                {t('Ohne sichtbaren Eintrag einrichten')}
+              </button>
+              <InfoHint
+                text={t(
+                  'Nur sinnvoll, wenn der Eintrag sicher steht und dieser Server ihn bloß nicht sehen kann. Fehlt er wirklich, scheitert das Zertifikat.'
+                )}
+              />
+            </div>
+          )}
         </>
       )}
       {/* Während des Laufs gibt es nichts zu wählen, aber gehen darf man. */}

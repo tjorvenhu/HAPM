@@ -193,4 +193,11 @@ export const setup: Dictionary = {
     'Already among the admin IPs.',
   'Aufrufbar von': 'Reachable from',
   'Alle anderen Adressen bekommen unter der Domain 403.': 'All other addresses get 403 under the domain.',
+  'Warte auf den DNS-Eintrag für {domain}': 'Waiting for the DNS record for {domain}',
+  'Der DNS-Eintrag für {domain} wird geprüft': 'Checking the DNS record for {domain}',
+  'Noch ist er nicht zu sehen. Nach dem Anlegen dauert das meist unter einer Minute. Die Prüfung läuft von selbst weiter.':
+    'It is not visible yet. After creating it this usually takes less than a minute. The check keeps running by itself.',
+  'Ohne sichtbaren Eintrag einrichten': 'Set up without a visible record',
+  'Nur sinnvoll, wenn der Eintrag sicher steht und dieser Server ihn bloß nicht sehen kann. Fehlt er wirklich, scheitert das Zertifikat.':
+    'Only useful if the record definitely exists and this server just cannot see it. If it is really missing, the certificate fails.',
 };

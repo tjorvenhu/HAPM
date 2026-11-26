@@ -328,6 +328,17 @@ bleiben.
    niemand.
    Die Wildcard gibt es nur über ACME mit einem DNS-Anbieter
    (`wildcardPossible`); hochgeladen wird, was das Zertifikat abdeckt.
+   **Die Abfrage läuft weiter, bis der Eintrag zu sehen ist** (`useAddressWatch`
+   in `app/setup/page.tsx`, alle fünf Sekunden): nach „anlegen" und nach
+   „Eintrag prüfen" im Schritt Adresse, und im Schritt Einrichten von selbst.
+   Braucht das Zertifikat den Eintrag (HTTP-01), ist „Jetzt einrichten"
+   gesperrt, bis die Domain auflöst: ein Fehlversuch zählt bei Let's Encrypt
+   gegen ein Kontingent. Nach 45 Sekunden gibt es den Weg ohne Prüfung, für
+   Server, die den Eintrag nie sehen. Gefragt wird zuerst der Resolver des
+   Servers und, wenn der nichts findet, die Nameserver der Domain selbst
+   (`askAuthoritative` in `lib/setup/address.ts`): wer die Domain vor dem
+   Anlegen einmal gefragt hat, dessen Resolver merkt sich „gibt es nicht" bis
+   zu einer Stunde, und der eben angelegte Eintrag bliebe so lange unsichtbar.
    **Der Wert des Eintrags ist bei einer Installation aus dem Internet die
    öffentliche Adresse** (`recordAddresses`, `orderRecordAddresses`): ein
    Server bei einem Cloud-Anbieter oder hinter einem Router trägt an seiner
