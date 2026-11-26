@@ -304,7 +304,10 @@ bleiben.
    dass die Frage beantwortet ist (`certificates: 'set'`). Angeboten wird, was
    mit den Antworten davor geht (`certificatePathOpen`): Let's Encrypt erreicht
    eine interne Installation nur über einen DNS-Anbieter mit API, die Karte ist
-   dann gesperrt und sagt warum. Ein eigener Server braucht intern ohne
+   dann gesperrt und sagt warum. Ist der Anbieter ein eigener Nameserver oder
+   Infoblox, steht unter der Auswahl eine Warnung: Let's Encrypt fragt den
+   TXT-Eintrag aus dem Internet ab und sieht eine Zone im eigenen Netz nicht.
+   Gesperrt wird die Karte nicht, die Zone kann auch öffentlich ausgeliefert sein. Ein eigener Server braucht intern ohne
    DNS-Anbieter den Schalter „erreicht HAPM über HTTP (Port 80)"; er ist in dem
    Fall vorbelegt, und ohne ihn lehnt die Route die Wahl ab. Ein eigener Server
    wird erst übernommen, wenn acme.sh ein Konto bei ihm hat (siehe

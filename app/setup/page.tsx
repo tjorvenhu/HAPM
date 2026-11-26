@@ -857,6 +857,8 @@ function CertificatesStep({
   // Let's Encrypt erreicht eine interne Installation nur über DNS-01.
   const letsEncryptPossible = !internal || dnsReady;
   const providerLabel = (setup.dnsHook && findDnsProvider(setup.dnsHook)?.label) || setup.dnsHook || '';
+  /** Ein Nameserver oder eine Appliance, die man selbst betreibt (`fixedWait`). */
+  const ownDns = Boolean(setup.dnsHook && findDnsProvider(setup.dnsHook)?.fixedWait);
 
   const [choice, setChoice] = useState<CertificateChoice | null>(
     setup.certificateSource === 'upload'
@@ -974,6 +976,18 @@ function CertificatesStep({
           </button>
         ))}
       </div>
+
+      {/* Eine Folge, die man vor der Wahl kennen muss: Let's Encrypt fragt den
+          TXT-Eintrag aus dem Internet ab. Einen Nameserver im eigenen Netz
+          erreicht es nicht, und der Antrag scheiterte erst beim Ausführen. */}
+      {choice === 'letsencrypt' && dnsReady && ownDns && (
+        <div className="alert alert-warning">
+          {t(
+            "Let's Encrypt prüft den DNS-Eintrag aus dem Internet. Das gelingt nur, wenn Ihre Zone bei {provider} auch dort ausgeliefert wird. Für eine Zone nur im eigenen Netz wählen Sie einen eigenen ACME-Server.",
+            { provider: providerLabel }
+          )}
+        </div>
+      )}
 
       {custom && (
         <>
